@@ -22,7 +22,7 @@ from pymatgen.core.structure_matcher import ElementComparator
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.symmetry.groups import PointGroup
 from pymatgen.transformations.standard_transformations import SupercellTransformation
-from pymatgen.util.coord import is_coord_subset_pbc
+from pymatgen.util.coord import is_coord_subset_pbc, lattice_points_in_supercell
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial import KDTree
 from scipy.spatial.distance import squareform
@@ -735,10 +735,19 @@ def get_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
+    fold_to_primitive: bool = True,
 ) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
     """
     Get a list of all equivalent sites of the input fractional coordinates in
     ``structure``.
+
+    If ``fold_to_primitive`` is ``True`` (default) and ``structure`` is a
+    supercell of a smaller primitive cell, the site orbit is generated in the
+    (orientation-preserving) primitive cell and then expanded back to
+    ``structure`` -- giving the complete orbit even in periodicity-breaking
+    supercells, where direct supercell symmetry analysis undercounts orbits (as
+    ``spglib`` can only use symmetry operations with integer rotation matrices
+    in the given cell basis).
 
     Tries to use hashing and caching to accelerate if possible.
 
@@ -792,6 +801,13 @@ def get_all_equiv_sites(
             If ``True``, prints information on the trialled ``symprec`` and
             ``dist_tol_factor`` values, and the identified equivalent sites.
             Default is ``False``.
+        fold_to_primitive (bool):
+            If ``True`` (default) and ``structure`` is a supercell of a smaller
+            primitive cell, generate the site orbit in the
+            (orientation-preserving) primitive cell and expand back to
+            ``structure``, giving the complete orbit even in
+            periodicity-breaking supercells (see docstring above). If
+            ``False``, uses direct symmetry analysis of ``structure``.
 
     Returns:
         list[PeriodicSite | np.ndarray]:
@@ -804,30 +820,23 @@ def get_all_equiv_sites(
         ``False``), also returns the final ``symprec`` and ``dist_tol_factor``
         values used for the equivalent site generation.
     """
-    try:
-        return _cache_ready_get_all_equiv_sites(
-            tuple(cast("Sequence", frac_coords)),
-            structure,
-            symprec,
-            dist_tol_factor,
-            species,
-            just_frac_coords,
-            return_symprec_and_dist_tol_factor,
-            fixed_symprec_and_dist_tol_factor,
-            verbose,
-        )
+    args = (
+        structure,
+        symprec,
+        dist_tol_factor,
+        species,
+        just_frac_coords,
+        return_symprec_and_dist_tol_factor,
+        fixed_symprec_and_dist_tol_factor,
+        verbose,
+        fold_to_primitive,
+    )
+    try:  # check hashability upfront, to avoid catching unrelated ``TypeError``s from the function body
+        key = (tuple(cast("Sequence", frac_coords)), *args)
+        hash(key)
     except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
-        return _raw_get_all_equiv_sites(
-            frac_coords,
-            structure,
-            symprec,
-            dist_tol_factor,
-            species,
-            just_frac_coords,
-            return_symprec_and_dist_tol_factor,
-            fixed_symprec_and_dist_tol_factor,
-            verbose,
-        )
+        return _raw_get_all_equiv_sites(frac_coords, *args)
+    return _cache_ready_get_all_equiv_sites(*key)
 
 
 @lru_cache(maxsize=int(1e3))
@@ -841,6 +850,7 @@ def _cache_ready_get_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
+    fold_to_primitive: bool = True,
 ) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
     output = _raw_get_all_equiv_sites(
         frac_coords,
@@ -852,6 +862,7 @@ def _cache_ready_get_all_equiv_sites(
         return_symprec_and_dist_tol_factor,
         fixed_symprec_and_dist_tol_factor,
         verbose,
+        fold_to_primitive,
     )
     # copy() to help avoid mutability issues with cached outputs:
     if not return_symprec_and_dist_tol_factor:
@@ -860,6 +871,36 @@ def _cache_ready_get_all_equiv_sites(
 
     assert isinstance(output, tuple)  # typing
     return output[0].copy(), output[1], output[2]
+
+
+def _get_orientation_preserving_primitive(
+    structure: Structure, symprec: float = 0.01
+) -> tuple[Structure, np.ndarray] | None:
+    """
+    Get the orientation-preserving primitive cell of ``structure`` (via
+    ``spglib`` with ``no_idealize=True``, keeping the original Cartesian
+    orientation and origin), along with the integer primitive-to-supercell.
+
+    transformation matrix ``M`` (such that:
+    ``structure.lattice.matrix = M @ primitive.lattice.matrix``).
+
+    Returns ``None`` if ``structure`` is already primitive or ``spglib``
+    primitive cell determination fails.
+    """
+    cell = (structure.lattice.matrix, structure.frac_coords, [site.specie.Z for site in structure])
+    prim_cell = spglib.standardize_cell(cell, to_primitive=True, no_idealize=True, symprec=symprec)
+    if prim_cell is None or len(prim_cell[2]) >= len(structure):
+        return None
+
+    prim_lattice = Lattice(prim_cell[0])
+    supercell_matrix = structure.lattice.matrix @ np.linalg.inv(prim_lattice.matrix)
+    int_supercell_matrix = np.rint(supercell_matrix)
+    if not np.allclose(supercell_matrix, int_supercell_matrix, atol=0.01):
+        raise ValueError(  # shouldn't happen for a true orientation-preserving primitive
+            f"Non-integer supercell matrix ({supercell_matrix}) between the input structure and its "
+            f"orientation-preserving primitive cell!"
+        )
+    return Structure(prim_lattice, list(prim_cell[2]), prim_cell[1]), int_supercell_matrix.astype(int)
 
 
 _TRIAL_SYMPREC_DIST_TOL_FACTORS = np.array([1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1])
@@ -875,6 +916,7 @@ def _raw_get_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
+    fold_to_primitive: bool = True,
 ) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
     # ensure sites have the same property keys, otherwise can cause issues with pymatgen primitive
     # structure determination:
@@ -890,31 +932,77 @@ def _raw_get_all_equiv_sites(
     else:
         properties = {}
 
+    def _clustered_orbit(structure: Structure, coords: ArrayLike, symprec: float, dist_tol: float):
+        """
+        Generate the orbit of ``coords`` under the symmetry operations of
+        ``structure`` (i.e. the set of symmetry-equivalent positions), as
+        deduplicated `unit-cell` fractional coordinates.
+        """
+        sga = get_sga_and_symprec(structure, symprec=symprec)[0]
+        return cluster_sites_by_dist_tol(
+            [
+                symm_op.operate(coords) % 1  # apply symm_op and move to unit cell
+                for symm_op in sga.get_symmetry_operations()  # fractional symm_ops by default
+            ],
+            structure,
+            dist_tol=dist_tol,
+        )
+
+    def _fold_to_primitive_equiv_sites(symprec: float, dist_tol: float):
+        """
+        Generate the complete orbit of ``frac_coords`` in ``structure`` by
+        folding to the orientation-preserving primitive cell, generating the
+        orbit there with the primitive symmetry operations, and expanding back
+        to ``structure`` with the primitive lattice translations.
+
+        This gives the complete orbit even in periodicity-breaking supercells,
+        where direct supercell symmetry analysis undercounts orbits (as
+        ``spglib`` can only use symmetry operations with integer rotation
+        matrices in the given cell basis). Returns the orbit as unit-cell
+        fractional coordinates, or ``None`` if ``structure`` is already
+        primitive (no folding possible/needed).
+        """
+        if (prim_and_matrix := _get_orientation_preserving_primitive(structure, symprec=symprec)) is None:
+            return None  # already primitive (or spglib failure); use direct supercell analysis
+        prim, int_supercell_matrix = prim_and_matrix
+        prim_frac_coords = np.asarray(frac_coords) @ int_supercell_matrix  # f_prim = f_super @ M
+        prim_orbit = _clustered_orbit(prim, prim_frac_coords, symprec, dist_tol)
+
+        # expand back up to ``structure``; supercell frac coords of each orbit member, plus all primitive
+        # lattice translations within the supercell (i.e. the coset representatives):
+        coset_translations = lattice_points_in_supercell(int_supercell_matrix)
+        all_frac_coords = (
+            np.array(prim_orbit) @ np.linalg.inv(int_supercell_matrix) + coset_translations[:, None]
+        ).reshape(-1, 3) % 1
+        return cluster_sites_by_dist_tol(list(all_frac_coords), structure, dist_tol=dist_tol)
+
     def _get_equiv_sites_with_given_symprec(
         symprec: float,
         dist_tol_factor: float,
         just_frac_coords: bool = False,
     ):
         dist_tol = dist_tol_factor * symprec  # distance tolerance for clustering sites
-        sga, symprec = get_sga_and_symprec(structure, symprec=symprec)
-        symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
+        orbit = None
+        if fold_to_primitive:
+            try:
+                orbit = _fold_to_primitive_equiv_sites(symprec, dist_tol)
+            except Exception as exc:
+                warnings.warn(
+                    f"Equivalent-site generation via primitive-cell folding failed with error: {exc!r}. "
+                    f"Falling back to direct symmetry analysis of the input structure, which can miss "
+                    f"equivalent sites in periodicity-breaking supercells."
+                )
+        if orbit is None:  # already primitive, folding disabled, or folding failed
+            orbit = _clustered_orbit(structure, frac_coords, symprec, dist_tol)
 
-        dummy_site = PeriodicSite(species, frac_coords, structure.lattice, properties=properties)
-        x_sites = [
-            apply_symm_op_to_site(
-                symm_op,
-                dummy_site,
-                fractional=True,
-                rotate_lattice=structure.lattice,  # same lattice, just want transformed frac coords
-                just_unit_cell_frac_coords=just_frac_coords,
-            )
-            for symm_op in symm_ops
-        ]
-        if not just_frac_coords:
-            for site in x_sites:
-                site.to_unit_cell(in_place=True)  # faster with in_place
-
-        return cluster_sites_by_dist_tol(x_sites, structure, dist_tol=dist_tol)
+        return (
+            orbit
+            if just_frac_coords
+            else [
+                PeriodicSite(species, site_frac_coords, structure.lattice, properties=properties)
+                for site_frac_coords in orbit
+            ]
+        )
 
     if fixed_symprec_and_dist_tol_factor:
         equiv_sites = _get_equiv_sites_with_given_symprec(
@@ -1147,6 +1235,7 @@ def _get_symm_dataset_of_struct_with_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
+    fold_to_primitive: bool = True,
 ):
     """
     Get the symmetry dataset of a ``SpacegroupAnalyzer`` object of a structure
@@ -1163,43 +1252,7 @@ def _get_symm_dataset_of_struct_with_all_equiv_sites(
             ``symprec`` and ``dist_tol_factor`` used for the equivalent site
             generation.
     """
-    try:
-        return _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(
-            tuple(cast("Sequence", frac_coords)),
-            struct,
-            symprec,
-            dist_tol_factor,
-            species,
-            return_symprec_and_dist_tol_factor,
-            fixed_symprec_and_dist_tol_factor,
-            verbose,
-        )
-    except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
-        return _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
-            frac_coords,
-            struct,
-            symprec,
-            dist_tol_factor,
-            species,
-            return_symprec_and_dist_tol_factor,
-            fixed_symprec_and_dist_tol_factor,
-            verbose,
-        )
-
-
-@lru_cache(maxsize=int(1e3))
-def _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(
-    frac_coords: tuple,
-    struct: Structure,
-    symprec: float = 0.01,
-    dist_tol_factor: float = 1.0,
-    species: str = "X",
-    return_symprec_and_dist_tol_factor: bool = False,
-    fixed_symprec_and_dist_tol_factor: bool = False,
-    verbose: bool = False,
-):
-    return _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
-        frac_coords,
+    args = (
         struct,
         symprec,
         dist_tol_factor,
@@ -1207,7 +1260,14 @@ def _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(
         return_symprec_and_dist_tol_factor,
         fixed_symprec_and_dist_tol_factor,
         verbose,
+        fold_to_primitive,
     )
+    try:  # check hashability upfront, to avoid catching unrelated ``TypeError``s from the function body
+        key = (tuple(cast("Sequence", frac_coords)), *args)
+        hash(key)
+    except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
+        return _raw_get_symm_dataset_of_struct_with_all_equiv_sites(frac_coords, *args)
+    return _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(*key)
 
 
 def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
@@ -1219,6 +1279,7 @@ def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
+    fold_to_primitive: bool = True,
 ):
     equiv_sites_output = get_all_equiv_sites(
         frac_coords,
@@ -1229,6 +1290,7 @@ def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
         return_symprec_and_dist_tol_factor=True,
         fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
         verbose=verbose,
+        fold_to_primitive=fold_to_primitive,
     )
     assert isinstance(equiv_sites_output, tuple)  # return_symprec_and_dist_tol_factor = True
     unique_sites, symprec, dist_tol_factor = equiv_sites_output
@@ -1238,6 +1300,11 @@ def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
     return (
         (*return_tuple, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else return_tuple
     )
+
+
+_cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites = lru_cache(maxsize=int(1e3))(
+    _raw_get_symm_dataset_of_struct_with_all_equiv_sites
+)
 
 
 def _get_struct_with_all_X(struct, unique_sites):
@@ -1346,6 +1413,7 @@ def get_equiv_frac_coords_in_primitive(
             dist_tol_factor=trial_dist_tol_factor,
             return_symprec_and_dist_tol_factor=True,
             fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
+            fold_to_primitive=False,  # this function performs its own folding, just needs seed sites
             verbose=verbose,
         )
         assert isinstance(equiv_sites_output, tuple)  # return_symprec_and_dist_tol_factor = True
@@ -1355,6 +1423,10 @@ def get_equiv_frac_coords_in_primitive(
             supercell_with_all_X, ignored_species=["X"], symprec=adjusted_trial_symprec
         )
 
+        # NOTE: If "No mapping between the primitive and supercell structures" difficulties ever prove
+        # recurrent here, this could be restructured to fold via the orientation-preserving primitive
+        # (``_get_orientation_preserving_primitive``, as in ``_raw_get_all_equiv_sites``), leaving only a
+        # single primitive <-> reference-primitive match rather than this supercell -> primitive matching:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="No mapping")
             rotated_struct, matrix = _rotate_and_get_supercell_matrix(

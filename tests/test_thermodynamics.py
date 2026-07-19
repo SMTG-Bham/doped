@@ -655,6 +655,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             symm_df, output, symm_w = _run_func_and_capture_stdout_warnings(
                 defect_thermo.get_symmetries_and_degeneracies, **kwargs
             )
+            assert not symm_w, "No warnings expected for get_symmetries_and_degeneracies"
             assert not output, "No output expected for get_symmetries_and_degeneracies"
             assert isinstance(symm_df, pd.DataFrame), "Expected a DataFrame"
             if kwargs.get("skip_formatting", False):
@@ -730,6 +731,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             )
             print("Checking chempots_warning")
             assert chempots_warning == (chempots is None)
+            assert len(conc_w) == 1  # either no limit specified or no chempots supplied warning
 
             if kwargs.get("skip_formatting", False):
                 print("Checking `Charge` and `Concentration...` formats")
@@ -779,20 +781,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 assert "Concentration (per site)" in df.columns
                 assert "Concentration (cm^-3)" in df.columns  # both now given
 
-        for w in [symm_w, conc_w]:  # the dub
-            print("Checking expected warnings")
-            if defect_thermo.bulk_formula in ["ZnS"]:  # periodicity-breaking -> warning:
-                # Note: Previously Sb2Si2Te6 ("SiSbTe3") also threw this warning, but now with
-                # auto-stenciling periodicity restoration this issue no longer appears for it
-                assert any(
-                    "The defect supercell has been detected to possibly have" in str(warn.message)
-                    for warn in w
-                )
-            else:
-                print(f"Checking len of: {[str(warning_message) for warning_message in w]}")
-                assert len(w) in {0, 1}
-
-        # self.capsys.readouterr()  # clear previous stdout
+        self.capsys.readouterr()  # clear previous stdout
         print("Checking plot()...")
         figure_or_list, output, w = _run_func_and_capture_stdout_warnings(defect_thermo.plot)
         assert isinstance(figure_or_list, mpl.figure.Figure | list)
@@ -1189,8 +1178,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self._check_defect_thermo(self.ZnS_defect_thermo, dist_tol=2.5)
 
     def _check_defect_thermo_no_metadata(self, defect_thermo, check_dists=True):
-        # get set of random 7 entries from defect_entries_wout_metadata (7 because need full CdTe
-        # example set for its semi-hard 😏 tests)
+        # get set of random 7 entries from defect_entries_wout_metadata (7 because need full CdTe example
+        # set for its semi-hard.. tests)
         defect_entries_wout_metadata = random.sample(
             list(defect_thermo.defect_entries.values()), min(7, len(defect_thermo.defect_entries))
         )
@@ -2527,7 +2516,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert (
                 point_symmetry_from_structure(defect_entry.defect_supercell)
                 == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
-            )
+            )  # no bulk reference: defect position guessed (SOAP analysis) and candidate symmetry
+            # operations generated directly from the local atomic geometry
             assert (
                 point_symmetry_from_structure(
                     defect_entry.defect_supercell, bulk_structure=defect_entry.bulk_supercell
@@ -2580,7 +2570,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             # test adjusting symprec:
             if name in [
                 "vac_1_Cd_0",
-                "as_1_Te_on_Cd_0",
                 "Int_Te_3_unperturbed_0",
                 "as_2_Te_on_Cd_C3v_metastable_1",
             ]:
@@ -2594,13 +2583,21 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         )  # default symprec for point_symmetry_from_site is 0.01
                         == "C1"
                     )
-            elif name in [
-                "vac_1_Cd_Td_0",
-                "as_1_Cd_on_Te_2",
-            ]:
+            elif name == "vac_1_Cd_Td_0":
                 assert point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01) == "D2d"
-            elif name == "vac_2_Te_orig_non_JT_distorted_0":
-                assert point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01) == "C3v"
+            elif name in [
+                "as_1_Te_on_Cd_0",
+                "as_1_Cd_on_Te_2",
+                "vac_2_Te_orig_non_JT_distorted_0",
+            ]:
+                # here the local isometry analysis (with refined operations) gives higher symmetries
+                # (matching the default symprec=0.1 results) even at symprec=0.01, where global ``spglib``
+                # analysis previously gave reduced symmetries (Cs/D2d/C3v), being more sensitive to
+                # far-field / coherent structural noise:
+                assert (
+                    point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01)
+                    == sym_degen_dict[name]["relaxed point symmetry"]
+                )
             elif name in [
                 "as_1_Te_on_Cd_-1",
                 "as_1_Cd_on_Te_1",

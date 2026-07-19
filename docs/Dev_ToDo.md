@@ -39,7 +39,6 @@
   there's any useful functionality we want to add!
 
 ## SK To-Do for next update:
-- Update SnB requirement (and thus doped) to pmg-core>2026.5.23 after ROPT fix; https://github.com/materialsproject/pymatgen-core/pull/69
 - Finish ``prune_to_expected_polymorphs`` testing and handling of new ``mp-api`` behaviour with default thermo types (may need to update requirement); https://github.com/materialsproject/api/issues/1104, https://github.com/materialsproject/api/pull/1087 -- drafts in SK shelved changes 
 - It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe. Keep old code for reference at the bottom maybe? With delta_VBM/CBM as a function example 
   - Ideally, would implement the general ``scan()`` function and then showcase it in the tutorials?
@@ -47,4 +46,5 @@
 - Update all tutorial notebooks to use latest codebase
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks. TODO in ``doped.chemical_potentials``.
 - Re-run pytest timings (with proper heavy-test skipping now, updated pmg `LOCPOT` parsing, many test changes etc)
+- Remove SnB/doped co-dependent develop-branch pin in GH actions testing.
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.

@@ -986,12 +986,18 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
 
 @lru_cache(maxsize=int(1e2))
 def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
-    from doped.utils.symmetry import doped_cluster_frac_coords, get_primitive_structure
+    from doped.utils.symmetry import _get_orientation_preserving_primitive, doped_cluster_frac_coords
 
     # map all sites to the unit cell; 0 ≤ xyz < 1.
     structure = Structure.from_sites(structure, to_unit_cell=True)
-    # get Voronoi nodes in primitive structure and then map back to the supercell:
-    prim_structure = get_primitive_structure(structure)
+    # get Voronoi nodes in the primitive structure and then map back to the supercell; using the
+    # orientation-preserving primitive, so that mapping back is just the integer supercell matrix expansion
+    # (no structure-matching or origin-shift handling needed):
+    try:
+        prim_and_matrix = _get_orientation_preserving_primitive(structure)
+    except ValueError:  # non-integer supercell matrix (no other primitive); analyse structure directly
+        prim_and_matrix = None
+    prim_structure, supercell_matrix = prim_and_matrix or (structure, np.eye(3, dtype=int))
 
     top_analyzer = DopedTopographyAnalyzer(prim_structure)
     voronoi_coords = [v.frac_coords for v in top_analyzer.vnodes]
@@ -1000,20 +1006,10 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     # cluster nodes within 0.2 Å of each other:
     prim_vnodes = doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
 
-    # map back to the supercell
-    sm = StructureMatcher(primitive_cell=False, attempt_supercell=True)
-    mapping = sm.get_supercell_matrix(structure, prim_structure)
     voronoi_struct = Structure.from_sites(
-        [PeriodicSite(Composition("X"), fpos, structure.lattice, skip_checks=True) for fpos in prim_vnodes]
+        [PeriodicSite("X", fpos, prim_structure.lattice, skip_checks=True) for fpos in prim_vnodes]
     )  # Structure with Voronoi nodes as sites
-    voronoi_struct.make_supercell(mapping)  # Map back to the supercell
-
-    # check if there was an origin shift between primitive and supercell
-    regenerated_supercell = prim_structure.copy()
-    regenerated_supercell.make_supercell(mapping)
-    fractional_shift = sm.get_transformation(structure, regenerated_supercell)[1]
-    if not np.allclose(fractional_shift, 0):
-        voronoi_struct.translate_sites(range(len(voronoi_struct)), fractional_shift, frac_coords=True)
+    voronoi_struct.make_supercell(supercell_matrix)  # Map back to the supercell
 
     return voronoi_struct.sites.copy()  # copy() to help avoid mutability issues with cached outputs
 

@@ -26,6 +26,18 @@ from doped.utils.efficiency import (
     PeriodicSite,
     Structure,
     StructureMatcher_scan_stol,
+    cache_species,
+)
+from doped.utils.parsing import (
+    _get_bulk_supercell,
+    _get_output_files_and_check_if_multiple,
+    _multiple_files_warning,
+    _num_electrons_from_charge_state,
+    _simple_spin_degeneracy_from_num_electrons,
+    _update_defect_entry_structure_metadata,
+    get_procar,
+    get_vasprun,
+    spin_degeneracy_from_vasprun,
 )
 
 if TYPE_CHECKING:
@@ -708,13 +720,6 @@ class DefectEntry(thermo.DefectEntry):
             return
 
         from doped.utils.eigenvalues import _parse_procar, get_band_edge_info
-        from doped.utils.parsing import (
-            _get_output_files_and_check_if_multiple,
-            _multiple_files_warning,
-            get_procar,
-            get_vasprun,
-            spin_degeneracy_from_vasprun,
-        )
 
         parsed_vr_procar_dict = {}
         for vr, procar, label in [(bulk_vr, bulk_procar, "bulk"), (defect_vr, defect_procar, "defect")]:
@@ -780,8 +785,6 @@ class DefectEntry(thermo.DefectEntry):
 
         bulk_vr, bulk_procar = parsed_vr_procar_dict["bulk"]
         defect_vr, defect_procar = parsed_vr_procar_dict["defect"]
-
-        from doped.utils.efficiency import cache_species
 
         with cache_species(Structure):
             band_orb, vbm_info, cbm_info = get_band_edge_info(
@@ -1187,10 +1190,6 @@ class DefectEntry(thermo.DefectEntry):
                 ``oxi_state``, ``multiplicity``, ``dist_tol_factor``) in the
                 ``defect_and_info_from_structures`` function.
         """
-        from doped.utils.parsing import (
-            _num_electrons_from_charge_state,
-            _simple_spin_degeneracy_from_num_electrons,
-        )
         from doped.utils.symmetry import get_orientational_degeneracy, point_symmetry_from_defect_entry
 
         reparse = symprec is not None or bulk_symprec is not None
@@ -1221,8 +1220,6 @@ class DefectEntry(thermo.DefectEntry):
                 )
             except Exception as e:
                 warnings.warn(f"Unable to determine bulk site symmetry for {self.name}, got error:\n{e!r}")
-
-            from doped.utils.parsing import _update_defect_entry_structure_metadata
 
             structure_metadata_kwargs = kwargs
             if bulk_symprec is not None:  # only include if not None
@@ -1504,8 +1501,6 @@ class DefectEntry(thermo.DefectEntry):
         """
         Returns a string representation of the |DefectEntry| object.
         """
-        from doped.utils.parsing import _get_bulk_supercell
-
         bulk_supercell = _get_bulk_supercell(self)
         try:
             defect_name = self.defect.name
@@ -1807,8 +1802,6 @@ def _parse_procar(procar: PathLike | Procar | None = None):
         Procar: The parsed |Procar| object in ``pymatgen`` format.
     """
     from pymatgen.electronic_structure.core import Spin
-
-    from doped.utils.parsing import get_procar
 
     if not hasattr(procar, "data"):  # not a parsed Procar object
         if procar and hasattr(procar, "proj_data") and not isinstance(procar, PathLike | Procar):
@@ -2429,8 +2422,6 @@ class Defect(core.Defect):
                         defect.structure = bulk_oxi_states
 
                     else:
-                        from doped.utils.efficiency import StructureMatcher_scan_stol
-
                         mapping_to_defect = StructureMatcher_scan_stol(
                             defect.structure,
                             bulk_oxi_states,
@@ -2724,9 +2715,9 @@ class Defect(core.Defect):
 
     def get_multiplicity(
         self,
-        primitive_structure: Structure | None = None,
         symprec: float | None = None,
         dist_tol_factor: float = 1.0,
+        primitive_structure: Structure | None = None,
         **kwargs,
     ) -> int:
         """
@@ -2734,17 +2725,13 @@ class Defect(core.Defect):
         host structure (``self.structure``).
 
         This function determines all equivalent sites of ``self.site`` in
-        ``self.structure``, by first folding down to the primitive unit cell
-        (which may be the same as ``self.structure``) and getting all
-        equivalent primitive cell sites (which avoids issues with
-        periodicity-breaking supercells, and boosts efficiency), then
-        multiplying by ``len(self.structure)/len(primitive_structure)``, giving
-        the site multiplicity in ``self.structure``.
+        ``self.structure`` using ``get_all_equiv_sites``, which internally
+        folds down to the primitive unit cell (if smaller than
+        ``self.structure``) to generate the complete site orbit -- avoiding
+        issues with periodicity-breaking supercells (where direct supercell
+        symmetry analysis undercounts orbits) and boosting efficiency.
 
         Args:
-            primitive_structure (|Structure| | None):
-                |Structure| to use for the primitive unit cell. Can be provided
-                to avoid recalculation of the primitive cell.
             symprec (float):
                 Symmetry precision to use for determining symmetry operations
                 and thus equivalent sites with ``spglib``. Default is ``None``,
@@ -2768,50 +2755,33 @@ class Defect(core.Defect):
                 ``spglib`` have consistent point group symmetries. Setting
                 ``verbose`` to ``True`` will print information on the trialled
                 ``dist_tol_factor`` (and ``symprec``) values.
+            primitive_structure (|Structure| | None):
+                (Deprecated, to be removed in v4.1.) Unused; retained for
+                backwards compatibility. Primitive cell folding is now handled
+                internally in ``get_all_equiv_sites``.
             **kwargs:
                 Additional keyword arguments to pass to
-                ``get_all_equiv_sites``, such as
+                ``get_all_equiv_sites``, such as ``fold_to_primitive``,
                 ``fixed_symprec_and_dist_tol_factor`` and ``verbose``.
 
         Returns:
             int: The multiplicity of ``self.site`` in ``self.structure``.
         """
-        from doped.utils.symmetry import (
-            get_all_equiv_sites,
-            get_equiv_frac_coords_in_primitive,
-            get_primitive_structure,
-        )
+        if primitive_structure is not None:
+            warnings.warn(  # TODO: Remove ``primitive_structure`` in v4.1
+                "The ``primitive_structure`` parameter of ``Defect.get_multiplicity`` is deprecated "
+                "and will be removed in v4.1. Primitive cell folding is now handled internally in "
+                "``get_all_equiv_sites``.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        from doped.utils.symmetry import get_all_equiv_sites
 
         assert isinstance(self.structure, Structure)
-        primitive_structure = primitive_structure or get_primitive_structure(
-            self.structure,
-            symprec=symprec or self.symprec,
-        )
-        if primitive_structure != self.structure:
-            # accounts for potential periodicity breaking in Defect.structure (which may be a supercell):
-            volume_factor = len(self.structure) / len(primitive_structure)
-            try:
-                equiv_frac_coords_in_prim = get_equiv_frac_coords_in_primitive(
-                    self.site.frac_coords,
-                    primitive_structure,
-                    self.structure,
-                    symprec=symprec or self.symprec,
-                    dist_tol_factor=dist_tol_factor,
-                    **kwargs,
-                )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
-            except Exception as exc:
-                warnings.warn(
-                    f"Multiplicity determination via primitive-cell folding failed with error: {exc!r}. "
-                    f"Falling back to direct symmetry analysis of Defect.structure, which can undercount "
-                    f"multiplicities in periodicity-breaking supercells."
-                )
-            else:
-                assert isinstance(equiv_frac_coords_in_prim, list | np.ndarray)  # type check (for mypy)
-                return len(equiv_frac_coords_in_prim) * round(volume_factor)
-
         return len(
-            get_all_equiv_sites(
-                self.site.frac_coords,
+            get_all_equiv_sites(  # folds to the primitive cell by default (``fold_to_primitive=True``),
+                self.site.frac_coords,  # giving the complete orbit even in periodicity-breaking cells
                 self.structure,
                 just_frac_coords=True,
                 symprec=symprec or self.symprec,

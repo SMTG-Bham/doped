@@ -43,7 +43,7 @@ from doped.core import (
     Vacancy,
     _falling_back_to_common_oxi_states_warning,
 )
-from doped.generation import DefectsGenerator, get_defect_name_from_entry
+from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
 from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure, StructureMatcher_scan_stol
 from doped.utils.supercells import get_min_image_distance, min_dist
 from doped.utils.symmetry import (
@@ -71,7 +71,11 @@ default_supercell_gen_kwargs = {
 
 
 def _check_defect_entry(
-    defect_entry, defect_name, defect_gen, oriented_conv_structure, charge_states_removed=False
+    defect_entry,
+    defect_name,
+    defect_gen,
+    oriented_conv_structure,
+    charge_states_removed=False,
 ):
     print(f"Checking DefectEntry {defect_name} attributes")
     assert defect_entry.name == defect_name
@@ -79,9 +83,6 @@ def _check_defect_entry(
     assert defect_entry.wyckoff
     assert defect_entry.defect
     assert defect_entry.defect.wyckoff == defect_entry.wyckoff
-    # Commenting out as confirmed works but slows down tests (tested elsewhere):
-    # assert get_defect_name_from_entry(defect_entry) == get_defect_name_from_defect(
-    # defect_entry.defect)  # TODO: A/B test uncommenting this now
     assert np.array_equal(defect_entry.defect.conv_cell_frac_coords, defect_entry.conv_cell_frac_coords)
     assert np.allclose(
         defect_entry.sc_entry.structure.lattice.matrix,
@@ -90,6 +91,20 @@ def _check_defect_entry(
 
     # only run more intensive checks on neutral entries, as charged entries are just copies of this
     if defect_entry.charge_state == 0 and "Co1 H12 Br2 O6" not in defect_gen.primitive_structure.formula:
+        # test defect name re-determination, with relaxed & unrelaxed symmetry determination (fine even in
+        # periodicity-breaking supercells, via local isometry analyses in
+        # ``point_symmetry_from_defect_entry``), with no warnings;
+        with warnings.catch_warnings(record=True) as w:
+            relaxed_defect_name = get_defect_name_from_entry(defect_entry)
+            assert relaxed_defect_name == get_defect_name_from_defect(defect_entry.defect)
+            assert relaxed_defect_name == get_defect_name_from_entry(defect_entry, relaxed=False)
+        _print_warning_info(w)
+        assert not [
+            warning
+            for warning in w
+            if "cannot be determined from the local environment" not in str(warning.message)
+        ]
+
         assert np.allclose(
             defect_entry.conventional_structure.lattice.matrix,
             defect_entry.defect.conventional_structure.lattice.matrix,
@@ -149,9 +164,7 @@ def _check_defect_entry(
             # test multiplicity functions:
             print(len(defect_entry.defect.equivalent_sites), defect_entry.defect.multiplicity)
             assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
-            assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
-                primitive_structure=defect_gen.primitive_structure,
-            )
+            assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity()
             from pymatgen.analysis.defects.core import Substitution as pmg_Substitution
             from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
 
@@ -161,12 +174,11 @@ def _check_defect_entry(
             }
             # test that custom doped multiplicity function matches pymatgen function (which is only defined
             # for Vacancies/Substitutions, and fails with periodicity-breaking cells (but don't have them
-            # here with _generated_ defects):
+            # here with _generated_ defects, where we use the primitive cell for Defect.structure):
             if defect_entry.defect.defect_type in defect_type_dict:
-                assert defect_type_dict[defect_entry.defect.defect_type].get_multiplicity(
-                    defect_entry.defect
-                ) == defect_entry.defect.get_multiplicity(
-                    primitive_structure=defect_gen.primitive_structure,
+                assert (
+                    defect_type_dict[defect_entry.defect.defect_type].get_multiplicity(defect_entry.defect)
+                    == defect_entry.defect.get_multiplicity()
                 )
 
             # now we fold down to primitive to calculate the multiplicity, which avoids issues with
@@ -180,12 +192,10 @@ def _check_defect_entry(
                 }
             )
             print(supercell_defect.multiplicity, defect_entry.defect.multiplicity)
-            # assert supercell_defect.multiplicity == defect_entry.defect.multiplicity * round(
-            #     len(defect_entry.bulk_supercell) / len(defect_entry.defect.structure)
-            # ) # TODO; uncomment
-            assert supercell_defect.multiplicity == supercell_defect.get_multiplicity(
-                primitive_structure=defect_gen.primitive_structure,
+            assert supercell_defect.multiplicity == defect_entry.defect.multiplicity * round(
+                len(defect_entry.bulk_supercell) / len(defect_entry.defect.structure)
             )
+            assert supercell_defect.multiplicity == supercell_defect.get_multiplicity()
             assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
 
             if (
@@ -193,16 +203,15 @@ def _check_defect_entry(
                 and defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
                     iupac_ordering=True
                 )[0]
-                not in [
-                    "SiSbTe3",
+                not in [  # skip periodicity-breaking cases with pymatgen methods (which don't account for
+                    "SiSbTe3",  # this, while doped does)
                     "Ag2Se",
                     "Ga2O3",  # used in test_complexes.py
                 ]
-            ):  # periodicity-breaking cases
-                assert defect_type_dict[supercell_defect.defect_type].get_multiplicity(
-                    supercell_defect
-                ) == supercell_defect.get_multiplicity(
-                    primitive_structure=defect_gen.primitive_structure,
+            ):
+                assert (
+                    defect_type_dict[supercell_defect.defect_type].get_multiplicity(supercell_defect)
+                    == supercell_defect.get_multiplicity()
                 )
 
             assert np.allclose(
@@ -1116,7 +1125,11 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 
         for defect_name, defect_entry in defect_gen.defect_entries.items():
             _check_defect_entry(
-                defect_entry, defect_name, defect_gen, reoriented_conv_structure, charge_states_removed
+                defect_entry,
+                defect_name,
+                defect_gen,
+                reoriented_conv_structure,
+                charge_states_removed,
             )
 
         random_name, random_defect_entry = random.choice(list(defect_gen.defect_entries.items()))
@@ -2260,29 +2273,6 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         CdTe_defect_gen.to_json(f"{data_dir}/CdTe_defect_gen.json")  # for testing in test_vasp.py
 
-        # test get_defect_name_from_entry relaxed/unrelaxed warnings:
-        # TODO: Check if making this part of the default check doesn't dramatically slow things down
-        with warnings.catch_warnings(record=True) as w:
-            warnings.resetwarnings()
-            # suggested check function in `get_defect_name_from_entry`:
-            for defect_name, defect_entry in CdTe_defect_gen.items():
-                print(defect_name)
-                print(
-                    get_defect_name_from_entry(defect_entry, relaxed=False),
-                    get_defect_name_from_entry(defect_entry),
-                )
-                assert get_defect_name_from_entry(
-                    defect_entry, relaxed=False
-                ) == get_defect_name_from_entry(defect_entry)
-
-        non_ignored_warnings = [  # warning about calculation_metadata with relaxed=True,
-            # but no other warnings
-            warning
-            for warning in w
-            if ("`calculation_metadata` attribute is not set") not in str(warning.message)
-        ]
-        assert not non_ignored_warnings  # no warnings with defect name re-determination
-
     def test_defects_generator_CdTe_supercell_input(self):
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.CdTe_bulk_supercell)
 
@@ -2563,18 +2553,6 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._save_defect_gen_jsons(ytos_defect_gen)
         self.ytos_defect_gen_check(ytos_defect_gen)
         self._load_and_test_defect_gen_jsons(ytos_defect_gen)
-
-        # test get_defect_name_from_entry with relaxed/unrelaxed symmetry determination:
-        with warnings.catch_warnings(record=True) as w:
-            for defect_name, defect_entry in ytos_defect_gen.items():
-                print(defect_name)
-                print(
-                    get_defect_name_from_entry(defect_entry, relaxed=False),
-                    get_defect_name_from_entry(defect_entry),
-                )  # TODO: Remove if adding this to general checks
-        _print_warning_info(w)
-        assert not w  # relaxed point symmetries are determined fine in this periodicity-breaking supercell
-        # (via local isometry analyses in ``point_symmetry_from_defect_entry``), no warnings
 
         # save reduced defect gen to json
         reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)

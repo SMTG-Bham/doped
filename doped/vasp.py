@@ -969,7 +969,7 @@ class DefectRelaxSet(MSONable):
         """
         return DefectDictSet(
             self.defect_supercell,
-            charge_state=self.defect_entry.charge_state,
+            charge_state=self.charge_state,
             user_incar_settings=self.user_incar_settings,
             user_kpoints_settings=Kpoints().from_dict(
                 {
@@ -1038,7 +1038,7 @@ class DefectRelaxSet(MSONable):
     def _vasp_std(self) -> DefectDictSet:
         return DefectDictSet(
             self.defect_supercell,
-            charge_state=self.defect_entry.charge_state,
+            charge_state=self.charge_state,
             user_incar_settings=self.user_incar_settings,
             user_kpoints_settings=self.user_kpoints_settings,
             user_potcar_functional=self.user_potcar_functional,
@@ -1123,7 +1123,7 @@ class DefectRelaxSet(MSONable):
 
         return DefectDictSet(
             self.defect_supercell,
-            charge_state=self.defect_entry.charge_state,
+            charge_state=self.charge_state,
             user_incar_settings=incar_settings,
             user_kpoints_settings=self.user_kpoints_settings,
             user_potcar_functional=self.user_potcar_functional,
@@ -1165,7 +1165,7 @@ class DefectRelaxSet(MSONable):
 
         return DefectDictSet(
             self.defect_supercell,
-            charge_state=self.defect_entry.charge_state,
+            charge_state=self.charge_state,
             user_incar_settings=user_incar_settings,
             user_kpoints_settings=self.user_kpoints_settings,
             user_potcar_functional=self.user_potcar_functional,
@@ -1416,10 +1416,16 @@ class DefectRelaxSet(MSONable):
 
     def _get_output_path(self, defect_dir: PathLike | None = None, subfolder: PathLike | None = None):
         if defect_dir is None:
-            if self.defect_entry.name is None:
-                self.defect_entry.name = get_defect_name_from_entry(self.defect_entry, relaxed=False)
+            if isinstance(self.defect_entry, Structure):  # no defect name, use formula & charge state
+                formula = self.defect_entry.composition.get_reduced_formula_and_factor(
+                    iupac_ordering=True
+                )[0]
+                defect_dir = f"{formula}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
+            else:
+                if self.defect_entry.name is None:
+                    self.defect_entry.name = get_defect_name_from_entry(self.defect_entry, relaxed=False)
 
-            defect_dir = self.defect_entry.name
+                defect_dir = self.defect_entry.name
 
         return f"{defect_dir}/{subfolder}" if subfolder is not None else defect_dir
 
@@ -1428,11 +1434,15 @@ class DefectRelaxSet(MSONable):
 
         stdev = d_min = None
         if rattle:
-            for trial_structure in [
-                self.defect_entry.defect.structure,
-                self.defect_entry.bulk_supercell,
-                self.defect_entry.bulk_supercell * 2,
-            ]:
+            if isinstance(self.defect_entry, Structure):
+                trial_structures = [self.defect_entry, self.defect_entry * 2]
+            else:
+                trial_structures = [
+                    self.defect_entry.defect.structure,
+                    self.defect_entry.bulk_supercell,
+                    self.defect_entry.bulk_supercell * 2,
+                ]
+            for trial_structure in trial_structures:
                 distance_matrix = trial_structure.distance_matrix
                 sorted_distances = np.sort(distance_matrix[distance_matrix > 0.8].flatten())
                 if len(sorted_distances) > 0:
@@ -1449,7 +1459,8 @@ class DefectRelaxSet(MSONable):
             **kwargs,  # kwargs to allow POTCAR testing on GH Actions
         )
 
-        if "bulk" not in defect_dir:  # not a bulk supercell
+        if "bulk" not in defect_dir and isinstance(self.defect_entry, DefectEntry):
+            # not a bulk supercell, and DefectEntry provenance to write:
             self.defect_entry.to_json(f"{output_path}/{self.defect_entry.name}.json.gz")
 
     def write_gam(
@@ -1538,7 +1549,7 @@ class DefectRelaxSet(MSONable):
                 Keyword arguments to pass to ``DefectDictSet.write_input()``.
         """
         if defect_dir is None:
-            defect_dir = self.defect_entry.name
+            defect_dir = self._get_output_path()  # handles Structure input & unset DefectEntry.name
 
         self._write_vasp_xxx_files(
             defect_dir,
@@ -1661,7 +1672,7 @@ class DefectRelaxSet(MSONable):
             return
 
         if defect_dir is None:
-            defect_dir = self.defect_entry.name
+            defect_dir = self._get_output_path()  # handles Structure input & unset DefectEntry.name
 
         self._write_vasp_xxx_files(
             defect_dir,
@@ -1794,7 +1805,7 @@ class DefectRelaxSet(MSONable):
             return
 
         if defect_dir is None:
-            defect_dir = self.defect_entry.name
+            defect_dir = self._get_output_path()  # handles Structure input & unset DefectEntry.name
 
         self._write_vasp_xxx_files(
             defect_dir,
@@ -1928,7 +1939,7 @@ class DefectRelaxSet(MSONable):
             return
 
         if defect_dir is None:
-            defect_dir = self.defect_entry.name
+            defect_dir = self._get_output_path()  # handles Structure input & unset DefectEntry.name
 
         self._write_vasp_xxx_files(
             defect_dir,
@@ -2166,11 +2177,13 @@ class DefectRelaxSet(MSONable):
         """
         Returns a string representation of the ``DefectRelaxSet`` object.
         """
-        formula = self.bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+        supercell = self.bulk_supercell if self.bulk_supercell is not None else self.defect_supercell
+        formula = supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectRelaxSet for bulk composition {formula}, and defect entry "
-            f"{self.defect_entry.name}. Available attributes:\n{properties}\n\n"
+            f"{getattr(self.defect_entry, 'name', self.defect_supercell.formula)}. "
+            f"Available attributes:\n{properties}\n\n"
             f"Available methods:\n{methods}"
         )
 

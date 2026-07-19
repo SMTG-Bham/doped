@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from copy import deepcopy
 from functools import lru_cache, partialmethod
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
@@ -29,8 +29,11 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vas
 from pymatgen.util.coord import all_distances
 from pymatgen.util.typing import PathLike, SpeciesLike
 
-from doped.core import DefectEntry, remove_site_oxi_state
 from doped.utils import _warn_parameter_order
+from doped.utils.efficiency import _parse_site_species_str
+
+if TYPE_CHECKING:
+    from doped.core import DefectEntry
 
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
@@ -717,8 +720,6 @@ def get_coords_and_idx_of_species(
     Get arrays of the coordinates and indices of the given species in the
     structure/list of sites.
     """
-    from doped.utils.efficiency import _parse_site_species_str
-
     coords = []
     idx = []
     for i, site in enumerate(structure_or_sites):
@@ -765,6 +766,8 @@ def get_matching_site(
         PeriodicSite:
             The closest matching site in ``structure`` to the input ``site``.
     """
+    from doped.core import remove_site_oxi_state
+
     if (
         isinstance(site, PeriodicSite) and not anonymous
     ):  # try directly match first         if site in structure:
@@ -1799,7 +1802,7 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
         )
 
 
-def _get_bulk_supercell(defect_entry: DefectEntry):
+def _get_bulk_supercell(defect_entry: "DefectEntry"):
     if hasattr(defect_entry, "bulk_supercell") and defect_entry.bulk_supercell:
         return defect_entry.bulk_supercell
 
@@ -1814,7 +1817,7 @@ def _get_bulk_supercell(defect_entry: DefectEntry):
     return None
 
 
-def _get_defect_supercell(defect_entry: DefectEntry):
+def _get_defect_supercell(defect_entry: "DefectEntry"):
     if hasattr(defect_entry, "defect_supercell") and defect_entry.defect_supercell:
         return defect_entry.defect_supercell
 
@@ -1829,7 +1832,7 @@ def _get_defect_supercell(defect_entry: DefectEntry):
     return None
 
 
-def _get_unrelaxed_defect_structure(defect_entry: DefectEntry, **kwargs) -> Structure | None:
+def _get_unrelaxed_defect_structure(defect_entry: "DefectEntry", **kwargs) -> Structure | None:
     if (
         hasattr(defect_entry, "calculation_metadata")
         and defect_entry.calculation_metadata
@@ -1846,7 +1849,7 @@ def _get_unrelaxed_defect_structure(defect_entry: DefectEntry, **kwargs) -> Stru
 
 
 def _get_defect_supercell_frac_coords(
-    defect_entry: DefectEntry, relaxed=True
+    defect_entry: "DefectEntry", relaxed=True
 ) -> np.ndarray | tuple[float, float, float] | None:
     sc_defect_frac_coords: np.ndarray | tuple[float, float, float] | None = (
         defect_entry.sc_defect_frac_coords
@@ -1863,8 +1866,8 @@ def _get_defect_supercell_frac_coords(
     return sc_defect_frac_coords
 
 
-def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True, **kwargs) -> PeriodicSite | None:
-    def _return_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
+def _get_defect_supercell_site(defect_entry: "DefectEntry", relaxed=True, **kwargs) -> PeriodicSite | None:
+    def _return_defect_supercell_site(defect_entry: "DefectEntry", relaxed=True):
         if relaxed or defect_entry.defect.defect_type == DefectType.Interstitial:
             # always relaxed site for interstitials (note that "bulk_site" may be guessed initial site if
             # it is close enough to the relaxed site):
@@ -1897,7 +1900,9 @@ def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True, **kwargs
     return _return_defect_supercell_site(defect_entry, relaxed=relaxed)
 
 
-def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite: bool = False, **kwargs):
+def _update_defect_entry_structure_metadata(
+    defect_entry: "DefectEntry", overwrite: bool = False, **kwargs
+):
     """
     Helper function to reparse the defect site information for a given
     |DefectEntry|, updating the relevant attributes and calculation metadata.
