@@ -2,6 +2,7 @@
 Utility code and functions for generating & analysing defect supercells.
 """
 
+from functools import lru_cache
 from itertools import permutations
 from typing import Any
 
@@ -557,9 +558,8 @@ def _get_candidate_P_arrays(
         print(f"{target_shape} closest integer transformation matrix (P_0, starting_P):")
         print(starting_P)
 
-    P_array = starting_P[None, :, :] + (np.indices([2 * limit + 1] * 9).reshape(9, -1).T - limit).reshape(
-        -1, 3, 3
-    )  # combined transformation functions to reduce memory demand, only having one big P array
+    P_array = starting_P[None, :, :] + _p_matrix_offsets_grid(limit)
+    # combined transformation functions to reduce memory demand, only having one big P array
 
     # Compute determinants and filter to only those with the correct size:
     dets = np.abs(_fast_3x3_determinant_vectorized(P_array))
@@ -568,8 +568,8 @@ def _get_candidate_P_arrays(
     # any P in valid_P that are all negative, flip the sign of the matrix:
     valid_P[np.all(valid_P <= 0, axis=(1, 2))] *= -1
 
-    # get unique lattices before computing metrics:
-    cell_matrices = np.einsum("ijk,kl->ijl", valid_P, norm_cell)
+    # get unique lattices before computing metrics (batched matmul, uses BLAS rather than ``np.einsum``):
+    cell_matrices = valid_P @ norm_cell
 
     lengths_angles = _vectorized_lengths_and_angles_from_matrices(cell_matrices)
     # for each row in lengths_angles, get the product multiplied by the sum, as a hash:
@@ -583,6 +583,18 @@ def _get_candidate_P_arrays(
         print(f"{target_shape} unique valid matrices (unique_cell_matrices): {len(unique_cell_matrices)}")
 
     return valid_P, norm_cell, unique_cell_matrices, unique_hashes, lengths_angles_hash
+
+
+@lru_cache(maxsize=4)
+def _p_matrix_offsets_grid(limit: int) -> np.ndarray:
+    """
+    All integer offset matrices with elements in ``[-limit, +limit]``, as a
+    ``((2*limit+1)^9, 3, 3)`` array; cached as it is constant for a given
+    ``limit`` (and somewhat expensive to construct; ~4M element array).
+    """
+    return ((np.indices([2 * limit + 1] * 9).reshape(9, -1).T - limit).reshape(-1, 3, 3)).astype(
+        np.int8
+    )  # int8 to reduce cached memory footprint (elements are small); upcast on addition
 
 
 def _check_and_return_scalar_matrix(P, cell=None):
@@ -815,6 +827,64 @@ def find_ideal_supercell(
     return (optimal_P, min_dist) if return_min_dist else optimal_P
 
 
+@lru_cache(maxsize=int(1e3))
+def _nonzero_coeffs_in_box(ni: int, nj: int, nk: int) -> np.ndarray:
+    """
+    All non-zero integer coefficient vectors ``[i, j, k]`` with ``|i| <= ni``,
+    ``|j| <= nj``, ``|k| <= nk``, as an ``(N, 3)`` array; cached as the same
+    (small) ranges recur constantly in supercell searches.
+    """
+    grid = np.mgrid[-ni : ni + 1, -nj : nj + 1, -nk : nk + 1].reshape(3, -1).T
+    return grid[np.any(grid != 0, axis=1)]
+
+
+def _get_min_image_distances_from_matrices(matrices: np.ndarray) -> np.ndarray:
+    """
+    Get the minimum image distances for a batch of lattice matrices at once,
+    with fully vectorised ``numpy`` enumeration.
+
+    Exact equivalent of
+    ``_get_min_image_distance_from_matrix(..., normalised=True)`` for each
+    matrix (but orders of magnitude faster than looping over ``pymatgen``'s
+    ``get_points_in_sphere``): all lattice vectors within the max possible min
+    image distance (``2^(1/6)`` for unit volume) are enumerated, using the
+    standard reciprocal-lattice bounding box to determine the required integer
+    coefficient ranges, and grouping matrices by required range for batched
+    computation.
+
+    Args:
+        matrices (np.ndarray):
+            ``(N, 3, 3)`` array of lattice matrices (any volumes; per-matrix
+            search radii are used).
+
+    Returns:
+        np.ndarray: ``(N,)`` array of min image distances, rounded to 4 d.p.
+    """
+    # max possible min image distance is 2^(1/6) * volume^(1/3) (for FCC/HCP packing), per matrix, plus a
+    # 1% buffer. Note candidate cell volumes equal |det(target_metric)| (= 1 for SC, but e.g. 0.25 for the
+    # FCC target metric), as |det(P)| = target_size and det(norm_cell) = det(target_metric)/target_size --
+    # using per-matrix radii (rather than assuming volume 1) tightens the search ranges below:
+    max_rs = 2 ** (1 / 6) * np.cbrt(np.abs(_fast_3x3_determinant_vectorized(matrices))) * 1.01  # (N,)
+    # a lattice point v = i*a + j*b + k*c within |v| <= r has |i| <= r*|b_i*| for reciprocal basis vectors
+    # b_i* (columns of the inverse matrix), bounding the required (per-axis) search ranges:
+    recip_lens = np.linalg.norm(np.linalg.inv(matrices), axis=1)  # (N, 3) reciprocal vector norms
+    naxes = np.ceil(max_rs[:, None] * recip_lens + 1e-9).astype(int)  # (N, 3) per-axis integer ranges
+
+    min_image_dists = np.empty(len(matrices))
+    unique_triples, inverse = np.unique(naxes, axis=0, return_inverse=True)
+    for triple_idx, (ni, nj, nk) in enumerate(unique_triples):  # group matrices by required ranges
+        coeffs = _nonzero_coeffs_in_box(int(ni), int(nj), int(nk))
+        group_indices = np.flatnonzero(inverse == triple_idx)  # indices of matrices with these ranges;
+        # ``inverse[i]`` is the index of ``naxes[i]``'s match in ``unique_triples`` (``np.unique`` output)
+        for chunk in np.array_split(group_indices, max(1, len(group_indices) * len(coeffs) // int(4e6))):
+            # chunked to bound peak memory usage (~100 MB) for large candidate sets / ranges
+            vectors = coeffs @ matrices[chunk]  # (M, C, 3) possible lattice vectors, batched matmul
+            sq_dists = np.einsum("kij,kij->ki", vectors, vectors)  # (M, C) squared vector lengths
+            min_image_dists[chunk] = np.sqrt(sq_dists.min(axis=1))
+
+    return min_image_dists.round(4)  # round to 4 d.p. as in _get_min_image_distance_from_matrix
+
+
 def _find_ideal_supercell_for_target_metric(
     cell: np.ndarray,
     target_size: int,
@@ -853,31 +923,7 @@ def _find_ideal_supercell_for_target_metric(
     if len(unique_cell_matrices) == 0:
         raise ValueError("No valid P matrices found with given settings")
 
-    # first we do a quick filter by getting the min image distances when considering vectors up to +/-2 in
-    # cell indices, which is far quicker and helps quickly filter many candidates
-    inds = (-2, -1, 0, 1, 2)
-    coeffs = np.array(  # all non-zero integer vectors in (-2, 2)^3 -- the 124 nearest image vectors
-        [[i, j, k] for i in inds for j in inds for k in inds if (i, j, k) != (0, 0, 0)]
-    )  # shape (124, 3)
-
-    # possible lattice vectors for every candidate cell at once:
-    # cell_matrices: (N, 3, 3), coeffs: (125, 3) -> vectors: (N, 125, 3)
-    lattice_vectors = np.einsum("ij,kjl->kil", coeffs, unique_cell_matrices)
-    max_min_image_dists = np.linalg.norm(lattice_vectors, axis=2).min(axis=1).round(4)  # (N,)
-
-    min_dists = []
-    current_best_min_image_distance = 0.001
-    for cell_matrix, min_dist in zip(unique_cell_matrices, max_min_image_dists, strict=False):
-        if min_dist >= current_best_min_image_distance:
-            min_dist = _get_min_image_distance_from_matrix(  # noqa: PLW2901
-                cell_matrix,
-                normalised=True,
-            )
-        if min_dist > current_best_min_image_distance:
-            current_best_min_image_distance = min_dist
-        min_dists.append(min_dist)
-
-    min_image_dists = np.array(min_dists)
+    min_image_dists = _get_min_image_distances_from_matrices(unique_cell_matrices)
 
     # get indices of min_image_dists that are equal to the minimum
     best_min_dist = np.max(min_image_dists)  # in terms of supercell effective cubic length

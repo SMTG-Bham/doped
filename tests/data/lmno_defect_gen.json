@@ -7466,7 +7466,28 @@
                     }
                 ]
             },
-            "calculation_metadata": {},
+            "calculation_metadata": {
+                "defect symmetry centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.31249999999999994,
+                        0.5625,
+                        0.31632
+                    ],
+                    "dtype": "float64"
+                },
+                "symmetry cluster centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.31249999999999994,
+                        0.5625,
+                        0.31632
+                    ],
+                    "dtype": "float64"
+                }
+            },
             "charge_state": 0,
             "charge_state_guessing_log": [
                 {
@@ -8665,59 +8686,6 @@
                     1,
                     2
                 ],
-                "_defect_site": {
-                    "@class": "PeriodicNeighbor",
-                    "@module": "pymatgen.core.structure",
-                    "@version": null,
-                    "coords": {
-                        "@class": "array",
-                        "@module": "numpy",
-                        "data": [
-                            1.0038364582800001,
-                            1.06712504172,
-                            5.17740375
-                        ],
-                        "dtype": "float64"
-                    },
-                    "image": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ],
-                    "index": 8,
-                    "label": "Mn",
-                    "lattice": {
-                        "@class": "Lattice",
-                        "@module": "pymatgen.core.lattice",
-                        "matrix": [
-                            [
-                                8.283846,
-                                0.0,
-                                0.0
-                            ],
-                            [
-                                0.0,
-                                8.283846,
-                                0.0
-                            ],
-                            [
-                                0.0,
-                                0.0,
-                                8.283846
-                            ]
-                        ],
-                        "pbc": [
-                            true,
-                            true,
-                            true
-                        ]
-                    },
-                    "nn_distance": 8.881784197001252e-16,
-                    "properties": {},
-                    "species": {
-                        "Mn4+": 1.0
-                    }
-                },
                 "_volume": 568.4549463023145,
                 "angle_tolerance": 5,
                 "conv_cell_frac_coords": {
@@ -9889,6 +9857,59 @@
                             ]
                         }
                     ]
+                },
+                "defect_site": {
+                    "@class": "PeriodicNeighbor",
+                    "@module": "pymatgen.core.structure",
+                    "@version": null,
+                    "coords": {
+                        "@class": "array",
+                        "@module": "numpy",
+                        "data": [
+                            1.0038364582800001,
+                            1.06712504172,
+                            5.17740375
+                        ],
+                        "dtype": "float64"
+                    },
+                    "image": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "index": 8,
+                    "label": "Mn",
+                    "lattice": {
+                        "@class": "Lattice",
+                        "@module": "pymatgen.core.lattice",
+                        "matrix": [
+                            [
+                                8.283846,
+                                0.0,
+                                0.0
+                            ],
+                            [
+                                0.0,
+                                8.283846,
+                                0.0
+                            ],
+                            [
+                                0.0,
+                                0.0,
+                                8.283846
+                            ]
+                        ],
+                        "pbc": [
+                            true,
+                            true,
+                            true
+                        ]
+                    },
+                    "nn_distance": 8.881784197001252e-16,
+                    "properties": {},
+                    "species": {
+                        "Mn4+": 1.0
+                    }
                 },
                 "equiv_conv_cell_frac_coords": [
                     {
@@ -15371,16 +15392,11 @@
                 }
             ],
             "name": "Li_Mn_0",
-            "sc_defect_frac_coords": {
-                "@class": "array",
-                "@module": "numpy",
-                "data": [
-                    0.3125,
-                    0.5625,
-                    0.31632
-                ],
-                "dtype": "float64"
-            },
+            "sc_defect_frac_coords": [
+                0.3125,
+                0.5625,
+                0.31632
+            ],
             "sc_entry": {
                 "@class": "ComputedStructureEntry",
                 "@module": "pymatgen.core.entries",
@@ -22951,7 +22967,7 @@
                         "@version": null,
                         "abc": [
                             0.008380000000000054,
-                            0.4715999999999998,
+                            0.4716,
                             0.2705
                         ],
                         "label": "Li",
@@ -22998,7 +23014,7 @@
                         "abc": [
                             0.2705,
                             0.008380000000000054,
-                            0.4715999999999998
+                            0.4716
                         ],
                         "label": "Li",
                         "lattice": {
@@ -23042,7 +23058,7 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.4715999999999998,
+                            0.4716,
                             0.2705,
                             0.008380000000000054
                         ],
@@ -23228,7 +23244,7 @@
                         "abc": [
                             0.22160000000000002,
                             0.74162,
-                            0.5205000000000001
+                            0.5205
                         ],
                         "label": "Li",
                         "lattice": {
@@ -23272,7 +23288,7 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.5205000000000001,
+                            0.5205,
                             0.22160000000000002,
                             0.74162
                         ],
@@ -23319,7 +23335,7 @@
                         "@version": null,
                         "abc": [
                             0.74162,
-                            0.5205000000000001,
+                            0.5205,
                             0.22160000000000002
                         ],
                         "label": "Li",
@@ -23502,7 +23518,7 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.4794999999999999,
+                            0.4795,
                             0.7216,
                             0.75838
                         ],
@@ -23550,7 +23566,7 @@
                         "abc": [
                             0.7216,
                             0.75838,
-                            0.4794999999999999
+                            0.4795
                         ],
                         "label": "Li",
                         "lattice": {
@@ -23595,7 +23611,7 @@
                         "@version": null,
                         "abc": [
                             0.75838,
-                            0.4794999999999999,
+                            0.4795,
                             0.7216
                         ],
                         "label": "Li",
@@ -23780,7 +23796,7 @@
                         "abc": [
                             0.22950000000000004,
                             0.99162,
-                            0.9715999999999999
+                            0.9716
                         ],
                         "label": "Li",
                         "lattice": {
@@ -23824,7 +23840,7 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.9715999999999999,
+                            0.9716,
                             0.22950000000000004,
                             0.99162
                         ],
@@ -23871,7 +23887,7 @@
                         "@version": null,
                         "abc": [
                             0.99162,
-                            0.9715999999999999,
+                            0.9716,
                             0.22950000000000004
                         ],
                         "label": "Li",
@@ -28085,9 +28101,9 @@
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "abc": [
-                        0.36685999999999985,
-                        0.9036400000000002,
-                        0.10473999999999989
+                        0.36685999999999996,
+                        0.90364,
+                        0.10474
                     ],
                     "label": "Li",
                     "lattice": {
@@ -28128,8 +28144,8 @@
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "abc": [
-                        0.8668599999999999,
-                        0.4036400000000002,
+                        0.86686,
+                        0.4036400000000001,
                         0.6047399999999999
                     ],
                     "label": "Li",
@@ -28171,9 +28187,9 @@
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "abc": [
-                        0.1047399999999999,
-                        0.36685999999999985,
-                        0.9036400000000001
+                        0.10474000000000001,
+                        0.36685999999999996,
+                        0.90364
                     ],
                     "label": "Li",
                     "lattice": {
@@ -28214,94 +28230,94 @@
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "abc": [
+                        0.60474,
+                        0.8668599999999999,
+                        0.40364000000000005
+                    ],
+                    "label": "Li",
+                    "lattice": {
+                        "@class": "Lattice",
+                        "@module": "pymatgen.core.lattice",
+                        "matrix": [
+                            [
+                                0.0,
+                                8.283846,
+                                8.283846
+                            ],
+                            [
+                                8.283846,
+                                0.0,
+                                8.283846
+                            ],
+                            [
+                                8.283846,
+                                8.283846,
+                                0.0
+                            ]
+                        ],
+                        "pbc": [
+                            true,
+                            true,
+                            true
+                        ]
+                    },
+                    "properties": {},
+                    "species": [
+                        {
+                            "element": "Li",
+                            "occu": 1.0
+                        }
+                    ]
+                },
+                {
+                    "@class": "PeriodicSite",
+                    "@module": "pymatgen.core.sites",
+                    "abc": [
+                        0.90364,
+                        0.10474,
+                        0.36685999999999996
+                    ],
+                    "label": "Li",
+                    "lattice": {
+                        "@class": "Lattice",
+                        "@module": "pymatgen.core.lattice",
+                        "matrix": [
+                            [
+                                0.0,
+                                8.283846,
+                                8.283846
+                            ],
+                            [
+                                8.283846,
+                                0.0,
+                                8.283846
+                            ],
+                            [
+                                8.283846,
+                                8.283846,
+                                0.0
+                            ]
+                        ],
+                        "pbc": [
+                            true,
+                            true,
+                            true
+                        ]
+                    },
+                    "properties": {},
+                    "species": [
+                        {
+                            "element": "Li",
+                            "occu": 1.0
+                        }
+                    ]
+                },
+                {
+                    "@class": "PeriodicSite",
+                    "@module": "pymatgen.core.sites",
+                    "abc": [
+                        0.40364000000000017,
                         0.6047399999999999,
-                        0.8668599999999997,
-                        0.40364000000000017
-                    ],
-                    "label": "Li",
-                    "lattice": {
-                        "@class": "Lattice",
-                        "@module": "pymatgen.core.lattice",
-                        "matrix": [
-                            [
-                                0.0,
-                                8.283846,
-                                8.283846
-                            ],
-                            [
-                                8.283846,
-                                0.0,
-                                8.283846
-                            ],
-                            [
-                                8.283846,
-                                8.283846,
-                                0.0
-                            ]
-                        ],
-                        "pbc": [
-                            true,
-                            true,
-                            true
-                        ]
-                    },
-                    "properties": {},
-                    "species": [
-                        {
-                            "element": "Li",
-                            "occu": 1.0
-                        }
-                    ]
-                },
-                {
-                    "@class": "PeriodicSite",
-                    "@module": "pymatgen.core.sites",
-                    "abc": [
-                        0.9036400000000002,
-                        0.10473999999999989,
-                        0.36685999999999985
-                    ],
-                    "label": "Li",
-                    "lattice": {
-                        "@class": "Lattice",
-                        "@module": "pymatgen.core.lattice",
-                        "matrix": [
-                            [
-                                0.0,
-                                8.283846,
-                                8.283846
-                            ],
-                            [
-                                8.283846,
-                                0.0,
-                                8.283846
-                            ],
-                            [
-                                8.283846,
-                                8.283846,
-                                0.0
-                            ]
-                        ],
-                        "pbc": [
-                            true,
-                            true,
-                            true
-                        ]
-                    },
-                    "properties": {},
-                    "species": [
-                        {
-                            "element": "Li",
-                            "occu": 1.0
-                        }
-                    ]
-                },
-                {
-                    "@class": "PeriodicSite",
-                    "@module": "pymatgen.core.sites",
-                    "abc": [
-                        0.4036400000000003,
-                        0.6047399999999998,
                         0.8668599999999999
                     ],
                     "label": "Li",
@@ -28602,8 +28618,8 @@
                     "@module": "pymatgen.core.sites",
                     "abc": [
                         0.52026,
-                        0.0002400000000000697,
-                        0.22135999999999995
+                        0.00024000000000001608,
+                        0.22136
                     ],
                     "label": "Li",
                     "lattice": {
@@ -28687,9 +28703,9 @@
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "abc": [
-                        0.22135999999999995,
+                        0.22136,
                         0.52026,
-                        0.00024000000000007978
+                        0.00024000000000002427
                     ],
                     "label": "Li",
                     "lattice": {
@@ -28773,8 +28789,8 @@
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "abc": [
-                        0.0002400000000000726,
-                        0.22135999999999995,
+                        0.00024000000000001708,
+                        0.22136,
                         0.52026
                     ],
                     "label": "Li",
@@ -29117,9 +29133,9 @@
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "abc": [
-                        0.5002400000000001,
-                        0.2581399999999999,
-                        0.22135999999999992
+                        0.50024,
+                        0.25814,
+                        0.22136000000000003
                     ],
                     "label": "Li",
                     "lattice": {
@@ -29203,9 +29219,9 @@
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "abc": [
-                        0.2581399999999999,
-                        0.22135999999999995,
-                        0.5002400000000001
+                        0.25814,
+                        0.22135999999999997,
+                        0.50024
                     ],
                     "label": "Li",
                     "lattice": {
@@ -29289,9 +29305,9 @@
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "abc": [
-                        0.22135999999999992,
+                        0.22135999999999995,
                         0.5002400000000001,
-                        0.2581399999999999
+                        0.25814000000000004
                     ],
                     "label": "Li",
                     "lattice": {
@@ -29889,16 +29905,11 @@
                 }
             ],
             "name": "Li_i_C1_Ni1.82_+1",
-            "sc_defect_frac_coords": {
-                "@class": "array",
-                "@module": "numpy",
-                "data": [
-                    0.36686,
-                    0.60474,
-                    0.62476
-                ],
-                "dtype": "float64"
-            },
+            "sc_defect_frac_coords": [
+                0.36686,
+                0.60474,
+                0.62476
+            ],
             "sc_entry": {
                 "@class": "ComputedStructureEntry",
                 "@module": "pymatgen.core.entries",
@@ -35947,59 +35958,6 @@
                     1,
                     2
                 ],
-                "_defect_site": {
-                    "@class": "PeriodicNeighbor",
-                    "@module": "pymatgen.core.structure",
-                    "@version": null,
-                    "coords": {
-                        "@class": "array",
-                        "@module": "numpy",
-                        "data": [
-                            0.030931880964,
-                            0.030931880964,
-                            0.030931880964
-                        ],
-                        "dtype": "float64"
-                    },
-                    "image": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ],
-                    "index": 0,
-                    "label": "Li",
-                    "lattice": {
-                        "@class": "Lattice",
-                        "@module": "pymatgen.core.lattice",
-                        "matrix": [
-                            [
-                                8.283846,
-                                0.0,
-                                0.0
-                            ],
-                            [
-                                0.0,
-                                8.283846,
-                                0.0
-                            ],
-                            [
-                                0.0,
-                                0.0,
-                                8.283846
-                            ]
-                        ],
-                        "pbc": [
-                            true,
-                            true,
-                            true
-                        ]
-                    },
-                    "nn_distance": 6.009258394948637e-18,
-                    "properties": {},
-                    "species": {
-                        "Li+": 1.0
-                    }
-                },
                 "_volume": 568.4549463023145,
                 "angle_tolerance": 5,
                 "conv_cell_frac_coords": {
@@ -37171,6 +37129,59 @@
                             ]
                         }
                     ]
+                },
+                "defect_site": {
+                    "@class": "PeriodicNeighbor",
+                    "@module": "pymatgen.core.structure",
+                    "@version": null,
+                    "coords": {
+                        "@class": "array",
+                        "@module": "numpy",
+                        "data": [
+                            0.030931880964,
+                            0.030931880964,
+                            0.030931880964
+                        ],
+                        "dtype": "float64"
+                    },
+                    "image": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "index": 0,
+                    "label": "Li",
+                    "lattice": {
+                        "@class": "Lattice",
+                        "@module": "pymatgen.core.lattice",
+                        "matrix": [
+                            [
+                                8.283846,
+                                0.0,
+                                0.0
+                            ],
+                            [
+                                0.0,
+                                8.283846,
+                                0.0
+                            ],
+                            [
+                                0.0,
+                                0.0,
+                                8.283846
+                            ]
+                        ],
+                        "pbc": [
+                            true,
+                            true,
+                            true
+                        ]
+                    },
+                    "nn_distance": 6.009258394948637e-18,
+                    "properties": {},
+                    "species": {
+                        "Li+": 1.0
+                    }
                 },
                 "equiv_conv_cell_frac_coords": [
                     {
@@ -42007,16 +42018,11 @@
                 }
             ],
             "name": "v_Li_+1",
-            "sc_defect_frac_coords": {
-                "@class": "array",
-                "@module": "numpy",
-                "data": [
-                    0.501867,
-                    0.501867,
-                    0.501867
-                ],
-                "dtype": "float64"
-            },
+            "sc_defect_frac_coords": [
+                0.501867,
+                0.501867,
+                0.501867
+            ],
             "sc_entry": {
                 "@class": "ComputedStructureEntry",
                 "@module": "pymatgen.core.entries",
@@ -45865,7 +45871,7 @@
                         "@version": null,
                         "abc": [
                             0.008380000000000054,
-                            0.4715999999999998,
+                            0.4716,
                             0.2705
                         ],
                         "label": "Li",
@@ -45912,7 +45918,7 @@
                         "abc": [
                             0.2705,
                             0.008380000000000054,
-                            0.4715999999999998
+                            0.4716
                         ],
                         "label": "Li",
                         "lattice": {
@@ -45956,7 +45962,7 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.4715999999999998,
+                            0.4716,
                             0.2705,
                             0.008380000000000054
                         ],
@@ -46142,7 +46148,7 @@
                         "abc": [
                             0.22160000000000002,
                             0.74162,
-                            0.5205000000000001
+                            0.5205
                         ],
                         "label": "Li",
                         "lattice": {
@@ -46186,7 +46192,7 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.5205000000000001,
+                            0.5205,
                             0.22160000000000002,
                             0.74162
                         ],
@@ -46233,7 +46239,7 @@
                         "@version": null,
                         "abc": [
                             0.74162,
-                            0.5205000000000001,
+                            0.5205,
                             0.22160000000000002
                         ],
                         "label": "Li",
@@ -46416,7 +46422,7 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.4794999999999999,
+                            0.4795,
                             0.7216,
                             0.75838
                         ],
@@ -46464,7 +46470,7 @@
                         "abc": [
                             0.7216,
                             0.75838,
-                            0.4794999999999999
+                            0.4795
                         ],
                         "label": "Li",
                         "lattice": {
@@ -46509,7 +46515,7 @@
                         "@version": null,
                         "abc": [
                             0.75838,
-                            0.4794999999999999,
+                            0.4795,
                             0.7216
                         ],
                         "label": "Li",
@@ -46694,7 +46700,7 @@
                         "abc": [
                             0.22950000000000004,
                             0.99162,
-                            0.9715999999999999
+                            0.9716
                         ],
                         "label": "Li",
                         "lattice": {
@@ -46738,7 +46744,7 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.9715999999999999,
+                            0.9716,
                             0.22950000000000004,
                             0.99162
                         ],
@@ -46785,7 +46791,7 @@
                         "@version": null,
                         "abc": [
                             0.99162,
-                            0.9715999999999999,
+                            0.9716,
                             0.22950000000000004
                         ],
                         "label": "Li",
@@ -48161,59 +48167,6 @@
                     1,
                     2
                 ],
-                "_defect_site": {
-                    "@class": "PeriodicNeighbor",
-                    "@module": "pymatgen.core.structure",
-                    "@version": null,
-                    "coords": {
-                        "@class": "array",
-                        "@module": "numpy",
-                        "data": [
-                            1.0038364582800001,
-                            1.06712504172,
-                            5.17740375
-                        ],
-                        "dtype": "float64"
-                    },
-                    "image": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ],
-                    "index": 8,
-                    "label": "Mn",
-                    "lattice": {
-                        "@class": "Lattice",
-                        "@module": "pymatgen.core.lattice",
-                        "matrix": [
-                            [
-                                8.283846,
-                                0.0,
-                                0.0
-                            ],
-                            [
-                                0.0,
-                                8.283846,
-                                0.0
-                            ],
-                            [
-                                0.0,
-                                0.0,
-                                8.283846
-                            ]
-                        ],
-                        "pbc": [
-                            true,
-                            true,
-                            true
-                        ]
-                    },
-                    "nn_distance": 8.881784197001252e-16,
-                    "properties": {},
-                    "species": {
-                        "Mn4+": 1.0
-                    }
-                },
                 "_volume": 568.4549463023145,
                 "angle_tolerance": 5,
                 "conv_cell_frac_coords": {
@@ -49385,6 +49338,59 @@
                             ]
                         }
                     ]
+                },
+                "defect_site": {
+                    "@class": "PeriodicNeighbor",
+                    "@module": "pymatgen.core.structure",
+                    "@version": null,
+                    "coords": {
+                        "@class": "array",
+                        "@module": "numpy",
+                        "data": [
+                            1.0038364582800001,
+                            1.06712504172,
+                            5.17740375
+                        ],
+                        "dtype": "float64"
+                    },
+                    "image": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "index": 8,
+                    "label": "Mn",
+                    "lattice": {
+                        "@class": "Lattice",
+                        "@module": "pymatgen.core.lattice",
+                        "matrix": [
+                            [
+                                8.283846,
+                                0.0,
+                                0.0
+                            ],
+                            [
+                                0.0,
+                                8.283846,
+                                0.0
+                            ],
+                            [
+                                0.0,
+                                0.0,
+                                8.283846
+                            ]
+                        ],
+                        "pbc": [
+                            true,
+                            true,
+                            true
+                        ]
+                    },
+                    "nn_distance": 8.881784197001252e-16,
+                    "properties": {},
+                    "species": {
+                        "Mn4+": 1.0
+                    }
                 },
                 "equiv_conv_cell_frac_coords": [
                     {
@@ -51397,59 +51403,6 @@
                     1,
                     2
                 ],
-                "_defect_site": {
-                    "@class": "PeriodicNeighbor",
-                    "@module": "pymatgen.core.structure",
-                    "@version": null,
-                    "coords": {
-                        "@class": "array",
-                        "@module": "numpy",
-                        "data": [
-                            0.030931880964,
-                            0.030931880964,
-                            0.030931880964
-                        ],
-                        "dtype": "float64"
-                    },
-                    "image": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ],
-                    "index": 0,
-                    "label": "Li",
-                    "lattice": {
-                        "@class": "Lattice",
-                        "@module": "pymatgen.core.lattice",
-                        "matrix": [
-                            [
-                                8.283846,
-                                0.0,
-                                0.0
-                            ],
-                            [
-                                0.0,
-                                8.283846,
-                                0.0
-                            ],
-                            [
-                                0.0,
-                                0.0,
-                                8.283846
-                            ]
-                        ],
-                        "pbc": [
-                            true,
-                            true,
-                            true
-                        ]
-                    },
-                    "nn_distance": 6.009258394948637e-18,
-                    "properties": {},
-                    "species": {
-                        "Li+": 1.0
-                    }
-                },
                 "_volume": 568.4549463023145,
                 "angle_tolerance": 5,
                 "conv_cell_frac_coords": {
@@ -52621,6 +52574,59 @@
                             ]
                         }
                     ]
+                },
+                "defect_site": {
+                    "@class": "PeriodicNeighbor",
+                    "@module": "pymatgen.core.structure",
+                    "@version": null,
+                    "coords": {
+                        "@class": "array",
+                        "@module": "numpy",
+                        "data": [
+                            0.030931880964,
+                            0.030931880964,
+                            0.030931880964
+                        ],
+                        "dtype": "float64"
+                    },
+                    "image": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "index": 0,
+                    "label": "Li",
+                    "lattice": {
+                        "@class": "Lattice",
+                        "@module": "pymatgen.core.lattice",
+                        "matrix": [
+                            [
+                                8.283846,
+                                0.0,
+                                0.0
+                            ],
+                            [
+                                0.0,
+                                8.283846,
+                                0.0
+                            ],
+                            [
+                                0.0,
+                                0.0,
+                                8.283846
+                            ]
+                        ],
+                        "pbc": [
+                            true,
+                            true,
+                            true
+                        ]
+                    },
+                    "nn_distance": 6.009258394948637e-18,
+                    "properties": {},
+                    "species": {
+                        "Li+": 1.0
+                    }
                 },
                 "equiv_conv_cell_frac_coords": [
                     {

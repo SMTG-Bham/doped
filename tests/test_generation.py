@@ -90,7 +90,7 @@ def _check_defect_entry(
     )
 
     # only run more intensive checks on neutral entries, as charged entries are just copies of this
-    if defect_entry.charge_state == 0 and "Co1 H12 Br2 O6" not in defect_gen.primitive_structure.formula:
+    if defect_entry.charge_state == 0:
         # test defect name re-determination, with relaxed & unrelaxed symmetry determination (fine even in
         # periodicity-breaking supercells, via local isometry analyses in
         # ``point_symmetry_from_defect_entry``), with no warnings;

@@ -3615,6 +3615,16 @@
                     "dtype": "float64"
                 },
                 "cbm": 5.666,
+                "defect symmetry centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.0839748423333645,
+                        0.6810171908547086,
+                        0.8640570421504995
+                    ],
+                    "dtype": "float64"
+                },
                 "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_1",
                 "defect_site_index": 0,
                 "defect_site_potentials": {
@@ -5469,7 +5479,16 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "periodicity_breaking_supercell": false,
+                "perturbation centroid": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.12770830036796518,
+                        0.6810171908547086,
+                        0.8640570421504995
+                    ],
+                    "dtype": "float64"
+                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -33630,7 +33649,10 @@
                     1,
                     2
                 ],
-                "_defect_site": {
+                "angle_tolerance": 5,
+                "conv_cell_frac_coords": null,
+                "conventional_structure": null,
+                "defect_site": {
                     "@class": "PeriodicNeighbor",
                     "@module": "pymatgen.core.structure",
                     "@version": null,
@@ -33677,7 +33699,7 @@
                             true
                         ]
                     },
-                    "nn_distance": 9.930136612989092e-16,
+                    "nn_distance": 1.0175362097255202e-15,
                     "properties": {
                         "selective_dynamics": [
                             true,
@@ -33689,9 +33711,6 @@
                         "Se2-": 1.0
                     }
                 },
-                "angle_tolerance": 5,
-                "conv_cell_frac_coords": null,
-                "conventional_structure": null,
                 "equiv_conv_cell_frac_coords": [],
                 "equivalent_sites": [
                     {
@@ -40710,6 +40729,16 @@
                     "dtype": "float64"
                 },
                 "cbm": 5.666,
+                "defect symmetry centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08392383949126275,
+                        0.412564464626387,
+                        0.9257414420563472
+                    ],
+                    "dtype": "float64"
+                },
                 "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_2",
                 "defect_site_index": 0,
                 "defect_site_potentials": {
@@ -42564,7 +42593,16 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "periodicity_breaking_supercell": false,
+                "perturbation centroid": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08337037200291328,
+                        0.412564464626387,
+                        0.9257414420563472
+                    ],
+                    "dtype": "float64"
+                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -70785,7 +70823,10 @@
                     1,
                     2
                 ],
-                "_defect_site": {
+                "angle_tolerance": 5,
+                "conv_cell_frac_coords": null,
+                "conventional_structure": null,
+                "defect_site": {
                     "@class": "PeriodicNeighbor",
                     "@module": "pymatgen.core.structure",
                     "@version": null,
@@ -70832,7 +70873,7 @@
                             true
                         ]
                     },
-                    "nn_distance": 9.930136612989092e-16,
+                    "nn_distance": 1.0175362097255202e-15,
                     "properties": {
                         "selective_dynamics": [
                             true,
@@ -70844,9 +70885,6 @@
                         "Se2-": 1.0
                     }
                 },
-                "angle_tolerance": 5,
-                "conv_cell_frac_coords": null,
-                "conventional_structure": null,
                 "equiv_conv_cell_frac_coords": [],
                 "equivalent_sites": [
                     {
@@ -77865,6 +77903,16 @@
                     "dtype": "float64"
                 },
                 "cbm": 5.666,
+                "defect symmetry centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08396526876578293,
+                        0.394536664626451,
+                        0.9234232218311907
+                    ],
+                    "dtype": "float64"
+                },
                 "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_-1",
                 "defect_site_index": 0,
                 "defect_site_potentials": {
@@ -79719,7 +79767,16 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "periodicity_breaking_supercell": false,
+                "perturbation centroid": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08331411483207812,
+                        0.394536664626451,
+                        0.9234232218311907
+                    ],
+                    "dtype": "float64"
+                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -107880,7 +107937,10 @@
                     1,
                     2
                 ],
-                "_defect_site": {
+                "angle_tolerance": 5,
+                "conv_cell_frac_coords": null,
+                "conventional_structure": null,
+                "defect_site": {
                     "@class": "PeriodicNeighbor",
                     "@module": "pymatgen.core.structure",
                     "@version": null,
@@ -107927,7 +107987,7 @@
                             true
                         ]
                     },
-                    "nn_distance": 9.930136612989092e-16,
+                    "nn_distance": 1.0175362097255202e-15,
                     "properties": {
                         "selective_dynamics": [
                             true,
@@ -107939,9 +107999,6 @@
                         "Se2-": 1.0
                     }
                 },
-                "angle_tolerance": 5,
-                "conv_cell_frac_coords": null,
-                "conventional_structure": null,
                 "equiv_conv_cell_frac_coords": [],
                 "equivalent_sites": [
                     {
@@ -114960,6 +115017,16 @@
                     "dtype": "float64"
                 },
                 "cbm": 5.666,
+                "defect symmetry centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08397413806033888,
+                        0.5834455492638226,
+                        0.9026148934329051
+                    ],
+                    "dtype": "float64"
+                },
                 "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_-2",
                 "defect_site_index": 0,
                 "defect_site_potentials": {
@@ -116814,7 +116881,16 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "periodicity_breaking_supercell": false,
+                "perturbation centroid": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08362290101493314,
+                        0.5834455492638226,
+                        0.9026148934329051
+                    ],
+                    "dtype": "float64"
+                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -144970,7 +145046,10 @@
                     1,
                     2
                 ],
-                "_defect_site": {
+                "angle_tolerance": 5,
+                "conv_cell_frac_coords": null,
+                "conventional_structure": null,
+                "defect_site": {
                     "@class": "PeriodicNeighbor",
                     "@module": "pymatgen.core.structure",
                     "@version": null,
@@ -145017,7 +145096,7 @@
                             true
                         ]
                     },
-                    "nn_distance": 9.930136612989092e-16,
+                    "nn_distance": 1.0175362097255202e-15,
                     "properties": {
                         "selective_dynamics": [
                             true,
@@ -145029,9 +145108,6 @@
                         "Se2-": 1.0
                     }
                 },
-                "angle_tolerance": 5,
-                "conv_cell_frac_coords": null,
-                "conventional_structure": null,
                 "equiv_conv_cell_frac_coords": [],
                 "equivalent_sites": [
                     {
@@ -151983,6 +152059,16 @@
                 },
                 "bulk_site_index": 25,
                 "cbm": 5.666,
+                "defect symmetry centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.0839617343592735,
+                        0.5792393744031489,
+                        0.8436671818674429
+                    ],
+                    "dtype": "float64"
+                },
                 "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_0",
                 "defect_site_index": 0,
                 "dielectric": {
@@ -153770,7 +153856,16 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "periodicity_breaking_supercell": false,
+                "perturbation centroid": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.14639882833150422,
+                        0.5792393744031489,
+                        0.8436671818674429
+                    ],
+                    "dtype": "float64"
+                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -181549,7 +181644,10 @@
                     1,
                     2
                 ],
-                "_defect_site": {
+                "angle_tolerance": 5,
+                "conv_cell_frac_coords": null,
+                "conventional_structure": null,
+                "defect_site": {
                     "@class": "PeriodicNeighbor",
                     "@module": "pymatgen.core.structure",
                     "@version": null,
@@ -181596,7 +181694,7 @@
                             true
                         ]
                     },
-                    "nn_distance": 9.930136612989092e-16,
+                    "nn_distance": 1.0175362097255202e-15,
                     "properties": {
                         "selective_dynamics": [
                             true,
@@ -181608,9 +181706,6 @@
                         "Se2-": 1.0
                     }
                 },
-                "angle_tolerance": 5,
-                "conv_cell_frac_coords": null,
-                "conventional_structure": null,
                 "equiv_conv_cell_frac_coords": [],
                 "equivalent_sites": [
                     {

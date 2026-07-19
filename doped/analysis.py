@@ -2212,13 +2212,13 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
             Additional keyword arguments to pass to the
             |point_symmetry_from_defect_entry| function, such as ``symprec``,
             ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
-            ``verbose`` and ``bulk_symprec``.
+            ``verbose``, ``bulk_symprec`` and ``centre_error_range``.
     """
     relaxed_point_group = point_symmetry_from_defect_entry(
         defect_entry,
         relaxed=True,
         verbose=kwargs.get("verbose", False),
-        **{k: v for k, v in kwargs.items() if k in ["symprec"]},
+        **{k: v for k, v in kwargs.items() if k in ["symprec", "centre_error_range", "bulk_symprec"]},
     )
 
     bulk_site_point_group = point_symmetry_from_defect_entry(

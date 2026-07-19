@@ -8,7 +8,7 @@ import os
 import warnings
 from collections.abc import Iterable, Sequence
 from functools import lru_cache, partial
-from itertools import permutations, product
+from itertools import combinations, permutations, product
 from typing import cast
 
 import numpy as np
@@ -54,8 +54,12 @@ def cached_simplify(eq):
 def cached_solve(equation, variable):
     """
     Cached solve function for ``sympy`` equations, for efficiency.
+
+    ``rational=False`` keeps float coefficients as floats, avoiding expensive
+    ``Float`` -> ``Rational`` conversions in ``sympy``; fine here as solutions
+    are only used numerically (with tolerance-based comparisons).
     """
-    return solve(equation, variable)
+    return solve(equation, variable, rational=False)
 
 
 def _set_spglib_warnings_error_handling_env_var():
@@ -220,8 +224,8 @@ def _frac_coords_sort_func(coords):
     coords_for_sorting = _vectorized_custom_round(
         np.mod(_vectorized_custom_round(coords), 1)
     )  # to unit cell
-    num_equals = sum(
-        np.isclose(coords_for_sorting[i], coords_for_sorting[j], atol=1e-3)
+    num_equals = sum(  # scalar comparisons, matching ``np.isclose(..., atol=1e-3)`` but avoiding overhead
+        abs(coords_for_sorting[i] - coords_for_sorting[j]) <= 1e-3
         for i in range(len(coords_for_sorting))
         for j in range(i + 1, len(coords_for_sorting))
     )
@@ -1776,8 +1780,11 @@ def _get_candidate_prim_structs(structure, **kwargs):
         [structure, pmg_prim_struct] if len(structure) == len(pmg_prim_struct) else [pmg_prim_struct]
     )
 
+    prev_struct = None
     for _i in range(4):
         struct = sga.get_primitive_standard_structure()
+        if prev_struct is not None and struct == prev_struct:
+            break  # standardisation converged; further iterations just duplicate these candidates
         candidate_prim_structs.append(struct)
 
         spglib_dataset = sga.get_symmetry_dataset()
@@ -1785,6 +1792,7 @@ def _get_candidate_prim_structs(structure, **kwargs):
             candidate_prim_structs.append(translate_structure(struct, spglib_dataset.origin_shift))
 
         sga = get_sga(struct, sga._symprec)  # use same symprec
+        prev_struct = struct
 
     candidate_prim_structs.append(sga.find_primitive())
     for candidate_conv_struct in [sga.get_refined_structure(), sga.get_conventional_standard_structure()]:
@@ -2546,16 +2554,11 @@ def get_wyckoff_label_and_equiv_coord_list(
                         sympy_expr, coord, temp_dict
                     )  # solve for new variable
 
-                # Check if the evaluated expression matches the corresponding coordinate
-                if not np.isclose(
-                    np.mod(float(coord), 1),  # wrap to 0-1 (i.e. to unit cell)
-                    np.mod(float(expr_value), 1),
-                    atol=0.003,
-                ) and not np.isclose(
-                    np.mod(float(coord), 1) - 1,  # wrap to 0-1 (i.e. to unit cell)
-                    np.mod(float(expr_value), 1),
-                    atol=0.003,
-                ):
+                # Check if the evaluated expression matches the corresponding coordinate, under periodic
+                # wrapping (i.e. modulo 1, to the unit cell); scalar comparisons matching
+                # ``np.isclose(..., atol=3e-3)``, but avoiding per-call overhead:
+                diff = float(coord) - float(expr_value)
+                if abs(diff - round(diff)) > 3e-3:
                     match = False
                     break
 
@@ -2718,22 +2721,19 @@ def point_symmetry_from_defect(
         str: Defect point symmetry.
     """
     try:
-        point_symm = point_symmetry_from_site(
+        return point_symmetry_from_site(
             defect.site,
             defect.structure,
             symprec=symprec,
             **kwargs,
         )
-        if point_symm is not None:
-            return point_symm
-
+    except (ValueError, KeyError):
+        # symm_ops approach failed (e.g. spglib symmetry determination failure (``ValueError``), or
+        # unrecognised Hermann-Mauguin symbol (``KeyError``)); use diagonal defect supercell approach:
         warnings.warn(
             "Defect point symmetry could not be determined from the standard approach. Falling back "
             "to supercell generation approach (which can be less efficient)."
         )
-        raise ValueError("Defect point symmetry could not be determined from the standard approach.")
-
-    except ValueError:  # symm_ops approach failed, just use diagonal defect supercell approach:
         defect_diagonal_supercell = defect.get_supercell_structure(
             sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
             dummy_species="X",
@@ -2773,7 +2773,9 @@ def _extract_defect_cluster(
     return coords, species
 
 
-def _matching_rot_index(rotations: Sequence[np.ndarray], rotation: np.ndarray, rot_tol: float = 0.3):
+def _matching_rot_index(
+    rotations: Sequence[np.ndarray], rotation: np.ndarray, rot_tol: float = 0.3
+) -> int | None:
     """
     Index of the first rotation matrix in ``rotations`` matching ``rotation``
     within ``rot_tol`` (Frobenius norm), else ``None``.
@@ -2782,10 +2784,12 @@ def _matching_rot_index(rotations: Sequence[np.ndarray], rotation: np.ndarray, r
     norm (rotation angles differ by >= 60°), so tolerance-based matching is
     robust for both exact and noisy (refined) operations.
     """
-    for i, R in enumerate(rotations):
-        if np.linalg.norm(rotation - R) < rot_tol:
-            return i
-    return None
+    if not len(rotations):
+        return None
+    diffs = np.asarray(rotations) - rotation  # vectorised over all rotations at once
+    sq_dists = np.einsum("ijk,ijk->i", diffs, diffs)  # squared Frobenius norms
+    matches = np.flatnonzero(sq_dists < rot_tol**2)
+    return int(matches[0]) if len(matches) else None
 
 
 def _bulk_cartesian_rotations(bulk_structure: Structure, symprec: float = 0.01) -> list[np.ndarray]:
@@ -2934,8 +2938,8 @@ def _candidate_rotations_from_cluster(
 
     anchor_coords = coords[anchor_idxs]
     anchor_pair_dists = {
-        (i, j): np.linalg.norm(anchor_coords[i] - anchor_coords[j]) for i in (0, 1) for j in (1, 2)
-    }
+        (i, j): np.linalg.norm(anchor_coords[i] - anchor_coords[j]) for i, j in combinations(range(3), 2)
+    }  # all pairs of the anchor triple
     pair_tol = 2 * symprec  # atoms each matched within symprec -> pair distances within 2*symprec
     frame_a_inv = orthonormal_frame(*anchor_coords).T  # orthogonal, so inverse = transpose
     reflection = np.diag([1.0, 1.0, -1.0])
@@ -2945,7 +2949,7 @@ def _candidate_rotations_from_cluster(
         [
             int(j)
             for j in np.where(species == species[anchor_idxs[k]])[0]  # matching species
-            if dists[j] <= dists[anchor_idxs[k]] + t_max + symprec  # distance within tolerange range
+            if dists[j] <= dists[anchor_idxs[k]] + t_max + symprec  # distance within tolerance range
         ]
         for k in range(3)  # for each atom in triple
     ]
@@ -3031,7 +3035,8 @@ def _map_residual(
     trees = trees or {sp: KDTree(coords[species == sp]) for sp in set(species)}
     rotation = np.eye(3) if rotation is None else rotation
     translation = np.zeros(3) if translation is None else translation
-    radius = radius or float(dists.max()) + symprec
+    if radius is None:
+        radius = float(dists.max()) + symprec
 
     mapped = coords @ rotation.T + translation  # apply the candidate operation to all atoms
 
@@ -3231,6 +3236,7 @@ def local_point_symmetry(
     defect_frac_coords: ArrayLike | None = None,
     symprec: float = 0.1,
     centre_error_range: float | None = None,
+    bulk_symprec: float = 0.01,
     verbose: bool = False,
     _first_pass: bool = True,
 ) -> tuple[str, list[tuple[np.ndarray, np.ndarray]], dict]:
@@ -3327,6 +3333,13 @@ def local_point_symmetry(
             ``None`` (default), uses 1.5 Å, or 3.0 Å when the defect position
             is taken from ``guess_defect_position`` (no bulk reference and no
             ``defect_frac_coords``) to allow for a larger potential error.
+        bulk_symprec (float):
+            Distance tolerance (in Å) for ``spglib`` symmetry analysis of the
+            (pristine) ``bulk_supercell``, used to generate the candidate
+            rotations for the local symmetry analysis. Unused if
+            ``bulk_supercell`` is ``None``. Default is 0.01 Å (the ``pymatgen``
+            / ``spglib`` default, appropriate for noise-free unrelaxed /
+            idealised structures).
         verbose (bool):
             If ``True``, prints diagnostic information on the local symmetry
             analysis. Default is ``False``.
@@ -3350,6 +3363,19 @@ def local_point_symmetry(
             - ``"residuals"``: best mapping residual (displacement) per
               candidate operation, allowing quantification of the separation
               between accepted and rejected operations.
+            - ``"degenerate_cluster"``: whether the local cluster contained
+              too few atoms (< 4) to certify any symmetry operations (e.g. very
+              small supercells or sparse/vacuum-spaced structures), in which
+              case ``C1`` is returned here, and global ``spglib`` analysis of
+              the defect supercell is used instead by
+              |point_symmetry_from_defect_entry| (where determinable).
+            - ``"empty_cluster"``: whether the local cluster contained no atoms
+              besides the defect itself (e.g. adsorbates/defects in
+              vacuum-spaced low-dimensional structures), in which case ``C1``
+              is returned here, but nothing local can have relaxed/distorted
+              and so the (unrelaxed) bulk site symmetry is the appropriate
+              relaxed point symmetry (used automatically by
+              |point_symmetry_from_defect_entry|).
     """
     radius = min(get_min_image_distance(defect_supercell) / 2, 12)  # cap at 12 Å for very large supercells
 
@@ -3365,9 +3391,11 @@ def local_point_symmetry(
         from doped.analysis import guess_defect_position  # avoid circular import
 
         centre_cart = guess_defect_position(defect_supercell)
-        centre_error_range = centre_error_range or 3.0  # default = 3.0 Å w/guessed position (larger error)
+        if centre_error_range is None:
+            centre_error_range = 3.0  # default = 3.0 Å w/guessed position (larger error)
 
-    centre_error_range = centre_error_range or 1.5  # default = 1.5 Å, except w/``guess_defect_position``
+    if centre_error_range is None:
+        centre_error_range = 1.5  # default = 1.5 Å, except w/``guess_defect_position``
 
     coords, species = _extract_defect_cluster(defect_supercell, centre_cart, radius)
     point_symmetry_info: dict = {
@@ -3376,8 +3404,37 @@ def local_point_symmetry(
         "cluster_centre_cart": centre_cart,
         "fixed_point_consistency": 0.0,
         "residuals": [],
+        "degenerate_cluster": False,
+        "empty_cluster": False,
     }
-    if len(coords) < 4:  # degenerate cluster, cannot certify any symmetry
+    if len(coords) < 4:  # degenerate cluster; too few atoms to certify any symmetry -> C1
+        point_symmetry_info["degenerate_cluster"] = True
+        if len(coords) == 0 or not np.any(np.linalg.norm(coords, axis=1) > symprec):
+            # no atoms in the local environment (besides any defect atom at the centre itself; e.g.
+            # adsorbates/defects in vacuum-spaced low-dimensional structures), so nothing local can have
+            # relaxed/distorted, and the (relaxed) defect point symmetry is the unrelaxed (bulk) site
+            # symmetry -- flagged here for the ``relaxed=False`` fallback in
+            # ``point_symmetry_from_defect_entry``:
+            point_symmetry_info["empty_cluster"] = True
+            warnings.warn(
+                f"No atoms within the local symmetry analysis radius ({radius:.2f} Å) of the defect site "
+                f"(besides the defect itself), so the point symmetry cannot be determined from the local "
+                f"environment; returning C1. As nothing local can have relaxed/distorted in this case, "
+                f"the (unrelaxed) bulk site symmetry (``relaxed=False``) is the appropriate relaxed "
+                f"point symmetry -- used automatically when a bulk reference is available (e.g. in "
+                f"``point_symmetry_from_defect_entry`` / ``doped`` parsing)."
+            )
+        else:  # too few atoms to certify any symmetry operations, but atoms present may have
+            # relaxed/distorted (so the bulk site symmetry cannot just be assumed); flagged for global
+            # ``spglib`` fallback in ``point_symmetry_from_defect_entry``:
+            warnings.warn(
+                f"Only {len(coords)} atom(s) within the local symmetry analysis radius ({radius:.2f} Å) "
+                f"of the defect site; too few to certify any symmetry operations, so the point symmetry "
+                f"cannot be determined from the local environment; returning C1. Global symmetry analysis "
+                f"of the defect supercell (``spglib``) may be more appropriate here -- used automatically "
+                f"in ``point_symmetry_from_defect_entry`` / ``doped`` parsing (though note this can be "
+                f"affected by periodicity-breaking supercell shapes)."
+            )
         return "C1", [(np.eye(3), np.zeros(3))], point_symmetry_info
 
     dists = np.linalg.norm(coords, axis=1)  # distances from the cluster centre
@@ -3399,7 +3456,7 @@ def local_point_symmetry(
     rotations = (  # either from triplet transformations in the cluster, or from the bulk primitive cell:
         _candidate_rotations_from_cluster(coords, species, dists, symprec, t_max)
         if bulk_supercell is None
-        else _bulk_cartesian_rotations(bulk_supercell)
+        else _bulk_cartesian_rotations(bulk_supercell, symprec=bulk_symprec)
     )
 
     # now determine candidate translations (t = x_b - R @ x_a); for this we use 'anchor atoms': the atom
@@ -3484,6 +3541,8 @@ def local_point_symmetry(
     while not _is_closed(kept, t_tol):
         # ensure identity operation is not considered for removal:
         removable = [i for i, op in enumerate(kept) if np.linalg.norm(op[0] - np.eye(3)) > 0.1]
+        if not removable:  # only (pseudo-)identity ops left (e.g. an uncertified pure translation in a
+            break  # translation-symmetric cluster); accept as-is rather than crash on ``max([])``
         del kept[max(removable, key=lambda i: kept[i][2])]  # remove the operation with the worst residual
 
     # the defect symmetry centre is _derived_ from the accepted operations, as their common fixed point
@@ -3494,8 +3553,8 @@ def local_point_symmetry(
     lhs, rhs = 1e-6 * np.eye(3), np.zeros(3)  # regularisation term
     for rotation, translation, _residual in kept:  # least squares fit:
         displacement_matrix = rotation - np.eye(3)  # (R - I)
-        lhs += displacement_matrix.T @ displacement_matrix  # (R - I) @ (R - I)^T
-        rhs -= displacement_matrix.T @ translation  # (R - I) @ t
+        lhs += displacement_matrix.T @ displacement_matrix  # (R - I)^T @ (R - I)
+        rhs += displacement_matrix.T @ -translation  # (R - I)^T @ -t
 
     centre_offset = np.linalg.solve(lhs, rhs)  # solve for c
     point_symmetry_info["centre_cart"] = centre_cart + centre_offset
@@ -3515,36 +3574,27 @@ def local_point_symmetry(
         )
 
     # in the noise-free limit, an off-centre cluster placement can only spuriously _lower_ the certified
-    # symmetry, so if not all candidate rotations were certified, re-run recentred on any plausibly-better
-    # centres -- the ops-derived symmetry centre (if it differs appreciably from the cluster centre used),
-    # and, if a bulk reference is provided, the structure-comparison defect site -- keeping the
+    # symmetry, so if not all candidate rotations were certified, re-run once recentred on the ops-derived
+    # symmetry centre (if it differs appreciably from the cluster centre used), keeping the
     # highest-symmetry result. Note that for knife-edge cases (distortions of magnitude ``~symprec``), a
     # shifted placement can instead certify _more_ ops than the true centre (borderline ops slipping under
     # tolerance), but expected to be rare in practice (and they are cases at the borderline of ``symprec``
-    # anyway)
+    # anyway):
     if _first_pass and len(kept) < len(rotations):
-        best_result = (symbol, [(op[0], op[1]) for op in kept], point_symmetry_info)
-        candidate_centres = [point_symmetry_info["centre_cart"]]  # ops-derived centre
-        if bulk_supercell is not None and defect_frac_coords is not None:
-            candidate_centres.append(_defect_coords_from_structures(defect_supercell, bulk_supercell))
-
-        tried_centres = [centre_cart]
-        for candidate_centre in candidate_centres:
-            if any(np.linalg.norm(candidate_centre - prev) <= symprec for prev in tried_centres):
-                continue  # <``symprec`` from previous centre, (effectively) already tried
+        derived_centre = point_symmetry_info["centre_cart"]
+        if np.linalg.norm(derived_centre - centre_cart) > symprec:  # differs appreciably; recentre
             retry_result = local_point_symmetry(
                 defect_supercell,
                 bulk_supercell,
-                defect_frac_coords=defect_supercell.lattice.get_fractional_coords(candidate_centre),
+                defect_frac_coords=defect_supercell.lattice.get_fractional_coords(derived_centre),
                 symprec=symprec,
                 centre_error_range=centre_error_range,
+                bulk_symprec=bulk_symprec,
                 verbose=verbose,
                 _first_pass=False,
             )
-            tried_centres.append(candidate_centre)
-            if len(retry_result[1]) > len(best_result[1]):  # more certified ops (higher symmetry)
-                best_result = retry_result
-        return best_result
+            if len(retry_result[1]) > len(kept):  # more certified ops (higher symmetry)
+                return retry_result
 
     return symbol, [(op[0], op[1]) for op in kept], point_symmetry_info
 
@@ -3624,19 +3674,23 @@ def point_symmetry_from_defect_entry(
             (when ``relaxed=False``). Default is ``None`` (no diagnostic
             output).
         **kwargs:
-            Additional keyword arguments to pass to ``get_all_equiv_sites``
-            when ``relaxed=False``, such as ``dist_tol_factor`` and
-            ``fixed_symprec_and_dist_tol_factor`` (ignored when
-            ``relaxed=True``).
+            Additional keyword arguments to pass to ``local_point_symmetry``
+            when ``relaxed=True`` (``centre_error_range``, ``bulk_symprec``),
+            or ``get_all_equiv_sites`` when ``relaxed=False`` (such as
+            ``dist_tol_factor`` and ``fixed_symprec_and_dist_tol_factor``);
+            kwargs not applicable to the chosen mode are ignored.
 
     Returns:
         str: Defect point symmetry (Schoenflies symbol).
     """
-    # TODO: Codex/Fable review diff
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
         # slight distortions present in the unrelaxed material).
+
+    # split off ``local_point_symmetry`` (relaxed) kwargs from ``get_all_equiv_sites`` (unrelaxed)
+    # kwargs, so a shared kwargs dict can be used for both (e.g. from ``get_orientational_degeneracy``):
+    local_kwargs = {k: kwargs.pop(k) for k in ("centre_error_range", "bulk_symprec") if k in kwargs}
 
     if relaxed:
         defect_supercell = _get_defect_supercell(defect_entry)
@@ -3646,6 +3700,7 @@ def point_symmetry_from_defect_entry(
             defect_frac_coords=_get_defect_supercell_frac_coords(defect_entry, relaxed=True),
             symprec=symprec,
             verbose=bool(verbose),
+            **local_kwargs,
         )
         for key, cart_coords in [
             ("symmetry cluster centre", info["cluster_centre_cart"]),
@@ -3654,6 +3709,21 @@ def point_symmetry_from_defect_entry(
             defect_entry.calculation_metadata[key] = (
                 defect_supercell.lattice.get_fractional_coords(cart_coords) % 1
             )
+        if info.get("empty_cluster"):  # no local environment to have relaxed/distorted (warned in
+            # ``local_point_symmetry``), so the relaxed point symmetry is the unrelaxed bulk site symmetry:
+            return point_symmetry_from_defect_entry(
+                defect_entry,
+                symprec=local_kwargs.get("bulk_symprec"),  # ``None`` -> 0.01 Å default
+                relaxed=False,
+                verbose=verbose,
+                **kwargs,
+            )
+        if info.get("degenerate_cluster"):  # too few local atoms to certify any symmetry (warned in
+            # ``local_point_symmetry``); fall back to global ``spglib`` analysis:
+            with contextlib.suppress(SymmetryUndeterminedError):
+                symbol = schoenflies_from_hermann(
+                    get_sga(defect_supercell, symprec=symprec).get_point_group_symbol()
+                )
         return symbol
 
     if defect_entry.defect.defect_type != DefectType.Interstitial:  # take from symmetry dataset of bulk:
@@ -3717,7 +3787,7 @@ def point_symmetry_from_structure(
     (supercell) structure.
 
     The point symmetry is determined by direct isometry analysis of the local
-    defect environment (see ``point_symmetry_from_defect_entry`` and
+    defect environment (see |point_symmetry_from_defect_entry| and
     ``local_point_symmetry`` for algorithm details), which is insensitive to
     periodicity-breaking supercell shapes (i.e. supercells whose shape breaks
     translational symmetries of the host crystal -- as can occur with
@@ -3744,7 +3814,7 @@ def point_symmetry_from_structure(
     (returned info dict, ``"centre_cart"`` and ``"cluster_centre_cart"`` keys),
     or printed with ``verbose=True``; when working from a |DefectEntry|, they
     are stored in ``calculation_metadata`` (under ``"defect symmetry centre"``
-    and ``"symmetry cluster centre"``) by ``point_symmetry_from_defect_entry``.
+    and ``"symmetry cluster centre"``) by |point_symmetry_from_defect_entry|.
 
     In the bulk-reference-free case, the local isometry result is also
     cross-checked against global space-group analysis of the defect supercell
@@ -3812,10 +3882,11 @@ def point_symmetry_from_structure(
             the cell definitions match (e.g. both supercells were generated
             with ``doped``). Default is ``False``.
         **kwargs:
-            Additional keyword arguments to pass to ``get_all_equiv_sites``
-            when ``relaxed=False``, such as ``dist_tol_factor`` and
-            ``fixed_symprec_and_dist_tol_factor`` (ignored when
-            ``relaxed=True``).
+            Additional keyword arguments to pass to ``local_point_symmetry``
+            when ``relaxed=True`` (``centre_error_range``, ``bulk_symprec``),
+            or ``get_all_equiv_sites`` when ``relaxed=False`` (such as
+            ``dist_tol_factor`` and ``fixed_symprec_and_dist_tol_factor``);
+            kwargs not applicable to the chosen mode are ignored.
 
     Returns:
         str: Defect point symmetry (Schoenflies symbol).
@@ -3860,6 +3931,7 @@ def point_symmetry_from_structure(
         defect_frac_coords=defect_frac_coords,  # if still None, guessed in ``local_point_symmetry``
         symprec=symprec,
         verbose=bool(verbose),
+        **{k: kwargs[k] for k in ("centre_error_range",) if k in kwargs},  # no bulk -> no bulk_symprec
     )
 
     # cross-check against global space-group analysis of the defect supercell, whose point group matches
@@ -3867,7 +3939,11 @@ def point_symmetry_from_structure(
     # approach can only spuriously _lower_ the true symmetry (global analysis: periodicity-breaking
     # supercell shapes; local analysis: imperfect cluster sphere centring, beyond what the ops-derived
     # recentring re-run can recover), so the higher-symmetry result is taken:
-    spglib_symbol = schoenflies_from_hermann(get_sga(structure, symprec=symprec).get_point_group_symbol())
+    spglib_symbol = None
+    with contextlib.suppress(SymmetryUndeterminedError):
+        spglib_symbol = schoenflies_from_hermann(
+            get_sga(structure, symprec=symprec).get_point_group_symbol()
+        )
     if spglib_symbol is not None and group_order_from_schoenflies(
         spglib_symbol
     ) > group_order_from_schoenflies(symbol):
@@ -3943,10 +4019,8 @@ def point_symmetry_from_site(
     spglib_point_group_symbols = [
         schoenflies_from_hermann(hermann_symbol)
         for hermann_symbol in symm_dataset.site_symmetry_symbols[-len(unique_sites) :]
-    ]  # get point group symbols for all unique sites
-    return max(
-        spglib_point_group_symbols, key=group_order_from_schoenflies
-    )  # use highest symmetry point group symbol
+    ]  # get point group symbols for all unique sites, and use the highest symmetry point group symbol:
+    return max(spglib_point_group_symbols, key=group_order_from_schoenflies)
 
 
 # Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
@@ -4088,7 +4162,7 @@ def get_orientational_degeneracy(
     ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``.
 
     The relaxed defect point symmetry is determined by direct isometry analysis
-    of the local defect environment (see ``point_symmetry_from_defect_entry``
+    of the local defect environment (see |point_symmetry_from_defect_entry|
     and ``local_point_symmetry`` for algorithm details), which is insensitive
     to periodicity-breaking supercell shapes (unlike global space-group
     analysis).
@@ -4128,7 +4202,7 @@ def get_orientational_degeneracy(
             Default is ``None`` (automatically calculated by ``doped``).
         symprec (float):
             Distance tolerance (in Å) for `relaxed` defect point symmetry
-            determination (see ``point_symmetry_from_defect_entry``). Default
+            determination (see |point_symmetry_from_defect_entry|). Default
             is ``0.1`` which matches that used by the ``Materials Project``
             and is larger than the ``pymatgen`` default of ``0.01`` to
             account for residual structural noise in relaxed defect
@@ -4137,9 +4211,11 @@ def get_orientational_degeneracy(
         bulk_symprec (float):
             Symmetry precision to use for determining symmetry operations and
             thus point symmetries with ``spglib``, for the `unrelaxed` (bulk
-            site) point symmetry. Default is ``0.01`` which matches the
-            ``pymatgen`` default. You may want to adjust for your system (e.g.
-            if there are very slight octahedral distortions etc.).
+            site) point symmetry -- also used for generating the candidate
+            rotations (from the bulk structure) in the `relaxed` local symmetry
+            analysis. Default is ``0.01`` which matches the ``pymatgen``
+            default. You may want to adjust for your system (e.g. if there are
+            very slight octahedral distortions etc.).
             If ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
             this value will be automatically adjusted (up to 10x, down to 0.1x)
             until the identified equivalent sites from ``spglib`` have
@@ -4147,9 +4223,12 @@ def get_orientational_degeneracy(
             will print information on the trialled ``symprec`` (and
             ``dist_tol_factor`` values).
         **kwargs:
-            Additional keyword arguments to pass to ``get_all_equiv_sites``,
-            such as ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
-            and ``verbose``.
+            Additional keyword arguments to pass to
+            |point_symmetry_from_defect_entry|, such as ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor`` and ``verbose`` (for
+            ``get_all_equiv_sites`` in the unrelaxed bulk-site analysis), or
+            ``centre_error_range`` (for ``local_point_symmetry`` in the
+            relaxed analysis).
 
     Returns:
         float: Orientational degeneracy factor for the defect.
@@ -4166,6 +4245,7 @@ def get_orientational_degeneracy(
             relaxed_point_group = point_symmetry_from_defect_entry(
                 defect_entry,
                 symprec=symprec,
+                bulk_symprec=bulk_symprec,  # also used for bulk candidate rotations in local analysis
                 relaxed=True,  # relaxed
                 **kwargs,
             )
@@ -4177,18 +4257,6 @@ def get_orientational_degeneracy(
                 relaxed=False,  # unrelaxed
                 **kwargs,
             )
-
-    # actually fine for split-vacancies (e.g. Ke's V_Sb in Sb2O5), or antisite-swaps etc:
-    # (so avoid warning for now; user will be warned anyway if symmetry determination failing)
-    # if orientational_degeneracy < 1 and not (
-    #     defect_type == DefectType.Interstitial
-    #     or (isinstance(defect_type, str) and defect_type.lower() == "interstitial")
-    # ):
-    #     raise ValueError(
-    #         f"From the input/determined point symmetries, an orientational degeneracy factor of "
-    #         f"{orientational_degeneracy} is predicted, which is less than 1, which is not reasonable "
-    #         f"for vacancies/substitutions, indicating an error in the symmetry determination!"
-    #     )
 
     return group_order_from_schoenflies(bulk_site_point_group) / group_order_from_schoenflies(
         relaxed_point_group

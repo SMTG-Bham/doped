@@ -247,6 +247,31 @@ def _parse_species_str(sp_el: Species | Element, wout_charge: bool = False) -> s
     return species_string.translate(_TRANSLATE_REMOVE_CHARGE) if wout_charge else species_string
 
 
+# Species overrides:
+_orig_species__str__ = Species.__str__
+
+
+def _species__str__(self):
+    """
+    Memoized ``Species.__str__`` (immutable objects); avoids heavy string
+    formatting in the many millions of ``Species.__hash__`` (= ``hash(str)``)
+    calls from ``Composition`` ``dict`` operations.
+
+    We memoize the string, not
+    the hash: changing ``__hash__`` values breaks pre-built ``Species``-keyed
+    ``dict``s in ``pymatgen`` (e.g. ``bond_valence``), which store key hashes
+    at insertion.
+    """
+    try:
+        return self.__dict__["_doped_str"]
+    except KeyError:
+        self.__dict__["_doped_str"] = string = _orig_species__str__(self)
+        return string
+
+
+Species.__str__ = _species__str__
+
+
 # PeriodicSite overrides:
 def _periodic_site__hash__(self):
     """
@@ -258,11 +283,14 @@ def _periodic_site__hash__(self):
         else {}
     )
 
-    species_info = tuple(str(el) for el in self._species)  # string representation is used for species hash
-    base_hash_tuple = (species_info, self.lattice, tuple(self.frac_coords))
+    species_info = tuple(  # avoid ``str(el)`` (``Species.__str__``/format machinery); equal species give
+        (el.symbol, getattr(el, "_oxi_state", None))  # equal (symbol, oxi) tuples
+        for el in self._species
+    )
+    base_hash_tuple = (species_info, self.lattice, self.frac_coords.tobytes())
     try:
-        return hash(base_hash_tuple + frozenset(property_dict.items()))
-    except Exception:  # hash without the property dict
+        return hash((*base_hash_tuple, frozenset(property_dict.items())))
+    except Exception:  # unhashable property values; hash without the property dict
         return hash(base_hash_tuple)
 
 
@@ -295,8 +323,13 @@ def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08
     """
     Cached version of ``np.allclose``, taking tuples as inputs (so that they
     are hashable and thus cacheable).
+
+    Implemented directly in Python (same semantics as ``np.allclose`` for
+    finite inputs), as the ``numpy`` machinery has ~10x higher overhead for the
+    small (len-3 coordinate) tuples this is mostly used for (and full
+    vectorised allclose should be used otherwise, anyway).
     """
-    return np.allclose(np.array(a), np.array(b), rtol=rtol, atol=atol)
+    return all(abs(x - y) <= atol + rtol * abs(y) for x, y in zip(a, b, strict=True))
 
 
 PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
@@ -304,6 +337,8 @@ PeriodicSite.__hash__ = _periodic_site__hash__
 
 
 # Lattice overrides:
+# (note: memoizing ``Lattice.__hash__`` was tested and found to give negligible speedup (~0.1% of
+# ``DefectsGenerator`` runtime), as ``pymatgen`` already caches the lengths/angles used in its hash)
 _orig_lattice_get_all_distances = Lattice.get_all_distances
 
 
@@ -403,6 +438,9 @@ def _Structure__eq__(self, other):
     both caching and an updated, faster equality function to speed up
     comparisons.
     """
+    if self is other:
+        return True  # identity fast-path, avoids hashing both structures below
+
     needed_attrs = ("lattice", "sites", "properties")
 
     if not all(hasattr(other, attr) for attr in needed_attrs):

@@ -23,7 +23,7 @@ dependencies = [
     "numpy>=1.21.0",
     "pymatgen-core>=2026.7.16",  # ROPT fix; https://github.com/materialsproject/pymatgen-core/pull/69
     # requires spglib >= 2.5
-    "pymatgen-analysis-defects>=2023.8.22",  # TODO: Update to (fully) pymatgen-core compatible version
+    "pymatgen-analysis-defects>=2023.8.22",
     "mp-api>=0.45",  # for Materials Project queries via ``mp_api.client.MPRester``
     "shakenbreak>=3.4.5",  # parameter re-ordering for ``get_defect_type_...`` functions
     "pandas",

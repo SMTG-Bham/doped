@@ -5720,6 +5720,16 @@
             },
             "bulk_site_index": 76,
             "cbm": 3.1209,
+            "defect symmetry centre": {
+                "@class": "array",
+                "@module": "numpy",
+                "data": [
+                    0.5,
+                    0.6170450855196065,
+                    0.4838016280870836
+                ],
+                "dtype": "float64"
+            },
             "defect_path": "/Users/kavanase/Packages/doped/tests/data/V2O5/v_O_1",
             "defect_site_index": null,
             "dielectric": {
@@ -8583,7 +8593,16 @@
             "mismatching_INCAR_tags": false,
             "mismatching_KPOINTS": false,
             "mismatching_POTCAR_symbols": false,
-            "periodicity_breaking_supercell": false,
+            "perturbation centroid": {
+                "@class": "array",
+                "@module": "numpy",
+                "data": [
+                    0.5,
+                    0.6170450855196065,
+                    0.4838016280870836
+                ],
+                "dtype": "float64"
+            },
             "relaxed point symmetry": "Cs",
             "run_metadata": {
                 "bulk_actual_kpoints": [
@@ -53829,7 +53848,10 @@
                 1,
                 2
             ],
-            "_defect_site": {
+            "angle_tolerance": 5,
+            "conv_cell_frac_coords": null,
+            "conventional_structure": null,
+            "defect_site": {
                 "@class": "PeriodicNeighbor",
                 "@module": "pymatgen.core.structure",
                 "@version": null,
@@ -53882,9 +53904,6 @@
                     "O2-": 1.0
                 }
             },
-            "angle_tolerance": 5,
-            "conv_cell_frac_coords": null,
-            "conventional_structure": null,
             "equiv_conv_cell_frac_coords": [],
             "equivalent_sites": [
                 {
@@ -65373,6 +65392,16 @@
             },
             "bulk_site_index": 94,
             "cbm": 3.1209,
+            "defect symmetry centre": {
+                "@class": "array",
+                "@module": "numpy",
+                "data": [
+                    0.4996427000794244,
+                    0.4544679512405656,
+                    0.64769641243678
+                ],
+                "dtype": "float64"
+            },
             "defect_path": "/Users/kavanase/Packages/doped/tests/data/V2O5/v_O_2",
             "defect_site_index": null,
             "dielectric": {
@@ -68236,7 +68265,16 @@
             "mismatching_INCAR_tags": false,
             "mismatching_KPOINTS": false,
             "mismatching_POTCAR_symbols": false,
-            "periodicity_breaking_supercell": false,
+            "perturbation centroid": {
+                "@class": "array",
+                "@module": "numpy",
+                "data": [
+                    0.4999603977358419,
+                    0.4544679512405656,
+                    0.64769641243678
+                ],
+                "dtype": "float64"
+            },
             "relaxed point symmetry": "Cs",
             "run_metadata": {
                 "bulk_actual_kpoints": [
@@ -113482,7 +113520,10 @@
                 1,
                 2
             ],
-            "_defect_site": {
+            "angle_tolerance": 5,
+            "conv_cell_frac_coords": null,
+            "conventional_structure": null,
+            "defect_site": {
                 "@class": "PeriodicNeighbor",
                 "@module": "pymatgen.core.structure",
                 "@version": null,
@@ -113535,9 +113576,6 @@
                     "O2-": 1.0
                 }
             },
-            "angle_tolerance": 5,
-            "conv_cell_frac_coords": null,
-            "conventional_structure": null,
             "equiv_conv_cell_frac_coords": [],
             "equivalent_sites": [
                 {
@@ -125026,6 +125064,16 @@
             },
             "bulk_site_index": 104,
             "cbm": 3.1209,
+            "defect symmetry centre": {
+                "@class": "array",
+                "@module": "numpy",
+                "data": [
+                    0.3333333329787223,
+                    0.6695522399173152,
+                    0.6833240792336215
+                ],
+                "dtype": "float64"
+            },
             "defect_path": "/Users/kavanase/Packages/doped/tests/data/V2O5/v_O_3",
             "defect_site_index": null,
             "dielectric": {
@@ -127889,7 +127937,16 @@
             "mismatching_INCAR_tags": false,
             "mismatching_KPOINTS": false,
             "mismatching_POTCAR_symbols": false,
-            "periodicity_breaking_supercell": false,
+            "perturbation centroid": {
+                "@class": "array",
+                "@module": "numpy",
+                "data": [
+                    0.333333328673697,
+                    0.6695522399173152,
+                    0.6833240792336215
+                ],
+                "dtype": "float64"
+            },
             "relaxed point symmetry": "Cs",
             "run_metadata": {
                 "bulk_actual_kpoints": [
@@ -173130,7 +173187,10 @@
                 1,
                 2
             ],
-            "_defect_site": {
+            "angle_tolerance": 5,
+            "conv_cell_frac_coords": null,
+            "conventional_structure": null,
+            "defect_site": {
                 "@class": "PeriodicNeighbor",
                 "@module": "pymatgen.core.structure",
                 "@version": null,
@@ -173177,15 +173237,12 @@
                         true
                     ]
                 },
-                "nn_distance": 3.469446951953614e-18,
+                "nn_distance": 0.0,
                 "properties": {},
                 "species": {
                     "O2-": 1.0
                 }
             },
-            "angle_tolerance": 5,
-            "conv_cell_frac_coords": null,
-            "conventional_structure": null,
             "equiv_conv_cell_frac_coords": [],
             "equivalent_sites": [
                 {
