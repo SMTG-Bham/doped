@@ -32,7 +32,7 @@ from scipy.spatial import HalfspaceIntersection
 from tqdm import tqdm
 
 from doped.chemical_potentials import ChemicalPotentialGrid, get_X_rich_poor_limit, plot_chempot_heatmap
-from doped.core import DefectEntry, _get_abs_chempots, _no_chempots_warning
+from doped.core import DefectEntry, _get_abs_chempots, _get_bulk_supercell, _no_chempots_warning
 from doped.generation import sort_defect_entries
 from doped.io.vasp.outputs import (
     _compare_incar_tags,
@@ -44,7 +44,6 @@ from doped.io.vasp.outputs import (
 from doped.utils import _doped_obj_properties_methods
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
-from doped.utils.parsing import _get_bulk_supercell
 from doped.utils.plotting import (
     TransitionLevel,
     _format_TL_charge_label,

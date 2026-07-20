@@ -44,6 +44,7 @@ from doped.chemical_potentials import (
     CompetingPhasesAnalyzer,
     get_doped_chempots_from_entries,
 )
+from doped.core import _get_defect_supercell_frac_coords
 from doped.generation import sort_defect_entries
 from doped.io.vasp.outputs import get_vasprun
 from doped.thermodynamics import (
@@ -54,7 +55,6 @@ from doped.thermodynamics import (
     get_interpolated_chempots,
     scissor_dos,
 )
-from doped.utils.parsing import _get_defect_supercell_frac_coords
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     get_min_dist_between_equiv_sites,

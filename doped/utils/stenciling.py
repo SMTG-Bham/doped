@@ -13,7 +13,7 @@ import numpy as np
 from tqdm import tqdm
 
 from doped.analysis import defect_site_from_structures
-from doped.core import DefectEntry
+from doped.core import DefectEntry, _get_bulk_supercell, _get_defect_supercell
 from doped.thermodynamics import _ensure_list
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import (

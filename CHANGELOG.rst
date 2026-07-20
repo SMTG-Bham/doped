@@ -12,11 +12,19 @@ Unreleased
   - VASP output parsing (``get_vasprun``, ``get_locpot``, ``get_outcar``, ``get_procar``, core potentials,
     ``INCAR``/``KPOINTS``/``POTCAR`` compatibility checks, magnetization/``NELECT``/spin parsing, calculation folder
     discovery...) moved from ``doped.utils.parsing`` to ``doped.io.vasp.outputs`` (deprecated aliases retained, warn on
-    use); ``doped.utils.parsing`` now contains only calculator-agnostic structure/site analysis utilities.
+    use).
   - New calculator-agnostic ``doped.io.outputs.CalculationOutputs`` container as the data contract between calculator
     backends and analysis functions (e.g. accepted by the finite-size charge correction functions, ``DefectsParser``
     (TODO)...), with ``doped.io.get_calculation_outputs()`` dispatching to the appropriate calculator parser.
-  - ``doped/VASP_sets`` -> ``doped/io/vasp/VASP_sets``.
+  - ``doped/VASP_sets`` -> ``doped/io/vasp/VASP_sets``, with the set YAMLs renamed with explicit ``VASP``
+    prefixes (e.g. ``VASP_RelaxSet.yaml``).
+  - New ``doped.io.utils`` module with the calculator-agnostic calculation-file discovery helpers
+    (``_find_calc_outputs``, ``_determine_subfolder`` etc.), parameterised by calculator-specific filename
+    masks / subfolder priorities (VASP-defaulted wrappers in ``doped.io.vasp.outputs``).
+  - ``doped.utils.parsing`` dissolved: defect identification & site-mapping utilities renamed to
+    ``doped.utils.mappings``; ``DefectEntry`` structure accessors moved to ``doped.core``;
+    electron-count/spin-degeneracy helpers moved to ``doped.utils.symmetry`` (deprecated
+    ``doped.utils.parsing`` aliases retained for all, warn on use).
   - VASP test data moved under ``tests/data/vasp/``.
   - New docs page on adding support for additional calculators.
 

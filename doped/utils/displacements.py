@@ -14,9 +14,8 @@ import pandas as pd
 from pymatgen.util.coord import pbc_shortest_vectors
 from pymatgen.util.typing import PathLike
 
-from doped.core import DefectEntry
-from doped.generation import _get_element_list
-from doped.utils.parsing import (
+from doped.core import (
+    DefectEntry,
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,

@@ -59,6 +59,7 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.util.typing import PathLike
 
 from doped.analysis import _convert_dielectric_to_tensor
+from doped.core import _get_bulk_supercell, _get_defect_supercell, _get_defect_supercell_frac_coords
 from doped.io.outputs import CalculationOutputs
 from doped.io.vasp.outputs import (
     _get_core_potentials_from_outcar_obj,

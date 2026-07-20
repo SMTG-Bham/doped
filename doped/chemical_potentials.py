@@ -70,7 +70,9 @@ from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_str
 # globally ignore:
 _ignore_pmg_warnings()
 
-pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
+pbesol_convrg_set = loadfn(
+    os.path.join(MODULE_DIR, "VASP_sets/VASP_PBEsol_ConvergenceSet.yaml")
+)  # just INCAR
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
 
@@ -1517,14 +1519,14 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
                 any non-numerical or non-``True``/``False`` flags need to be
                 input as strings with quotation marks. See
-                ``doped/io/vasp/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the
-                default settings.
+                ``doped/io/vasp/VASP_sets/VASP_PBEsol_ConvergenceSet.yaml`` for
+                the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
                 ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
@@ -1641,14 +1643,14 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
                 any non-numerical or non-``True``/``False`` flags need to be
                 input as strings with quotation marks. See
-                ``doped/io/vasp/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the
-                default settings.
+                ``doped/io/vasp/VASP_sets/VASP_PBEsol_ConvergenceSet.yaml`` for
+                the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
                 ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
@@ -1751,14 +1753,14 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/io/vasp/VASP_sets/RelaxSet.yaml`` and
-                ``HSESet.yaml`` for the default settings.
+                See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
+                ``VASP_HSESet.yaml`` for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
                 ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
@@ -1896,14 +1898,14 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/io/vasp/VASP_sets/RelaxSet.yaml`` and
-                ``HSESet.yaml`` for the default settings.
+                See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
+                ``VASP_HSESet.yaml`` for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
                 ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
@@ -2056,14 +2058,14 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/io/vasp/VASP_sets/RelaxSet.yaml`` and
-                ``HSESet.yaml`` for the default settings.
+                See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
+                ``VASP_HSESet.yaml`` for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
                 ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
@@ -2228,14 +2230,14 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/io/vasp/VASP_sets/RelaxSet.yaml`` and
-                ``HSESet.yaml`` for the default settings.
+                See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
+                ``VASP_HSESet.yaml`` for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
                 ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for

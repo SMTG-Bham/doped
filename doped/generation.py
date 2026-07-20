@@ -40,6 +40,8 @@ from doped.core import (
     Interstitial,
     Substitution,
     Vacancy,
+    _get_bulk_supercell,
+    _get_defect_supercell_site,
     doped_defect_from_pmg_defect,
     get_oxi_probabilities,
     guess_and_set_oxi_states_with_timeout,
