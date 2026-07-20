@@ -2731,17 +2731,6 @@ class DefectParser:
         site_pots_file = site_pots_file or "site potential"  # generic fallbacks for warning messages
         planar_pots_file = planar_pots_file or "planar-averaged potential"
 
-        # pre-loaded bulk data (``bulk_site_potentials``/``bulk_locpot_dict`` kwargs) also counts as
-        # available, without needing the bulk output files:
-        efnv_data_available = _check_folder_for_file_match(defect_path, "OUTCAR") and (
-            self.kwargs.get("bulk_site_potentials") is not None
-            or _check_folder_for_file_match(bulk_path, "OUTCAR")
-        )
-        fnv_data_available = _check_folder_for_file_match(defect_path, "LOCPOT") and (
-            self.kwargs.get("bulk_locpot_dict") is not None
-            or _check_folder_for_file_match(bulk_path, "LOCPOT")
-        )
-
         # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
         isotropic_dielectric = all(np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric))
 
