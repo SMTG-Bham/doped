@@ -39,6 +39,13 @@ Unreleased
     ``doped.utils.parsing`` aliases retained for all, warn on use).
   - VASP test data moved under ``tests/data/vasp/``.
   - New docs page on adding support for additional calculators.
+  - Calculator-agnostic renaming of parsing/analysis options: ``bulk_vr``/``defect_vr`` -> ``bulk_outputs``/
+    ``defect_outputs`` in the eigenvalue analysis functions (``get_eigenvalue_analysis`` etc.), and
+    ``bulk_band_gap_vr`` -> ``bulk_band_gap_outputs`` (now taking a path -- parsed with the chosen calculator
+    backend -- or a ``CalculationOutputs`` object). The VASP-specific ``defect_vr``/``bulk_vr``/``bulk_procar``
+    options and attributes of ``DefectsParser``/``DefectParser`` have been removed (``CalculationOutputs`` objects,
+    which retain the raw parsed VASP objects in ``CalculationOutputs.raw``, are used instead), along with the
+    ``parse_procar`` option (``PROCAR`` fallback parsing is now controlled by ``parse_projected_eigen``).
 
 v.3.2.1
 ----------
