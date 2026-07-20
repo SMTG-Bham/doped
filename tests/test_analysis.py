@@ -17,6 +17,7 @@ import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.electronic_structure.dos import FermiDos
+from pymatgen.io.vasp.outputs import Vasprun
 from test_utils import (
     EXAMPLE_DIR,
     _print_warning_info,
@@ -24,6 +25,7 @@ from test_utils import (
     custom_mpl_image_compare,
     data_dir,
     if_present_rm,
+    vasp_data_dir,
 )
 
 from doped.analysis import (
@@ -36,20 +38,21 @@ from doped.analysis import (
     shallow_dopant_binding_energy,
 )
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
-from doped.utils.efficiency import Structure
-from doped.utils.eigenvalues import get_eigenvalue_analysis
-from doped.utils.parsing import (
-    Vasprun,
-    _create_unrelaxed_defect_structure,
-    _num_electrons_from_charge_state,
-    _simple_spin_degeneracy_from_num_electrons,
-    get_defect_type_and_composition_diff,
-    get_defect_type_and_site_indices,
+from doped.io.vasp.outputs import (
     get_magnetization_from_vasprun,
     get_outcar,
     get_procar,
     get_vasprun,
     spin_degeneracy_from_vasprun,
+)
+from doped.utils.efficiency import Structure
+from doped.utils.eigenvalues import get_eigenvalue_analysis
+from doped.utils.parsing import (
+    _create_unrelaxed_defect_structure,
+    _num_electrons_from_charge_state,
+    _simple_spin_degeneracy_from_num_electrons,
+    get_defect_type_and_composition_diff,
+    get_defect_type_and_site_indices,
 )
 from doped.utils.symmetry import (
     get_orientational_degeneracy,
@@ -194,19 +197,19 @@ class DefectsParsingTestCase(unittest.TestCase):
             [0, 0, 25.24],
         ]
 
-        self.Sb2Se3_DATA_DIR = os.path.join(data_dir, "Sb2Se3")
+        self.Sb2Se3_DATA_DIR = os.path.join(vasp_data_dir, "Sb2Se3")
         self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
         self.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
         self.Sb2Si2Te6_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "Sb2Si2Te6")
 
-        self.V2O5_DATA_DIR = os.path.join(data_dir, "V2O5")
-        self.SrTiO3_DATA_DIR = os.path.join(data_dir, "SrTiO3")
-        self.ZnS_DATA_DIR = os.path.join(data_dir, "ZnS")
-        self.SOLID_SOLUTION_DATA_DIR = os.path.join(data_dir, "Solid_Solution")
-        self.CaO_DATA_DIR = os.path.join(data_dir, "CaO")
-        self.BiOI_DATA_DIR = os.path.join(data_dir, "BiOI")
-        self.shallow_O_Se_DATA_DIR = os.path.join(data_dir, "Shallow_O_Se_+1")
+        self.V2O5_DATA_DIR = os.path.join(vasp_data_dir, "V2O5")
+        self.SrTiO3_DATA_DIR = os.path.join(vasp_data_dir, "SrTiO3")
+        self.ZnS_DATA_DIR = os.path.join(vasp_data_dir, "ZnS")
+        self.SOLID_SOLUTION_DATA_DIR = os.path.join(vasp_data_dir, "Solid_Solution")
+        self.CaO_DATA_DIR = os.path.join(vasp_data_dir, "CaO")
+        self.BiOI_DATA_DIR = os.path.join(vasp_data_dir, "BiOI")
+        self.shallow_O_Se_DATA_DIR = os.path.join(vasp_data_dir, "Shallow_O_Se_+1")
         self.Se_dielectric = np.array([0.627551, 0.627551, 0.943432]) + np.array(
             [6.714217, 6.714317, 10.276149]
         )
@@ -234,7 +237,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
-        if_present_rm(os.path.join(data_dir, "Magnetization_Tests/CdTe/CdTe_defect_dict.json.gz"))
+        if_present_rm(os.path.join(vasp_data_dir, "Magnetization_Tests/CdTe/CdTe_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_test_defect_dict.json"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json.gz"))
@@ -722,7 +725,7 @@ class DefectsParsingTestCase(unittest.TestCase):
     def test_DefectsParser_CdTe_kpoints_mismatch(self):
         dp, w = _create_dp_and_capture_warnings(
             output_path=self.CdTe_EXAMPLE_DIR,
-            bulk_path=f"{data_dir}/CdTe",  # vasp_gam bulk vr here
+            bulk_path=f"{data_dir}/vasp/CdTe",  # vasp_gam bulk vr here
             dielectric=9.13,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
@@ -3351,7 +3354,7 @@ class DefectsParsingTestCase(unittest.TestCase):
     def test_checking_defect_bulk_cell_definitions(self):
         with warnings.catch_warnings(record=True) as w:
             DefectParser.from_paths(
-                defect_path=f"{data_dir}/Doped_CdTe",
+                defect_path=f"{data_dir}/vasp/Doped_CdTe",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 skip_corrections=True,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
@@ -3835,7 +3838,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # S = 0 bipolaron ncl:
         vr = get_vasprun(
-            f"{data_dir}/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S0_0/vasp_ncl/vasprun.xml.gz",
+            f"{data_dir}/vasp/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S0_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 0.903, atol=0.05)
@@ -3843,7 +3846,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # S = 1 bipolaron ncl:
         vr = get_vasprun(
-            f"{data_dir}/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S1_0/vasp_ncl/vasprun.xml.gz",
+            f"{data_dir}/vasp/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S1_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 1.6, atol=0.05)
@@ -3851,7 +3854,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # O2 triplet calculation, vasp_std, ISPIN = 2
         vr = get_vasprun(
-            f"{data_dir}/Magnetization_Tests/O2_mmm_EaH_0/vasp_std/vasprun.xml.gz",
+            f"{data_dir}/vasp/Magnetization_Tests/O2_mmm_EaH_0/vasp_std/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         print(get_magnetization_from_vasprun(vr))
@@ -3860,7 +3863,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # O2 triplet calculation, vasp_ncl (near-perfect triplet)
         vr = get_vasprun(
-            f"{data_dir}/Magnetization_Tests/O2_mmm_EaH_0/vasp_ncl/vasprun.xml.gz",
+            f"{data_dir}/vasp/Magnetization_Tests/O2_mmm_EaH_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 2, atol=0.001)
@@ -3878,7 +3881,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # test |DefectsParser| handling:
         dp, _w = _create_dp_and_capture_warnings(
-            output_path=f"{data_dir}/Magnetization_Tests/CdTe",
+            output_path=f"{data_dir}/vasp/Magnetization_Tests/CdTe",
             bulk_path=f"{self.CdTe_BULK_DATA_DIR}",
             dielectric=9.13,
         )
@@ -3888,7 +3891,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # previously caused an error, with magnetization being parsed as negative value due to
         # N_spin_down > N_spin_up, now spin degeneracy correctly determined from absolute magnetization
-        vr = get_vasprun(f"{data_dir}/Magnetization_Tests/Co_Zn_0/vasprun.xml.gz")
+        vr = get_vasprun(f"{data_dir}/vasp/Magnetization_Tests/Co_Zn_0/vasprun.xml.gz")
         assert np.isclose(get_magnetization_from_vasprun(vr), -3, atol=0.02)
         assert spin_degeneracy_from_vasprun(vr) == 4
 
@@ -4007,7 +4010,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
     """
 
     def setUp(self):
-        self.CdTe_corrections_dir = os.path.join(data_dir, "CdTe_charge_correction_tests")
+        self.CdTe_corrections_dir = os.path.join(vasp_data_dir, "CdTe_charge_correction_tests")
         self.v_Cd_m2_path = f"{self.CdTe_corrections_dir}/v_Cd_-2_vasp_gam"
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 

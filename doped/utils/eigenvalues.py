@@ -18,9 +18,9 @@ from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
 from doped.analysis import defect_site_from_structures
-from doped.core import DefectEntry, _parse_procar, template_defect_entry_from_structures
+from doped.core import DefectEntry, template_defect_entry_from_structures
+from doped.io.vasp.outputs import _parse_procar, get_magnetization_from_vasprun, get_nelect_from_vasprun
 from doped.utils import vise_handling
-from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
 from doped.utils.plotting import doped_plot_style
 
 with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)

@@ -30,7 +30,14 @@ from test_thermodynamics import (
     belas_linear_fit,
     reduced_anneal_temperatures,
 )
-from test_utils import EXAMPLE_DIR, STYLE, _print_warning_info, custom_mpl_image_compare, data_dir
+from test_utils import (
+    EXAMPLE_DIR,
+    STYLE,
+    _print_warning_info,
+    custom_mpl_image_compare,
+    data_dir,
+    vasp_data_dir,
+)
 
 from doped.thermodynamics import (
     DefectThermodynamics,
@@ -2923,7 +2930,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = deepcopy(self.solver_doped if backend == "doped" else self.solver_py_sc_fermi)
         solver.defect_thermodynamics.bulk_dos = os.path.join(
-            data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz"
+            vasp_data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz"
         )
 
         quenched_fermi_levels = []

@@ -34,17 +34,17 @@ from tqdm import tqdm
 from doped.chemical_potentials import ChemicalPotentialGrid, get_X_rich_poor_limit, plot_chempot_heatmap
 from doped.core import DefectEntry, _get_abs_chempots, _no_chempots_warning
 from doped.generation import sort_defect_entries
-from doped.utils import _doped_obj_properties_methods
-from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
-from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
-from doped.utils.parsing import (
+from doped.io.vasp.outputs import (
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
-    _get_bulk_supercell,
     get_nelect_from_vasprun,
     get_vasprun,
 )
+from doped.utils import _doped_obj_properties_methods
+from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
+from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
+from doped.utils.parsing import _get_bulk_supercell
 from doped.utils.plotting import (
     TransitionLevel,
     _format_TL_charge_label,
@@ -5227,12 +5227,12 @@ class FermiSolver(MSONable):
                 A |DefectThermodynamics| object, providing access to defect
                 formation energies and other related thermodynamic properties.
             bulk_dos (FermiDos or |Vasprun| or PathLike):
-                Either a path to the ``vasprun.xml(.gz)`` output of a bulk DOS
-                calculation in VASP, a ``pymatgen`` |Vasprun| object or a
-                ``pymatgen`` ``FermiDos`` for the bulk electronic DOS, for
-                calculating carrier concentrations.
-                If not provided, uses ``DefectThermodynamics.bulk_dos`` if
-                present.
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of
+                states (DOS), for calculating carrier concentrations.
+                Alternatively, can be a ``pymatgen`` |Vasprun| object or path
+                to the ``vasprun.xml(.gz)`` output of a bulk DOS calculation in
+                ``VASP``. If not provided, uses
+                ``DefectThermodynamics.bulk_dos`` if present.
 
                 Usually this is a static calculation with the `primitive` cell
                 of the bulk material, with relatively dense `k`-point sampling
@@ -8722,8 +8722,8 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
         nelect (int):
             The total number of electrons in the system. If not provided, the
             number of electrons will be taken from the ``FermiDos`` object
-            (which usually takes this value from the ``vasprun.xml(.gz)`` when
-            parsing).
+            (which usually takes this value from the calculation output --
+            e.g. ``vasprun.xml(.gz)`` with VASP -- when parsing).
         bandgap (float):
             Band gap of the system in eV. If not provided, the band gap will be
             taken from the ``FermiDos`` object. When this function is used
@@ -8751,9 +8751,10 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
         spin_pol = False
 
     if nelect is None:
-        # this requires the input dos to be a FermiDos. NELECT could be calculated alternatively
-        # by integrating the tdos of a ``pymatgen`` ``Dos`` object, but this isn't expected to be
-        # a common use case and using parsed NELECT from vasprun.xml(.gz) is more reliable
+        # this requires the input dos to be a FermiDos. The electron count could be calculated
+        # alternatively by integrating the tdos of a ``pymatgen`` ``Dos`` object, but this isn't expected
+        # to be a common use case and using the electron count parsed from the calculation output (e.g.
+        # ``NELECT`` from ``vasprun.xml(.gz)`` with ``VASP``) is more reliable/robust.
         nelect = fermi_dos.nelecs
     if bandgap is None:
         bandgap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)

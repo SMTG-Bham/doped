@@ -32,10 +32,10 @@ from test_utils import (
     _run_func_and_capture_stdout_warnings,
     api_key,
     custom_mpl_image_compare,
-    data_dir,
     if_present_rm,
     module_path,
     plot_chempot_heatmap_and_test_no_warnings,
+    vasp_data_dir,
 )
 
 from doped.analysis import DefectsParser, guess_defect_position
@@ -45,6 +45,7 @@ from doped.chemical_potentials import (
     get_doped_chempots_from_entries,
 )
 from doped.generation import sort_defect_entries
+from doped.io.vasp.outputs import get_vasprun
 from doped.thermodynamics import (
     DefectThermodynamics,
     _add_effective_dopant_concentration,
@@ -53,7 +54,7 @@ from doped.thermodynamics import (
     get_interpolated_chempots,
     scissor_dos,
 )
-from doped.utils.parsing import _get_defect_supercell_frac_coords, get_vasprun
+from doped.utils.parsing import _get_defect_supercell_frac_coords
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     get_min_dist_between_equiv_sites,
@@ -135,13 +136,13 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
             [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023],
         ]
 
-        cls.Sb2Se3_DATA_DIR = os.path.join(data_dir, "Sb2Se3")
+        cls.Sb2Se3_DATA_DIR = os.path.join(vasp_data_dir, "Sb2Se3")
         cls.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
         cls.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
         cls.Sb2Si2Te6_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "Sb2Si2Te6")
 
-        cls.V2O5_DATA_DIR = os.path.join(data_dir, "V2O5")
+        cls.V2O5_DATA_DIR = os.path.join(vasp_data_dir, "V2O5")
 
         cls.MgO_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "MgO")
 
@@ -184,13 +185,15 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.orig_MgO_defect_dict = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_defect_dict.json.gz"))
         cls.MgO_chempots = loadfn(os.path.join(EXAMPLE_DIR, "MgO/CompetingPhases/MgO_chempots.json"))
 
-        cls.Sb2O5_chempots = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_chempots.json"))
-        cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
+        cls.Sb2O5_chempots = loadfn(os.path.join(vasp_data_dir, "Sb2O5/Sb2O5_chempots.json"))
+        cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(vasp_data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
 
-        cls.orig_ZnS_defect_thermo = loadfn(os.path.join(data_dir, "ZnS/ZnS_thermo.json"))
+        cls.orig_ZnS_defect_thermo = loadfn(os.path.join(vasp_data_dir, "ZnS/ZnS_thermo.json"))
 
-        cls.orig_Se_ext_no_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Ext_No_Pnict_Thermo.json.gz"))
-        cls.orig_Se_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Pnict_Thermo.json.gz"))
+        cls.orig_Se_ext_no_pnict_thermo = loadfn(
+            os.path.join(vasp_data_dir, "Se_Ext_No_Pnict_Thermo.json.gz")
+        )
+        cls.orig_Se_pnict_thermo = loadfn(os.path.join(vasp_data_dir, "Se_Pnict_Thermo.json.gz"))
 
         # cls.CdTe_fermi_dos = get_fermi_dos(
         #     os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
@@ -3031,7 +3034,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         Concentration plot shows expected asymptotic behaviour under different
         approximations.
         """
-        STO_wo_Al_thermo = loadfn(os.path.join(data_dir, "SrTiO3", "STO_wo_Al_thermo.json.gz"))
+        STO_wo_Al_thermo = loadfn(os.path.join(vasp_data_dir, "SrTiO3", "STO_wo_Al_thermo.json.gz"))
         v_O = STO_wo_Al_thermo.defect_entries["vac_O_2"]  # very low energy defect here
         assert np.isclose(
             v_O.formation_energy(
@@ -3147,7 +3150,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         Concentration plot shows expected asymptotic behaviour under different
         approximations.
         """
-        STO_wo_Al_thermo = loadfn(os.path.join(data_dir, "SrTiO3", "STO_wo_Al_thermo.json.gz"))
+        STO_wo_Al_thermo = loadfn(os.path.join(vasp_data_dir, "SrTiO3", "STO_wo_Al_thermo.json.gz"))
         v_O_1 = STO_wo_Al_thermo.defect_entries["vac_O_1"]  # very low energy defect here
         v_O_2 = STO_wo_Al_thermo.defect_entries["vac_O_2"]  # very low energy defect here
 
@@ -3328,7 +3331,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         different defect types (``V_Sr`` and ``Ti_Sr`` here) competing for the
         same site.
         """
-        STO_wo_Al_thermo = loadfn(os.path.join(data_dir, "SrTiO3", "STO_wo_Al_thermo.json.gz"))
+        STO_wo_Al_thermo = loadfn(os.path.join(vasp_data_dir, "SrTiO3", "STO_wo_Al_thermo.json.gz"))
         fig, ax = plt.subplots()
         x = np.linspace(1000, 10000, 100)
         for i, T in enumerate(x):
@@ -4600,7 +4603,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         calculation for primitive CdTe; specifying just the path to the DOS
         vasprun.xml.
         """
-        k10_dos_vr_path = os.path.join(data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
+        k10_dos_vr_path = os.path.join(vasp_data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
 
         for i, bulk_dos in enumerate([k10_dos_vr_path, get_vasprun(k10_dos_vr_path, parse_dos=True)]):
             print(f"Testing k10 DOS with thermo for {'str input' if i == 0 else 'DOS object input'}")

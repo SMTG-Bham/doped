@@ -31,6 +31,7 @@ from test_utils import (
     custom_mpl_image_compare,
     data_dir,
     if_present_rm,
+    vasp_data_dir,
 )
 
 from doped.analysis import DefectParser
@@ -653,14 +654,14 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         Test plotting V2O5 defects, FNV correction.
         """
         dielectric = [4.186, 19.33, 17.49]
-        bulk_path = f"{data_dir}/V2O5/V2O5_bulk"
-        chempots = loadfn(f"{data_dir}/V2O5/chempots.json")
+        bulk_path = f"{vasp_data_dir}/V2O5/V2O5_bulk"
+        chempots = loadfn(f"{vasp_data_dir}/V2O5/chempots.json")
 
         defect_dict = {
             defect: DefectParser.from_paths(
-                f"{data_dir}/V2O5/{defect}", bulk_path, dielectric=dielectric
+                f"{vasp_data_dir}/V2O5/{defect}", bulk_path, dielectric=dielectric
             ).defect_entry
-            for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
+            for defect in [dir for dir in os.listdir(f"{vasp_data_dir}/V2O5") if "v_O" in dir]
         }  # charge auto-determined (as neutral)
         thermo = DefectThermodynamics(list(defect_dict.values()))
         return thermo.plot(chempots, limit="V2O5-O2")

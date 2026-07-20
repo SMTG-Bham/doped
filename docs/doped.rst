@@ -17,5 +17,5 @@ Modules
    doped.init
    doped.thermodynamics
    doped.utils
-   doped.vasp
+   doped.io
    doped.VASP_sets

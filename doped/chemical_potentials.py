@@ -45,9 +45,14 @@ from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
 from doped.generation import _element_sort_func
-from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
-from doped.utils.efficiency import StructureMatcher_scan_stol
-from doped.utils.parsing import (
+from doped.io.vasp.inputs import (
+    MODULE_DIR,
+    DopedDictSet,
+    default_HSE_set,
+    default_relax_set,
+    singlepoint_incar_settings,
+)
+from doped.io.vasp.outputs import (
     _compare_incar_tags,
     _compare_potcar_symbols,
     _find_calc_outputs,
@@ -57,15 +62,10 @@ from doped.utils.parsing import (
     get_magnetization_from_vasprun,
     get_vasprun,
 )
+from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
+from doped.utils.efficiency import StructureMatcher_scan_stol
 from doped.utils.plotting import doped_plot_style, get_colormap
 from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
-from doped.vasp import (
-    MODULE_DIR,
-    DopedDictSet,
-    default_HSE_set,
-    default_relax_set,
-    singlepoint_incar_settings,
-)
 
 # globally ignore:
 _ignore_pmg_warnings()
@@ -1517,15 +1517,15 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
                 any non-numerical or non-``True``/``False`` flags need to be
                 input as strings with quotation marks. See
-                ``doped/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the default
-                settings.
+                ``doped/io/vasp/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the
+                default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -1641,15 +1641,15 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
                 any non-numerical or non-``True``/``False`` flags need to be
                 input as strings with quotation marks. See
-                ``doped/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the default
-                settings.
+                ``doped/io/vasp/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the
+                default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -1751,15 +1751,15 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
-                the default settings.
+                See ``doped/io/vasp/VASP_sets/RelaxSet.yaml`` and
+                ``HSESet.yaml`` for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -1896,15 +1896,15 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
-                the default settings.
+                See ``doped/io/vasp/VASP_sets/RelaxSet.yaml`` and
+                ``HSESet.yaml`` for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -2056,15 +2056,15 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
-                the default settings.
+                See ``doped/io/vasp/VASP_sets/RelaxSet.yaml`` and
+                ``HSESet.yaml`` for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -2228,15 +2228,15 @@ class CompetingPhases(MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
-                the default settings.
+                See ``doped/io/vasp/VASP_sets/RelaxSet.yaml`` and
+                ``HSESet.yaml`` for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                ``doped/io/vasp/VASP_sets/PotcarSet.yaml`` for the default
+                ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -3243,7 +3243,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 ``{Formula}_{spg}_EaH_{EaH}/{subfolder}/vasprun.xml(.gz)``)
                 If ``None`` (default), then auto-detects the subfolder: the
                 highest-priority name (case-insensitive) among
-                ``_SUBFOLDER_PRIORITY`` (``vasp_ncl``, ``singlepoint``,
+                ``_VASP_SUBFOLDER_PRIORITY`` (``vasp_ncl``, ``singlepoint``,
                 ``final``, ``relax``, ``vasp_std``, ``vasp_nkred_std``,
                 ``vasp_gam``), `with calculation outputs` (``vasprun.xml(.gz)``
                 files) and present in the discovered paths, is used. If none
@@ -3665,7 +3665,7 @@ class CompetingPhasesAnalyzer(MSONable):
         Recursively searches for ``vasprun.xml(.gz)`` files under ``path``.
         When ``subfolder`` is set, only vaspruns inside directories with that
         name are used.  When ``subfolder`` is ``None`` (default), the
-        highest-priority subfolder present among ``_SUBFOLDER_PRIORITY``
+        highest-priority subfolder present among ``_VASP_SUBFOLDER_PRIORITY``
         (``vasp_ncl``, ``singlepoint``, ``final``, ``relax``, ``vasp_std``,
         ``vasp_nkred_std``, ``vasp_gam``; case-insensitive),
         `with calculation outputs` (``vasprun.xml(.gz)`` files) and present in
@@ -3829,7 +3829,7 @@ class CompetingPhasesAnalyzer(MSONable):
     ) -> None:
         """
         Recursively search ``path`` for ``vasprun.xml(.gz)`` files, using the
-        :func:`~doped.utils.parsing._find_calc_outputs` helper for file
+        :func:`~doped.io.vasp.outputs._find_calc_outputs` helper for file
         discovery and subfolder auto-detection.
         """
         root = Path(path)

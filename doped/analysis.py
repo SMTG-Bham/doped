@@ -1,5 +1,5 @@
 """
-Code to analyse VASP defect calculations.
+Code to analyse defect supercell calculations.
 
 These functions are built from a combination of useful modules from
 ``pymatgen``, alongside substantial modification, in the efforts of making an
@@ -35,6 +35,27 @@ from doped.generation import (
     name_defect_entries,
     sort_defect_entries,
 )
+from doped.io.vasp.outputs import (
+    _VASP_CALC_OUTPUT_MASK,
+    _compare_incar_tags,
+    _compare_kpoints,
+    _compare_potcar_symbols,
+    _determine_subfolder,
+    _find_calc_outputs,
+    _format_mismatching_incar_warning,
+    _get_bulk_locpot_dict,
+    _get_bulk_site_potentials,
+    _get_calc_files_df,
+    _get_output_files_and_check_if_multiple,
+    _multiple_files_warning,
+    _parse_vr_and_poss_procar,
+    _vasp_file_parsing_action_dict,
+    get_core_potentials_from_outcar,
+    get_locpot,
+    get_vasprun,
+    spin_degeneracy_from_vasprun,
+    total_charge_from_vasprun,
+)
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import (
     _doped_obj_properties_methods,
@@ -45,31 +66,12 @@ from doped.utils import (
 )
 from doped.utils.efficiency import StructureMatcher_scan_stol, _parse_site_species_str
 from doped.utils.parsing import (
-    _CALC_OUTPUT_MASK,
-    _compare_incar_tags,
-    _compare_kpoints,
-    _compare_potcar_symbols,
     _create_unrelaxed_defect_structure,
-    _determine_subfolder,
-    _find_calc_outputs,
-    _format_mismatching_incar_warning,
-    _get_bulk_locpot_dict,
-    _get_bulk_site_potentials,
-    _get_calc_files_df,
     _get_defect_supercell_frac_coords,
-    _get_output_files_and_check_if_multiple,
-    _multiple_files_warning,
-    _vasp_file_parsing_action_dict,
     check_atom_mapping_far_from_defect,
-    get_core_potentials_from_outcar,
     get_defect_type_and_site_indices,
     get_dimer_bonds,
-    get_locpot,
     get_matching_site,
-    get_procar,
-    get_vasprun,
-    spin_degeneracy_from_vasprun,
-    total_charge_from_vasprun,
 )
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
@@ -912,12 +914,12 @@ class DefectsParser:
 
         Loops over calculation directories in ``output_path`` (likely the same
         ``output_path`` used with |DefectsSet| for file generation in
-        ``doped.vasp``) and parses the defect calculations into a dictionary
-        of: ``{defect_name: DefectEntry}``, where the ``defect_name`` is set to
-        the defect calculation folder name (`if it is a recognised defect
-        name`), else it is set to the default ``doped`` name for that defect
-        (using the estimated `unrelaxed` defect structure, for the point group
-        and neighbour distances). By default, searches for folders in
+        ``doped.io.vasp.inputs``) and parses the defect calculations into a
+        dictionary of: ``{defect_name: DefectEntry}``, where ``defect_name`` is
+        set to the defect calculation folder name (`if` it is a recognised
+        defect name), else it is set to the default ``doped`` name for that
+        defect (using the estimated `unrelaxed` defect structure, for the point
+        group and neighbour distances). By default, searches for folders in
         ``output_path`` with ``subfolder`` containing ``vasprun.xml(.gz)``
         files, and tries to parse them as |DefectEntry|\s.
 
@@ -940,13 +942,12 @@ class DefectsParser:
             output_path (PathLike):
                 Path to the output directory containing the defect calculation
                 folders (likely the same ``output_path`` used with
-                |DefectsSet| for file generation in ``doped.vasp``).
-                Default is current directory.
+                |DefectsSet| for file generation). Default = current directory.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant (ionic + static contributions), in
                 the same xyz Cartesian basis as the supercell calculations
                 (likely but not necessarily the same as the raw output of a
-                VASP dielectric calculation, if an oddly-defined primitive cell
+                DFT dielectric calculation, if an oddly-defined primitive cell
                 is used). If not provided, charge corrections cannot be
                 computed and so ``skip_corrections`` will be set to ``True``.
                 See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
@@ -959,7 +960,7 @@ class DefectsParser:
                 etc.). If not specified, ``doped`` checks, case-insensitively
                 and in order, for ``"vasp_ncl"``, ``"singlepoint"``,
                 ``"final"``, ``"relax"``, ``"vasp_std"``, ``"vasp_nkred_std"``,
-                ``"vasp_gam"`` subfolders (following ``_SUBFOLDER_PRIORITY``)
+                ``"vasp_gam"`` subfolders (following ``_VASP_SUBFOLDER_PRIORITY``)
                 `with calculation outputs` (``vasprun.xml(.gz)`` files), and
                 uses the first matching subfolder name as ``subfolder``,
                 otherwise uses the defect calculation folder itself with no
@@ -1480,7 +1481,7 @@ def _get_calculation_folders_for_parsing(
             (default), ``doped`` checks, case-insensitively and in order, for
             ``"vasp_ncl"``, ``"singlepoint"``, ``"final"``, ``"relax"``,
             ``"vasp_std"``, ``"vasp_nkred_std"``, ``"vasp_gam"`` subfolders
-            (following ``_SUBFOLDER_PRIORITY``) `with calculation outputs`
+            (following ``_VASP_SUBFOLDER_PRIORITY``) `with calculation outputs`
             (``vasprun.xml(.gz)`` files), and uses the first matching subfolder
             name as ``subfolder``, otherwise uses the defect calculation folder
             itself with no subfolder (set ``subfolder = "."`` to enforce this).
@@ -1506,7 +1507,8 @@ def _get_calculation_folders_for_parsing(
         parent_root = out_root.parent
         calc_files_df = _get_calc_files_df(parent_root)
         files_not_found_error = FileNotFoundError(
-            f"No calculation folders with any of {_CALC_OUTPUT_MASK} in filenames found under {out_root}."
+            f"No calculation folders with any of {_VASP_CALC_OUTPUT_MASK} in filenames found under "
+            f"{out_root}."
         )
         if calc_files_df.empty:  # no calculation output files found
             raise files_not_found_error
@@ -1579,9 +1581,9 @@ def _resolve_bulk_path(
 
         raise ValueError(
             f"Could not determine bulk supercell calculation folder in {out_root}, found "
-            f"{len(possible_bulk_folders)} folders containing any of {_CALC_OUTPUT_MASK} in filenames (in "
-            f"subfolders) and '{_BULK_FOLDER_PATTERN}' in the folder name. Please specify `bulk_path` "
-            f"manually."
+            f"{len(possible_bulk_folders)} folders containing any of {_VASP_CALC_OUTPUT_MASK} in "
+            f"filenames (in subfolders) and '{_BULK_FOLDER_PATTERN}' in the folder name. Please specify "
+            f"`bulk_path` manually."
         )
 
     assert bulk_path is not None  # all ``bulk_path is None`` branches above return or raise
@@ -1612,22 +1614,22 @@ def _append_subfolder_if_needed(bulk_path: Path, subfolder: PathLike, user_set: 
             Path to the bulk calculation directory, with subfolder if needed.
     """
     if (bulk_path / subfolder).is_dir() and any(
-        k in f.name for k in _CALC_OUTPUT_MASK for f in (bulk_path / subfolder).iterdir()
+        k in f.name for k in _VASP_CALC_OUTPUT_MASK for f in (bulk_path / subfolder).iterdir()
     ):  # subfolder contains calculation output files, so add to bulk path
         return bulk_path / subfolder
 
-    if not any(k in f.name for k in _CALC_OUTPUT_MASK for f in bulk_path.iterdir()):  # no output files
+    if not any(k in f.name for k in _VASP_CALC_OUTPUT_MASK for f in bulk_path.iterdir()):  # no outputs
         possible_bulk_subfolders = [
             p
             for p in bulk_path.iterdir()
-            if p.is_dir() and any(k in f.name for k in _CALC_OUTPUT_MASK for f in p.iterdir())
+            if p.is_dir() and any(k in f.name for k in _VASP_CALC_OUTPUT_MASK for f in p.iterdir())
         ]
         if len(possible_bulk_subfolders) == 1 and not user_set:
             # if only one subfolder with calculation outputs, and `subfolder` not explicitly set, use this:
             return possible_bulk_subfolders[0].resolve()
 
         raise FileNotFoundError(
-            f"No files with any of {_CALC_OUTPUT_MASK} in names found under {bulk_path} (subfolder "
+            f"No files with any of {_VASP_CALC_OUTPUT_MASK} in names found under {bulk_path} (subfolder "
             f"{subfolder}). Please ensure bulk supercell calculation files are present and/or specify "
             f"`bulk_path` manually."
         )
@@ -2250,58 +2252,6 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
         )
     defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
     defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
-
-
-def _parse_vr_and_poss_procar(
-    output_path: PathLike,
-    parse_projected_eigen: bool | None = None,
-    label: str = "bulk",
-    parse_procar: bool = True,
-):
-    """
-    Parse the ``vasprun.xml(.gz)`` file at ``output_path``, and possibly a
-    ``PROCAR`` file if both ``parse_procar`` and ``parse_projected_eigen`` are
-    ``True`` and  projected eigenvalues cannot be parsed from the
-    ``vasprun.xml(.gz)`` file.
-    """
-    procar = None
-    failed_eig_parsing_warning_message = (
-        f"Could not parse eigenvalue data from vasprun.xml.gz files in {label} folder at {output_path}"
-    )
-
-    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", output_path)
-    if multiple:
-        _multiple_files_warning("vasprun.xml", output_path, vr_path, dir_type=label)
-
-    try:
-        vr = get_vasprun(
-            vr_path,
-            parse_projected_eigen=parse_projected_eigen is not False,
-            parse_eigen=(parse_projected_eigen is not False or label == "bulk"),
-        )  # vr.eigenvalues not needed for defects except for vr-only eigenvalue analysis
-    except Exception as vr_exc:
-        vr = get_vasprun(vr_path, parse_projected_eigen=False, parse_eigen=label == "bulk")
-        failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
-
-        if parse_procar:
-            procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
-            if multiple:
-                _multiple_files_warning("PROCAR", output_path, procar_path, dir_type=label)
-            if "PROCAR" in procar_path and parse_projected_eigen is not False:
-                try:
-                    procar = get_procar(procar_path)
-
-                except Exception as procar_exc:
-                    failed_eig_parsing_warning_message += (
-                        f"\nThen got the following error when attempting to parse projected eigenvalues "
-                        f"from the defect PROCAR(.gz):\n{procar_exc}"
-                    )
-
-    if vr.projected_eigenvalues is None and procar is None and parse_projected_eigen is True:
-        # only warn if parse_projected_eigen is set to True (not None)
-        warnings.warn(failed_eig_parsing_warning_message)
-
-    return (vr, procar) if parse_procar else vr
 
 
 class DefectParser:

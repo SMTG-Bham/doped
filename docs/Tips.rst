@@ -61,8 +61,8 @@ sites based on the criteria below. Typically the easiest way to do this is to fo
 the defect generation tutorial, and then run the |ShakeNBreak| ``vasp_gam`` relaxations for the 
 ``Unperturbed`` and ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, 
 you can generate the ``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in
-:class:`~doped.vasp.DefectsSet` :meth:`~doped.vasp.DefectsSet.write_files()` -- this will rattle 
-the output structures by default to break symmetry (controlled by the ``rattle`` option).
+:class:`~doped.io.vasp.inputs.DefectsSet` :meth:`~doped.io.vasp.inputs.DefectsSet.write_files()` -- this
+will rattle the output structures by default to break symmetry (controlled by the ``rattle`` option).
 
 We can then compare the energies of these trial relaxations, and remove candidates that either:
 
@@ -207,7 +207,7 @@ particularly for metals, which are often the most expensive competing phases -- 
   greatly reduce the cost with minimal loss of accuracy -- as encouraged in the defect supercell 
   workflow (see the :ref:`VASP input file generation <generation_tutorial:Prepare VASP calculation files with doped>`
   section of the defect generation tutorial, and the
-  :attr:`~doped.vasp.DefectRelaxSet.vasp_nkred_std` property). 
+  :attr:`~doped.io.vasp.inputs.DefectRelaxSet.vasp_nkred_std` property). 
   This is particularly useful for metallic competing phases, which require high `k`-point densities and 
   thus can be very expensive/memory-demanding, particularly if also using hybrid DFT and/or including 
   spin-orbit coupling (SOC), but can often use reduced Fock exchange `k`-point densities without 
@@ -731,7 +731,7 @@ This tag is particularly important for magnetic materials (as discussed in the
 ``ShakeNBreak`` tips page), and can be useful if trying to favour a specific polaron/spin configuration
 (as briefly discussed at `this point <https://youtu.be/FWz7nm9qoNg?si=sOnJQ5b0tZ5WwNO-&t=6914>`__ in the
 YouTube defects tutorial). This tag can be set using the ``user_incar_settings`` parameter in the
-``doped.vasp`` classes, for which the python API helps streamline this process when setting ``MAGMOM``
+``doped.io.vasp.inputs`` classes, for which the python API helps streamline this process when setting ``MAGMOM``
 for multiple defects.
 
 .. note::
@@ -748,7 +748,7 @@ the :attr:`~doped.core.DefectEntry.degeneracy_factors` |DefectEntry| attribute
 (``DefectEntry.degeneracy_factors["spin degeneracy"]``, and printed in the 
 |DefectThermodynamics| 
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_symmetries_and_degeneracies()` method) and used in
-thermodynamic analyses. See the :func:`~doped.utils.parsing.spin_degeneracy_from_vasprun()` function for 
+thermodynamic analyses. See the :func:`~doped.io.vasp.outputs.spin_degeneracy_from_vasprun()` function for 
 details.
 
 Symmetry Precision (``symprec``)
@@ -859,9 +859,9 @@ In the typical defect calculation workflow with ``doped`` (exemplified in the tu
 ``JSON`` files are automatically written to file:
 
 - The |DefectsGenerator| object or ``defect_entries`` dictionary that is input to
-  :class:`~doped.vasp.DefectsSet`, when writing ``VASP`` input files with
-  :class:`~doped.vasp.DefectsSet` :meth:`~doped.vasp.DefectsSet.write_files()` -- written to
-  ``output_path``. Additionally, for each calculation directory generated, the corresponding
+  :class:`~doped.io.vasp.inputs.DefectsSet`, when writing ``VASP`` input files with
+  :class:`~doped.io.vasp.inputs.DefectsSet` :meth:`~doped.io.vasp.inputs.DefectsSet.write_files()` --
+  written to ``output_path``. Additionally, for each calculation directory generated, the corresponding
   |DefectEntry| object is written to a ``{DefectEntry.name}.json`` file in the directory 
   so that all information on the generated defect structure, charge state etc. is preserved in the 
   calculation directory.

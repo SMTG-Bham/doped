@@ -159,7 +159,7 @@ Errors with ``Python`` Scripts
 The recommended usage of ``doped`` is through interactive python sessions, such as with Jupyter notebooks,
 ``IPython`` or an IDE (e.g. ``PyCharm`` or ``VSCode``), as shown in the ``doped`` :doc:`tutorials <Tutorials>`.
 However, it is possible to also use ``doped`` through ``Python`` scripts if preferred.
-Due to the use of the ``multiprocessing`` module in ``doped.generation``, ``doped.vasp`` and
+Due to the use of the ``multiprocessing`` module in ``doped.generation``, ``doped.io.vasp.inputs`` and
 ``doped.analysis``, you need to use the proper syntax for running ``Python`` scripts, with
 ``if __name__ == '__main__':...``
 
@@ -170,7 +170,7 @@ default settings – in reality you likely need to customise some options!) woul
 
     from pymatgen.core.structure import Structure
     from doped.generation import DefectsGenerator
-    from doped.vasp import DefectsSet
+    from doped.io.vasp.inputs import DefectsSet
 
     def generate_and_write_vasp_files():
         primitive_struct = Structure.from_file("prim_POSCAR")

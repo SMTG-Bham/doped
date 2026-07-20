@@ -3,6 +3,23 @@ Change Log
 
 ..  Release checklist: Version bump, update changelog, possibly update pytest timings if significant new tests added, check tutorials run, update SnB?
 
+Unreleased
+--------------
+- Major restructuring for multi-calculator support beyond VASP: calculator-specific code now lives in the new
+  ``doped.io`` subpackage, with ``doped.io.<calculator>.inputs``/``outputs`` modules per calculator.
+
+  - ``doped.vasp`` -> ``doped.io.vasp.inputs`` (deprecated alias retained, warns on use).
+  - VASP output parsing (``get_vasprun``, ``get_locpot``, ``get_outcar``, ``get_procar``, core potentials,
+    ``INCAR``/``KPOINTS``/``POTCAR`` compatibility checks, magnetization/``NELECT``/spin parsing, calculation folder
+    discovery...) moved from ``doped.utils.parsing`` to ``doped.io.vasp.outputs`` (deprecated aliases retained, warn on
+    use); ``doped.utils.parsing`` now contains only calculator-agnostic structure/site analysis utilities.
+  - New calculator-agnostic ``doped.io.outputs.CalculationOutputs`` container as the data contract between calculator
+    backends and analysis functions (e.g. accepted by the finite-size charge correction functions, ``DefectsParser``
+    (TODO)...), with ``doped.io.get_calculation_outputs()`` dispatching to the appropriate calculator parser.
+  - ``doped/VASP_sets`` -> ``doped/io/vasp/VASP_sets``.
+  - VASP test data moved under ``tests/data/vasp/``.
+  - New docs page on adding support for additional calculators.
+
 v.3.2.1
 ----------
 - Add ``per_site``, ``per_charge`` and ``return_annealing_values`` options to ``FermiSolver`` methods, for more flexible output formatting.

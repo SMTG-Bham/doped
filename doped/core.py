@@ -19,6 +19,13 @@ from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
+from doped.io.vasp.outputs import (
+    _get_output_files_and_check_if_multiple,
+    _multiple_files_warning,
+    get_procar,
+    get_vasprun,
+    spin_degeneracy_from_vasprun,
+)
 from doped.utils import _doped_obj_properties_methods, get_mp_context, vise_handling, warn_once
 from doped.utils.efficiency import (
     Composition,
@@ -30,14 +37,9 @@ from doped.utils.efficiency import (
 )
 from doped.utils.parsing import (
     _get_bulk_supercell,
-    _get_output_files_and_check_if_multiple,
-    _multiple_files_warning,
     _num_electrons_from_charge_state,
     _simple_spin_degeneracy_from_num_electrons,
     _update_defect_entry_structure_metadata,
-    get_procar,
-    get_vasprun,
-    spin_degeneracy_from_vasprun,
 )
 
 if TYPE_CHECKING:
@@ -143,7 +145,7 @@ class DefectEntry(thermo.DefectEntry):
                 of the defect concentration / Fermi level functions. Spin and
                 configurational (geometry) degeneracy factors are automatically
                 determined by ``doped`` during parsing (for details, see the
-                ``spin_degeneracy_from_vasprun()``,
+                :func:`~doped.io.vasp.outputs.spin_degeneracy_from_vasprun`,
                 |get_orientational_degeneracy| and
                 |point_symmetry_from_defect_entry| functions), but can also be
                 edited in ``DefectEntry.degeneracy_factors``.
@@ -391,20 +393,22 @@ class DefectEntry(thermo.DefectEntry):
                 tutorial section for information on calculating and converging
                 the dielectric constant.
             defect_locpot:
-                Path to the output VASP ``LOCPOT`` file from the defect
-                supercell calculation, or the corresponding ``pymatgen``
-                ``Locpot`` object, or a dictionary of the planar-averaged
-                potential in the form:
-                ``{i: Locpot.get_average_along_axis(i) for i in [0,1,2]}``.
-                If ``None``, will try to use ``defect_locpot`` from the
-                ``defect_entry`` ``calculation_metadata`` if available.
+                The planar-averaged electrostatic potential from the defect
+                supercell calculation, as a dictionary in the form:
+                ``{i: 1D array of potential along axis i, for i in [0,1,2]}``
+                (i.e. ``{i: Locpot.get_average_along_axis(i)}`` with VASP), a
+                :class:`~doped.io.outputs.CalculationOutputs` object with
+                ``planar_averaged_potentials``, a path to the output VASP
+                ``LOCPOT`` file, or the corresponding ``pymatgen`` ``Locpot``
+                object. If ``None``, will try to use ``defect_locpot_dict``
+                from the ``defect_entry`` ``calculation_metadata`` if
+                available.
             bulk_locpot:
-                Path to the output VASP ``LOCPOT`` file from the bulk supercell
-                calculation, or the corresponding ``pymatgen`` ``Locpot``
-                object, or a dictionary of the planar-averaged potential as:
-                ``{i: Locpot.get_average_along_axis(i) for i in [0,1,2]}``.
-                If ``None``, will try to use ``bulk_locpot`` from the
-                ``defect_entry`` ``calculation_metadata`` if available.
+                The planar-averaged electrostatic potential from the bulk
+                supercell calculation, in any of the formats accepted for
+                ``defect_locpot`` above. If ``None``, will try to use
+                ``bulk_locpot_dict`` from the ``defect_entry``
+                ``calculation_metadata`` if available.
             plot (bool):
                 Whether to plot the FNV electrostatic potential plots (for
                 manually checking the behaviour of the charge correction here).
@@ -565,17 +569,20 @@ class DefectEntry(thermo.DefectEntry):
                 List of site indices (in the defect supercell) to exclude from
                 the site potential sampling in the correction calculation/plot.
                 If None (default), no sites are excluded.
-            defect_outcar (PathLike or |Outcar|):
-                Path to the output ``VASP`` ``OUTCAR`` file from the defect
-                supercell calculation, or the corresponding ``pymatgen``
-                |Outcar| object. If ``None``, will use
-                ``defect_supercell_site_potentials`` from the ``defect_entry``
-                ``calculation_metadata`` if available.
-            bulk_outcar (PathLike or |Outcar|):
-                Path to the output ``VASP`` ``OUTCAR`` file from the bulk
-                supercell calculation, or the corresponding ``pymatgen``
-                |Outcar| object. If None, will try to use
-                ``bulk_supercell_site_potentials`` from the ``defect_entry``
+            defect_outcar (PathLike, |Outcar| or CalculationOutputs):
+                The atomic-site electrostatic potentials from the defect
+                supercell calculation, as a
+                :class:`~doped.io.outputs.CalculationOutputs` object with
+                ``site_potentials``, a path to the output ``VASP`` ``OUTCAR``
+                file, or the corresponding ``pymatgen`` |Outcar| object. If
+                ``None``, will try to use the ``defect_site_potentials`` from
+                the ``defect_entry`` ``calculation_metadata`` if available.
+                # TODO: Rename defect/bulk_{outcar} and {locpot} accordingly
+            bulk_outcar (PathLike, |Outcar| or CalculationOutputs):
+                The atomic-site electrostatic potentials from the bulk
+                supercell calculation, in any of the formats accepted for
+                ``defect_outcar`` above. If ``None``, will try to use the
+                ``bulk_site_potentials`` from the ``defect_entry``
                 ``calculation_metadata`` if available.
             plot (bool):
                 Whether to plot the Kumagai site potential plots (for
@@ -719,7 +726,9 @@ class DefectEntry(thermo.DefectEntry):
         if self.calculation_metadata.get("eigenvalue_data") is not None and not force_reparse:
             return
 
-        from doped.utils.eigenvalues import _parse_procar, get_band_edge_info
+        # TODO: Currently still VASP-specific, need to move/refactor
+        from doped.io.vasp.outputs import _parse_procar
+        from doped.utils.eigenvalues import get_band_edge_info
 
         parsed_vr_procar_dict = {}
         for vr, procar, label in [(bulk_vr, bulk_procar, "bulk"), (defect_vr, defect_procar, "defect")]:
@@ -1786,35 +1795,6 @@ def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
         return cast("BandEdgeStates", analysis).is_shallow  # plot=False returns only ``BandEdgeStates``
     except Exception:
         return default
-
-
-def _parse_procar(procar: PathLike | Procar | None = None):
-    """
-    Parse the input path or ``pymatgen`` |Procar| to a |Procar| object in the
-    correct format, for eigenvalue analysis.
-
-    Args:
-        procar (PathLike, |Procar|):
-            Either a path to the ``VASP`` ``PROCAR``` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or a``pymatgen`` |Procar|.
-
-    Returns:
-        Procar: The parsed |Procar| object in ``pymatgen`` format.
-    """
-    from pymatgen.electronic_structure.core import Spin
-
-    if not hasattr(procar, "data"):  # not a parsed Procar object
-        if procar and hasattr(procar, "proj_data") and not isinstance(procar, PathLike | Procar):
-            if procar._is_soc:
-                procar.data = {Spin.up: procar.proj_data[0]}
-            else:
-                procar.data = {Spin.up: procar.proj_data[0], Spin.down: procar.proj_data[1]}
-            del procar.proj_data
-
-        elif isinstance(procar, PathLike):  # path to PROCAR file
-            procar = get_procar(procar)
-
-    return procar
 
 
 def _no_chempots_warning(property="Formation energies (and concentrations)"):

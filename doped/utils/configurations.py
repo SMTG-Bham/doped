@@ -303,9 +303,10 @@ def orient_s2_like_s1(
 ) -> Structure:
     """
     Re-orient ``struct2`` to match the orientation of ``struct1`` as closely as
-    possible , with matching atomic indices as needed for VASP NEB calculations
-    and other structural transformation analyses (e.g. configuration coordinate
-    (CC) diagrams via ``nonrad``, ``CarrierCapture.jl`` etc.).
+    possible , with matching atomic indices as typically needed for NEB
+    calculations (e.g. with VASP) and other structural transformation analyses
+    (e.g. configuration coordinate (CC) diagrams via ``nonrad``,
+    ``CarrierCapture.jl`` etc.).
 
     This will give a fully symmetry-equivalent orientation (i.e. **will not
     change the actual geometry**) of ``struct2``, except if ``struct1`` and
@@ -314,9 +315,9 @@ def orient_s2_like_s1(
 
     This corresponds to minimising the root-mean-square displacement for the
     shortest `linear` path from ``struct1`` to a symmetry-equivalent definition
-    of ``struct2``, with matched atomic indices and lattices as required by
-    VASP NEB and ``nonrad`` functions. This function uses an accelerated
-    version of the
+    of ``struct2``, with matched atomic indices and lattices as often required
+    by NEB calculations (e.g. with VASP) and ``nonrad`` functions. This
+    function uses an accelerated version of the
     :meth:`~pymatgen.analysis.structure_matcher.StructureMatcher.get_s2_like_s1`
     method, extended to ensure the correct atomic indices matching and lattice
     vector definitions.

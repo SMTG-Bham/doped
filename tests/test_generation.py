@@ -33,6 +33,7 @@ from test_utils import (
     _run_heavy_tests,
     data_dir,
     if_present_rm,
+    vasp_data_dir,
 )
 
 from doped.core import (
@@ -44,6 +45,7 @@ from doped.core import (
     _falling_back_to_common_oxi_states_warning,
 )
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
+from doped.io.vasp.inputs import DefectsSet
 from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure, StructureMatcher_scan_stol
 from doped.utils.supercells import get_min_image_distance, min_dist
 from doped.utils.symmetry import (
@@ -54,7 +56,6 @@ from doped.utils.symmetry import (
     swap_axes,
     translate_structure,
 )
-from doped.vasp import DefectsSet
 
 try:
     from pymatgen.core.entries import ComputedStructureEntry
@@ -340,7 +341,7 @@ def _check_defect_entry(
 
 class DefectsGeneratorTest(unittest.TestCase):
     def setUp(self):
-        self.CdTe_data_dir = os.path.join(data_dir, "CdTe")
+        self.CdTe_data_dir = os.path.join(vasp_data_dir, "CdTe")
         self.prim_cdte = Structure.from_file(f"{EXAMPLE_DIR}/CdTe/relaxed_primitive_POSCAR")
         sga = SpacegroupAnalyzer(self.prim_cdte)
         self.conv_cdte = sga.get_conventional_standard_structure()

@@ -34,10 +34,11 @@ from test_utils import (
     if_present_rm,
     module_path,
     plot_chempot_heatmap_and_test_no_warnings,
+    vasp_data_dir,
 )
 
 from doped import chemical_potentials
-from doped.utils.parsing import _find_calc_outputs, _get_calc_files_df
+from doped.io.vasp.outputs import _find_calc_outputs, _get_calc_files_df
 from doped.utils.symmetry import get_primitive_structure
 
 
@@ -2189,7 +2190,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
     def test_find_calc_outputs_shared_helper(self):
         """
         Direct tests for the shared ``_find_calc_outputs`` and
-        ``_get_calc_files_df`` helpers in ``doped.utils.parsing``.
+        ``_get_calc_files_df`` helpers in ``doped.io.vasp.outputs``.
         """
         from pathlib import Path
 
@@ -2527,18 +2528,18 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         for many warnings/issues to be handled).
         """
         shutil.copyfile(
-            f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/vasprun.xml.gz",
-            f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/duplicate_for_testing_vasprun.xml.gz",
+            f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/vasprun.xml.gz",
+            f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/duplicate_for_testing_vasprun.xml.gz",
         )
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer(
-                "Cs2AgBiBr6", f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases"
+                "Cs2AgBiBr6", f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases"
             )
         _print_warning_info(w)  # for debugging
         for expected_warning in [
             f"Multiple `vasprun.xml` files found in competing phase directory: "
-            f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0",
-            f"vasprun.xml file at {data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
+            f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0",
+            f"vasprun.xml file at {vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
             f" is corrupted/incomplete. Attempting to continue parsing but may fail!",
             "There are mismatching INCAR tags for (some of) your competing phases calculations which are "
             "likely to cause errors in the parsed results (energies & thus chemical potential limits). "

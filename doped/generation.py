@@ -2810,7 +2810,7 @@ def get_interstitial_sites(
     # so we want to pick the higher symmetry sites because it's cleaner, more intuitive etc
     # but, this is slightly more likely to be stuck in local minima, compared to the (nearby)
     # lower symmetry interstitial sites... avoided by using ShakeNBreak, other structure-searching
-    # approaches, or rattling the output structures (default in ``doped.vasp``)
+    # approaches, or rattling the output structures (default in ``doped.io.vasp.inputs``)
     sites_list = [v.frac_coords for v in DopedTopographyAnalyzer(host_structure).vnodes]
     if not sites_list:  # empty list
         warnings.warn("No interstitial sites found in host structure!")

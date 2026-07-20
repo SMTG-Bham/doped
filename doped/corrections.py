@@ -26,6 +26,11 @@ If you use the corrections implemented in this module, please cite:
     or
     Freysoldt, Neugebauer, and Van de Walle, Phys. Rev. Lett. 2009 for FNV.
 
+The required electrostatic potential inputs (planar-averaged potentials for
+FNV, atomic-site potentials for eFNV) can be provided as calculator-agnostic
+:class:`~doped.io.outputs.CalculationOutputs` objects, or directly as ``VASP``
+``LOCPOT``/``OUTCAR`` outputs.
+
 **Note**: Ideally, the "defect site" used for all charge corrections should
 actually be the centre of the localised charge in the defect supercell. Usually
 this coincides with the defect site, but not always (e.g. vacancy where the
@@ -35,8 +40,9 @@ centre-of-charge sites are close enough that any resulting quantitative error
 in the correction is negligible. However, in cases where we have large
 finite-size correction values, this can be significant. If some efficient
 methods for determining the centroid of charge difference between bulk/defect
-LOCPOTs (for FNV) or bulk/defect site potentials (for eFNV) were developed,
-they should be used here.
+planar-averaged electrostatic potentials (e.g. ``LOCPOT`` with ``VASP``) (for
+FNV) or bulk/defect site potentials (for eFNV) were developed, they should be
+used here.
 """
 
 import contextlib
@@ -53,14 +59,17 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.util.typing import PathLike
 
 from doped.analysis import _convert_dielectric_to_tensor
+from doped.io.outputs import CalculationOutputs
+from doped.io.vasp.outputs import (
+    _get_core_potentials_from_outcar_obj,
+    get_core_potentials_from_outcar,
+    get_locpot,
+)
 from doped.utils import vise_handling
 from doped.utils.parsing import (
     _get_bulk_supercell,
-    _get_core_potentials_from_outcar_obj,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
-    get_core_potentials_from_outcar,
-    get_locpot,
     get_site_mappings,
     get_wigner_seitz_radius,
 )
@@ -97,11 +106,21 @@ def _get_and_check_metadata(entry, key, display_name):
 
 
 def _check_if_pathlike_and_get_locpot_or_core_pots(
-    locpot_or_outcar: Locpot | Outcar | PathLike | dict,
+    locpot_or_outcar: Locpot | Outcar | PathLike | dict | CalculationOutputs,
     obj_type: str = "locpot",
     dir_type: str = "",
     total_energy: list | float | None = None,
 ):
+    if isinstance(locpot_or_outcar, CalculationOutputs):
+        if obj_type == "locpot":
+            locpot_or_outcar.require(
+                "planar_averaged_potentials", task="The FNV (Freysoldt) charge correction"
+            )
+            return locpot_or_outcar.planar_averaged_potentials
+        locpot_or_outcar.require("site_potentials", task="The eFNV (Kumagai) charge correction")
+        return list(locpot_or_outcar.site_potentials)  # type: ignore[arg-type]
+
+    # TODO: Remaining code here is VASP-specific, should be moved to a vasp.outputs function
     if isinstance(locpot_or_outcar, PathLike):
         if obj_type == "locpot":
             return get_locpot(locpot_or_outcar)
@@ -126,8 +145,8 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
 def get_freysoldt_correction(
     defect_entry,
     dielectric: float | np.ndarray | list | None = None,
-    defect_locpot: PathLike | Locpot | dict | None = None,
-    bulk_locpot: PathLike | Locpot | dict | None = None,
+    defect_locpot: PathLike | Locpot | dict | CalculationOutputs | None = None,
+    bulk_locpot: PathLike | Locpot | dict | CalculationOutputs | None = None,
     plot: bool = False,
     filename: PathLike | None = None,
     axis: int | None = None,
@@ -170,18 +189,19 @@ def get_freysoldt_correction(
             tutorial section for information on calculating and converging the
             dielectric constant.
         defect_locpot:
-            Path to the output VASP LOCPOT file from the defect supercell
-            calculation, or the corresponding ``pymatgen`` ``Locpot`` object,
-            or a dictionary of the planar-averaged potential in the form:
-            ``{i: Locpot.get_average_along_axis(i) for i in [0,1,2]}``.
-            If ``None``, will try to use ``defect_locpot_dict`` from the
-            ``defect_entry`` ``calculation_metadata`` if available.
+            The planar-averaged electrostatic potential from the defect
+            supercell calculation, as a dictionary in the form:
+            ``{i: 1D array of potential along axis i, for i in [0,1,2]}``
+            (i.e. ``{i: Locpot.get_average_along_axis(i)}`` with VASP), a
+            :class:`~doped.io.outputs.CalculationOutputs` object with
+            ``planar_averaged_potentials``, a path to the output VASP
+            ``LOCPOT`` file, or the corresponding ``pymatgen`` ``Locpot``
+            object. If ``None``, will try to use ``defect_locpot_dict`` from
+            the ``defect_entry`` ``calculation_metadata`` if available.
         bulk_locpot:
-            Path to the output ``VASP`` ``LOCPOT`` file from the bulk supercell
-            calculation, or the corresponding ``pymatgen`` ``Locpot`` object,
-            or a dictionary of the planar-averaged potential in the form:
-            ``{i: Locpot.get_average_along_axis(i) for i in [0,1,2]}``.
-            If ``None``, will try to use ``bulk_locpot_dict`` from the
+            The planar-averaged electrostatic potential from the bulk supercell
+            calculation, in any of the formats accepted for ``defect_locpot``
+            above. If ``None``, will try to use ``bulk_locpot_dict`` from the
             ``defect_entry`` ``calculation_metadata`` if available.
         plot (bool):
             Whether to plot the FNV electrostatic potential plots (for
@@ -340,8 +360,8 @@ def get_kumagai_correction(
     dielectric: float | np.ndarray | list | None = None,
     defect_region_radius: float | None = None,
     excluded_indices: list[int] | None = None,
-    defect_outcar: PathLike | Outcar | None = None,
-    bulk_outcar: PathLike | Outcar | None = None,
+    defect_outcar: PathLike | Outcar | CalculationOutputs | None = None,
+    bulk_outcar: PathLike | Outcar | CalculationOutputs | None = None,
     plot: bool = False,
     filename: PathLike | None = None,
     verbose: bool = True,
@@ -409,15 +429,17 @@ def get_kumagai_correction(
             List of site indices (in the defect supercell) to exclude from
             the site potential sampling in the correction calculation/plot.
             If ``None`` (default), no sites are excluded.
-        defect_outcar (PathLike or |Outcar|):
-            Path to the output ``VASP`` ``OUTCAR`` file from the defect
-            supercell calculation, or the corresponding ``pymatgen`` |Outcar|
-            object. If ``None``, will try to use the ``defect_site_potentials``
-            from the ``defect_entry`` ``calculation_metadata`` if available.
-        bulk_outcar (PathLike or |Outcar|):
-            Path to the output ``VASP`` ``OUTCAR`` file from the bulk supercell
-            calculation, or the corresponding ``pymatgen`` |Outcar| object.
-            If ``None``, will try to use the ``bulk_site_potentials``
+        defect_outcar (PathLike, |Outcar| or CalculationOutputs):
+            The atomic-site electrostatic potentials from the defect supercell
+            calculation, as a :class:`~doped.io.outputs.CalculationOutputs`
+            object with ``site_potentials``, a path to the output ``VASP``
+            ``OUTCAR`` file, or the corresponding ``pymatgen`` |Outcar| object.
+            If ``None``, will try to use the ``defect_site_potentials`` from
+            the ``defect_entry`` ``calculation_metadata`` if available.
+        bulk_outcar (PathLike, |Outcar| or CalculationOutputs):
+            The atomic-site electrostatic potentials from the bulk supercell
+            calculation, in any of the formats accepted for ``defect_outcar``
+            above. If ``None``, will try to use the ``bulk_site_potentials``
             from the ``defect_entry`` ``calculation_metadata`` if available.
         plot (bool):
             Whether to plot the Kumagai site potential plots (for
