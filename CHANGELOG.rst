@@ -14,8 +14,20 @@ Unreleased
     discovery...) moved from ``doped.utils.parsing`` to ``doped.io.vasp.outputs`` (deprecated aliases retained, warn on
     use).
   - New calculator-agnostic ``doped.io.outputs.CalculationOutputs`` container as the data contract between calculator
-    backends and analysis functions (e.g. accepted by the finite-size charge correction functions, ``DefectsParser``
-    (TODO)...), with ``doped.io.get_calculation_outputs()`` dispatching to the appropriate calculator parser.
+    backends and analysis functions (accepted by the finite-size charge correction functions, ``DefectsParser`` /
+    ``DefectParser``, eigenvalue analyses...), with ``doped.io.get_calculation_outputs()`` dispatching to the
+    appropriate calculator parser.
+  - ``DefectsParser``/``DefectParser`` and the eigenvalue / band-edge analyses are now fully calculator-agnostic,
+    working off ``CalculationOutputs`` via a small backend protocol (``doped.io.get_backend()``;
+    ``get_calculation_outputs()``, ``CALC_OUTPUT_MASK``, ``SUBFOLDER_PRIORITY``, potential loaders, compatibility
+    checks... -- see the "Adding Support for a New Calculator" docs page), selected with a new
+    ``calculator="vasp"`` option.
+  - New ``doped.io.serialized`` escape-hatch backend, parsing pre-serialised ``CalculationOutputs`` JSON files
+    (``calculation_outputs.json.gz`` per calculation directory) so the full parsing/analysis workflow can be used
+    with `any` calculator without a dedicated backend (``DefectsParser(..., calculator="serialized")``).
+  - New ``doped.io.inputs.DefectsSetBase`` base class with the calculator-agnostic input-generation orchestration
+    (defect entry formatting/naming, per-defect input sets, folder writing & provenance serialisation), which the
+    VASP ``DefectsSet`` now subclasses.
   - ``doped/VASP_sets`` -> ``doped/io/vasp/VASP_sets``, with the set YAMLs renamed with explicit ``VASP``
     prefixes (e.g. ``VASP_RelaxSet.yaml``).
   - New ``doped.io.utils`` module with the calculator-agnostic calculation-file discovery helpers

@@ -14,6 +14,14 @@ details on implementing support for additional calculators.
    :undoc-members:
    :show-inheritance:
 
+doped.io.inputs module
+--------------------------
+
+.. automodule:: doped.io.inputs
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 doped.io.outputs module
 ---------------------------
 
@@ -26,6 +34,14 @@ doped.io.utils module
 -------------------------
 
 .. automodule:: doped.io.utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+doped.io.serialized.outputs module
+--------------------------------------
+
+.. automodule:: doped.io.serialized.outputs
    :members:
    :undoc-members:
    :show-inheritance:

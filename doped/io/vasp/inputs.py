@@ -9,18 +9,16 @@ import os
 import warnings
 from functools import lru_cache
 from importlib import resources
-from typing import cast
 
 import numpy as np
 from monty.io import zopen
 from monty.json import MSONable
-from monty.serialization import dumpfn, loadfn
+from monty.serialization import loadfn
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar
 from pymatgen.io.vasp.sets import VaspInputSet
 from pymatgen.util.typing import PathLike
-from tqdm import tqdm
 
 from doped.core import (
     DefectEntry,
@@ -28,14 +26,9 @@ from doped.core import (
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
 )
-from doped.generation import (
-    DefectsGenerator,
-    _custom_formatwarning,
-    get_defect_name_from_entry,
-    name_defect_entries,
-)
-from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
-from doped.utils.symmetry import _frac_coords_sort_func
+from doped.generation import DefectsGenerator, _custom_formatwarning, get_defect_name_from_entry
+from doped.io.inputs import DefectsSetBase
+from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings
 
 _ignore_pmg_warnings()
 warnings.formatwarning = _custom_formatwarning
@@ -2201,11 +2194,13 @@ class DefectRelaxSet(MSONable):
         )
 
 
-class DefectsSet(MSONable):
+class DefectsSet(DefectsSetBase):
     """
     Class for generating input files for ``VASP`` defect calculations for a set
     of ``doped``/``pymatgen`` |DefectEntry| objects.
     """
+
+    _input_set_name = "DefectRelaxSet"
 
     def __init__(
         self,
@@ -2356,56 +2351,10 @@ class DefectsSet(MSONable):
         self.user_kpoints_settings = user_kpoints_settings
         self.user_potcar_functional = user_potcar_functional
         self.user_potcar_settings = user_potcar_settings
-        self.kwargs = kwargs
-        self.defect_entries, self.json_name, self.json_obj = self._format_defect_entries_input(
-            defect_entries
-        )
-
-        if soc is not None:
-            self.soc = soc
-        else:
-
-            def _get_atomic_numbers(defect_entry):
-                # use defect supercell rather than defect.defect_structure because could be e.g. a
-                # vacancy in a 2-atom primitive structure where the atom being removed is the heavy
-                # (Z>=31) one
-                defect_supercell = _get_defect_supercell(defect_entry)
-                if defect_supercell is not None:
-                    return defect_supercell.atomic_numbers
-
-                raise ValueError(
-                    "Defect supercell needs to be defined in the DefectEntry attributes, but both "
-                    "DefectEntry.defect_supercell and DefectEntry.sc_entry.structure are None!"
-                )
-
-            max_atomic_num = np.max(
-                [
-                    np.max(_get_atomic_numbers(defect_entry))
-                    for defect_entry in self.defect_entries.values()
-                ]
-            )
-            self.soc = max_atomic_num >= 31
-
-        self.defect_sets: dict[str, DefectRelaxSet] = {}
-
-        for defect_species, defect_entry in self.defect_entries.items():
-            self.defect_sets[defect_species] = DefectRelaxSet(
-                defect_entry=defect_entry,
-                charge_state=defect_entry.charge_state,
-                soc=self.soc,
-                user_incar_settings=self.user_incar_settings,
-                user_kpoints_settings=self.user_kpoints_settings,
-                user_potcar_functional=self.user_potcar_functional,
-                user_potcar_settings=self.user_potcar_settings,
-                **self.kwargs,
-            )
+        self._input_soc = soc
+        super().__init__(defect_entries, **kwargs)  # format entries & build ``DefectRelaxSet``s
 
         # set bulk vasp attributes:
-        if not self.defect_sets:
-            raise ValueError(
-                "No `DefectRelaxSet` objects created, indicating problems with the `DefectsSet` "
-                "input/creation!"
-            )
         defect_relax_set = list(self.defect_sets.values())[-1]
         self.bulk_supercell = defect_relax_set.bulk_supercell
         self.bulk_vasp_gam = defect_relax_set.bulk_vasp_gam
@@ -2418,116 +2367,62 @@ class DefectsSet(MSONable):
 
         self.bulk_vasp_ncl = defect_relax_set.bulk_vasp_ncl
 
-    def _format_defect_entries_input(
-        self,
-        defect_entries: DefectsGenerator | dict[str, DefectEntry] | list[DefectEntry] | DefectEntry,
-    ) -> tuple[dict[str, DefectEntry], str, dict[str, DefectEntry] | DefectsGenerator]:
-        r"""
-        Helper function to format input ``defect_entries`` into a named
-        dictionary of |DefectEntry| objects.
-
-        Also returns the name of the JSON file and object to serialise when
-        writing the VASP input to files. This is the |DefectsGenerator| object if
-        ``defect_entries`` is a |DefectsGenerator| object, otherwise the
-        dictionary of |DefectEntry| objects.
-
-        Args:
-            defect_entries (|DefectsGenerator|, dict/list of |DefectEntry|\s, or |DefectEntry|):
-                Either a |DefectsGenerator| object, or a dictionary/list of
-                |DefectEntry|\s, or a single |DefectEntry| object, for
-                which to generate ``VASP`` input files.
-                If a |DefectsGenerator| object or a dictionary (->
-                ``{defect name: DefectEntry}``), the defect folder names will
-                be set equal to ``defect name``. If a list or single
-                |DefectEntry| object is provided, the defect folder names
-                will be set equal to ``DefectEntry.name`` if the ``name``
-                attribute is set, otherwise generated according to the
-                ``doped`` convention (see ``doped.generation``).
+    def _setup(self):
         """
-        json_filename = "defect_entries.json.gz"  # global statement in case, but should be skipped
-        json_obj = defect_entries
-        if type(defect_entries).__name__ == "DefectsGenerator":
-            defect_entries = cast("DefectsGenerator", defect_entries)
-            formula = defect_entries.primitive_structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
-            json_filename = f"{formula}_defects_generator.json.gz"
-            json_obj = defect_entries
-            defect_entries = defect_entries.defect_entries
+        Determine whether SOC (``vasp_ncl``) input sets should be generated, if
+        ``soc`` was not explicitly set.
+        """
+        if self._input_soc is not None:
+            self.soc = self._input_soc
+            return
 
-        elif isinstance(defect_entries, DefectEntry):
-            defect_entries = [defect_entries]
-        if isinstance(
-            defect_entries, list
-        ):  # also catches case where defect_entries is a single DefectEntry, from converting to list above
-            # need to convert to dict with doped names as keys:
-            defect_entry_list = copy.deepcopy(defect_entries)
-            with contextlib.suppress(AttributeError, TypeError):  # sort by conventional cell
-                # fractional coordinates if these are defined, to aid deterministic naming
-                defect_entry_list.sort(key=lambda x: _frac_coords_sort_func(x.conv_cell_frac_coords))
+        def _get_atomic_numbers(defect_entry):
+            # use defect supercell rather than defect.defect_structure because could be e.g. a
+            # vacancy in a 2-atom primitive structure where the atom being removed is the heavy
+            # (Z>=31) one
+            defect_supercell = _get_defect_supercell(defect_entry)
+            if defect_supercell is not None:
+                return defect_supercell.atomic_numbers
 
-            # figure out which DefectEntry objects need to be named (don't name if already named)
-            defect_entries_to_name = [
-                defect_entry for defect_entry in defect_entry_list if not hasattr(defect_entry, "name")
-            ]
-            new_named_defect_entries_dict = name_defect_entries(defect_entries_to_name)
-            # set name attribute: (these are names without charges!)
-            for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
-                defect_entry.name = (
-                    f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
-                    f"{defect_entry.charge_state}"
-                )
-
-            # if any duplicate names, crash (and burn, b...)
-            if len({defect_entry.name for defect_entry in defect_entry_list}) != len(defect_entry_list):
-                raise ValueError(
-                    "Some defect entries have the same name, due to mixing of named and unnamed input "
-                    "`DefectEntry`s! This would cause defect folders to be overwritten. Please check "
-                    "your DefectEntry names and/or generate your defects using DefectsGenerator instead."
-                )
-
-            defect_entries = {defect_entry.name: defect_entry for defect_entry in defect_entry_list}
-            formula = defect_entry_list[0].defect.structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
-            json_filename = f"{formula}_defect_entries.json.gz"
-            json_obj = defect_entries
-
-        # check correct format:
-        if isinstance(defect_entries, dict) and not all(
-            isinstance(defect_entry, DefectEntry) for defect_entry in defect_entries.values()
-        ):
-            raise TypeError(
-                f"Input defect_entries dict must be of the form {{defect_name: DefectEntry}}, got dict "
-                f"with values of type {[type(value) for value in defect_entries.values()]} instead"
+            raise ValueError(
+                "Defect supercell needs to be defined in the DefectEntry attributes, but both "
+                "DefectEntry.defect_supercell and DefectEntry.sc_entry.structure are None!"
             )
 
-        if not isinstance(defect_entries, dict):
-            raise TypeError(
-                f"Input defect_entries must be of type DefectsGenerator, dict, list or DefectEntry, got "
-                f"type {type(defect_entries)} instead."
-            )
+        max_atomic_num = np.max(
+            [np.max(_get_atomic_numbers(defect_entry)) for defect_entry in self.defect_entries.values()]
+        )
+        self.soc = max_atomic_num >= 31
 
-        # ``defect_entries`` validated as a ``{name: DefectEntry}`` dict above:
-        return cast(
-            "tuple[dict[str, DefectEntry], str, dict[str, DefectEntry] | DefectsGenerator]",
-            (defect_entries, json_filename, json_obj),
+    def _defect_input_set(self, defect_entry: DefectEntry) -> DefectRelaxSet:
+        """
+        Build the ``DefectRelaxSet`` for a single defect entry.
+        """
+        return DefectRelaxSet(
+            defect_entry=defect_entry,
+            charge_state=defect_entry.charge_state,
+            soc=self.soc,
+            user_incar_settings=self.user_incar_settings,
+            user_kpoints_settings=self.user_kpoints_settings,
+            user_potcar_functional=self.user_potcar_functional,
+            user_potcar_settings=self.user_potcar_settings,
+            **self.kwargs,
         )
 
     @staticmethod
     def _write_defect(args):
-        defect_species, defect_relax_set, output_path, poscar, rattle, vasp_gam, bulk, kwargs = args
-        defect_dir = os.path.join(output_path, defect_species)
+        defect_species, defect_relax_set, output_path, bulk, write_kwargs = args
+        kwargs = dict(write_kwargs)
         defect_relax_set.write_all(
-            defect_dir=defect_dir,
-            poscar=poscar,
-            rattle=rattle,
-            vasp_gam=vasp_gam,
+            defect_dir=os.path.join(output_path, defect_species),
+            poscar=kwargs.pop("poscar", False),
+            rattle=kwargs.pop("rattle", True),
+            vasp_gam=kwargs.pop("vasp_gam", None),
             bulk=bulk,
             **kwargs,
         )
 
-    def write_files(
+    def write_files(  # type: ignore[override]  # deliberately extends the base signature
         self,
         output_path: PathLike = ".",
         poscar: bool = False,
@@ -2688,73 +2583,15 @@ class DefectsSet(MSONable):
         # TODO: If POTCARs not setup, warn and only write neutral defect folders, with INCAR, KPOINTS and
         #  (if poscar) POSCAR? And bulk
 
-        args_list = [
-            (
-                defect_species,
-                defect_relax_set,
-                output_path,
-                poscar,
-                rattle,
-                vasp_gam,
-                bulk if i == len(self.defect_sets) - 1 else False,  # write bulk folder(s) for last defect
-                kwargs,
-            )
-            for i, (defect_species, defect_relax_set) in enumerate(self.defect_sets.items())
-        ]
-        if processes is None:  # best setting for number of processes, from testing
-            mp = get_mp_context()
-            processes = min(round(len(args_list) / 30), mp.cpu_count() - 1)
-
-        if processes > 1:
-            with pool_manager(processes) as pool:
-                for _ in tqdm(
-                    pool.imap(self._write_defect, args_list),
-                    total=len(args_list),
-                    desc="Generating and writing input files",
-                ):
-                    pass
-        else:
-            for args in tqdm(args_list, desc="Generating and writing input files"):
-                self._write_defect(args)
-
-        dumpfn(self.json_obj, os.path.join(output_path, self.json_name))
-
-    def __repr__(self):
-        """
-        Returns a string representation of the |DefectsSet| object.
-        """
-        formula = next(
-            iter(self.defect_entries.values())
-        ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-        properties, methods = _doped_obj_properties_methods(self)
-        return (
-            f"doped DefectsSet for bulk composition {formula}, with {len(self.defect_entries)} "
-            f"defect entries in self.defect_entries. Available attributes:\n{properties}\n\n"
-            f"Available methods:\n{methods}"
+        super().write_files(
+            output_path=output_path,
+            bulk=bulk,
+            processes=processes,
+            poscar=poscar,
+            rattle=rattle,
+            vasp_gam=vasp_gam,
+            **kwargs,
         )
-
-    def __getattr__(self, attr):
-        """
-        Redirects an unknown attribute/method call to the ``defect_sets``
-        dictionary attribute, if the attribute doesn't exist in |DefectsSet|.
-        """
-        # Return the attribute if it exists in self.__dict__
-        if attr in self.__dict__:
-            return self.__dict__[attr]
-
-        # Check if the attribute exists in defect_sets:
-        if hasattr(self.defect_sets, attr):
-            return getattr(self.defect_sets, attr)
-
-        # If all else fails, raise an AttributeError
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
-
-    def __getitem__(self, key):
-        """
-        Makes |DefectsSet| object subscriptable, so that it can be indexed like
-        a dictionary, using the ``defect_sets`` dictionary attribute.
-        """
-        return self.defect_sets[key]
 
     def __setitem__(self, key, value):
         """
@@ -2779,33 +2616,6 @@ class DefectsSet(MSONable):
             )
 
         self.defect_sets[key] = value
-
-    def __delitem__(self, key):
-        """
-        Deletes the specified ``DefectRelaxSet`` from the ``defect_sets``
-        dictionary.
-        """
-        del self.defect_sets[key]
-
-    def __contains__(self, key):
-        """
-        Returns True if the ``defect_sets`` dictionary contains the specified
-        defect name.
-        """
-        return key in self.defect_sets
-
-    def __len__(self):
-        r"""
-        Returns the number of ``DefectRelaxSet``\s in the ``defect_sets``
-        dictionary.
-        """
-        return len(self.defect_sets)
-
-    def __iter__(self):
-        """
-        Returns an iterator over the ``defect_sets`` dictionary.
-        """
-        return iter(self.defect_sets)
 
 
 # TODO: Go through and update docstrings with descriptions all the default behaviour (INCAR,
