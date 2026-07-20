@@ -42,6 +42,35 @@ class CalculationOutputsTestCase(unittest.TestCase):
         assert len(outputs.site_potentials) == len(outputs.structure)
         assert outputs.eigenvalues is not None
         assert {"incar", "kpoints", "potcar_symbols"}.issubset(outputs.run_metadata)
+        assert outputs.charge == -2  # auto-determined from NELECT vs neutral electron count
+        assert outputs.spin_degeneracy() == 1  # even-electron (closed-shell) system
+        assert outputs.spin_degeneracy(charge_state=-2) == 1
+
+    def test_raw_objects_and_serialisation(self):
+        """
+        Test the (non-serialised) ``raw`` calculator objects dict,
+        ``get_computed_entry()``, and ``as_dict()``/``from_dict()`` round-
+        tripping.
+        """
+        from pymatgen.io.vasp.outputs import Vasprun
+
+        from doped.io.outputs import CalculationOutputs
+
+        outputs = get_calculation_outputs(self.defect_dir, parse_projected_eigen=False)
+        assert isinstance(outputs.raw["vasprun"], Vasprun)
+        computed_entry = outputs.get_computed_entry()
+        assert computed_entry is outputs.raw["computed_entry"]
+        assert np.isclose(computed_entry.energy, outputs.energy)
+        assert computed_entry.parameters  # VASP-parsed entry with calculation parameters
+
+        dct = outputs.as_dict()
+        assert "raw" not in dct
+        assert outputs.raw  # not clobbered by serialisation
+        reloaded = CalculationOutputs.from_dict(dct)
+        assert np.isclose(reloaded.energy, outputs.energy)
+        assert len(reloaded.structure) == len(outputs.structure)
+        assert reloaded.raw == {}  # raw objects not serialised
+        assert np.isclose(reloaded.get_computed_entry().energy, outputs.energy)  # bare-entry fallback
 
     def test_require(self):
         """

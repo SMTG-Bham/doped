@@ -854,7 +854,7 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
     """
     from doped.utils.symmetry import (  # avoid circular import (symmetry imports doped.core)
         _num_electrons_from_charge_state,
-        _simple_spin_degeneracy_from_num_electrons,
+        _spin_degeneracy_from_num_electrons_and_magnetization,
     )
 
     if charge_state is None:
@@ -863,22 +863,11 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
         num_electrons = _num_electrons_from_charge_state(vasprun.final_structure, charge_state)
 
     try:
-        raw_magnetization = get_magnetization_from_vasprun(vasprun)
-        # take the vector norm as the total magnetization (for NCL (SOC) / vector magnetization):
-        magnetization = float(np.linalg.norm(raw_magnetization))
-
-        # round to nearest possible value (even numbers for even-electron systems, odd for odd-electron):
-        if num_electrons % 2 == 0:  # even-electron system, spin degeneracy = 1, 3, 5, ...
-            magnetization = round(magnetization / 2) * 2  # nearest even number
-        else:
-            magnetization = round((magnetization - 1) / 2) * 2 + 1  # nearest odd number
-
-        # spin multiplicity = 2S + 1 = 2(mag/2) + 1 = mag + 1 (where mag is in Bohr magnetons
-        # i.e. number of electrons, as in VASP):
-        return abs(magnetization) + 1
-
+        magnetization: float | np.ndarray | None = get_magnetization_from_vasprun(vasprun)
     except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetization:
-        return _simple_spin_degeneracy_from_num_electrons(int(num_electrons))  # guess from charge
+        magnetization = None  # guess from electron count
+
+    return _spin_degeneracy_from_num_electrons_and_magnetization(int(num_electrons), magnetization)
 
 
 def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
@@ -1050,13 +1039,6 @@ def get_calculation_outputs(
         _multiple_files_warning("vasprun.xml", path, vr_path, dir_type="calculation")
     vr = get_vasprun(vr_path, **kwargs)
 
-    try:
-        magnetization = get_magnetization_from_vasprun(vr)
-    except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetization
-        magnetization = None
-
-    band_gap, cbm, vbm, _direct = vr.eigenvalue_band_properties if vr.eigenvalues else (None,) * 4
-
     planar_averaged_potentials = None
     if load_planar_averaged_potentials:
         locpot_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", path)
@@ -1074,31 +1056,95 @@ def get_calculation_outputs(
             outcar_path, dir_type="calculation", total_energy=vr.final_energy
         )
 
+    return calculation_outputs_from_vasprun(
+        vr,
+        path=path,
+        planar_averaged_potentials=planar_averaged_potentials,
+        site_potentials=site_potentials,
+    )
+
+
+def calculation_outputs_from_vasprun(
+    vasprun: Vasprun,
+    procar: PathLike | Procar | None = None,
+    path: PathLike | None = None,
+    planar_averaged_potentials: dict[int, np.ndarray] | None = None,
+    site_potentials: list | np.ndarray | None = None,
+) -> CalculationOutputs:
+    """
+    Build a (calculator-agnostic) :class:`~doped.io.outputs.CalculationOutputs`
+    object from already-parsed VASP output objects.
+
+    The input ``vasprun`` (and ``procar``, if provided) objects are kept in
+    the (non-serialised) ``CalculationOutputs.raw`` dict (as ``"vasprun"`` /
+    ``"procar"``, alongside a ``"computed_entry"``
+    ``ComputedStructureEntry``), for reuse by VASP-specific code without
+    re-parsing.
+
+    Args:
+        vasprun (|Vasprun|):
+            ``pymatgen`` |Vasprun| object for the calculation.
+        procar (PathLike | |Procar|):
+            Path to a ``PROCAR(.gz)`` file or a ``pymatgen`` |Procar| object
+            for the calculation, if parsed (stored in ``raw["procar"]`` for
+            eigenvalue analyses when the ``vasprun`` lacks orbital
+            projections). Default is ``None``.
+        path (PathLike):
+            Directory from which the outputs were parsed, if applicable.
+        planar_averaged_potentials (dict[int, np.ndarray]):
+            Planar-averaged electrostatic potentials (from ``LOCPOT``), if
+            already parsed. Default is ``None``.
+        site_potentials (list | np.ndarray):
+            Atomic-site core potentials (from ``OUTCAR``), if already parsed.
+            Default is ``None``.
+
+    Returns:
+        CalculationOutputs: The calculation outputs.
+    """
+    try:
+        magnetization = get_magnetization_from_vasprun(vasprun)
+    except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetization
+        magnetization = None
+
+    band_gap, cbm, vbm, _direct = (
+        vasprun.eigenvalue_band_properties if vasprun.eigenvalues else (None,) * 4
+    )
+
+    charge = None
+    with contextlib.suppress(Exception):
+        charge = total_charge_from_vasprun(vasprun)
+
     return CalculationOutputs(
-        structure=vr.final_structure,
-        energy=vr.final_energy,
+        structure=vasprun.final_structure,
+        energy=vasprun.final_energy,
         calculator="vasp",
         directory=path,
-        converged_electronic=vr.converged_electronic,
-        converged_ionic=vr.converged_ionic,
-        efermi=vr.efermi,
-        eigenvalues=vr.eigenvalues,
-        projected_eigenvalues=vr.projected_eigenvalues,
-        projected_magnetisation=getattr(vr, "projected_magnetization", None),
-        kpoint_coords=np.array(vr.actual_kpoints),
-        kpoint_weights=np.array(vr.actual_kpoints_weights),
-        nelect=vr.parameters.get("NELECT"),
+        converged_electronic=vasprun.converged_electronic,
+        converged_ionic=vasprun.converged_ionic,
+        efermi=vasprun.efermi,
+        eigenvalues=vasprun.eigenvalues,
+        projected_eigenvalues=vasprun.projected_eigenvalues,
+        projected_magnetisation=getattr(vasprun, "projected_magnetization", None),
+        kpoint_coords=np.array(vasprun.actual_kpoints),
+        kpoint_weights=np.array(vasprun.actual_kpoints_weights),
+        nelect=vasprun.parameters.get("NELECT"),
+        charge=charge,
         magnetization=magnetization,
-        noncollinear=vr.parameters.get("LNONCOLLINEAR"),
+        noncollinear=vasprun.parameters.get("LNONCOLLINEAR"),
         vbm=vbm,
         cbm=cbm,
         band_gap=band_gap,
         planar_averaged_potentials=planar_averaged_potentials,
         site_potentials=site_potentials,
         run_metadata={
-            "incar": vr.incar,
-            "kpoints": vr.kpoints,
-            "actual_kpoints": vr.actual_kpoints,
-            "potcar_symbols": vr.potcar_spec,
+            "incar": vasprun.incar,
+            "kpoints": vasprun.kpoints,
+            "actual_kpoints": vasprun.actual_kpoints,
+            "potcar_symbols": vasprun.potcar_spec,
+        },
+        raw={
+            "vasprun": vasprun,
+            "procar": _parse_procar(procar) if procar is not None else None,
+            "computed_entry": vasprun.get_computed_entry(),
         },
     )
