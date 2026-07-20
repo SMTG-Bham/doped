@@ -815,7 +815,7 @@ class DefectThermodynamics(MSONable):
                 analysis. If ``None`` (default), will use ``"vbm"`` from the
                 ``calculation_metadata`` dict attributes of the parsed
                 |DefectEntry| objects, which by default is taken from the
-                bulk supercell VBM (unless ``bulk_band_gap_vr`` is set during
+                bulk supercell VBM (unless ``bulk_band_gap_outputs`` is set during
                 defect parsing). Note that ``vbm`` should only affect the
                 reference for the Fermi level values output by ``doped`` (as
                 this VBM eigenvalue is used as the zero reference), thus
@@ -1948,7 +1948,7 @@ class DefectThermodynamics(MSONable):
                 ``calculation_metadata`` dict attributes of |DefectEntry|\s
                 in ``self.defect_entries`` if present, otherwise ``self.vbm``
                 -- which corresponds to the VBM of the `bulk supercell`
-                calculation by default, unless ``bulk_band_gap_vr`` is set
+                calculation by default, unless ``bulk_band_gap_outputs`` is set
                 during defect parsing).
                 If ``None`` (default), set to the mid-gap Fermi level (E_g/2).
             skip_formatting (bool):
@@ -2027,7 +2027,7 @@ class DefectThermodynamics(MSONable):
                 ``calculation_metadata`` dict attributes of |DefectEntry|\s
                 in ``self.defect_entries`` if present, otherwise ``self.vbm``
                 -- which corresponds to the VBM of the `bulk supercell`
-                calculation by default, unless ``bulk_band_gap_vr`` is set
+                calculation by default, unless ``bulk_band_gap_outputs`` is set
                 during defect parsing). If ``None`` (default), set to the
                 mid-gap Fermi level (E_g/2).
             skip_formatting (bool):
@@ -2292,7 +2292,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the Fermi level positions are given relative to ``self.vbm``,
         which is the VBM eigenvalue of the bulk supercell calculation by
-        default, unless ``bulk_band_gap_vr`` is set during defect parsing.
+        default, unless ``bulk_band_gap_outputs`` is set during defect parsing.
 
         This is computed by obtaining the formation energies for every stable
         defect with non-zero charge, and then finding the highest Fermi level
@@ -2432,7 +2432,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the band edge positions are taken from ``self.vbm`` and
         ``self.band_gap``, which are parsed from the `bulk supercell
-        calculation` by default, unless ``bulk_band_gap_vr`` is set during
+        calculation` by default, unless ``bulk_band_gap_outputs`` is set during
         defect parsing.
 
         If a dopant has a higher formation energy than the doping window at the
@@ -2702,7 +2702,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the band edge positions are taken from ``self.vbm`` and
         ``self.band_gap``, which are parsed from the `bulk supercell
-        calculation` by default, unless ``bulk_band_gap_vr`` is set during
+        calculation` by default, unless ``bulk_band_gap_outputs`` is set during
         defect parsing.
 
         Note that different defect entries (different charge states, and/or
@@ -2961,7 +2961,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the band edge positions are taken from ``self.vbm`` and
         ``self.band_gap``, which are parsed from the `bulk supercell`
-        calculation by default, unless ``bulk_band_gap_vr`` is set during
+        calculation by default, unless ``bulk_band_gap_outputs`` is set during
         defect parsing. The VBM lies at 0 eV (blue shaded region), and the CBM
         lies at ``self.band_gap`` (orange shaded region).
 
@@ -3128,7 +3128,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the transition level (and Fermi level) positions are given
         relative to ``self.vbm``, which is the VBM eigenvalue of the bulk
-        supercell calculation by default, unless ``bulk_band_gap_vr`` is set
+        supercell calculation by default, unless ``bulk_band_gap_outputs`` is set
         during defect parsing.
 
         By default, only returns the thermodynamic ground-state transition
@@ -3820,8 +3820,9 @@ class DefectThermodynamics(MSONable):
                 f"The {mismatching} of the bulk DOS calculation (VBM = {fdos_vbm:.2f} eV, band gap = "
                 f"{fdos_band_gap:.2f} eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap` "
                 f"(VBM = {self.vbm:.2f} eV, band gap = {self.band_gap:.2f} eV; which are taken from the "
-                f"bulk supercell calculation by default, unless `bulk_band_gap_vr` is set during defect "
-                f"parsing). This can cause inaccuracies in thermodynamics & concentration analyses; see "
+                f"bulk supercell calculation by default, unless `bulk_band_gap_outputs` is set during "
+                f"defect parsing). This can cause inaccuracies in thermodynamics & concentration "
+                f"analyses; see "
                 f"https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations "
                 f"for advice.\n"
                 f"Note that the Fermi level will be always referenced to `DefectThermodynamics.vbm`!"
@@ -3849,7 +3850,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the returned Fermi level is given relative to ``self.vbm``,
         which is the VBM eigenvalue of the bulk supercell calculation by
-        default, unless ``bulk_band_gap_vr`` is set during defect parsing.
+        default, unless ``bulk_band_gap_outputs`` is set during defect parsing.
 
         Note that this assumes `equilibrium` defect concentrations!
         ``DefectThermodynamics.get_fermi_level_and_concentrations()`` can

@@ -17,7 +17,6 @@ import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.electronic_structure.dos import FermiDos
-from pymatgen.io.vasp.outputs import Vasprun
 from test_utils import (
     EXAMPLE_DIR,
     _print_warning_info,
@@ -38,6 +37,7 @@ from doped.analysis import (
     shallow_dopant_binding_energy,
 )
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
+from doped.io.outputs import CalculationOutputs
 from doped.io.vasp.outputs import (
     get_magnetization_from_vasprun,
     get_outcar,
@@ -408,7 +408,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert CdTe_dp.error_tolerance == 0.05
             assert CdTe_dp.bulk_path == self.CdTe_BULK_DATA_DIR  # automatically determined
             assert CdTe_dp.subfolder == "vasp_ncl"  # automatically determined
-            assert CdTe_dp.bulk_band_gap_vr is None
+            assert CdTe_dp.bulk_band_gap_outputs is None
 
         check_DefectsParser(CdTe_dp)
         assert (
@@ -615,7 +615,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             dielectric=[9.13, 9.13, 9.13],
             error_tolerance=0.01,
             skip_corrections=False,
-            bulk_band_gap_vr=f"{self.CdTe_BULK_DATA_DIR}/vasprun.xml",
+            bulk_band_gap_outputs=f"{self.CdTe_BULK_DATA_DIR}/vasprun.xml",
             processes=4,
             json_filename="test_pop.json",
         )
@@ -639,7 +639,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.output_path == self.CdTe_EXAMPLE_DIR
         assert dp.dielectric == [9.13, 9.13, 9.13]
         assert dp.error_tolerance == 0.01
-        assert isinstance(dp.bulk_band_gap_vr, Vasprun)
+        assert isinstance(dp.bulk_band_gap_outputs, CalculationOutputs)
         assert dp.processes == 4
         assert dp.json_filename == "test_pop.json"
 

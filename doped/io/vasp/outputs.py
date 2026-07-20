@@ -9,6 +9,7 @@ calculator-agnostic form (:class:`~doped.io.outputs.CalculationOutputs`) via
 
 import contextlib
 import itertools
+import os
 import re
 import warnings
 from collections.abc import Iterable
@@ -1110,7 +1111,11 @@ def _parse_vr_and_poss_procar(
         f"Could not parse eigenvalue data from vasprun.xml.gz files in {label} folder at {output_path}"
     )
 
-    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", output_path)
+    if not os.path.isdir(output_path):  # direct path to a ``vasprun.xml(.gz)`` file
+        vr_path, multiple = output_path, False  # ``get_vasprun`` handles archived (e.g. ``.gz``) suffixes
+        output_path = os.path.dirname(output_path) or "."  # for possible ``PROCAR`` fallback searches
+    else:
+        vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", output_path)
     if multiple:
         _multiple_files_warning("vasprun.xml", output_path, vr_path, dir_type=label)
 
@@ -1173,8 +1178,9 @@ def get_calculation_outputs(
 
     Args:
         path (PathLike):
-            Path to the VASP calculation directory, containing the
-            ``vasprun.xml(.gz)`` file to parse.
+            Path to the VASP calculation directory (containing the
+            ``vasprun.xml(.gz)`` file to parse), or directly to a
+            ``vasprun.xml(.gz)`` file.
         load_planar_averaged_potentials (bool):
             Whether to also parse the planar-averaged electrostatic potentials
             from the ``LOCPOT(.gz)`` file in ``path``. Default is ``False``.

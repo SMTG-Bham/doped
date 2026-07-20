@@ -1050,7 +1050,7 @@ class DefectEntry(thermo.DefectEntry):
                 calculating formation energy. If ``None`` (default), will use
                 ``"vbm"`` from the ``calculation_metadata`` dict attribute if
                 present -- which corresponds to the VBM of the `bulk supercell`
-                calculation by default, unless ``bulk_band_gap_vr`` is set
+                calculation by default, unless ``bulk_band_gap_outputs`` is set
                 during defect parsing).
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
@@ -1363,7 +1363,7 @@ class DefectEntry(thermo.DefectEntry):
                 use ``"vbm"`` from the ``calculation_metadata`` dict attribute
                 if present -- which corresponds to the VBM of the
                 `bulk supercell` calculation by default, unless
-                ``bulk_band_gap_vr`` is set during defect parsing.
+                ``bulk_band_gap_outputs`` is set during defect parsing.
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
                 referenced to the VBM. Default is 0 (i.e. the VBM).

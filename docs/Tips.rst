@@ -622,7 +622,7 @@ This can arise for a number of reasons:
 
     - Assuming the `k`-point sampling of the DOS calculation is sufficiently dense, then the issue is just
       that the VBM eigenvalue and band gap of the bulk supercell calculation is not accurate. This can be
-      rectified by using the ``bulk_band_gap_vr`` option during defect parsing (see
+      rectified by using the ``bulk_band_gap_outputs`` option during defect parsing (see
       |DefectsParser| docstring) to set the bulk band gap and VBM eigenvalue to
       the correct values.
     - In this case, the absolute values of predictions should not be affected as the eigenvalue references

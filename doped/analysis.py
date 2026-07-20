@@ -23,7 +23,6 @@ from pymatgen.core import Element
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
-from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
@@ -43,7 +42,6 @@ from doped.generation import (
 from doped.io import get_backend
 from doped.io import utils as _io_utils
 from doped.io.outputs import CalculationOutputs
-from doped.io.vasp.outputs import get_vasprun
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import (
     _doped_obj_properties_methods,
@@ -889,7 +887,7 @@ class DefectsParser:
         bulk_path: PathLike | None = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        bulk_band_gap_vr: PathLike | Vasprun | CalculationOutputs | None = None,
+        bulk_band_gap_outputs: PathLike | CalculationOutputs | None = None,
         processes: int | None = None,
         json_filename: PathLike | bool | None = None,
         parse_projected_eigen: bool | None = None,
@@ -977,10 +975,11 @@ class DefectsParser:
                 ``error_tolerance`` or 10% of the band gap, by default, or can
                 be set by a ``shallow_charge_stability_tolerance = X`` keyword
                 argument).
-            bulk_band_gap_vr (PathLike, |Vasprun| or CalculationOutputs):
-                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
-                |Vasprun| or :class:`~doped.io.outputs.CalculationOutputs`
-                object, from which to determine the bulk band gap
+            bulk_band_gap_outputs (PathLike or CalculationOutputs):
+                Path to a bulk calculation directory (or output file, e.g.
+                ``vasprun.xml(.gz)`` with VASP), or a
+                :class:`~doped.io.outputs.CalculationOutputs` object, from
+                which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points
                 which are not included in the bulk supercell calculation, then
                 this parameter should be used to provide the output of a bulk
@@ -1068,10 +1067,12 @@ class DefectsParser:
         self.bulk_path = bulk_path
         self.subfolder = subfolder
         self.calculator = calculator
-        if bulk_band_gap_vr and not isinstance(bulk_band_gap_vr, Vasprun | CalculationOutputs):
-            self.bulk_band_gap_vr = get_vasprun(bulk_band_gap_vr, parse_projected_eigen=False)
-        else:
-            self.bulk_band_gap_vr = bulk_band_gap_vr
+        if bulk_band_gap_outputs is not None and not isinstance(bulk_band_gap_outputs, CalculationOutputs):
+            # path to a calculation directory (or output file); parse with the calculator backend:
+            bulk_band_gap_outputs = self._backend.get_calculation_outputs(
+                bulk_band_gap_outputs, parse_projected_eigen=False, label="bulk band gap"
+            )
+        self.bulk_band_gap_outputs = bulk_band_gap_outputs
         self.processes = processes
         self.json_filename = json_filename
         self.parse_projected_eigen = parse_projected_eigen
@@ -1261,7 +1262,7 @@ class DefectsParser:
                 dielectric=self.dielectric,
                 skip_corrections=self.skip_corrections,
                 error_tolerance=self.error_tolerance,
-                bulk_band_gap_vr=self.bulk_band_gap_vr,
+                bulk_band_gap_outputs=self.bulk_band_gap_outputs,
                 oxi_state=self.kwargs.get("oxi_state") if self._bulk_oxi_states else "Undetermined",
                 parse_projected_eigen=self.parse_projected_eigen,
                 calculator=self.calculator,
@@ -1386,7 +1387,7 @@ class DefectsParser:
                 analysis. If ``None`` (default), will use ``"vbm"`` from the
                 ``calculation_metadata`` dict attributes of the parsed
                 |DefectEntry| objects, which by default is taken from the
-                bulk supercell VBM (unless ``bulk_band_gap_vr`` is set during
+                bulk supercell VBM (unless ``bulk_band_gap_outputs`` is set during
                 parsing). Note that ``vbm`` should only affect the reference
                 for the Fermi level values output by ``doped`` (as this VBM
                 eigenvalue is used as the zero reference), thus affecting the
@@ -2358,7 +2359,7 @@ class DefectParser:
         charge_state: int | None = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        bulk_band_gap_vr: PathLike | Vasprun | CalculationOutputs | None = None,
+        bulk_band_gap_outputs: PathLike | CalculationOutputs | None = None,
         parse_projected_eigen: bool | None = None,
         calculator: str = "vasp",
         bulk_outputs: CalculationOutputs | None = None,
@@ -2409,10 +2410,11 @@ class DefectParser:
                 on the variance of the potential in the sampling region, is
                 greater than this value (in eV), then a warning is raised.
                 Default is 0.05 eV.
-            bulk_band_gap_vr (PathLike, |Vasprun| or CalculationOutputs):
-                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
-                |Vasprun| or :class:`~doped.io.outputs.CalculationOutputs`
-                object, from which to determine the bulk band gap
+            bulk_band_gap_outputs (PathLike or CalculationOutputs):
+                Path to a bulk calculation directory (or output file, e.g.
+                ``vasprun.xml(.gz)`` with VASP), or a
+                :class:`~doped.io.outputs.CalculationOutputs` object, from
+                which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points
                 which are not included in the bulk supercell calculation, then
                 this parameter should be used to provide the output of a bulk
@@ -2607,7 +2609,7 @@ class DefectParser:
         )
 
         dp.load_and_check_calculation_metadata()  # Load standard defect metadata
-        dp.load_bulk_gap_data(bulk_band_gap_vr=bulk_band_gap_vr)  # Load band gap data
+        dp.load_bulk_gap_data(bulk_band_gap_outputs=bulk_band_gap_outputs)  # Load band gap data
 
         # check if charge corrections are possible, and apply if so (and ``skip_corrections = False``):
         if dielectric is not None:
@@ -2937,7 +2939,7 @@ class DefectParser:
 
     def load_bulk_gap_data(
         self,
-        bulk_band_gap_vr: PathLike | Vasprun | None = None,
+        bulk_band_gap_outputs: PathLike | CalculationOutputs | None = None,
         use_MP: bool = False,
         mpid: str | None = None,
         api_key: str | None = None,
@@ -2946,8 +2948,8 @@ class DefectParser:
         Load the ``"band_gap"``, ``"vbm"`` and ``"cbm"`` values for the parsed
         |DefectEntry|\s.
 
-        If ``bulk_band_gap_vr`` is provided, then these values are parsed from
-        it, else taken from the parsed bulk supercell calculation.
+        If ``bulk_band_gap_outputs`` is provided, then these values are parsed
+        from it, else taken from the parsed bulk supercell calculation.
 
         ``"band_gap"`` and ``"vbm"`` are used by default when generating
         |DefectThermodynamics| objects, to be used in plotting & analysis.
@@ -2960,10 +2962,11 @@ class DefectParser:
         severely-underestimated GGA DFT bandgap!
 
         Args:
-            bulk_band_gap_vr (PathLike, |Vasprun| or CalculationOutputs):
-                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
-                |Vasprun| or :class:`~doped.io.outputs.CalculationOutputs`
-                object, from which to determine the bulk band gap
+            bulk_band_gap_outputs (PathLike or CalculationOutputs):
+                Path to a bulk calculation directory (or output file, e.g.
+                ``vasprun.xml(.gz)`` with VASP), or a
+                :class:`~doped.io.outputs.CalculationOutputs` object, from
+                which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points
                 which are not included in the bulk supercell calculation, then
                 this parameter should be used to provide the output of a bulk
@@ -3069,7 +3072,7 @@ class DefectParser:
                 band_gap = bs.get_band_gap()["energy"]
                 gap_calculation_metadata["MP_gga_BScalc_data"] = bs.get_band_gap().copy()
 
-        if (vbm is None or band_gap is None or cbm is None or not bulk_band_gap_vr) and (
+        if (vbm is None or band_gap is None or cbm is None or not bulk_band_gap_outputs) and (
             mpid and band_gap is None
         ):
             warnings.warn(
@@ -3078,18 +3081,18 @@ class DefectParser:
             )
             gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
 
-        if bulk_band_gap_vr is not None:
-            if isinstance(bulk_band_gap_vr, CalculationOutputs):
-                band_gap, cbm, vbm = (
-                    bulk_band_gap_vr.band_gap,
-                    bulk_band_gap_vr.cbm,
-                    bulk_band_gap_vr.vbm,
+        if bulk_band_gap_outputs is not None:
+            if not isinstance(bulk_band_gap_outputs, CalculationOutputs):
+                # path to a calculation directory (or output file); parse with the calculator backend:
+                bulk_band_gap_outputs = self._backend.get_calculation_outputs(
+                    bulk_band_gap_outputs, parse_projected_eigen=False, label="bulk band gap"
                 )
-            else:  # path to a VASP ``vasprun.xml(.gz)`` file, or ``Vasprun`` object:
-                if not isinstance(bulk_band_gap_vr, Vasprun):
-                    bulk_band_gap_vr = get_vasprun(bulk_band_gap_vr, parse_projected_eigen=False)
 
-                band_gap, cbm, vbm, _ = bulk_band_gap_vr.eigenvalue_band_properties
+            band_gap, cbm, vbm = (
+                bulk_band_gap_outputs.band_gap,
+                bulk_band_gap_outputs.cbm,
+                bulk_band_gap_outputs.vbm,
+            )
 
         gap_calculation_metadata.update(
             {
