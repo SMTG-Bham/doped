@@ -2649,9 +2649,8 @@ def get_wyckoff_label_and_equiv_coord_list(
                     expr_value = np.mod(float(expr_value), 1)  # wrap to 0-1 (i.e. to unit cell)
 
                 except TypeError:
-                    # Assign the expression the value of the corresponding coordinate, and solve
-                    # for the new variable
-                    # first, special cases with two possible solutions due to PBC:
+                    # Assign the expression the value of the corresponding coordinate, and solve for the
+                    # new variable first, special cases with two possible solutions due to PBC:
                     if sympy_expr == cached_simplify("-2*x"):
                         add_new_variable_dict("1+", sympy_expr, coord, temp_dict, variable_dicts)
                     elif sympy_expr == cached_simplify("2*x"):
@@ -2686,45 +2685,30 @@ def get_wyckoff_label_and_equiv_coord_list(
 def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict):
     """
     Compare the Wyckoff labels of a conventional structure to a list of Wyckoff
-    labels.
+    labels, allowing for either conventional cell definition (``spglib`` /
+    Bilbao) -- and thus Wyckoff multiplicities -- being an integer multiple
+    (up to 4x) of the other.
     """
 
-    def _multiply_wyckoffs(wyckoff_labels, n=2):
-        return [str(n * int(wyckoff[:-1])) + wyckoff[-1] for wyckoff in wyckoff_labels]
+    def _multiply_wyckoff(wyckoff, n):
+        return f"{n * int(wyckoff[:-1])}{wyckoff[-1]}"
 
-    wyckoff_symbol_lists = [_multiply_wyckoffs(wyckoff_symbols, n=n) for n in range(1, 5)]  # up to 4x
+    symbol_set = set(wyckoff_symbols)
+    multiplied_symbols = [{_multiply_wyckoff(w, n) for w in wyckoff_symbols} for n in range(1, 5)]  # <=4x
     doped_wyckoffs = []
 
     for site in conv_struct:
         wyckoff_label, _equiv_coords = get_wyckoff_label_and_equiv_coord_list(
             conv_cell_site=site, wyckoff_dict=wyckoff_dict
         )
-        if all(
-            # allow for sga conventional cell (and thus wyckoffs) being a multiple of BCS conventional cell
-            wyckoff_label not in wyckoff_symbol_list
-            for wyckoff_symbol_list in wyckoff_symbol_lists
-        ) and all(
-            # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
-            multiplied_wyckoff_symbol not in wyckoff_symbols
-            for multiplied_wyckoff_symbol in [
-                _multiply_wyckoffs([wyckoff_label], n=n)[0]
-                for n in range(1, 5)  # up to 4x
-            ]
+        if not any(wyckoff_label in symbols for symbols in multiplied_symbols) and not any(
+            _multiply_wyckoff(wyckoff_label, n) in symbol_set for n in range(1, 5)
         ):
             return False  # break on first non-match
         doped_wyckoffs.append(wyckoff_label)
 
-    return any(
-        # allow for sga conventional cell (and thus wyckoffs) being a multiple of BCS conventional cell
-        set(i) == set(doped_wyckoffs)
-        for i in wyckoff_symbol_lists
-    ) or any(
-        set(i) == set(wyckoff_symbols)
-        for i in [
-            # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
-            _multiply_wyckoffs(doped_wyckoffs, n=n)
-            for n in range(1, 5)  # up to 4x
-        ]
+    return any(symbols == set(doped_wyckoffs) for symbols in multiplied_symbols) or any(
+        {_multiply_wyckoff(w, n) for w in doped_wyckoffs} == symbol_set for n in range(1, 5)
     )  # False if no complete match, True otherwise
 
 
@@ -2782,15 +2766,14 @@ def _get_wyckoff_datafile():
 
 def _skip_to_spacegroup(f, spacegroup, setting=None):
     """
-    Read lines from f until a blank line is encountered.
+    Read lines from ``f`` until a blank line is encountered.
     """
     name = str(spacegroup) if setting is None else f"{spacegroup!s}-{setting}"
     while True:
         line = f.readline()
         if not line:
             raise ValueError(
-                f"Invalid spacegroup {spacegroup} with setting: {setting}. Not found in the Wyckoff "
-                f"database!"
+                f"Invalid spacegroup {spacegroup}, setting: {setting}. Not found in the Wyckoff database!"
             )
         if line.startswith(name):
             break
