@@ -2303,7 +2303,7 @@ def _parse_vr_and_poss_procar(
         # only warn if parse_projected_eigen is set to True (not None)
         warnings.warn(failed_eig_parsing_warning_message)
 
-    return vr, procar if parse_procar else vr
+    return (vr, procar) if parse_procar else vr
 
 
 class DefectParser:
@@ -2519,9 +2519,10 @@ class DefectParser:
                 label="bulk",
                 parse_procar=bulk_procar is None,
             )
-            bulk_vr, bulk_procar = (
-                parsed_bulk_vasp_objs if len(parsed_bulk_vasp_objs) == 2 else (parsed_bulk_vasp_objs, None)
-            )
+            if bulk_procar is None:
+                bulk_vr, bulk_procar = parsed_bulk_vasp_objs
+            else:  # keep the user-supplied bulk_procar
+                bulk_vr = parsed_bulk_vasp_objs
             parse_projected_eigen = bulk_vr.projected_eigenvalues is not None or bulk_procar is not None
 
         elif bulk_vr is None:
