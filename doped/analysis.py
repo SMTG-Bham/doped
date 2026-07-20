@@ -3053,7 +3053,7 @@ class DefectParser:
                 parse_procar=False,
             )
 
-        bulk_sc_structure = self.bulk_vr.initial_structure
+        bulk_sc_structure = self.bulk_vr.final_structure
         band_gap, cbm, vbm, _ = self.bulk_vr.eigenvalue_band_properties
         gap_calculation_metadata = {}
 
