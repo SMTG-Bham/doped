@@ -35,12 +35,6 @@ from doped.utils.efficiency import (
     StructureMatcher_scan_stol,
     cache_species,
 )
-from doped.utils.parsing import (
-    _get_bulk_supercell,
-    _num_electrons_from_charge_state,
-    _simple_spin_degeneracy_from_num_electrons,
-    _update_defect_entry_structure_metadata,
-)
 
 if TYPE_CHECKING:
     import matplotlib as mpl
@@ -1262,6 +1256,11 @@ class DefectEntry(thermo.DefectEntry):
 
         if "spin degeneracy" not in self.degeneracy_factors:  # if not set, use simple spin degeneracy
             try:
+                from doped.utils.symmetry import (  # avoid circular import (symmetry imports core)
+                    _num_electrons_from_charge_state,
+                    _simple_spin_degeneracy_from_num_electrons,
+                )
+
                 self.degeneracy_factors["spin degeneracy"] = _simple_spin_degeneracy_from_num_electrons(
                     _num_electrons_from_charge_state(self.defect_supercell, self.charge_state)
                 )
@@ -1711,6 +1710,144 @@ class DefectEntry(thermo.DefectEntry):
             fig=fig,
             style_file=style_file,
         )
+
+
+def _get_bulk_supercell(defect_entry: "DefectEntry"):
+    if hasattr(defect_entry, "bulk_supercell") and defect_entry.bulk_supercell:
+        return defect_entry.bulk_supercell
+
+    if (
+        hasattr(defect_entry, "bulk_entry")
+        and defect_entry.bulk_entry
+        and hasattr(defect_entry.bulk_entry, "structure")
+        and defect_entry.bulk_entry.structure
+    ):
+        return defect_entry.bulk_entry.structure
+
+    return None
+
+
+def _get_defect_supercell(defect_entry: "DefectEntry"):
+    if hasattr(defect_entry, "defect_supercell") and defect_entry.defect_supercell:
+        return defect_entry.defect_supercell
+
+    if (
+        hasattr(defect_entry, "sc_entry")
+        and defect_entry.sc_entry
+        and hasattr(defect_entry.sc_entry, "structure")
+        and defect_entry.sc_entry.structure
+    ):
+        return defect_entry.sc_entry.structure
+
+    return None
+
+
+def _get_defect_supercell_frac_coords(
+    defect_entry: "DefectEntry", relaxed=True
+) -> np.ndarray | tuple[float, float, float] | None:
+    sc_defect_frac_coords: np.ndarray | tuple[float, float, float] | None = (
+        defect_entry.sc_defect_frac_coords
+    )
+    site = None
+
+    if not relaxed:
+        site = _get_defect_supercell_site(defect_entry, relaxed=False)
+    if sc_defect_frac_coords is None and site is None:
+        site = _get_defect_supercell_site(defect_entry)
+    if site is not None:
+        sc_defect_frac_coords = site.frac_coords
+
+    return sc_defect_frac_coords
+
+
+def _get_defect_supercell_site(defect_entry: "DefectEntry", relaxed=True, **kwargs) -> PeriodicSite | None:
+    def _return_defect_supercell_site(defect_entry: "DefectEntry", relaxed=True):
+        if relaxed or defect_entry.defect.defect_type == core.DefectType.Interstitial:
+            # always relaxed site for interstitials (note that "bulk_site" may be guessed initial site if
+            # it is close enough to the relaxed site):
+            if site := getattr(defect_entry, "defect_supercell_site", None):
+                return site
+
+            if defect_entry.sc_defect_frac_coords is not None:
+                return PeriodicSite(
+                    defect_entry.defect.site.species,
+                    defect_entry.sc_defect_frac_coords,
+                    _get_defect_supercell(defect_entry).lattice,
+                )
+
+        # otherwise we use ``bulk_site``, for relaxed = False (vacancies & substitutions)
+        if (
+            hasattr(defect_entry, "calculation_metadata")
+            and defect_entry.calculation_metadata
+            and defect_entry.calculation_metadata.get("bulk_site")
+        ):
+            return defect_entry.calculation_metadata.get("bulk_site")
+
+        return None
+
+    if defect_supercell_site := _return_defect_supercell_site(defect_entry, relaxed=relaxed):
+        return defect_supercell_site
+
+    # otherwise need to reparse info:
+    _update_defect_entry_structure_metadata(defect_entry, **kwargs)
+
+    return _return_defect_supercell_site(defect_entry, relaxed=relaxed)
+
+
+def _update_defect_entry_structure_metadata(
+    defect_entry: "DefectEntry", overwrite: bool = False, **kwargs
+):
+    """
+    Helper function to reparse the defect site information for a given
+    |DefectEntry|, updating the relevant attributes and calculation metadata.
+
+    Args:
+        defect_entry (|DefectEntry|):
+            The |DefectEntry| object for which to update the defect site
+            information.
+        overwrite (bool):
+            Whether to overwrite existing |DefectEntry| attributes with the
+            newly parsed values. Default is ``False`` (i.e. only update if the
+            attributes are not already set).
+        **kwargs:
+            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
+            (such as ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
+            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
+            ``symprec``, ``dist_tol_factor``) in the
+            ``defect_and_info_from_structures`` function.
+    """
+    from doped.analysis import defect_and_info_from_structures
+
+    bulk_supercell = _get_bulk_supercell(defect_entry)
+    defect_supercell = _get_defect_supercell(defect_entry)
+    (
+        defect,
+        defect_site,
+        defect_structure_metadata,
+    ) = defect_and_info_from_structures(
+        defect_supercell,
+        bulk_supercell,
+        _parameter_order_warn=False,
+        **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
+    )
+    if not getattr(defect_entry, "calculation_metadata", None):
+        defect_entry.calculation_metadata = {}
+
+    # update any missing calculation_metadata:
+    for k, v in defect_structure_metadata.items():
+        if not defect_entry.calculation_metadata.get(k) or overwrite:
+            defect_entry.calculation_metadata[k] = v
+
+    for attr_name, value in {
+        "defect": defect,
+        "sc_defect_frac_coords": defect_site.frac_coords,  # _relaxed_ defect site
+        "defect_supercell_site": defect_site,
+        "defect_supercell": defect_supercell,
+        "bulk_supercell": bulk_supercell,
+    }.items():
+        if getattr(defect_entry, attr_name, None) is None or overwrite:
+            setattr(defect_entry, attr_name, value)
 
 
 def template_defect_entry_from_structures(

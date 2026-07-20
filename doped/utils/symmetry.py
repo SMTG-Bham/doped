@@ -31,14 +31,8 @@ from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry, template_defect_entry_from_structures
 from doped.utils.configurations import orient_s2_like_s1
-from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure
-from doped.utils.parsing import (
-    _get_bulk_supercell,
-    _get_defect_supercell,
-    _get_defect_supercell_frac_coords,
-    _get_site_mapping_from_coords_and_indices,
-    get_site_mappings,
-)
+from doped.utils.efficiency import Element, PeriodicSite, SpacegroupAnalyzer, Structure
+from doped.utils.parsing import _get_site_mapping_from_coords_and_indices, get_site_mappings
 from doped.utils.supercells import get_min_image_distance, min_dist
 
 
@@ -3773,6 +3767,12 @@ def point_symmetry_from_defect_entry(
     Returns:
         str: Defect point symmetry (Schoenflies symbol).
     """
+    from doped.core import (  # avoid circular import (doped.core imports doped.utils.symmetry)
+        _get_bulk_supercell,
+        _get_defect_supercell,
+        _get_defect_supercell_frac_coords,
+    )
+
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
@@ -4223,6 +4223,48 @@ def group_order_from_schoenflies(sch_symbol):
     Useful for symmetry and orientational degeneracy analysis.
     """
     return _point_group_order[sch_symbol]
+
+
+def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0) -> int:
+    """
+    Get the total number of electrons (including core electrons! -- so
+    different to ``NELECT`` in VASP in most cases) for a given structure and
+    charge state.
+
+    Args:
+        structure (|Structure|):
+            The structure for which to get the total number of electrons.
+        charge_state (int):
+            The charge state of the system. Default is 0.
+
+    Returns:
+        int:
+            The total number of electrons in the system, including core
+            electrons.
+    """
+    total_Z = int(
+        sum(Element(elt).Z * num for elt, num in structure.composition.get_el_amt_dict().items())
+    )
+    return int(total_Z + charge_state)
+
+
+def _simple_spin_degeneracy_from_num_electrons(num_electrons: int = 0) -> int:
+    """
+    Get the spin degeneracy of a system from the total number of electrons,
+    assuming simple singlet (S=0) behaviour for even-electron systems or
+    doublet (S=1/2) behaviour for odd-electron systems.
+
+    Spin multiplicity is equal to ``2S + 1``, so 1 for singlets (S = 0), 2 for
+    doublets (S = 1/2), 3 for triplets (S = 1) etc.
+
+    Args:
+        num_electrons (int): The total number of electrons.
+
+    Returns:
+        int:
+            The spin multiplicity assuming singlet or doublet behaviour.
+    """
+    return int(num_electrons % 2 + 1)
 
 
 def get_orientational_degeneracy(
