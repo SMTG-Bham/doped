@@ -2647,10 +2647,7 @@ class DefectParser:
         if parse_projected_eigen is not False:
             try:
                 defect_entry._load_and_parse_eigenvalue_data(
-                    bulk_vr=bulk_outputs.raw.get("vasprun"),
-                    bulk_procar=bulk_outputs.raw.get("procar"),
-                    defect_vr=defect_outputs.raw.get("vasprun"),
-                    defect_procar=defect_outputs.raw.get("procar"),
+                    bulk_vr=bulk_outputs, defect_vr=defect_outputs
                 )
             except Exception as exc:
                 if parse_projected_eigen is True:  # otherwise no warning

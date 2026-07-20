@@ -1326,6 +1326,93 @@ def calculation_outputs_from_vasprun(
     )
 
 
+def load_eigenvalue_outputs(
+    path: PathLike | None = None,
+    vr: PathLike | Vasprun | None = None,
+    procar: PathLike | Procar | None = None,
+    label: str = "bulk",
+    run_metadata: dict | None = None,
+) -> CalculationOutputs:
+    """
+    Load VASP calculation outputs `with orbital projections` (from
+    ``vasprun.xml(.gz)``, or failing that ``PROCAR(.gz)``, files) for
+    eigenvalue / band-edge analysis, raising an informative error if no
+    projection data can be parsed.
+
+    Part of the ``doped.io`` backend protocol (optional hook used by
+    ``DefectEntry.get_eigenvalue_analysis()`` when eigenvalue data was not
+    parsed up-front).
+
+    Args:
+        path (PathLike):
+            Path to the calculation directory (e.g.
+            ``DefectEntry.calculation_metadata["bulk_path"]``), to load
+            output files from if ``vr`` is not provided / lacks orbital
+            projections.
+        vr (PathLike | |Vasprun|):
+            Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` |Vasprun|
+            object, if already loaded. Default is ``None``.
+        procar (PathLike | |Procar|):
+            Path to a ``PROCAR(.gz)`` file, or a ``pymatgen`` |Procar|
+            object, if already loaded. Default is ``None``.
+        label (str):
+            Label for the type of calculation being parsed (e.g. ``"bulk"``,
+            ``"defect"``), for informative warnings/errors. Default is
+            ``"bulk"``.
+        run_metadata (dict):
+            The ``DefectEntry.calculation_metadata["run_metadata"]`` dict, to
+            re-hydrate the |Vasprun| from its serialised
+            ``{label}_vasprun_dict`` as a last resort. Default is ``None``.
+
+    Returns:
+        CalculationOutputs:
+            The parsed calculation outputs, with ``projected_eigenvalues``.
+    """
+    if vr is not None and not isinstance(vr, Vasprun):  # just try loading from vasprun first
+        with contextlib.suppress(Exception):
+            vr = get_vasprun(vr, parse_projected_eigen=True)
+
+    if vr is None or (isinstance(vr, Vasprun) and vr.projected_eigenvalues is None):
+        vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", path)  # try from path
+        if multiple:
+            _multiple_files_warning("vasprun.xml", path, vr_path, dir_type=label)
+        with contextlib.suppress(Exception):
+            vr = get_vasprun(vr_path, parse_projected_eigen=True)
+
+    if vr is None and procar is not None:  # then try take from serialised vasprun dict:
+        with contextlib.suppress(Exception):
+            vr = Vasprun.from_dict((run_metadata or {})[f"{label}_vasprun_dict"])
+
+    if not isinstance(vr, Vasprun):
+        raise FileNotFoundError(
+            f"No {label} 'vasprun.xml(.gz)' file found (and successfully parsed) in path: {path}. "
+            f"Required for eigenvalue analysis!"
+        )
+
+    # try load procar data, to see if projected eigenvalues are available:
+    if procar is not None and vr.projected_eigenvalues is None:
+        procar = _parse_procar(procar)
+
+    if procar is None and path is not None and vr.projected_eigenvalues is None:
+        # no procar, try parse from directory:
+        try:
+            procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", path)
+            if multiple:
+                _multiple_files_warning("PROCAR", path, procar_path, dir_type=label)
+            procar = get_procar(procar_path)
+
+        except (FileNotFoundError, IsADirectoryError):
+            procar = None
+
+    if procar is None and vr.projected_eigenvalues is None:
+        raise FileNotFoundError(
+            f"No {label} 'PROCAR' or 'vasprun.xml(.gz)' file found (and successfully parsed) with "
+            f"projected orbitals in path: {path}. Required for eigenvalue analysis!"
+        )
+
+    return calculation_outputs_from_vasprun(vr, procar=procar, path=path)
+
+
 def _get_vr_dict_without_proj_eigenvalues(vr: Vasprun) -> dict:
     """
     Get the ``Vasprun.as_dict()`` representation, with the (large) projected
