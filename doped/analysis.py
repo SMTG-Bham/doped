@@ -23,7 +23,7 @@ from pymatgen.core import Element
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
-from pymatgen.io.vasp.outputs import Procar, Vasprun
+from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
@@ -43,7 +43,7 @@ from doped.generation import (
 from doped.io import get_backend
 from doped.io import utils as _io_utils
 from doped.io.outputs import CalculationOutputs
-from doped.io.vasp.outputs import _parse_procar, calculation_outputs_from_vasprun, get_vasprun
+from doped.io.vasp.outputs import get_vasprun
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import (
     _doped_obj_properties_methods,
@@ -1235,22 +1235,6 @@ class DefectsParser:
         """
         return get_backend(self.calculator)
 
-    @property
-    def bulk_vr(self) -> Vasprun | None:
-        """
-        The raw bulk supercell |Vasprun| object, if parsed with the VASP
-        backend.
-        """
-        return self.bulk_outputs.raw.get("vasprun") if self.bulk_outputs is not None else None
-
-    @property
-    def bulk_procar(self) -> Procar | None:
-        """
-        The raw bulk supercell |Procar| object, if parsed with the VASP
-        backend.
-        """
-        return self.bulk_outputs.raw.get("procar") if self.bulk_outputs is not None else None
-
     def _parse_single_defect(self, defect_folder: str) -> DefectEntry | None:
         """
         Parse a single defect calculation at
@@ -2293,8 +2277,6 @@ class DefectParser:
         bulk_outputs: CalculationOutputs | None = None,
         error_tolerance: float = 0.05,
         parse_projected_eigen: bool | None = None,
-        defect_vr: Vasprun | None = None,
-        bulk_vr: Vasprun | None = None,
         **kwargs,
     ):
         """
@@ -2333,14 +2315,6 @@ class DefectParser:
                 Default is ``None``, which will attempt to load this data but
                 with no warning if it fails (otherwise if ``True`` a warning
                 will be printed).
-            defect_vr (|Vasprun|):
-                ``pymatgen`` |Vasprun| object for the defect supercell
-                calculation, as a (VASP-specific) alternative to
-                ``defect_outputs``.
-            bulk_vr (|Vasprun|):
-                ``pymatgen`` |Vasprun| object for the reference bulk supercell
-                calculation, as a (VASP-specific) alternative to
-                ``bulk_outputs``.
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``,
@@ -2361,31 +2335,11 @@ class DefectParser:
                 symmetries.
         """
         self.defect_entry: DefectEntry = defect_entry
-        if defect_outputs is None and defect_vr is not None:
-            defect_outputs = calculation_outputs_from_vasprun(defect_vr)
-        if bulk_outputs is None and bulk_vr is not None:
-            bulk_outputs = calculation_outputs_from_vasprun(bulk_vr)
         self.defect_outputs = defect_outputs
         self.bulk_outputs = bulk_outputs
         self.error_tolerance = error_tolerance
         self.kwargs = kwargs or {}
         self.parse_projected_eigen = parse_projected_eigen
-
-    @property
-    def defect_vr(self) -> Vasprun | None:
-        """
-        The raw defect supercell |Vasprun| object, if parsed with the VASP
-        backend.
-        """
-        return self.defect_outputs.raw.get("vasprun") if self.defect_outputs is not None else None
-
-    @property
-    def bulk_vr(self) -> Vasprun | None:
-        """
-        The raw bulk supercell |Vasprun| object, if parsed with the VASP
-        backend.
-        """
-        return self.bulk_outputs.raw.get("vasprun") if self.bulk_outputs is not None else None
 
     @property
     def _backend(self):
@@ -2400,8 +2354,6 @@ class DefectParser:
         cls,
         defect_path: PathLike,
         bulk_path: PathLike | None = None,
-        bulk_vr: Vasprun | None = None,
-        bulk_procar: Procar | None = None,
         dielectric: float | np.ndarray | list | None = None,
         charge_state: int | None = None,
         skip_corrections: bool = False,
@@ -2432,16 +2384,7 @@ class DefectParser:
             bulk_path (PathLike):
                 Path to bulk supercell folder (containing the calculation
                 output files, e.g. ``vasprun.xml(.gz)`` with VASP). Not
-                required if ``bulk_outputs`` (or ``bulk_vr``) is provided.
-            bulk_vr (|Vasprun|):
-                ``pymatgen`` |Vasprun| object for the reference bulk
-                supercell calculation, if already loaded (can be supplied to
-                expedite parsing); (VASP-specific) alternative to
-                ``bulk_outputs``. Default is ``None``.
-            bulk_procar (|Procar|):
-                ``pymatgen`` |Procar| object, for the reference bulk
-                supercell calculation if already loaded (can be supplied to
-                expedite parsing). Default is ``None``.
+                required if ``bulk_outputs`` is provided.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant (ionic + static contributions), in
                 the same xyz Cartesian basis as the supercell calculations
@@ -2544,25 +2487,16 @@ class DefectParser:
         }
 
         # parse bulk reference cell output files:
-        if bulk_outputs is None and bulk_vr is not None:  # wrap supplied VASP objects
-            bulk_outputs = calculation_outputs_from_vasprun(bulk_vr, procar=bulk_procar, path=bulk_path)
-        elif bulk_outputs is None and bulk_path is not None:  # parse bulk calculation outputs
+        if bulk_outputs is None and bulk_path is not None:  # parse bulk calculation outputs
             bulk_outputs = backend.get_calculation_outputs(
                 bulk_path,
                 parse_projected_eigen=parse_projected_eigen,
                 label="bulk",
-                parse_procar=bulk_procar is None,
             )
             parse_projected_eigen = bulk_outputs.projected_eigenvalues is not None
 
         elif bulk_outputs is None:
-            raise ValueError("Either `bulk_path`, `bulk_outputs` or `bulk_vr` must be provided!")
-
-        if bulk_procar is not None and bulk_outputs.raw.get("procar") is None:  # user-supplied PROCAR
-            bulk_outputs.raw["procar"] = bulk_procar = _parse_procar(bulk_procar)
-            if bulk_outputs.projected_eigenvalues is None:
-                bulk_outputs.projected_eigenvalues = getattr(bulk_procar, "data", None)
-                parse_projected_eigen = bulk_outputs.projected_eigenvalues is not None
+            raise ValueError("Either `bulk_path` or `bulk_outputs` must be provided!")
 
         bulk_supercell = bulk_outputs.structure.copy()
 
