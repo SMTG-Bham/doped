@@ -649,9 +649,9 @@ class DefectEntry(thermo.DefectEntry):
 
     def _load_and_parse_eigenvalue_data(
         self,
-        defect_vr: PathLike | Vasprun | CalculationOutputs | None = None,
+        defect_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
         defect_procar: PathLike | Procar | None = None,
-        bulk_vr: PathLike | Vasprun | CalculationOutputs | None = None,
+        bulk_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
         bulk_procar: PathLike | Procar | None = None,
         force_reparse: bool = False,
         clear_attributes: bool = True,
@@ -667,7 +667,7 @@ class DefectEntry(thermo.DefectEntry):
         ``clear_attributes`` is ``True`` (default).
 
         Args:
-            defect_vr (PathLike, |Vasprun| or CalculationOutputs):
+            defect_outputs (PathLike, |Vasprun| or CalculationOutputs):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file,
                 a ``pymatgen`` |Vasprun| object, or a (calculator-agnostic)
                 :class:`~doped.io.outputs.CalculationOutputs` object (with
@@ -679,14 +679,14 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["defect_path"]``.
             defect_procar (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
-                ``defect_vr`` (i.e. ``vasprun.xml(.gz)`` file from
+                ``defect_outputs`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
                 ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
                 object, for the defect supercell calculation. If ``None``
                 (default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            bulk_vr (PathLike, |Vasprun| or CalculationOutputs):
+            bulk_outputs (PathLike, |Vasprun| or CalculationOutputs):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file,
                 a ``pymatgen`` |Vasprun| object, or a (calculator-agnostic)
                 :class:`~doped.io.outputs.CalculationOutputs` object (with
@@ -698,7 +698,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["bulk_path"]``.
             bulk_procar (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
-                ``bulk_vr`` (i.e. ``vasprun.xml(.gz)`` file from
+                ``bulk_outputs`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
                 ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
@@ -723,17 +723,25 @@ class DefectEntry(thermo.DefectEntry):
 
         backend = get_backend(self.calculation_metadata.get("calculator", "vasp"))
         outputs_dict: dict[str, CalculationOutputs] = {}
-        for vr, procar, label in [(bulk_vr, bulk_procar, "bulk"), (defect_vr, defect_procar, "defect")]:
+        for supplied_outputs, procar, label in [
+            (bulk_outputs, bulk_procar, "bulk"),
+            (defect_outputs, defect_procar, "defect"),
+        ]:
             path = self.calculation_metadata.get(f"{label}_path")
-            if isinstance(vr, CalculationOutputs) and vr.projected_eigenvalues is not None:
-                outputs = vr
+            if (
+                isinstance(supplied_outputs, CalculationOutputs)
+                and supplied_outputs.projected_eigenvalues is not None
+            ):
+                outputs = supplied_outputs
             elif (load_eigenvalue_outputs := getattr(backend, "load_eigenvalue_outputs", None)) is not (
                 None
             ):
                 outputs = load_eigenvalue_outputs(
                     path=path,
-                    vr=None if isinstance(vr, CalculationOutputs) else vr,
-                    procar=procar,
+                    outputs=(
+                        None if isinstance(supplied_outputs, CalculationOutputs) else supplied_outputs
+                    ),
+                    projections=procar,
                     label=label,
                     run_metadata=self.calculation_metadata.get("run_metadata") or {},
                 )
@@ -749,8 +757,8 @@ class DefectEntry(thermo.DefectEntry):
 
         with cache_species(Structure):
             band_orb, vbm_info, cbm_info = get_band_edge_info(
-                bulk_vr=outputs_dict["bulk"],
-                defect_vr=outputs_dict["defect"],
+                bulk_outputs=outputs_dict["bulk"],
+                defect_outputs=outputs_dict["defect"],
                 defect_supercell_site=self.defect_supercell_site,
             )
 
@@ -785,9 +793,9 @@ class DefectEntry(thermo.DefectEntry):
         self,
         plot: bool = True,
         filename: PathLike | None = None,
-        defect_vr: PathLike | Vasprun | None = None,
+        defect_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
         defect_procar: PathLike | Procar | None = None,
-        bulk_vr: PathLike | Vasprun | None = None,
+        bulk_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
         bulk_procar: PathLike | Procar | None = None,
         force_reparse: bool = False,
         clear_attributes: bool = True,
@@ -830,14 +838,15 @@ class DefectEntry(thermo.DefectEntry):
             filename (PathLike):
                 Filename to save the eigenvalue plot to (if ``plot = True``).
                 If ``None`` (default), plots are not saved.
-            defect_vr (PathLike, |Vasprun|):
+            defect_outputs (PathLike, |Vasprun| or CalculationOutputs):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-                Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
-                or a ``pymatgen`` |Vasprun| object, for the defect supercell
-                calculation. If ``None`` (default), tries to load the
-                |Vasprun| object from
+                Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file,
+                a ``pymatgen`` |Vasprun| object or a
+                :class:`~doped.io.outputs.CalculationOutputs` object, for the
+                defect supercell calculation. If ``None`` (default), tries to
+                load the |Vasprun| object from
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
@@ -845,16 +854,17 @@ class DefectEntry(thermo.DefectEntry):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
-                and/or if ``defect_vr`` was parsed with
+                and/or if ``defect_outputs`` was parsed with
                 ``parse_projected_eigen = True``.
-            bulk_vr (PathLike, |Vasprun|):
+            bulk_outputs (PathLike, |Vasprun| or CalculationOutputs):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-                Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
-                or a ``pymatgen`` |Vasprun| object, for the reference bulk
-                supercell calculation. If ``None`` (default), tries to load
-                the |Vasprun| object from
+                Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file,
+                a ``pymatgen`` |Vasprun| object or a
+                :class:`~doped.io.outputs.CalculationOutputs` object, for the
+                reference bulk supercell calculation. If ``None`` (default),
+                tries to load the |Vasprun| object from
                 ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
@@ -862,18 +872,13 @@ class DefectEntry(thermo.DefectEntry):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
-                and/or if ``bulk_vr`` was parsed with
+                and/or if ``bulk_outputs`` was parsed with
                 ``parse_projected_eigen = True``.
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
                 ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
                 object, for the reference bulk supercell calculation. If
                 ``None`` (default), tries to load from a ``PROCAR(.gz)`` file
                 at ``self.calculation_metadata["bulk_path"]``.
-                Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
-                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
-                object, for the defect supercell calculation. If ``None``
-                (default), tries to load from a ``PROCAR(.gz)`` file at
-                ``self.calculation_metadata["defect_path"]``.
             force_reparse (bool):
                 Whether to force re-parsing of the eigenvalue data, even if
                 already present in the ``calculation_metadata``.
@@ -897,9 +902,9 @@ class DefectEntry(thermo.DefectEntry):
         from doped.utils.eigenvalues import get_eigenvalue_analysis
 
         self._load_and_parse_eigenvalue_data(
-            bulk_vr=bulk_vr,
+            bulk_outputs=bulk_outputs,
             bulk_procar=bulk_procar,
-            defect_vr=defect_vr,
+            defect_outputs=defect_outputs,
             defect_procar=defect_procar,
             force_reparse=force_reparse,
             clear_attributes=clear_attributes,

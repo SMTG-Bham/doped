@@ -1328,8 +1328,8 @@ def calculation_outputs_from_vasprun(
 
 def load_eigenvalue_outputs(
     path: PathLike | None = None,
-    vr: PathLike | Vasprun | None = None,
-    procar: PathLike | Procar | None = None,
+    outputs: PathLike | Vasprun | None = None,
+    projections: PathLike | Procar | None = None,
     label: str = "bulk",
     run_metadata: dict | None = None,
 ) -> CalculationOutputs:
@@ -1347,12 +1347,12 @@ def load_eigenvalue_outputs(
         path (PathLike):
             Path to the calculation directory (e.g.
             ``DefectEntry.calculation_metadata["bulk_path"]``), to load
-            output files from if ``vr`` is not provided / lacks orbital
+            output files from if ``outputs`` is not provided / lacks orbital
             projections.
-        vr (PathLike | |Vasprun|):
+        outputs (PathLike | |Vasprun|):
             Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` |Vasprun|
             object, if already loaded. Default is ``None``.
-        procar (PathLike | |Procar|):
+        projections (PathLike | |Procar|):
             Path to a ``PROCAR(.gz)`` file, or a ``pymatgen`` |Procar|
             object, if already loaded. Default is ``None``.
         label (str):
@@ -1368,6 +1368,7 @@ def load_eigenvalue_outputs(
         CalculationOutputs:
             The parsed calculation outputs, with ``projected_eigenvalues``.
     """
+    vr, procar = outputs, projections
     if vr is not None and not isinstance(vr, Vasprun):  # just try loading from vasprun first
         with contextlib.suppress(Exception):
             vr = get_vasprun(vr, parse_projected_eigen=True)

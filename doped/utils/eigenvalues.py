@@ -234,7 +234,7 @@ def make_perfect_band_edge_state_from_vasp(
 
 
 def make_band_edge_orbital_infos(
-    defect_vr: CalculationOutputs | Vasprun,
+    defect_outputs: CalculationOutputs | Vasprun,
     vbm: float,
     cbm: float,
     eigval_shift: float = 0.0,
@@ -249,7 +249,7 @@ def make_band_edge_orbital_infos(
     calculation outputs.
 
     Args:
-        defect_vr (CalculationOutputs or |Vasprun|):
+        defect_outputs (CalculationOutputs or |Vasprun|):
             ``CalculationOutputs`` (or |Vasprun|) object for the defect
             supercell calculation.
         vbm (float): VBM eigenvalue in eV.
@@ -262,12 +262,12 @@ def make_band_edge_orbital_infos(
         defect_procar (|Procar|):
             ``pymatgen`` |Procar| object, for the defect supercell, if
             projected eigenvalue/orbitals data is not provided in
-            ``defect_vr``.
+            ``defect_outputs``.
 
     Returns:
         ``BandEdgeOrbitalInfos`` object.
     """
-    outputs = _as_calculation_outputs(defect_vr, procar=defect_procar)
+    outputs = _as_calculation_outputs(defect_outputs, procar=defect_procar)
     outputs.require(
         "eigenvalues", "projected_eigenvalues", "kpoint_coords", task="Eigenvalue & orbital analysis"
     )
@@ -314,8 +314,8 @@ def make_band_edge_orbital_infos(
 
 
 def get_band_edge_info(
-    defect_vr: CalculationOutputs | Vasprun,
-    bulk_vr: CalculationOutputs | Vasprun,
+    defect_outputs: CalculationOutputs | Vasprun,
+    bulk_outputs: CalculationOutputs | Vasprun,
     defect_procar: PathLike | Procar | None = None,
     bulk_procar: PathLike | Procar | None = None,
     defect_supercell_site: PeriodicSite | None = None,
@@ -329,14 +329,14 @@ def get_band_edge_info(
     See the :ref:`Tips:Perturbed Host States (Shallow Defects)` tips section.
 
     Args:
-        defect_vr (CalculationOutputs or |Vasprun|):
+        defect_outputs (CalculationOutputs or |Vasprun|):
             :class:`~doped.io.outputs.CalculationOutputs` or |Vasprun| object
             of the defect supercell calculation. If ``defect_procar`` is not
             provided, then this must have orbital projection data
             (``projected_eigenvalues``; i.e. from a calculation with
             ``LORBIT > 10`` in the ``INCAR`` and parsed with
             ``parse_projected_eigen = True`` (default), with VASP).
-        bulk_vr (CalculationOutputs or |Vasprun|):
+        bulk_outputs (CalculationOutputs or |Vasprun|):
             :class:`~doped.io.outputs.CalculationOutputs` or |Vasprun| object
             of the bulk supercell calculation. If ``bulk_procar`` is not
             provided, then this must have orbital projection data
@@ -347,14 +347,14 @@ def get_band_edge_info(
             Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
             object, for the defect supercell calculation. Not required if the
-            supplied ``defect_vr`` has orbital projection data. Default is
-            ``None``.
+            supplied ``defect_outputs`` has orbital projection data. Default
+            is ``None``.
         bulk_procar (PathLike, |Procar|):
             Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
             object, for the reference bulk supercell calculation. Not required
-            if the supplied ``bulk_vr`` has orbital projection data. Default
-            is ``None``.
+            if the supplied ``bulk_outputs`` has orbital projection data.
+            Default is ``None``.
         defect_supercell_site (|PeriodicSite|):
             |PeriodicSite| object of the defect site in the defect supercell,
             from which the defect neighbours are determined for localisation
@@ -371,8 +371,8 @@ def get_band_edge_info(
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects for the
         bulk VBM and CBM.
     """
-    bulk_outputs = _as_calculation_outputs(bulk_vr, procar=bulk_procar)
-    defect_outputs = _as_calculation_outputs(defect_vr, procar=defect_procar)
+    bulk_outputs = _as_calculation_outputs(bulk_outputs, procar=bulk_procar)
+    defect_outputs = _as_calculation_outputs(defect_outputs, procar=defect_procar)
     band_edge_prop = band_edge_properties_from_outputs(bulk_outputs)
 
     # get defect neighbour indices
@@ -412,9 +412,9 @@ def get_eigenvalue_analysis(
     filename: str | None = None,
     ks_labels: bool = False,
     style_file: str | None = None,
-    bulk_vr: PathLike | Vasprun | CalculationOutputs | None = None,
+    bulk_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
     bulk_procar: PathLike | Procar | None = None,
-    defect_vr: PathLike | Vasprun | CalculationOutputs | None = None,
+    defect_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
     defect_procar: PathLike | Procar | None = None,
     force_reparse: bool = False,
     ylims: tuple[float, float] | None = None,
@@ -471,14 +471,15 @@ def get_eigenvalue_analysis(
             Path to a ``mplstyle`` file to use for the plot. If ``None``
             (default), uses the ``doped`` displacement plot style
             (``doped/utils/displacement.mplstyle``).
-        bulk_vr (PathLike, |Vasprun|):
+        bulk_outputs (PathLike, |Vasprun| or CalculationOutputs):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
-            ``pymatgen`` |Vasprun| object, for the reference bulk supercell
-            calculation. If ``None`` (default), tries to load the |Vasprun|
-            object from
+            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file, a
+            ``pymatgen`` |Vasprun| object or a
+            :class:`~doped.io.outputs.CalculationOutputs` object, for the
+            reference bulk supercell calculation. If ``None`` (default), tries
+            to load the |Vasprun| object from
             ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``
             or, failing that, from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
@@ -486,20 +487,21 @@ def get_eigenvalue_analysis(
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if
-            ``bulk_vr`` was parsed with ``parse_projected_eigen = True``
+            ``bulk_outputs`` was parsed with ``parse_projected_eigen = True``
             (default). Either a path to the ``VASP`` ``PROCAR`` output file
             (with ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen``
             |Procar| object, for the reference bulk supercell calculation. If
             ``None`` (default), tries to load from a ``PROCAR(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
-        defect_vr (PathLike, |Vasprun|):
+        defect_outputs (PathLike, |Vasprun| or CalculationOutputs):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
-            ``pymatgen`` |Vasprun| object, for the defect supercell
-            calculation. If ``None`` (default), tries to load the |Vasprun|
-            object from
+            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file, a
+            ``pymatgen`` |Vasprun| object or a
+            :class:`~doped.io.outputs.CalculationOutputs` object, for the
+            defect supercell calculation. If ``None`` (default), tries to load
+            the |Vasprun| object from
             ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``
             or, failing that, from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
@@ -507,7 +509,7 @@ def get_eigenvalue_analysis(
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if
-            ``defect_vr`` was parsed with ``parse_projected_eigen = True``
+            ``defect_outputs`` was parsed with ``parse_projected_eigen = True``
             (default). Either a path to the ``VASP`` ``PROCAR`` output file
             (with ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen``
             |Procar| object, for the defect supercell calculation. If
@@ -548,16 +550,16 @@ def get_eigenvalue_analysis(
         ``plot=True``).
     """
     if defect_entry is None:
-        if not all([bulk_vr, defect_vr]):
+        if not all([bulk_outputs, defect_outputs]):
             raise ValueError(
-                "If `defect_entry` is not provided, then both `bulk_vr` and `defect_vr` at a minimum "
-                "must be provided!"
+                "If `defect_entry` is not provided, then both `bulk_outputs` and `defect_outputs` at a "
+                "minimum must be provided!"
             )
 
-        if not isinstance(bulk_vr, Vasprun | CalculationOutputs):
-            bulk_vr = Vasprun(bulk_vr)
-        if not isinstance(defect_vr, Vasprun | CalculationOutputs):
-            defect_vr = Vasprun(defect_vr)
+        if not isinstance(bulk_outputs, Vasprun | CalculationOutputs):
+            bulk_outputs = Vasprun(bulk_outputs)
+        if not isinstance(defect_outputs, Vasprun | CalculationOutputs):
+            defect_outputs = Vasprun(defect_outputs)
 
         def _structure_of(outputs_or_vr):
             if isinstance(outputs_or_vr, CalculationOutputs):
@@ -565,14 +567,17 @@ def get_eigenvalue_analysis(
             return outputs_or_vr.final_structure
 
         defect_entry = template_defect_entry_from_structures(
-            _structure_of(defect_vr), _structure_of(bulk_vr), oxi_state="Undetermined", multiplicity=1
+            _structure_of(defect_outputs),
+            _structure_of(bulk_outputs),
+            oxi_state="Undetermined",
+            multiplicity=1,
         )
 
-    # TODO: Allow just bulk and 'defect_vr' to be passed directly for this function, so it can be used
-    #  with e.g. polarons etc
+    # TODO: Allow just bulk and 'defect_outputs' to be passed directly for this function, so it can be
+    #  used with e.g. polarons etc
     defect_entry._load_and_parse_eigenvalue_data(
-        bulk_vr=bulk_vr,
-        defect_vr=defect_vr,
+        bulk_outputs=bulk_outputs,
+        defect_outputs=defect_outputs,
         bulk_procar=bulk_procar,
         defect_procar=defect_procar,
         force_reparse=force_reparse,

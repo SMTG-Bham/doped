@@ -89,10 +89,12 @@ reference backend):
   ``MISMATCH_WARNING_SPECS``): defect/bulk calculation settings
   compatibility checks, populating ``"run_metadata"`` (and any
   ``"mismatching_..."`` entries) in ``DefectEntry.calculation_metadata``.
-- ``load_eigenvalue_outputs(path, vr, procar, label, run_metadata)``:
+- ``load_eigenvalue_outputs(path, outputs, projections, label, run_metadata)``:
   loading of outputs `with orbital projections` for eigenvalue / band-edge
   analysis (``DefectEntry.get_eigenvalue_analysis()``), when not parsed
-  up-front.
+  up-front. ``outputs``/``projections`` are optional already-loaded
+  calculator-native objects or file paths (e.g. ``Vasprun``/``Procar``
+  objects with VASP).
 
 The generic calculation-file discovery helpers in ``doped.io.utils``
 (e.g. ``_find_calc_outputs``, ``_determine_subfolder``) are parameterised by

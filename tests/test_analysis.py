@@ -3634,10 +3634,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         # now should still all work fine:
         print("Testing v_Cu_0 with plot = True, direct VASP outputs; vaspruns")
         bes, fig = get_eigenvalue_analysis(
-            bulk_vr=get_vasprun(
+            bulk_outputs=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
-            defect_vr=get_vasprun(
+            defect_outputs=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
         )
@@ -3646,10 +3646,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         print("Testing v_Cu_0 with plot = True, direct VASP outputs; vaspruns and procars")
         self.tearDown()  # ensure PROCARs returned to original state
         bes, fig = get_eigenvalue_analysis(
-            bulk_vr=get_vasprun(
+            bulk_outputs=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
-            defect_vr=get_vasprun(
+            defect_outputs=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
             bulk_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR.gz"),
@@ -3657,12 +3657,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
 
-        # test error when not providing defect_entry or bulk_vr:
+        # test error when not providing defect_entry or bulk_outputs:
         with pytest.raises(ValueError) as exc:
             get_eigenvalue_analysis()
         assert (
-            "If `defect_entry` is not provided, then both `bulk_vr` and `defect_vr` at a minimum must be "
-            "provided!" in str(exc.value)
+            "If `defect_entry` is not provided, then both `bulk_outputs` and `defect_outputs` at a "
+            "minimum must be provided!" in str(exc.value)
         )
 
         # test all fine when saving and reloading from JSON (previously didn't, but fixed)

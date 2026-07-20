@@ -2610,9 +2610,8 @@ class DefectParser:
         )
         calculation_metadata.update(defect_structure_metadata)  # add defect structure metadata
 
-        # ComputedEntry.parameters keys have random order when using Vasprun.get_computed_entry(), which is
-        # fine but shows file differences in git diffs, so sort them to avoid this (just for easier
-        # tracking for SK, allow it fam)
+        # ComputedEntry.parameters keys have random order when using Vasprun.get_computed_entry(), which
+        # is fine but shows file differences in git diffs, so sort them to avoid this (for easier tracking)
         sc_entry = defect_outputs.get_computed_entry()
         bulk_entry = bulk_outputs.get_computed_entry()
         for computed_entry in [sc_entry, bulk_entry]:
@@ -2647,7 +2646,7 @@ class DefectParser:
         if parse_projected_eigen is not False:
             try:
                 defect_entry._load_and_parse_eigenvalue_data(
-                    bulk_vr=bulk_outputs, defect_vr=defect_outputs
+                    bulk_outputs=bulk_outputs, defect_outputs=defect_outputs
                 )
             except Exception as exc:
                 if parse_projected_eigen is True:  # otherwise no warning
