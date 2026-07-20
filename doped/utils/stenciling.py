@@ -25,9 +25,7 @@ from doped.utils.efficiency import (
     _cached_Composition_init,
     _Composition__eq__,
 )
-from doped.utils.parsing import (
-    _get_bulk_supercell,
-    _get_defect_supercell,
+from doped.utils.mappings import (
     check_atom_mapping_far_from_defect,
     get_coords_and_idx_of_species,
     get_defect_type_and_composition_diff,

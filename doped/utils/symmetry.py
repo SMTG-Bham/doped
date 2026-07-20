@@ -32,7 +32,7 @@ from tqdm import tqdm
 from doped.core import Defect, DefectEntry, template_defect_entry_from_structures
 from doped.utils.configurations import orient_s2_like_s1
 from doped.utils.efficiency import Element, PeriodicSite, SpacegroupAnalyzer, Structure
-from doped.utils.parsing import _get_site_mapping_from_coords_and_indices, get_site_mappings
+from doped.utils.mappings import _get_site_mapping_from_coords_and_indices, get_site_mappings
 from doped.utils.supercells import get_min_image_distance, min_dist
 
 

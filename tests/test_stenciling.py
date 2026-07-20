@@ -27,7 +27,7 @@ from doped.utils.efficiency import (
     StructureMatcher_scan_stol,
     get_element_min_max_bond_length_dict,
 )
-from doped.utils.parsing import check_atom_mapping_far_from_defect, get_defect_type_and_composition_diff
+from doped.utils.mappings import check_atom_mapping_far_from_defect, get_defect_type_and_composition_diff
 from doped.utils.stenciling import get_defect_in_supercell
 from doped.utils.supercells import min_dist
 

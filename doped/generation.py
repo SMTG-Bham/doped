@@ -44,9 +44,9 @@ from doped.core import (
     get_oxi_probabilities,
     guess_and_set_oxi_states_with_timeout,
 )
-from doped.utils import parsing, pool_manager, supercells, symmetry
+from doped.utils import pool_manager, supercells, symmetry
 from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
-from doped.utils.parsing import reorder_s2_like_s1
+from doped.utils.mappings import reorder_s2_like_s1
 from doped.utils.plotting import format_defect_name
 
 if TYPE_CHECKING:
@@ -361,8 +361,8 @@ def closest_site_info(
             structure = defect.structure
         if site is None:
             # use defect_supercell_site if attribute exists, otherwise use sc_defect_frac_coords:
-            site = parsing._get_defect_supercell_site(defect_entry_or_defect)
-            structure = parsing._get_bulk_supercell(defect_entry_or_defect)
+            site = _get_defect_supercell_site(defect_entry_or_defect)
+            structure = _get_bulk_supercell(defect_entry_or_defect)
 
     elif isinstance(defect_entry_or_defect, Defect | core.Defect):
         if isinstance(defect_entry_or_defect, core.Defect):

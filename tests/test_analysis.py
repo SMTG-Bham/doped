@@ -1,6 +1,6 @@
 """
 Tests for the ``doped.analysis`` module, which also implicitly tests most of
-the ``doped.utils.parsing`` module, and some ``doped.thermodynamics``
+the ``doped.utils.mappings`` module, and some ``doped.thermodynamics``
 functions.
 """
 
@@ -47,14 +47,14 @@ from doped.io.vasp.outputs import (
 )
 from doped.utils.efficiency import Structure
 from doped.utils.eigenvalues import get_eigenvalue_analysis
-from doped.utils.parsing import (
+from doped.utils.mappings import (
     _create_unrelaxed_defect_structure,
-    _num_electrons_from_charge_state,
-    _simple_spin_degeneracy_from_num_electrons,
     get_defect_type_and_composition_diff,
     get_defect_type_and_site_indices,
 )
 from doped.utils.symmetry import (
+    _num_electrons_from_charge_state,
+    _simple_spin_degeneracy_from_num_electrons,
     get_orientational_degeneracy,
     get_primitive_structure,
     point_symmetry_from_defect_entry,

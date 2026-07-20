@@ -70,9 +70,8 @@ from doped.utils import (
     pool_manager,
 )
 from doped.utils.efficiency import StructureMatcher_scan_stol, _parse_site_species_str
-from doped.utils.parsing import (
+from doped.utils.mappings import (
     _create_unrelaxed_defect_structure,
-    _get_defect_supercell_frac_coords,
     check_atom_mapping_far_from_defect,
     get_defect_type_and_site_indices,
     get_dimer_bonds,

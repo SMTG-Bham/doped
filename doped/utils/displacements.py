@@ -21,9 +21,9 @@ from doped.utils.parsing import (
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
     _get_defect_supercell_site,
-    get_matching_site,
-    get_site_mappings,
 )
+from doped.generation import _get_element_list
+from doped.utils.mappings import get_matching_site, get_site_mappings
 from doped.utils.plotting import doped_plot_style
 from doped.utils.symmetry import _round_floats
 

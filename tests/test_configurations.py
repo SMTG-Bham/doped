@@ -24,7 +24,7 @@ from doped.utils.configurations import (
     orient_s2_like_s1,
     write_path_structures,
 )
-from doped.utils.parsing import (
+from doped.utils.mappings import (
     check_atom_mapping_far_from_defect,
     get_site_mappings,
     get_wigner_seitz_radius,

@@ -1,6 +1,6 @@
 """
 Tests for the `doped.utils.plotting` module, which also implicitly tests some
-of the `doped.utils.parsing` and `doped.analysis` modules.
+of the `doped.utils.mappings` and `doped.analysis` modules.
 
 Note that some of the integration tests in `test_analysis.py` also implicitly
 tests much of the plotting functionality.

@@ -15,7 +15,7 @@ from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.util.typing import PathLike
 
 from doped.utils.efficiency import StructureMatcher_scan_stol, get_element_min_max_bond_length_dict
-from doped.utils.parsing import check_atom_mapping_far_from_defect
+from doped.utils.mappings import check_atom_mapping_far_from_defect
 
 
 def get_transformation_from_s2_to_s1(
@@ -352,7 +352,7 @@ def orient_s2_like_s1(
             If ``True`` (default), check the atom mapping between ``struct1``
             and the re-oriented ``struct2`` (using
             ``check_atom_mapping_far_from_defect`` from
-            ``doped.utils.parsing``), warning if a significant mismatch
+            ``doped.utils.mappings``), warning if a significant mismatch
             remains throughout the cell after re-orientation. This typically
             indicates a mismatch in the lattice definitions (e.g. different
             tiling of primitive cells within identical supercell lattice

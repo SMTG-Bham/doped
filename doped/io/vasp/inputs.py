@@ -30,11 +30,6 @@ from doped.generation import (
     name_defect_entries,
 )
 from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
-from doped.utils.parsing import (
-    _get_bulk_supercell,
-    _get_defect_supercell,
-    _get_defect_supercell_frac_coords,
-)
 from doped.utils.symmetry import _frac_coords_sort_func
 
 _ignore_pmg_warnings()

@@ -66,13 +66,7 @@ from doped.io.vasp.outputs import (
     get_locpot,
 )
 from doped.utils import vise_handling
-from doped.utils.parsing import (
-    _get_bulk_supercell,
-    _get_defect_supercell,
-    _get_defect_supercell_frac_coords,
-    get_site_mappings,
-    get_wigner_seitz_radius,
-)
+from doped.utils.mappings import get_site_mappings, get_wigner_seitz_radius
 from doped.utils.plotting import doped_plot_style, format_defect_name
 
 
