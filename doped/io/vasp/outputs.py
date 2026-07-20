@@ -14,6 +14,7 @@ import warnings
 from collections.abc import Iterable
 from functools import lru_cache, partialmethod
 from pathlib import Path
+from typing import Any
 from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
@@ -998,6 +999,24 @@ def _total_energies_from_outputs(outputs: CalculationOutputs) -> list[float]:
     return [energy for energy in energies if energy is not None]
 
 
+SITE_POTENTIALS_FILE = "OUTCAR"
+"""
+Name of the (VASP) output file providing atomic-site electrostatic potentials
+(for Kumagai (eFNV) charge corrections).
+
+Part of the ``doped.io`` backend
+protocol.
+"""
+
+PLANAR_POTENTIALS_FILE = "LOCPOT"
+"""
+Name of the (VASP) output file providing planar-averaged electrostatic
+potentials (for Freysoldt (FNV) charge corrections).
+
+Part of the ``doped.io``
+backend protocol.
+"""
+
 FILE_PARSING_ACTIONS = {
     "vasprun.xml": "parse the calculation energy and metadata.",
     "OUTCAR": "parse core levels and compute the Kumagai (eFNV) image charge correction.",
@@ -1029,12 +1048,15 @@ def _parse_vr_and_poss_procar(
     parse_projected_eigen: bool | None = None,
     label: str = "bulk",
     parse_procar: bool = True,
+    **kwargs,
 ):
     """
     Parse the ``vasprun.xml(.gz)`` file at ``output_path``, and possibly a
     ``PROCAR`` file if both ``parse_procar`` and ``parse_projected_eigen`` are
     ``True`` and  projected eigenvalues cannot be parsed from the
     ``vasprun.xml(.gz)`` file.
+
+    ``kwargs`` are passed to :func:`get_vasprun` (e.g. ``parse_mag``).
     """
     procar = None
     failed_eig_parsing_warning_message = (
@@ -1045,14 +1067,17 @@ def _parse_vr_and_poss_procar(
     if multiple:
         _multiple_files_warning("vasprun.xml", output_path, vr_path, dir_type=label)
 
+    # vr.eigenvalues not needed for defect supercells, except for vr-only eigenvalue analysis:
+    parse_eigen = kwargs.pop("parse_eigen", parse_projected_eigen is not False or label != "defect")
     try:
         vr = get_vasprun(
             vr_path,
             parse_projected_eigen=parse_projected_eigen is not False,
-            parse_eigen=(parse_projected_eigen is not False or label == "bulk"),
-        )  # vr.eigenvalues not needed for defects except for vr-only eigenvalue analysis
+            parse_eigen=parse_eigen,
+            **kwargs,
+        )
     except Exception as vr_exc:
-        vr = get_vasprun(vr_path, parse_projected_eigen=False, parse_eigen=label == "bulk")
+        vr = get_vasprun(vr_path, parse_projected_eigen=False, parse_eigen=label != "defect", **kwargs)
         failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
 
         if parse_procar:
@@ -1073,13 +1098,16 @@ def _parse_vr_and_poss_procar(
         # only warn if parse_projected_eigen is set to True (not None)
         warnings.warn(failed_eig_parsing_warning_message)
 
-    return vr, procar if parse_procar else vr
+    return (vr, procar) if parse_procar else vr
 
 
 def get_calculation_outputs(
     path: PathLike,
     load_planar_averaged_potentials: bool = False,
     load_site_potentials: bool = False,
+    parse_projected_eigen: bool | None = None,
+    label: str = "calculation",
+    parse_procar: bool = True,
     **kwargs,
 ) -> CalculationOutputs:
     """
@@ -1090,7 +1118,11 @@ def get_calculation_outputs(
     structures, eigenvalue data and calculation metadata, with optional
     parsing of the ``LOCPOT`` (planar-averaged electrostatic potentials, for
     Freysoldt (FNV) charge corrections) and ``OUTCAR`` (atomic-site core
-    potentials, for Kumagai (eFNV) charge corrections) files.
+    potentials, for Kumagai (eFNV) charge corrections) files. The parsed
+    ``Vasprun`` (and possible ``Procar``) objects are retained in the
+    (non-serialised) ``CalculationOutputs.raw`` dict.
+
+    Part of the ``doped.io`` backend protocol.
 
     Args:
         path (PathLike):
@@ -1102,23 +1134,39 @@ def get_calculation_outputs(
         load_site_potentials (bool):
             Whether to also parse the atomic-site core potentials from the
             ``OUTCAR(.gz)`` file in ``path``. Default is ``False``.
+        parse_projected_eigen (bool):
+            Whether to parse orbital projections (from the
+            ``vasprun.xml(.gz)`` file, or failing that, a ``PROCAR(.gz)``
+            file if present and ``parse_procar`` is ``True``). If ``None``
+            (default), tries to parse projections but with no warning if this
+            fails; if ``True``, warns on failure; if ``False``, skips
+            projection parsing (and eigenvalue parsing for defect
+            supercells, i.e. if ``label="defect"``) for expedited parsing.
+        label (str):
+            Label for the type of calculation being parsed (e.g. ``"bulk"``,
+            ``"defect"``), for informative warnings and parsing efficiency
+            choices. Default is ``"calculation"``.
+        parse_procar (bool):
+            Whether to attempt parsing a ``PROCAR(.gz)`` file for orbital
+            projections, if these could not be parsed from the
+            ``vasprun.xml(.gz)`` file. Default is ``True``.
         **kwargs:
             Additional keyword arguments to pass to :func:`get_vasprun` (e.g.
-            ``parse_projected_eigen``, ``parse_mag``).
+            ``parse_mag``).
 
     Returns:
         CalculationOutputs: The parsed calculation outputs.
     """
-    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", path)
-    if multiple:
-        _multiple_files_warning("vasprun.xml", path, vr_path, dir_type="calculation")
-    vr = get_vasprun(vr_path, **kwargs)
+    parsed = _parse_vr_and_poss_procar(
+        path, parse_projected_eigen=parse_projected_eigen, label=label, parse_procar=parse_procar, **kwargs
+    )
+    vr, procar = parsed if parse_procar else (parsed, None)
 
     planar_averaged_potentials = None
     if load_planar_averaged_potentials:
         locpot_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", path)
         if multiple:
-            _multiple_files_warning("LOCPOT", path, locpot_path, dir_type="calculation")
+            _multiple_files_warning("LOCPOT", path, locpot_path, dir_type=label)
         locpot = get_locpot(locpot_path)
         planar_averaged_potentials = {axis: locpot.get_average_along_axis(axis) for axis in [0, 1, 2]}
 
@@ -1126,13 +1174,14 @@ def get_calculation_outputs(
     if load_site_potentials:
         outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", path)
         if multiple:
-            _multiple_files_warning("OUTCAR", path, outcar_path, dir_type="calculation")
+            _multiple_files_warning("OUTCAR", path, outcar_path, dir_type=label)
         site_potentials = get_core_potentials_from_outcar(
-            outcar_path, dir_type="calculation", total_energy=vr.final_energy
+            outcar_path, dir_type=label, total_energy=vr.final_energy
         )
 
     return calculation_outputs_from_vasprun(
         vr,
+        procar=procar,
         path=path,
         planar_averaged_potentials=planar_averaged_potentials,
         site_potentials=site_potentials,
@@ -1189,6 +1238,11 @@ def calculation_outputs_from_vasprun(
     with contextlib.suppress(Exception):
         charge = total_charge_from_vasprun(vasprun)
 
+    procar = _parse_procar(procar) if procar is not None else None
+    projected_eigenvalues = vasprun.projected_eigenvalues
+    if projected_eigenvalues is None and procar is not None:
+        projected_eigenvalues = procar.data  # fall back to PROCAR orbital projections
+
     return CalculationOutputs(
         structure=vasprun.final_structure,
         energy=vasprun.final_energy,
@@ -1198,7 +1252,7 @@ def calculation_outputs_from_vasprun(
         converged_ionic=vasprun.converged_ionic,
         efermi=vasprun.efermi,
         eigenvalues=vasprun.eigenvalues,
-        projected_eigenvalues=vasprun.projected_eigenvalues,
+        projected_eigenvalues=projected_eigenvalues,
         projected_magnetisation=getattr(vasprun, "projected_magnetization", None),
         kpoint_coords=np.array(vasprun.actual_kpoints),
         kpoint_weights=np.array(vasprun.actual_kpoints_weights),
@@ -1219,7 +1273,104 @@ def calculation_outputs_from_vasprun(
         },
         raw={
             "vasprun": vasprun,
-            "procar": _parse_procar(procar) if procar is not None else None,
+            "procar": procar,
             "computed_entry": vasprun.get_computed_entry(),
         },
     )
+
+
+def _get_vr_dict_without_proj_eigenvalues(vr: Vasprun) -> dict:
+    """
+    Get the ``Vasprun.as_dict()`` representation, with the (large) projected
+    eigenvalues / magnetization data excluded (as these are not needed in later
+    stages of ``doped`` analysis workflows).
+    """
+    attributes_to_cut = ["projected_eigenvalues", "projected_magnetization"]
+    orig_values = {}
+    for attribute in attributes_to_cut:
+        orig_values[attribute] = getattr(vr, attribute)
+        setattr(vr, attribute, None)
+
+    vr_dict = vr.as_dict()  # only call once
+    vr_dict_wout_proj = {  # projected eigenvalue data might be present, but not needed (v slow
+        # and data-heavy)
+        **{k: v for k, v in vr_dict.items() if k != "output"},
+        "output": {k: v for k, v in vr_dict["output"].items() if k not in attributes_to_cut},
+    }
+    for attribute in attributes_to_cut:
+        vr_dict_wout_proj["output"][attribute] = None
+        setattr(vr, attribute, orig_values[attribute])  # reset to original value
+
+    return vr_dict_wout_proj
+
+
+def check_run_compatibility(
+    defect_outputs: CalculationOutputs,
+    bulk_outputs: CalculationOutputs,
+    warn: bool = True,
+) -> dict:
+    """
+    Check the compatibility of the calculation settings of a defect & bulk
+    supercell calculation pair (INCAR tags, KPOINTS and POTCARs with VASP),
+    returning the run metadata and any mismatches for storage in
+    ``DefectEntry.calculation_metadata``.
+
+    Part of the ``doped.io`` backend protocol.
+
+    Args:
+        defect_outputs (CalculationOutputs):
+            Parsed outputs of the defect supercell calculation.
+        bulk_outputs (CalculationOutputs):
+            Parsed outputs of the reference bulk supercell calculation.
+        warn (bool):
+            Whether to warn about any found mismatches. Default is ``True``.
+
+    Returns:
+        dict:
+            ``calculation_metadata`` updates: the ``"run_metadata"`` dict
+            (INCAR/KPOINTS/POTCAR data, plus serialised ``Vasprun`` dicts
+            when available), and ``"mismatching_INCAR_tags"``,
+            ``"mismatching_POTCAR_symbols"`` & ``"mismatching_KPOINTS"``
+            entries (``False``, or the mismatching values).
+    """
+
+    def _incar_dict(outputs: CalculationOutputs) -> dict:
+        incar = outputs.run_metadata.get("incar", {})
+        incar_dict = incar.as_dict() if hasattr(incar, "as_dict") else dict(incar)
+        return {k: v for k, v in incar_dict.items() if "@" not in k}  # not JSONable with module keys
+
+    run_metadata: dict[str, Any] = {
+        "defect_incar": _incar_dict(defect_outputs),
+        "bulk_incar": _incar_dict(bulk_outputs),
+        "defect_kpoints": defect_outputs.run_metadata.get("kpoints"),
+        "bulk_kpoints": bulk_outputs.run_metadata.get("kpoints"),
+        "defect_actual_kpoints": defect_outputs.run_metadata.get("actual_kpoints"),
+        "bulk_actual_kpoints": bulk_outputs.run_metadata.get("actual_kpoints"),
+        "defect_potcar_symbols": defect_outputs.run_metadata.get("potcar_symbols"),
+        "bulk_potcar_symbols": bulk_outputs.run_metadata.get("potcar_symbols"),
+    }
+    for label, outputs in [("defect", defect_outputs), ("bulk", bulk_outputs)]:
+        if (vr := outputs.raw.get("vasprun")) is not None:
+            run_metadata[f"{label}_vasprun_dict"] = _get_vr_dict_without_proj_eigenvalues(vr)
+
+    incar_mismatches = _compare_incar_tags(
+        run_metadata["defect_incar"], run_metadata["bulk_incar"], warn=warn
+    )
+    potcar_mismatches = _compare_potcar_symbols(
+        run_metadata["defect_potcar_symbols"], run_metadata["bulk_potcar_symbols"], warn=warn
+    )
+    kpoint_mismatches = _compare_kpoints(
+        run_metadata["defect_actual_kpoints"],
+        run_metadata["bulk_actual_kpoints"],
+        run_metadata["defect_kpoints"],
+        run_metadata["bulk_kpoints"],
+        warn=warn,
+    )
+    return {
+        "mismatching_INCAR_tags": incar_mismatches if not isinstance(incar_mismatches, bool) else False,
+        "mismatching_POTCAR_symbols": (
+            potcar_mismatches if not isinstance(potcar_mismatches, bool) else False
+        ),
+        "mismatching_KPOINTS": kpoint_mismatches if not isinstance(kpoint_mismatches, bool) else False,
+        "run_metadata": run_metadata,
+    }
