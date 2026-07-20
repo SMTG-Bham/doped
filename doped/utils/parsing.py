@@ -331,79 +331,6 @@ def get_matching_site(
     return closest_site
 
 
-def find_nearest_coords(
-    candidate_frac_coords: list | np.ndarray,
-    target_frac_coords: list | np.ndarray,
-    lattice: Lattice,
-    return_idx: bool = False,
-) -> tuple[list | np.ndarray, int] | list | np.ndarray:
-    """
-    Find the nearest coords in ``candidate_frac_coords`` to
-    ``target_frac_coords``.
-
-    If ``return_idx`` is ``True``, also returns the index of the nearest coords
-    in ``candidate_frac_coords`` to ``target_frac_coords``.
-
-    Args:
-        candidate_frac_coords (list | np.ndarray):
-            Fractional coordinates (typically from a bulk supercell), to find
-            the nearest coordinates to ``target_frac_coords``.
-        target_frac_coords (list | np.ndarray):
-            The target coordinates to find the nearest coordinates to in
-            ``candidate_frac_coords``.
-        lattice (|Lattice|):
-            The lattice object to use with the fractional coordinates.
-        return_idx (bool):
-            Whether to also return the index of the nearest coordinates in
-            ``candidate_frac_coords`` to ``target_frac_coords``.
-    """
-    if len(np.array(target_frac_coords).shape) > 1:
-        raise ValueError("`target_frac_coords` should be a 1D array of fractional coordinates!")
-
-    distance_matrix = lattice.get_all_distances(candidate_frac_coords, target_frac_coords).ravel()
-    match = distance_matrix.argmin()
-
-    return candidate_frac_coords[match], match if return_idx else candidate_frac_coords[match]
-
-
-def find_missing_idx(
-    frac_coords1: list | np.ndarray,
-    frac_coords2: list | np.ndarray,
-    lattice: Lattice,
-):
-    """
-    Find the missing/outlier index between two sets of fractional coordinates
-    (differing in size by 1), by grouping the coordinates based on the minimum
-    distances between coordinates or, if that doesn't give a unique match, the
-    site combination that gives the minimum summed squared distances between
-    paired sites.
-
-    The index returned is the index of the missing/outlier coordinate in the
-    larger set of coordinates.
-
-    Args:
-        frac_coords1 (list | np.ndarray):
-            First set of fractional coordinates.
-        frac_coords2 (list | np.ndarray):
-            Second set of fractional coordinates.
-        lattice (|Lattice|):
-            The lattice object to use with the fractional coordinates.
-    """
-    subset, superset = (  # supa-set
-        (frac_coords1, frac_coords2)
-        if len(frac_coords1) < len(frac_coords2)
-        else (frac_coords2, frac_coords1)
-    )
-    # in theory this could be made even faster using ``lll_frac_tol`` as in ``_cart_dists()`` in
-    # ``pymatgen``, with smart choice of initial ``lll_frac_tol`` and scanning upwards if the match is
-    # below the threshold tolerance (as in ``StructureMatcher_scan_stol()``), but in practice this
-    # function seems to be incredibly fast as is. Can revisit if it ever becomes a bottleneck
-    _vecs, d_2 = pbc_shortest_vectors(lattice, subset, superset, return_d2=True)
-    site_matches, _ = get_linear_assignment_solution(d_2)  # matching superset indices, of len(subset)
-
-    return next(iter(set(np.arange(len(superset), dtype=int)) - set(site_matches)))
-
-
 def _create_unrelaxed_defect_structure(
     defect_supercell: Structure,
     bulk_supercell: Structure,
@@ -936,22 +863,6 @@ def _get_defect_supercell(defect_entry: "DefectEntry"):
     return None
 
 
-def _get_unrelaxed_defect_structure(defect_entry: "DefectEntry", **kwargs) -> Structure | None:
-    if (
-        hasattr(defect_entry, "calculation_metadata")
-        and defect_entry.calculation_metadata
-        and "unrelaxed_defect_structure" in defect_entry.calculation_metadata
-    ):
-        return defect_entry.calculation_metadata["unrelaxed_defect_structure"]
-
-    bulk_supercell = _get_bulk_supercell(defect_entry)
-
-    if bulk_supercell is not None:  # reparse info:
-        _update_defect_entry_structure_metadata(defect_entry, **kwargs)
-
-    return defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
-
-
 def _get_defect_supercell_frac_coords(
     defect_entry: "DefectEntry", relaxed=True
 ) -> np.ndarray | tuple[float, float, float] | None:
@@ -1100,15 +1011,6 @@ def _simple_spin_degeneracy_from_num_electrons(num_electrons: int = 0) -> int:
             The spin multiplicity assuming singlet or doublet behaviour.
     """
     return int(num_electrons % 2 + 1)
-
-
-def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type):
-    meta = defect_entry.calculation_metadata[f"{charge_correction_type}_meta"]
-    corr = (
-        meta[f"{charge_correction_type}_electrostatic"]
-        + meta[f"{charge_correction_type}_potential_alignment_correction"]
-    )
-    defect_entry.corrections.update({f"{charge_correction_type}_charge_correction": corr})
 
 
 def get_dimer_bonds(structure: Structure, rtol: float = 1.05) -> dict[str, list[float]]:
