@@ -1095,14 +1095,12 @@ def _parse_vr_and_poss_procar(
     output_path: PathLike,
     parse_projected_eigen: bool | None = None,
     label: str = "bulk",
-    parse_procar: bool = True,
     **kwargs,
 ):
     """
     Parse the ``vasprun.xml(.gz)`` file at ``output_path``, and possibly a
-    ``PROCAR`` file if both ``parse_procar`` and ``parse_projected_eigen`` are
-    ``True`` and  projected eigenvalues cannot be parsed from the
-    ``vasprun.xml(.gz)`` file.
+    ``PROCAR`` file if ``parse_projected_eigen`` is not ``False`` and projected
+    eigenvalues cannot be parsed from the ``vasprun.xml(.gz)`` file.
 
     ``kwargs`` are passed to :func:`get_vasprun` (e.g. ``parse_mag``).
     """
@@ -1132,25 +1130,24 @@ def _parse_vr_and_poss_procar(
         vr = get_vasprun(vr_path, parse_projected_eigen=False, parse_eigen=label != "defect", **kwargs)
         failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
 
-        if parse_procar:
-            procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
-            if multiple:
-                _multiple_files_warning("PROCAR", output_path, procar_path, dir_type=label)
-            if "PROCAR" in procar_path and parse_projected_eigen is not False:
-                try:
-                    procar = get_procar(procar_path)
+        procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
+        if multiple:
+            _multiple_files_warning("PROCAR", output_path, procar_path, dir_type=label)
+        if "PROCAR" in procar_path and parse_projected_eigen is not False:
+            try:
+                procar = get_procar(procar_path)
 
-                except Exception as procar_exc:
-                    failed_eig_parsing_warning_message += (
-                        f"\nThen got the following error when attempting to parse projected eigenvalues "
-                        f"from the defect PROCAR(.gz):\n{procar_exc}"
-                    )
+            except Exception as procar_exc:
+                failed_eig_parsing_warning_message += (
+                    f"\nThen got the following error when attempting to parse projected eigenvalues "
+                    f"from the defect PROCAR(.gz):\n{procar_exc}"
+                )
 
     if vr.projected_eigenvalues is None and procar is None and parse_projected_eigen is True:
         # only warn if parse_projected_eigen is set to True (not None)
         warnings.warn(failed_eig_parsing_warning_message)
 
-    return (vr, procar) if parse_procar else vr
+    return vr, procar
 
 
 def get_calculation_outputs(
@@ -1159,7 +1156,6 @@ def get_calculation_outputs(
     load_site_potentials: bool = False,
     parse_projected_eigen: bool | None = None,
     label: str = "calculation",
-    parse_procar: bool = True,
     **kwargs,
 ) -> CalculationOutputs:
     """
@@ -1190,19 +1186,15 @@ def get_calculation_outputs(
         parse_projected_eigen (bool):
             Whether to parse orbital projections (from the
             ``vasprun.xml(.gz)`` file, or failing that, a ``PROCAR(.gz)``
-            file if present and ``parse_procar`` is ``True``). If ``None``
-            (default), tries to parse projections but with no warning if this
-            fails; if ``True``, warns on failure; if ``False``, skips
-            projection parsing (and eigenvalue parsing for defect
-            supercells, i.e. if ``label="defect"``) for expedited parsing.
+            file if present). If ``None`` (default), tries to parse
+            projections but with no warning if this fails; if ``True``, warns
+            on failure; if ``False``, skips projection parsing (and
+            eigenvalue parsing for defect supercells, i.e. if
+            ``label="defect"``) for expedited parsing.
         label (str):
             Label for the type of calculation being parsed (e.g. ``"bulk"``,
             ``"defect"``), for informative warnings and parsing efficiency
             choices. Default is ``"calculation"``.
-        parse_procar (bool):
-            Whether to attempt parsing a ``PROCAR(.gz)`` file for orbital
-            projections, if these could not be parsed from the
-            ``vasprun.xml(.gz)`` file. Default is ``True``.
         **kwargs:
             Additional keyword arguments to pass to :func:`get_vasprun` (e.g.
             ``parse_mag``).
@@ -1210,10 +1202,9 @@ def get_calculation_outputs(
     Returns:
         CalculationOutputs: The parsed calculation outputs.
     """
-    parsed = _parse_vr_and_poss_procar(
-        path, parse_projected_eigen=parse_projected_eigen, label=label, parse_procar=parse_procar, **kwargs
+    vr, procar = _parse_vr_and_poss_procar(
+        path, parse_projected_eigen=parse_projected_eigen, label=label, **kwargs
     )
-    vr, procar = parsed if parse_procar else (parsed, None)
 
     planar_averaged_potentials = None
     if load_planar_averaged_potentials:

@@ -2911,7 +2911,6 @@ class DefectParser:
                         self.defect_entry.calculation_metadata[f"{label}_path"],
                         parse_projected_eigen=False,  # not needed for DefectEntry metadata
                         label=label,  # "bulk" or "defect"
-                        parse_procar=False,
                     ),
                 )
 
@@ -2999,7 +2998,6 @@ class DefectParser:
                 self.defect_entry.calculation_metadata["bulk_path"],
                 parse_projected_eigen=self.parse_projected_eigen,
                 label="bulk",
-                parse_procar=False,
             )
 
         bulk_sc_structure = self.bulk_outputs.structure
