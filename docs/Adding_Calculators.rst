@@ -9,6 +9,7 @@ subpackage, with each supported calculator having a
 
     doped/io/
     ├── outputs.py        # calculator-agnostic CalculationOutputs container
+    ├── utils.py          # calculator-agnostic helpers (calculation file/folder discovery)
     └── vasp/
         ├── inputs.py     # input file generation (DefectsSet etc.)
         └── outputs.py    # output parsing (vasprun.xml, OUTCAR, LOCPOT...)
@@ -57,6 +58,12 @@ With this, ``doped.io.get_calculation_outputs(path, calculator="<calculator>")``
 dispatches to your parser, and the parsed data can be provided to the
 analysis functions (e.g. charge corrections via
 ``DefectEntry.get_freysoldt_correction``/``get_kumagai_correction``).
+
+The generic calculation-file discovery helpers in ``doped.io.utils``
+(e.g. ``_find_calc_outputs``, ``_determine_subfolder``) are parameterised by
+calculator-specific filename masks and subfolder priority lists (see their
+VASP-defaulted wrappers in ``doped.io.vasp.outputs``), and can be reused
+when implementing output parsing for other calculators.
 
 Step 2 (optional): Input File Generation
 --------------------------------------------

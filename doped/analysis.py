@@ -27,7 +27,12 @@ from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
-from doped.core import Defect, DefectEntry, guess_and_set_oxi_states_with_timeout
+from doped.core import (
+    Defect,
+    DefectEntry,
+    _get_defect_supercell_frac_coords,
+    guess_and_set_oxi_states_with_timeout,
+)
 from doped.generation import (
     get_defect_name_from_defect,
     get_defect_name_from_entry,

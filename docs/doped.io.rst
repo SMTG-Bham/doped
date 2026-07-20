@@ -22,6 +22,14 @@ doped.io.outputs module
    :undoc-members:
    :show-inheritance:
 
+doped.io.utils module
+-------------------------
+
+.. automodule:: doped.io.utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 doped.io.vasp.inputs module
 -------------------------------
 

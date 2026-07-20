@@ -9,13 +9,11 @@ calculator-agnostic form (:class:`~doped.io.outputs.CalculationOutputs`) via
 
 import contextlib
 import itertools
-import os
 import re
 import warnings
 from collections.abc import Iterable
 from functools import lru_cache, partialmethod
 from pathlib import Path
-from typing import Any
 from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
@@ -27,32 +25,14 @@ from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.typing import PathLike
 
+from doped.io import utils as _io_utils
 from doped.io.outputs import CalculationOutputs
-from doped.utils.parsing import (
-    _num_electrons_from_charge_state,
-    _simple_spin_degeneracy_from_num_electrons,
-)
+from doped.io.utils import _dataframe_of_files, find_archived_fname  # noqa: F401 (re-exported)
 
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
 def _get_potcar_summary_stats() -> dict:
     return loadfn(POTCAR_STATS_PATH)
-
-
-def find_archived_fname(fname, raise_error=True):
-    """
-    Find a suitable filename, taking account of possible use of compression
-    software.
-    """
-    if os.path.exists(fname):
-        return fname
-    # Check for archive files
-    for ext in [".gz", ".xz", ".bz", ".lzma"]:
-        if os.path.exists(fname + ext):
-            return fname + ext
-    if raise_error:
-        raise FileNotFoundError
-    return None
 
 
 # has to be defined as staticmethod to be consistent with usage in pymatgen, alternatively could make
@@ -349,7 +329,8 @@ def _get_output_files_and_check_if_multiple(
 ) -> tuple[PathLike, bool]:
     """
     Search for all files with filenames matching ``output_file``, case-
-    insensitive.
+    insensitive; VASP-defaulted wrapper of
+    :func:`doped.io.utils._get_output_files_and_check_if_multiple`.
 
     Args:
         output_file (PathLike):
@@ -363,29 +344,8 @@ def _get_output_files_and_check_if_multiple(
             The path to the identified file, and a boolean indicating whether
             multiple files were found.
     """
-    if output_file.lower() == "vasprun.xml":
-        search_patterns = ["vasprun", ".xml"]
-    else:
-        search_patterns = [output_file.lower()]
-
-    files = os.listdir(path)
-    output_files = [
-        filename
-        for filename in files
-        if all(i in filename.lower() for i in search_patterns) and not filename.startswith(".")
-    ]
-    # sort by direct match to {output_file}, direct match to {output_file}.gz, then alphabetically:
-    if output_files := sorted(
-        output_files,
-        key=lambda x: (x == output_file, x == f"{output_file}.gz", x),
-        reverse=True,
-    ):
-        output_path = os.path.join(path, output_files[0])
-        return (output_path, True) if len(output_files) > 1 else (output_path, False)
-    return (
-        os.path.join(path, output_file),
-        False,
-    )  # so `get_X()` will raise an informative FileNotFoundError
+    search_patterns = ["vasprun", ".xml"] if str(output_file).lower() == "vasprun.xml" else None
+    return _io_utils._get_output_files_and_check_if_multiple(output_file, path, search_patterns)
 
 
 _VASP_CALC_OUTPUT_MASK = ("vasprun.xml", "vasprun.xml.gz")
@@ -407,70 +367,16 @@ Priority order when auto-detecting calculation subfolders.
 """
 
 
-def _dataframe_of_files(root: Path) -> pd.DataFrame:
-    """
-    Get a dataframe with one row per file under ``root``, found recursively.
-
-    Hidden files/directories (names starting with ``"."``) and files
-    sitting directly in ``root`` (i.e. with only one path component
-    relative to ``root``) are excluded.
-
-    Columns: ``filename``, ``full_path``, ``folder_path``,
-    ``folder_in_root`` (the first path component relative to ``root``).
-
-    Args:
-        root (Path):
-            Path to the root directory.
-
-    Returns:
-        pd.DataFrame:
-            One row per discovered file.
-    """
-    root = Path(root)
-    rows: list[dict[str, Any]] = []
-    for f in root.rglob("*"):  # recursively find all files under root, ignoring hidden folders/files
-        if f.is_file():
-            relative_parts = f.relative_to(root).parts
-            if any(part.startswith(".") for part in relative_parts) or len(relative_parts) < 2:
-                continue  # ignore hidden files and folders, and files in root directory itself
-            rows.append(
-                {
-                    "filename": f.name,
-                    "full_path": f,
-                    "folder_path": f.parent,
-                    "folder_in_root": relative_parts[0],
-                }
-            )
-    return pd.DataFrame(rows)
-
-
 def _get_calc_files_df(
     root: Path, calc_output_mask: Iterable[str] = _VASP_CALC_OUTPUT_MASK
 ) -> pd.DataFrame:
     """
-    Get a DataFrame of calculation output files (matching ``calc_output_mask``)
-    found recursively under ``root``, excluding hidden files/directories and
-    files sitting directly in ``root``.
-
-    This is a filtered view of :func:`_dataframe_of_files`.
-
-    Args:
-        root (Path):
-            Path to the root directory.
-        calc_output_mask (Iterable[str]):
-            Iterable of filename patterns to match.  Defaults to
-            ``_VASP_CALC_OUTPUT_MASK`` (``("vasprun.xml", "vasprun.xml.gz")``).
-            Matching is case-insensitive.
-
-    Returns:
-        pd.DataFrame:
-            One row per matching calculation output file.
+    Get a DataFrame of calculation output files (matching ``calc_output_mask``,
+    defaulting to VASP ``vasprun.xml(.gz)`` files) found recursively under
+    ``root``; VASP-defaulted wrapper of
+    :func:`doped.io.utils._get_calc_files_df`.
     """
-    files_df = _dataframe_of_files(root)
-    if files_df.empty:
-        return pd.DataFrame()
-    pattern = "|".join(map(re.escape, calc_output_mask))
-    return files_df[files_df["filename"].str.contains(pattern, regex=True, na=False)]
+    return _io_utils._get_calc_files_df(root, calc_output_mask)
 
 
 def _determine_subfolder(
@@ -480,35 +386,13 @@ def _determine_subfolder(
 ) -> str:
     """
     Pick the highest-priority calculation subfolder name present in
-    ``files_df`` (restricted to rows whose ``folder_in_root`` is in
-    ``candidate_folders``), or ``"."`` if none of the priority names are found.
-
-    Args:
-        files_df (pd.DataFrame):
-            DataFrame produced by :func:`_dataframe_of_files`, filtered
-            to calculation output files.
-        candidate_folders (list[str]):
-            Top-level folder names to consider. If ``None`` (default),
-            considers all top-level folder names.
-        subfolder_priority (list[str]):
-            Priority order for subfolder names.  Defaults to
-            ``_VASP_SUBFOLDER_PRIORITY``
-            (``["vasp_ncl", "singlepoint", "final", "relax", "vasp_std", "vasp_nkred_std", "vasp_gam"]``)
-            where folder names are compared case-insensitively.
-
-    Returns:
-        str:
-            The detected subfolder name, or ``"."``.
+    ``files_df`` (defaulting to the VASP subfolder priority order,
+    ``_VASP_SUBFOLDER_PRIORITY``); VASP-defaulted wrapper of
+    :func:`doped.io.utils._determine_subfolder`.
     """
-    candidate_folder_df = (
-        files_df[files_df["folder_in_root"].isin(candidate_folders)]
-        if candidate_folders is not None
-        else files_df
+    return _io_utils._determine_subfolder(
+        files_df, candidate_folders, subfolder_priority=subfolder_priority
     )
-    for subfolder in subfolder_priority:
-        if any(subfolder in p.name.lower() for p in candidate_folder_df["folder_path"].unique()):
-            return subfolder
-    return "."
 
 
 def _find_calc_outputs(
@@ -516,36 +400,20 @@ def _find_calc_outputs(
     subfolder: PathLike | None = None,
 ) -> tuple[pd.DataFrame, list[str], str]:
     """
-    Recursively find calculation output files under ``output_path`` and auto-
-    detect the calculation subfolder when ``subfolder`` is ``None``.
+    Recursively find VASP calculation output files (``vasprun.xml(.gz)``) under
+    ``output_path`` and auto-detect the calculation subfolder (from
+    ``_VASP_SUBFOLDER_PRIORITY``) when ``subfolder`` is ``None``; VASP-
+    defaulted wrapper of :func:`doped.io.utils._find_calc_outputs`.
 
     Shared discovery logic used by both :func:`~doped.analysis.DefectsParser`
     and :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer`.
-
-    Args:
-        output_path (PathLike):
-            Root directory to search.
-        subfolder (PathLike | None):
-            Explicit subfolder name (e.g. ``"vasp_std"``).  If
-            ``None``, auto-detected using ``_VASP_SUBFOLDER_PRIORITY``
-            (``["vasp_ncl", "singlepoint", "final", "relax", "vasp_std", "vasp_nkred_std", "vasp_gam"]``)
-            where folder names are compared case-insensitively.
-
-    Returns:
-        tuple[pd.DataFrame, list[str], str]:
-            ``(calc_files_df, candidate_folders, resolved_subfolder)``
-            where *resolved_subfolder* is ``"."`` when no priority
-            subfolder is found.
     """
-    calc_files_df = _get_calc_files_df(Path(output_path))
-    if calc_files_df.empty:
-        return pd.DataFrame(), [], "."
-
-    candidate_folders = calc_files_df["folder_in_root"].unique().tolist()
-    resolved_subfolder = (
-        _determine_subfolder(calc_files_df, candidate_folders) if subfolder is None else str(subfolder)
+    return _io_utils._find_calc_outputs(
+        output_path,
+        subfolder,
+        calc_output_mask=_VASP_CALC_OUTPUT_MASK,
+        subfolder_priority=_VASP_SUBFOLDER_PRIORITY,
     )
-    return calc_files_df, candidate_folders, resolved_subfolder
 
 
 def _compare_potcar_symbols(
@@ -984,6 +852,11 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
     Returns:
         int: Spin degeneracy of the system.
     """
+    from doped.utils.symmetry import (  # avoid circular import (symmetry imports doped.core)
+        _num_electrons_from_charge_state,
+        _simple_spin_degeneracy_from_num_electrons,
+    )
+
     if charge_state is None:
         num_electrons = get_nelect_from_vasprun(vasprun)
     else:
@@ -1076,13 +949,15 @@ _vasp_file_parsing_action_dict = {
 
 
 def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, dir_type="bulk"):
-    filename = os.path.basename(chosen_filepath)
+    """
+    Warn that multiple files matching ``file_type`` were found in
+    ``directory``, with ``action`` defaulting to the VASP file parsing actions
+    (``_vasp_file_parsing_action_dict``); VASP-defaulted wrapper of
+    :func:`doped.io.utils._multiple_files_warning`.
+    """
     if action is None:
         action = _vasp_file_parsing_action_dict[file_type]
-    warnings.warn(
-        f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
-        f"{action}"
-    )
+    _io_utils._multiple_files_warning(file_type, directory, chosen_filepath, action, dir_type)
 
 
 def _parse_vr_and_poss_procar(
