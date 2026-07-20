@@ -1698,9 +1698,7 @@ def _format_and_raise_parsing_warnings(
         return warning
 
     multiple_files_warning_dict: dict[str, list[tuple]] = {
-        "vasprun.xml": [],
-        "OUTCAR": [],
-        "LOCPOT": [],
+        file_type: [] for file_type in _vasp_file_parsing_action_dict
     }
     non_duplicate_warnings: list[tuple[str, str | None]] = []
     for defect_folder, defect_path, warning_info in per_defect_warnings:
@@ -1712,7 +1710,7 @@ def _format_and_raise_parsing_warnings(
 
         remaining_warnings: list[str] = []
         for warning in warnings_list:
-            if warning.startswith("Multiple"):
+            if warning.startswith("Multiple") and warning.split("`")[1] in multiple_files_warning_dict:
                 file_type = warning.split("`")[1]
                 directory = warning.split("directory: ")[1].split(". Using")[0]
                 chosen_file = warning.split("Using ")[1].split(" to")[0]

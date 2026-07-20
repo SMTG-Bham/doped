@@ -2130,6 +2130,7 @@ _vasp_file_parsing_action_dict = {
     "vasprun.xml": "parse the calculation energy and metadata.",
     "OUTCAR": "parse core levels and compute the Kumagai (eFNV) image charge correction.",
     "LOCPOT": "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
+    "PROCAR": "parse orbital projections for eigenvalue analysis.",
 }
 
 
