@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from monty.json import MSONable
+from monty.json import MontyDecoder, MSONable
 from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
@@ -146,6 +146,10 @@ class CalculationOutputs(MSONable):
         """
         MSON-style ``dict`` representation, excluding the in-memory ``raw``
         objects (which are generally large and/or not serialisable).
+
+        Non-string dictionary keys (``Spin`` keys for eigenvalue data, axis
+        indices for planar-averaged potentials) are converted to strings for
+        JSON compatibility, and restored by :meth:`from_dict`.
         """
         raw, self.raw = self.raw, {}  # detach raw so it is not (expensively) serialised
         try:
@@ -153,7 +157,33 @@ class CalculationOutputs(MSONable):
         finally:
             self.raw = raw
         dct.pop("raw", None)
+
+        for key in ("eigenvalues", "projected_eigenvalues", "planar_averaged_potentials"):
+            if dct.get(key) is not None:  # Spin / axis-index keys -> strings for JSON compatibility
+                dct[key] = {str(getattr(k, "value", k)): v for k, v in dct[key].items()}
         return dct
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CalculationOutputs":
+        """
+        Reconstitute a ``CalculationOutputs`` object from its :meth:`as_dict`
+        representation.
+        """
+        decoder = MontyDecoder()
+        decoded = {
+            k: decoder.process_decoded(v) for k, v in d.items() if not k.startswith("@") and k != "raw"
+        }
+        for key in ("eigenvalues", "projected_eigenvalues"):
+            if decoded.get(key) is not None:
+                decoded[key] = {Spin(int(k)): np.asarray(v) for k, v in decoded[key].items()}
+        if decoded.get("planar_averaged_potentials") is not None:
+            decoded["planar_averaged_potentials"] = {
+                int(k): np.asarray(v) for k, v in decoded["planar_averaged_potentials"].items()
+            }
+        for key in ("projected_magnetisation", "kpoint_coords", "kpoint_weights"):
+            if decoded.get(key) is not None:
+                decoded[key] = np.asarray(decoded[key])
+        return cls(**decoded)
 
     def get_computed_entry(self) -> ComputedStructureEntry:
         """

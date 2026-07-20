@@ -130,6 +130,109 @@ class CalculationOutputsTestCase(unittest.TestCase):
             # TODO: Also hard-test the value here
 
 
+class SerializedBackendTestCase(unittest.TestCase):
+    """
+    Test the ``doped.io.serialized`` escape-hatch backend, which parses pre-
+    serialised ``CalculationOutputs`` JSON files (i.e. the calculator-agnostic
+    parsing pathway, usable with any calculator).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.CdTe_corrections_dir = os.path.join(vasp_data_dir, "CdTe_charge_correction_tests")
+        cls.defect_dir = f"{cls.CdTe_corrections_dir}/v_Cd_-2_vasp_gam"
+        cls.bulk_dir = f"{cls.CdTe_corrections_dir}/bulk_vasp_gam"
+        cls.parse_kwargs = {
+            "load_planar_averaged_potentials": True,
+            "load_site_potentials": True,
+            "parse_projected_eigen": False,
+        }
+
+    def _serialise_outputs_to_tmp_tree(self, tmpdir):
+        """
+        Build ``CalculationOutputs`` (with the VASP backend), and serialise to
+        a ``{tmpdir}/{v_Cd_-2,CdTe_bulk}/calculation_outputs.json.gz`` tree.
+        """
+        from monty.serialization import dumpfn
+
+        folders = {}
+        for name, src_dir in [("v_Cd_-2", self.defect_dir), ("CdTe_bulk", self.bulk_dir)]:
+            outputs = get_calculation_outputs(src_dir, **self.parse_kwargs)
+            folder = os.path.join(tmpdir, name)
+            os.makedirs(folder)
+            dumpfn(outputs, os.path.join(folder, "calculation_outputs.json.gz"))
+            folders[name] = folder
+        return folders
+
+    def test_serialized_backend_json_roundtrip(self):
+        """
+        ``CalculationOutputs`` survive a full JSON file round-trip (including
+        ``Spin``-keyed eigenvalues and axis-keyed potentials).
+        """
+        import tempfile
+
+        from doped.io.outputs import CalculationOutputs
+
+        outputs = get_calculation_outputs(self.defect_dir, **self.parse_kwargs)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folders = self._serialise_outputs_to_tmp_tree(tmpdir)
+            reloaded = get_calculation_outputs(folders["v_Cd_-2"], calculator="serialized")
+
+        assert isinstance(reloaded, CalculationOutputs)
+        assert np.isclose(reloaded.energy, outputs.energy)
+        assert reloaded.charge == outputs.charge == -2
+        assert len(reloaded.structure) == len(outputs.structure)
+        assert set(reloaded.eigenvalues.keys()) == set(outputs.eigenvalues.keys())  # Spin keys restored
+        for spin, array in outputs.eigenvalues.items():
+            assert np.allclose(reloaded.eigenvalues[spin], array)
+        assert set(reloaded.planar_averaged_potentials.keys()) == {0, 1, 2}
+        assert np.allclose(reloaded.site_potentials, outputs.site_potentials)
+        assert reloaded.raw == {}
+
+    def test_serialized_backend_defect_parsing(self):
+        """
+        ``DefectsParser``/``DefectParser`` parsing with the ``serialized``
+        backend matches direct VASP output-file parsing (energies, charge
+        states, charge corrections & band edge data).
+        """
+        import tempfile
+
+        from doped.analysis import DefectParser, DefectsParser
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # multiple-files & SnB deprecation warnings not under test
+            reference_entry = DefectParser.from_paths(  # direct VASP output-file parsing
+                defect_path=self.defect_dir,
+                bulk_path=self.bulk_dir,
+                dielectric=9.13,
+                parse_projected_eigen=False,
+            ).defect_entry
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                self._serialise_outputs_to_tmp_tree(tmpdir)
+                dp = DefectsParser(  # fully calculator-agnostic parsing of the serialised outputs
+                    output_path=tmpdir,
+                    dielectric=9.13,
+                    calculator="serialized",
+                    json_filename=False,
+                )
+
+        assert len(dp.defect_dict) == 1
+        entry = next(iter(dp.defect_dict.values()))
+        assert entry.charge_state == reference_entry.charge_state == -2
+        assert entry.calculation_metadata["calculator"] == "serialized"
+        assert np.isclose(entry.sc_entry.energy, reference_entry.sc_entry.energy)
+        assert np.isclose(entry.bulk_entry.energy, reference_entry.bulk_entry.energy)
+        for key in ("vbm", "cbm", "band_gap"):
+            assert np.isclose(entry.calculation_metadata[key], reference_entry.calculation_metadata[key])
+        assert entry.corrections  # eFNV correction applied from serialised site potentials
+        assert np.isclose(
+            sum(entry.corrections.values()), sum(reference_entry.corrections.values()), atol=1e-6
+        )
+        assert np.isclose(entry.get_ediff(), reference_entry.get_ediff(), atol=1e-6)
+        assert entry.degeneracy_factors["spin degeneracy"] == 1
+
+
 class DeprecationShimsTestCase(unittest.TestCase):
     def test_doped_vasp_shim(self):
         """
