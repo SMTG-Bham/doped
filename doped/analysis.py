@@ -2114,7 +2114,9 @@ def _check_and_warn_dimer_bonds_spin_states(
             num_dimer_bonds > 0
             and num_dimer_bonds < 4
             and not any(  # check if NUPDOWN set to != [0, 1] in any matching defect & charge state
-                entry.calculation_metadata.get("run_metadata", {}).get("INCAR", {}).get("NUPDOWN", 0)
+                entry.calculation_metadata.get("run_metadata", {})
+                .get("defect_incar", {})
+                .get("NUPDOWN", 0)
                 not in [0, 1]
                 for entry in defect_dict.values()
                 if entry.defect.name == defect_entry.defect.name
