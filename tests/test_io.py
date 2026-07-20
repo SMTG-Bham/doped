@@ -121,20 +121,20 @@ class DeprecationShimsTestCase(unittest.TestCase):
         The dissolved ``doped.utils.parsing`` module forwards its old names to
         their new homes with ``DeprecationWarning``\s.
         """
-        import doped.core
         import doped.io.vasp.outputs
         import doped.utils.mappings
         import doped.utils.parsing
-        import doped.utils.symmetry
 
         for name, module in [
             ("get_vasprun", doped.io.vasp.outputs),
             ("get_defect_type_and_composition_diff", doped.utils.mappings),
-            ("_get_bulk_supercell", doped.core),
-            ("_simple_spin_degeneracy_from_num_electrons", doped.utils.symmetry),
         ]:
             with pytest.warns(DeprecationWarning, match=f"{name} has moved to {module.__name__}"):
                 assert getattr(doped.utils.parsing, name) is getattr(module, name)
+
+        for private_name in ("_get_bulk_supercell", "_simple_spin_degeneracy_from_num_electrons"):
+            with pytest.raises(AttributeError):  # private helpers are not aliased
+                _ = getattr(doped.utils.parsing, private_name)
 
         with pytest.raises(AttributeError):
             _ = doped.utils.parsing.definitely_not_a_real_attribute
