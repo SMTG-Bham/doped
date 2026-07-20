@@ -41,22 +41,18 @@ from doped.generation import (
     sort_defect_entries,
 )
 from doped.io.vasp.outputs import (
-    _VASP_CALC_OUTPUT_MASK,
+    CALC_OUTPUT_MASK,
+    FILE_PARSING_ACTIONS,
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
     _determine_subfolder,
     _find_calc_outputs,
     _format_mismatching_incar_warning,
-    _get_bulk_locpot_dict,
-    _get_bulk_site_potentials,
     _get_calc_files_df,
-    _get_output_files_and_check_if_multiple,
-    _multiple_files_warning,
     _parse_vr_and_poss_procar,
-    _vasp_file_parsing_action_dict,
-    get_core_potentials_from_outcar,
-    get_locpot,
+    get_planar_averaged_potentials,
+    get_site_potentials,
     get_vasprun,
     spin_degeneracy_from_vasprun,
     total_charge_from_vasprun,
@@ -964,7 +960,7 @@ class DefectsParser:
                 etc.). If not specified, ``doped`` checks, case-insensitively
                 and in order, for ``"vasp_ncl"``, ``"singlepoint"``,
                 ``"final"``, ``"relax"``, ``"vasp_std"``, ``"vasp_nkred_std"``,
-                ``"vasp_gam"`` subfolders (following ``_VASP_SUBFOLDER_PRIORITY``)
+                ``"vasp_gam"`` subfolders (following ``SUBFOLDER_PRIORITY``)
                 `with calculation outputs` (``vasprun.xml(.gz)`` files), and
                 uses the first matching subfolder name as ``subfolder``,
                 otherwise uses the defect calculation folder itself with no
@@ -1115,16 +1111,19 @@ class DefectsParser:
                 self.bulk_vr.final_structure = self._bulk_oxi_states = bulk_struct_w_oxi
 
         # load and parse bulk corrections data once for efficiency:
-        self.bulk_corrections_data = {}
+        self.bulk_corrections_data: dict[str, Any] = {}
         if not skip_corrections:
             bulk_corr_kwargs: dict[str, Any] = {
-                "bulk_path": self.bulk_path,
+                "path": self.bulk_path,
+                "dir_type": "bulk",
                 "quiet": True,
             }
             with contextlib.suppress(Exception):
-                self.bulk_corrections_data["bulk_locpot_dict"] = _get_bulk_locpot_dict(**bulk_corr_kwargs)
+                self.bulk_corrections_data["bulk_locpot_dict"] = get_planar_averaged_potentials(
+                    **bulk_corr_kwargs
+                )
             with contextlib.suppress(Exception):
-                self.bulk_corrections_data["bulk_site_potentials"] = _get_bulk_site_potentials(
+                self.bulk_corrections_data["bulk_site_potentials"] = get_site_potentials(
                     total_energy=_get_total_energies(None, self.bulk_vr),
                     **bulk_corr_kwargs,
                 )
@@ -1485,7 +1484,7 @@ def _get_calculation_folders_for_parsing(
             (default), ``doped`` checks, case-insensitively and in order, for
             ``"vasp_ncl"``, ``"singlepoint"``, ``"final"``, ``"relax"``,
             ``"vasp_std"``, ``"vasp_nkred_std"``, ``"vasp_gam"`` subfolders
-            (following ``_VASP_SUBFOLDER_PRIORITY``) `with calculation outputs`
+            (following ``SUBFOLDER_PRIORITY``) `with calculation outputs`
             (``vasprun.xml(.gz)`` files), and uses the first matching subfolder
             name as ``subfolder``, otherwise uses the defect calculation folder
             itself with no subfolder (set ``subfolder = "."`` to enforce this).
@@ -1511,8 +1510,7 @@ def _get_calculation_folders_for_parsing(
         parent_root = out_root.parent
         calc_files_df = _get_calc_files_df(parent_root)
         files_not_found_error = FileNotFoundError(
-            f"No calculation folders with any of {_VASP_CALC_OUTPUT_MASK} in filenames found under "
-            f"{out_root}."
+            f"No calculation folders with any of {CALC_OUTPUT_MASK} in filenames found under {out_root}."
         )
         if calc_files_df.empty:  # no calculation output files found
             raise files_not_found_error
@@ -1585,7 +1583,7 @@ def _resolve_bulk_path(
 
         raise ValueError(
             f"Could not determine bulk supercell calculation folder in {out_root}, found "
-            f"{len(possible_bulk_folders)} folders containing any of {_VASP_CALC_OUTPUT_MASK} in "
+            f"{len(possible_bulk_folders)} folders containing any of {CALC_OUTPUT_MASK} in "
             f"filenames (in subfolders) and '{_BULK_FOLDER_PATTERN}' in the folder name. Please specify "
             f"`bulk_path` manually."
         )
@@ -1618,22 +1616,22 @@ def _append_subfolder_if_needed(bulk_path: Path, subfolder: PathLike, user_set: 
             Path to the bulk calculation directory, with subfolder if needed.
     """
     if (bulk_path / subfolder).is_dir() and any(
-        k in f.name for k in _VASP_CALC_OUTPUT_MASK for f in (bulk_path / subfolder).iterdir()
+        k in f.name for k in CALC_OUTPUT_MASK for f in (bulk_path / subfolder).iterdir()
     ):  # subfolder contains calculation output files, so add to bulk path
         return bulk_path / subfolder
 
-    if not any(k in f.name for k in _VASP_CALC_OUTPUT_MASK for f in bulk_path.iterdir()):  # no outputs
+    if not any(k in f.name for k in CALC_OUTPUT_MASK for f in bulk_path.iterdir()):  # no outputs
         possible_bulk_subfolders = [
             p
             for p in bulk_path.iterdir()
-            if p.is_dir() and any(k in f.name for k in _VASP_CALC_OUTPUT_MASK for f in p.iterdir())
+            if p.is_dir() and any(k in f.name for k in CALC_OUTPUT_MASK for f in p.iterdir())
         ]
         if len(possible_bulk_subfolders) == 1 and not user_set:
             # if only one subfolder with calculation outputs, and `subfolder` not explicitly set, use this:
             return possible_bulk_subfolders[0].resolve()
 
         raise FileNotFoundError(
-            f"No files with any of {_VASP_CALC_OUTPUT_MASK} in names found under {bulk_path} (subfolder "
+            f"No files with any of {CALC_OUTPUT_MASK} in names found under {bulk_path} (subfolder "
             f"{subfolder}). Please ensure bulk supercell calculation files are present and/or specify "
             f"`bulk_path` manually."
         )
@@ -1752,7 +1750,7 @@ def _format_and_raise_parsing_warnings(
                 f"Multiple `{file_type}` files found in certain defect directories:\n"
                 f"(directory: chosen file for parsing):\n"
                 f"{joined_info_string}\n"
-                f"{file_type} files are used to {_vasp_file_parsing_action_dict[file_type]}"
+                f"{file_type} files are used to {FILE_PARSING_ACTIONS[file_type]}"
             )
 
     for message, lookup_key in non_duplicate_warnings:
@@ -2761,21 +2759,13 @@ class DefectParser:
         bulk_locpot_dict = (
             bulk_locpot_dict
             or self.kwargs.get("bulk_locpot_dict", None)
-            or _get_bulk_locpot_dict(self.defect_entry.calculation_metadata["bulk_path"])
-        )
-
-        defect_locpot_path, multiple = _get_output_files_and_check_if_multiple(
-            "LOCPOT", self.defect_entry.calculation_metadata["defect_path"]
-        )
-        if multiple:
-            _multiple_files_warning(
-                "LOCPOT",
-                self.defect_entry.calculation_metadata["defect_path"],
-                defect_locpot_path,
-                dir_type="defect",
+            or get_planar_averaged_potentials(
+                self.defect_entry.calculation_metadata["bulk_path"], dir_type="bulk"
             )
-        defect_locpot = get_locpot(defect_locpot_path)
-        defect_locpot_dict = {str(k): defect_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
+        )
+        defect_locpot_dict = get_planar_averaged_potentials(
+            self.defect_entry.calculation_metadata["defect_path"], dir_type="defect"
+        )
 
         self.defect_entry.calculation_metadata.update(
             {
@@ -2786,7 +2776,7 @@ class DefectParser:
 
         return bulk_locpot_dict
 
-    def load_eFNV_data(self, bulk_site_potentials: list | None = None):
+    def load_eFNV_data(self, bulk_site_potentials: list | np.ndarray | None = None):
         """
         Load metadata required for performing Kumagai correction (i.e. atomic
         site potentials from the ``OUTCAR`` files).
@@ -2819,23 +2809,14 @@ class DefectParser:
         bulk_site_potentials = bulk_site_potentials or self.kwargs.get("bulk_site_potentials", None)
 
         if bulk_site_potentials is None:
-            bulk_site_potentials = _get_bulk_site_potentials(
+            bulk_site_potentials = get_site_potentials(
                 self.defect_entry.calculation_metadata["bulk_path"],
+                dir_type="bulk",
                 total_energy=_get_total_energies(self.defect_entry.bulk_entry, self.bulk_vr),
             )
 
-        defect_outcar_path, multiple = _get_output_files_and_check_if_multiple(
-            "OUTCAR", self.defect_entry.calculation_metadata["defect_path"]
-        )
-        if multiple:
-            _multiple_files_warning(
-                "OUTCAR",
-                self.defect_entry.calculation_metadata["defect_path"],
-                defect_outcar_path,
-                dir_type="defect",
-            )
-        defect_site_potentials = get_core_potentials_from_outcar(
-            defect_outcar_path,
+        defect_site_potentials = get_site_potentials(
+            self.defect_entry.calculation_metadata["defect_path"],
             dir_type="defect",
             total_energy=_get_total_energies(self.defect_entry.sc_entry, self.defect_vr),
         )

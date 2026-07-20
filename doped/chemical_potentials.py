@@ -3245,7 +3245,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 ``{Formula}_{spg}_EaH_{EaH}/{subfolder}/vasprun.xml(.gz)``)
                 If ``None`` (default), then auto-detects the subfolder: the
                 highest-priority name (case-insensitive) among
-                ``_VASP_SUBFOLDER_PRIORITY`` (``vasp_ncl``, ``singlepoint``,
+                ``SUBFOLDER_PRIORITY`` (``vasp_ncl``, ``singlepoint``,
                 ``final``, ``relax``, ``vasp_std``, ``vasp_nkred_std``,
                 ``vasp_gam``), `with calculation outputs` (``vasprun.xml(.gz)``
                 files) and present in the discovered paths, is used. If none
@@ -3667,7 +3667,7 @@ class CompetingPhasesAnalyzer(MSONable):
         Recursively searches for ``vasprun.xml(.gz)`` files under ``path``.
         When ``subfolder`` is set, only vaspruns inside directories with that
         name are used.  When ``subfolder`` is ``None`` (default), the
-        highest-priority subfolder present among ``_VASP_SUBFOLDER_PRIORITY``
+        highest-priority subfolder present among ``SUBFOLDER_PRIORITY``
         (``vasp_ncl``, ``singlepoint``, ``final``, ``relax``, ``vasp_std``,
         ``vasp_nkred_std``, ``vasp_gam``; case-insensitive),
         `with calculation outputs` (``vasprun.xml(.gz)`` files) and present in

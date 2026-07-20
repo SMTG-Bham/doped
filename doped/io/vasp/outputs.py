@@ -348,12 +348,15 @@ def _get_output_files_and_check_if_multiple(
     return _io_utils._get_output_files_and_check_if_multiple(output_file, path, search_patterns)
 
 
-_VASP_CALC_OUTPUT_MASK = ("vasprun.xml", "vasprun.xml.gz")
+CALC_OUTPUT_MASK = ("vasprun.xml", "vasprun.xml.gz")
 """
-Filename patterns that identify calculation output files.
+Filename patterns identifying (VASP) calculation output files, used for
+calculation folder discovery.
+
+Part of the ``doped.io`` backend protocol.
 """
 
-_VASP_SUBFOLDER_PRIORITY = [
+SUBFOLDER_PRIORITY = [
     "vasp_ncl",
     "singlepoint",
     "final",
@@ -363,13 +366,14 @@ _VASP_SUBFOLDER_PRIORITY = [
     "vasp_gam",
 ]
 """
-Priority order when auto-detecting calculation subfolders.
+Priority order when auto-detecting (VASP) calculation subfolders.
+
+Part of the
+``doped.io`` backend protocol.
 """
 
 
-def _get_calc_files_df(
-    root: Path, calc_output_mask: Iterable[str] = _VASP_CALC_OUTPUT_MASK
-) -> pd.DataFrame:
+def _get_calc_files_df(root: Path, calc_output_mask: Iterable[str] = CALC_OUTPUT_MASK) -> pd.DataFrame:
     """
     Get a DataFrame of calculation output files (matching ``calc_output_mask``,
     defaulting to VASP ``vasprun.xml(.gz)`` files) found recursively under
@@ -382,12 +386,12 @@ def _get_calc_files_df(
 def _determine_subfolder(
     files_df: pd.DataFrame,
     candidate_folders: list[str] | None = None,
-    subfolder_priority: list[str] = _VASP_SUBFOLDER_PRIORITY,
+    subfolder_priority: list[str] = SUBFOLDER_PRIORITY,
 ) -> str:
     """
     Pick the highest-priority calculation subfolder name present in
     ``files_df`` (defaulting to the VASP subfolder priority order,
-    ``_VASP_SUBFOLDER_PRIORITY``); VASP-defaulted wrapper of
+    ``SUBFOLDER_PRIORITY``); VASP-defaulted wrapper of
     :func:`doped.io.utils._determine_subfolder`.
     """
     return _io_utils._determine_subfolder(
@@ -402,8 +406,8 @@ def _find_calc_outputs(
     """
     Recursively find VASP calculation output files (``vasprun.xml(.gz)``) under
     ``output_path`` and auto-detect the calculation subfolder (from
-    ``_VASP_SUBFOLDER_PRIORITY``) when ``subfolder`` is ``None``; VASP-
-    defaulted wrapper of :func:`doped.io.utils._find_calc_outputs`.
+    ``SUBFOLDER_PRIORITY``) when ``subfolder`` is ``None``; VASP-defaulted
+    wrapper of :func:`doped.io.utils._find_calc_outputs`.
 
     Shared discovery logic used by both :func:`~doped.analysis.DefectsParser`
     and :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer`.
@@ -411,8 +415,8 @@ def _find_calc_outputs(
     return _io_utils._find_calc_outputs(
         output_path,
         subfolder,
-        calc_output_mask=_VASP_CALC_OUTPUT_MASK,
-        subfolder_priority=_VASP_SUBFOLDER_PRIORITY,
+        calc_output_mask=CALC_OUTPUT_MASK,
+        subfolder_priority=SUBFOLDER_PRIORITY,
     )
 
 
@@ -903,49 +907,120 @@ def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
     return auto_charge
 
 
-def _get_bulk_locpot_dict(bulk_path, quiet=False):
-    bulk_locpot_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", bulk_path)
+def get_planar_averaged_potentials(
+    path: PathLike, dir_type: str = "bulk", quiet: bool = False
+) -> dict[str, np.ndarray]:
+    """
+    Get the planar-averaged electrostatic potentials along each lattice vector
+    for the calculation in ``path`` (from the ``LOCPOT(.gz)`` file with VASP),
+    needed for Freysoldt (FNV) finite-size charge corrections.
+
+    Part of the ``doped.io`` backend protocol.
+
+    Args:
+        path (PathLike):
+            Path to the calculation directory.
+        dir_type (str):
+            The type of directory being parsed (e.g. ``"bulk"`` or
+            ``"defect"``), for informative warnings/errors. Default is
+            ``"bulk"``.
+        quiet (bool):
+            Whether to skip the multiple-files warning if several matching
+            files are found. Default is ``False``.
+
+    Returns:
+        dict[str, np.ndarray]:
+            The planar-averaged potentials, as ``{axis index (str): 1D
+            array}``.
+    """
+    locpot_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", path)
     if multiple and not quiet:
-        _multiple_files_warning(
-            "LOCPOT",
-            bulk_path,
-            bulk_locpot_path,
-            dir_type="bulk",
-        )
-    bulk_locpot = get_locpot(bulk_locpot_path)
-    return {str(k): bulk_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
+        _multiple_files_warning("LOCPOT", path, locpot_path, dir_type=dir_type)
+    locpot = get_locpot(locpot_path)
+    return {str(k): locpot.get_average_along_axis(k) for k in [0, 1, 2]}
 
 
-def _get_bulk_site_potentials(
-    bulk_path: PathLike, quiet: bool = False, total_energy: list | float | None = None
-):
-    bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", bulk_path)
+def get_site_potentials(
+    path: PathLike,
+    dir_type: str = "bulk",
+    quiet: bool = False,
+    outputs: CalculationOutputs | None = None,
+    total_energy: list | float | None = None,
+) -> np.ndarray:
+    """
+    Get the atomic-site electrostatic potentials for the calculation in
+    ``path`` (from the core potentials in the ``OUTCAR(.gz)`` file with VASP),
+    needed for Kumagai (eFNV) finite-size charge corrections.
+
+    Part of the ``doped.io`` backend protocol.
+
+    Args:
+        path (PathLike):
+            Path to the calculation directory.
+        dir_type (str):
+            The type of directory being parsed (e.g. ``"bulk"`` or
+            ``"defect"``), for informative warnings/errors. Default is
+            ``"bulk"``.
+        quiet (bool):
+            Whether to skip the multiple-files warning if several matching
+            files are found. Default is ``False``.
+        outputs (CalculationOutputs):
+            Already-parsed :class:`~doped.io.outputs.CalculationOutputs` for
+            `this` calculation, if available, used to cross-check the total
+            energy of the parsed ``OUTCAR`` (warning if mismatching, i.e. if
+            an inconsistent file combination is being used). Default is
+            ``None``.
+        total_energy (list | float):
+            Total energy / energies to cross-check the parsed ``OUTCAR``
+            energy against (alternative to ``outputs``). Default is ``None``.
+
+    Returns:
+        np.ndarray: The atomic-site electrostatic potentials.
+    """
+    outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", path)
     if multiple and not quiet:
-        _multiple_files_warning(
-            "OUTCAR",
-            bulk_path,
-            bulk_outcar_path,
-            dir_type="bulk",
-        )
-    return get_core_potentials_from_outcar(bulk_outcar_path, dir_type="bulk", total_energy=total_energy)
+        _multiple_files_warning("OUTCAR", path, outcar_path, dir_type=dir_type)
+    if total_energy is None and outputs is not None:
+        total_energy = _total_energies_from_outputs(outputs)
+    return get_core_potentials_from_outcar(outcar_path, dir_type=dir_type, total_energy=total_energy)
 
 
-_vasp_file_parsing_action_dict = {
+def _total_energies_from_outputs(outputs: CalculationOutputs) -> list[float]:
+    """
+    Get the total energy / energies of a parsed calculation (final energy, plus
+    the last electronic step energy from the raw ``Vasprun`` if available), for
+    energy cross-checks.
+    """
+    energies = [outputs.energy]
+    if (vr := outputs.raw.get("vasprun")) is not None:
+        with contextlib.suppress(Exception):
+            energies.append(vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"])
+    return [energy for energy in energies if energy is not None]
+
+
+FILE_PARSING_ACTIONS = {
     "vasprun.xml": "parse the calculation energy and metadata.",
     "OUTCAR": "parse core levels and compute the Kumagai (eFNV) image charge correction.",
     "LOCPOT": "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
 }
+"""
+The (VASP) calculation output file types parsed by ``doped``, and what they are
+used for (for informative warning messages).
+
+Part of the ``doped.io``
+backend protocol.
+"""
 
 
 def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, dir_type="bulk"):
     """
     Warn that multiple files matching ``file_type`` were found in
     ``directory``, with ``action`` defaulting to the VASP file parsing actions
-    (``_vasp_file_parsing_action_dict``); VASP-defaulted wrapper of
+    (``FILE_PARSING_ACTIONS``); VASP-defaulted wrapper of
     :func:`doped.io.utils._multiple_files_warning`.
     """
     if action is None:
-        action = _vasp_file_parsing_action_dict[file_type]
+        action = FILE_PARSING_ACTIONS[file_type]
     _io_utils._multiple_files_warning(file_type, directory, chosen_filepath, action, dir_type)
 
 
