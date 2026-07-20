@@ -41,21 +41,9 @@ from doped.generation import (
     sort_defect_entries,
 )
 from doped.io import get_backend
+from doped.io import utils as _io_utils
 from doped.io.outputs import CalculationOutputs
-from doped.io.vasp.outputs import (
-    CALC_OUTPUT_MASK,
-    FILE_PARSING_ACTIONS,
-    _determine_subfolder,
-    _find_calc_outputs,
-    _format_mismatching_incar_warning,
-    _get_calc_files_df,
-    _parse_procar,
-    _parse_vr_and_poss_procar,
-    calculation_outputs_from_vasprun,
-    get_planar_averaged_potentials,
-    get_site_potentials,
-    get_vasprun,
-)
+from doped.io.vasp.outputs import _parse_procar, calculation_outputs_from_vasprun, get_vasprun
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import (
     _doped_obj_properties_methods,
@@ -901,15 +889,16 @@ class DefectsParser:
         bulk_path: PathLike | None = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        bulk_band_gap_vr: PathLike | Vasprun | None = None,
+        bulk_band_gap_vr: PathLike | Vasprun | CalculationOutputs | None = None,
         processes: int | None = None,
         json_filename: PathLike | bool | None = None,
         parse_projected_eigen: bool | None = None,
+        calculator: str = "vasp",
         **kwargs,
     ):
         r"""
-        A class for rapidly parsing multiple VASP defect supercell calculations
-        for a given host (bulk) material.
+        A class for rapidly parsing multiple defect supercell calculations for
+        a given host (bulk) material.
 
         Loops over calculation directories in ``output_path`` (likely the same
         ``output_path`` used with |DefectsSet| for file generation in
@@ -919,8 +908,9 @@ class DefectsParser:
         defect name), else it is set to the default ``doped`` name for that
         defect (using the estimated `unrelaxed` defect structure, for the point
         group and neighbour distances). By default, searches for folders in
-        ``output_path`` with ``subfolder`` containing ``vasprun.xml(.gz)``
-        files, and tries to parse them as |DefectEntry|\s.
+        ``output_path`` with ``subfolder`` containing calculation output files
+        (``vasprun.xml(.gz)`` files with the default ``vasp`` calculator), and
+        tries to parse them as |DefectEntry|\s.
 
         By default, tries multiprocessing to speed up defect parsing, which can
         be controlled with ``processes``. If parsing hangs, this may be due to
@@ -987,9 +977,10 @@ class DefectsParser:
                 ``error_tolerance`` or 10% of the band gap, by default, or can
                 be set by a ``shallow_charge_stability_tolerance = X`` keyword
                 argument).
-            bulk_band_gap_vr (PathLike or |Vasprun|):
+            bulk_band_gap_vr (PathLike, |Vasprun| or CalculationOutputs):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
-                |Vasprun| object, from which to determine the bulk band gap
+                |Vasprun| or :class:`~doped.io.outputs.CalculationOutputs`
+                object, from which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points
                 which are not included in the bulk supercell calculation, then
                 this parameter should be used to provide the output of a bulk
@@ -1035,6 +1026,11 @@ class DefectsParser:
                 Default is ``None``, which will attempt to load this data but
                 with no warning if it fails (otherwise if ``True`` a warning
                 will be printed).
+            calculator (str):
+                Name of the calculator used for the defect & bulk supercell
+                calculations, matching a ``doped.io.<calculator>`` parsing
+                backend (see the "Adding Support for a New Calculator" docs
+                page). Default is ``"vasp"``.
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``,
@@ -1071,32 +1067,32 @@ class DefectsParser:
         self.error_tolerance = error_tolerance
         self.bulk_path = bulk_path
         self.subfolder = subfolder
-        if bulk_band_gap_vr and not isinstance(bulk_band_gap_vr, Vasprun):
+        self.calculator = calculator
+        if bulk_band_gap_vr and not isinstance(bulk_band_gap_vr, Vasprun | CalculationOutputs):
             self.bulk_band_gap_vr = get_vasprun(bulk_band_gap_vr, parse_projected_eigen=False)
         else:
             self.bulk_band_gap_vr = bulk_band_gap_vr
         self.processes = processes
         self.json_filename = json_filename
         self.parse_projected_eigen = parse_projected_eigen
-        self.bulk_vr = None  # loaded later
+        self.bulk_outputs: CalculationOutputs | None = None  # loaded later
         self.kwargs = kwargs
 
         # get folders for parsing:
         self.defect_folders, self.output_path, self.subfolder, self.bulk_path = (
-            _get_calculation_folders_for_parsing(self.output_path, self.subfolder, self.bulk_path)
+            _get_calculation_folders_for_parsing(
+                self.output_path, self.subfolder, self.bulk_path, backend=self._backend
+            )
         )
 
         pbar = tqdm(total=len(self.defect_folders), desc="Parsing bulk reference calculation")
         # parse bulk calculation:
-        self.bulk_vr, self.bulk_procar = _parse_vr_and_poss_procar(
-            output_path=self.bulk_path,
+        self.bulk_outputs = self._backend.get_calculation_outputs(
+            self.bulk_path,
             parse_projected_eigen=self.parse_projected_eigen,
             label="bulk",
-            parse_procar=True,
         )
-        self.parse_projected_eigen = any(
-            i is not None for i in [self.bulk_vr.projected_eigenvalues, self.bulk_procar]
-        )
+        self.parse_projected_eigen = self.bulk_outputs.projected_eigenvalues is not None
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
@@ -1105,9 +1101,11 @@ class DefectsParser:
         with warnings.catch_warnings():  # ignore warnings if issues in guessing, this is not so important
             warnings.filterwarnings("ignore", message="Oxidation states could not be guessed")
             if bulk_struct_w_oxi := guess_and_set_oxi_states_with_timeout(
-                self.bulk_vr.final_structure, break_early_if_expensive=True
+                self.bulk_outputs.structure, break_early_if_expensive=True
             ):
-                self.bulk_vr.final_structure = self._bulk_oxi_states = bulk_struct_w_oxi
+                self.bulk_outputs.structure = self._bulk_oxi_states = bulk_struct_w_oxi
+                if (bulk_raw_vr := self.bulk_outputs.raw.get("vasprun")) is not None:
+                    bulk_raw_vr.final_structure = bulk_struct_w_oxi  # keep raw objects consistent
 
         # load and parse bulk corrections data once for efficiency:
         self.bulk_corrections_data: dict[str, Any] = {}
@@ -1118,13 +1116,16 @@ class DefectsParser:
                 "quiet": True,
             }
             with contextlib.suppress(Exception):
-                self.bulk_corrections_data["bulk_locpot_dict"] = get_planar_averaged_potentials(
-                    **bulk_corr_kwargs
+                self.bulk_corrections_data["bulk_locpot_dict"] = (
+                    {str(k): v for k, v in self.bulk_outputs.planar_averaged_potentials.items()}
+                    if self.bulk_outputs.planar_averaged_potentials is not None
+                    else self._backend.get_planar_averaged_potentials(**bulk_corr_kwargs)
                 )
             with contextlib.suppress(Exception):
-                self.bulk_corrections_data["bulk_site_potentials"] = get_site_potentials(
-                    total_energy=_get_total_energies(None, self.bulk_vr),
-                    **bulk_corr_kwargs,
+                self.bulk_corrections_data["bulk_site_potentials"] = (
+                    self.bulk_outputs.site_potentials
+                    if self.bulk_outputs.site_potentials is not None
+                    else self._backend.get_site_potentials(outputs=self.bulk_outputs, **bulk_corr_kwargs)
                 )
 
         self.defect_dict = {}
@@ -1173,7 +1174,10 @@ class DefectsParser:
 
         # checks and warnings:
         _format_and_raise_parsing_warnings(  # format and raise any parsing warnings
-            per_defect_warnings, bulk_path=self.bulk_path, subfolder=self.subfolder
+            per_defect_warnings,
+            bulk_path=self.bulk_path,
+            subfolder=self.subfolder,
+            file_parsing_actions=getattr(self._backend, "FILE_PARSING_ACTIONS", {}),
         )
 
         parsed_defect_entries = [
@@ -1205,7 +1209,9 @@ class DefectsParser:
         # Parsed defect checks:
         # handle (and warn) any charge correction errors or calculation parameter mismatches:
         _handle_charge_correction_errors(self.defect_dict, self.error_tolerance, **kwargs)
-        _warn_calculation_mismatches(self.defect_dict)  # warn any mismatching defect/bulk calc parameters
+        _warn_calculation_mismatches(  # warn any mismatching defect/bulk calc parameters
+            self.defect_dict, getattr(self._backend, "MISMATCH_WARNING_SPECS", {})
+        )
         _check_and_warn_dimer_bonds_spin_states(self.defect_dict, rtol=self.kwargs.get("rtol", 1.05))
 
         if self.json_filename is not False:  # save to json unless json_filename is False:
@@ -1217,6 +1223,33 @@ class DefectsParser:
 
             assert isinstance(self.json_filename, str)  # typing
             dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))
+
+    @property
+    def _backend(self):
+        """
+        The ``doped.io`` output-parsing backend module for the calculator used
+        for these defect calculations.
+
+        Resolved dynamically (module objects cannot be pickled for
+        multiprocessing).
+        """
+        return get_backend(self.calculator)
+
+    @property
+    def bulk_vr(self) -> Vasprun | None:
+        """
+        The raw bulk supercell |Vasprun| object, if parsed with the VASP
+        backend.
+        """
+        return self.bulk_outputs.raw.get("vasprun") if self.bulk_outputs is not None else None
+
+    @property
+    def bulk_procar(self) -> Procar | None:
+        """
+        The raw bulk supercell |Procar| object, if parsed with the VASP
+        backend.
+        """
+        return self.bulk_outputs.raw.get("procar") if self.bulk_outputs is not None else None
 
     def _parse_single_defect(self, defect_folder: str) -> DefectEntry | None:
         """
@@ -1240,14 +1273,14 @@ class DefectsParser:
             dp = DefectParser.from_paths(
                 defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
                 bulk_path=self.bulk_path,
-                bulk_vr=self.bulk_vr,
-                bulk_procar=self.bulk_procar,
+                bulk_outputs=self.bulk_outputs,
                 dielectric=self.dielectric,
                 skip_corrections=self.skip_corrections,
                 error_tolerance=self.error_tolerance,
                 bulk_band_gap_vr=self.bulk_band_gap_vr,
                 oxi_state=self.kwargs.get("oxi_state") if self._bulk_oxi_states else "Undetermined",
                 parse_projected_eigen=self.parse_projected_eigen,
+                calculator=self.calculator,
                 **self.kwargs,
             )
 
@@ -1285,11 +1318,12 @@ class DefectsParser:
             parsed_defect_entry = self._parse_single_defect(defect_folder)
 
         ignore_messages = (
-            "Estimated error",
-            "There are mismatching",
-            "The KPOINTS",
-            "The POTCAR",
-        )  # collectively warned later
+            "Estimated error",  # charge correction errors, collectively warned later
+            *(  # per-defect calculation-settings mismatch warnings, collectively warned later:
+                spec["per_defect_warning_prefix"]
+                for spec in getattr(self._backend, "MISMATCH_WARNING_SPECS", {}).values()
+            ),
+        )
 
         warning_info: dict[str, tuple[type, str, int]] = {
             str(w.message): (w.category, w.filename, w.lineno)
@@ -1469,6 +1503,7 @@ def _get_calculation_folders_for_parsing(
     output_path: PathLike = ".",
     subfolder: PathLike | None = None,
     bulk_path: PathLike | None = None,
+    backend: Any = None,
 ) -> tuple[list[str], str, str, str]:
     """
     Get calculation folders for parsing.
@@ -1481,18 +1516,24 @@ def _get_calculation_folders_for_parsing(
             Name of subfolder(s) within each calculation folder (in the
             ``output_path`` directory) from which to parse. If not specified,
             (default), ``doped`` checks, case-insensitively and in order, for
-            ``"vasp_ncl"``, ``"singlepoint"``, ``"final"``, ``"relax"``,
-            ``"vasp_std"``, ``"vasp_nkred_std"``, ``"vasp_gam"`` subfolders
-            (following ``SUBFOLDER_PRIORITY``) `with calculation outputs`
-            (``vasprun.xml(.gz)`` files), and uses the first matching subfolder
-            name as ``subfolder``, otherwise uses the defect calculation folder
-            itself with no subfolder (set ``subfolder = "."`` to enforce this).
+            subfolders in the backend ``SUBFOLDER_PRIORITY`` (``"vasp_ncl"``,
+            ``"singlepoint"``, ``"final"``, ``"relax"``, ``"vasp_std"``,
+            ``"vasp_nkred_std"``, ``"vasp_gam"`` for VASP) `with calculation
+            outputs` (``vasprun.xml(.gz)`` files for VASP), and uses the first
+            matching subfolder name as ``subfolder``, otherwise uses the defect
+            calculation folder itself with no subfolder (set
+            ``subfolder = "."`` to enforce this).
         bulk_path (PathLike | None):
             Path to bulk reference calculation folder. If not specified,
             searches for folder with "bulk" in the name in the ``output_path``
             directory (matching the default ``doped`` name for the bulk
             reference folder). Can be the full path, or the relative path from
             the ``output_path`` directory.
+        backend (ModuleType):
+            The ``doped.io`` output-parsing backend module, providing the
+            ``CALC_OUTPUT_MASK`` (and optionally ``SUBFOLDER_PRIORITY``)
+            constants for calculation output discovery. Default is ``None``
+            (the VASP backend).
 
     Returns:
         tuple[list[str], PathLike, PathLike, PathLike]:
@@ -1500,16 +1541,21 @@ def _get_calculation_folders_for_parsing(
             and bulk path (the last three of which are the input arguments
             which may have been updated within this function).
     """
+    backend = backend or get_backend("vasp")
+    calc_output_mask = backend.CALC_OUTPUT_MASK
+    subfolder_priority = getattr(backend, "SUBFOLDER_PRIORITY", [])
     out_root = Path(output_path).resolve()
     user_set_subfolder = subfolder is not None
 
-    calc_files_df, possible_defect_folders, detected_subfolder = _find_calc_outputs(out_root, subfolder)
+    calc_files_df, possible_defect_folders, detected_subfolder = _io_utils._find_calc_outputs(
+        out_root, subfolder, calc_output_mask=calc_output_mask, subfolder_priority=subfolder_priority
+    )
 
     if calc_files_df.empty:  # user may have specified defect sub-folder directly, so check one level up
         parent_root = out_root.parent
-        calc_files_df = _get_calc_files_df(parent_root)
+        calc_files_df = _io_utils._get_calc_files_df(parent_root, calc_output_mask)
         files_not_found_error = FileNotFoundError(
-            f"No calculation folders with any of {CALC_OUTPUT_MASK} in filenames found under {out_root}."
+            f"No calculation folders with any of {calc_output_mask} in filenames found under {out_root}."
         )
         if calc_files_df.empty:  # no calculation output files found
             raise files_not_found_error
@@ -1526,7 +1572,9 @@ def _get_calculation_folders_for_parsing(
         out_root = parent_root  # shift context to parent directory
 
         detected_subfolder = (
-            _determine_subfolder(calc_files_df, possible_defect_folders)
+            _io_utils._determine_subfolder(
+                calc_files_df, possible_defect_folders, subfolder_priority=subfolder_priority
+            )
             if not user_set_subfolder
             else str(subfolder)
         )
@@ -1545,19 +1593,22 @@ def _get_calculation_folders_for_parsing(
         if d not in possible_bulk_folders and (subfolder == "." or (out_root / d / subfolder).is_dir())
     ]
 
-    if bulk_path is not None and not _get_calc_files_df(Path(bulk_path)).empty:
+    if bulk_path is not None and not _io_utils._get_calc_files_df(Path(bulk_path), calc_output_mask).empty:
         bulk_path = Path(bulk_path).resolve()
 
-    else:
-        bulk_path = _resolve_bulk_path(out_root, possible_bulk_folders, bulk_path)  # resolve bulk path
+    else:  # resolve bulk path:
+        bulk_path = _resolve_bulk_path(out_root, possible_bulk_folders, bulk_path, calc_output_mask)
 
-    bulk_path = _append_subfolder_if_needed(bulk_path, subfolder, user_set_subfolder)
+    bulk_path = _append_subfolder_if_needed(bulk_path, subfolder, user_set_subfolder, calc_output_mask)
 
     return defect_folders, str(out_root), str(subfolder), str(bulk_path)
 
 
 def _resolve_bulk_path(
-    out_root: Path, possible_bulk_folders: list[str], bulk_path: PathLike | None
+    out_root: Path,
+    possible_bulk_folders: list[str],
+    bulk_path: PathLike | None,
+    calc_output_mask: tuple[str, ...] = ("vasprun.xml", "vasprun.xml.gz"),
 ) -> Path:
     """
     Return absolute Path to bulk folder (may contain subfolder later).
@@ -1569,6 +1620,9 @@ def _resolve_bulk_path(
             List of possible bulk calculation folders (in ``out_root``).
         bulk_path (str | None):
             User-provided explicit path to the bulk calculation directory.
+        calc_output_mask (tuple[str, ...]):
+            Filename patterns identifying calculation output files (for
+            informative error messages).
     """
     if bulk_path is None:
         if len(possible_bulk_folders) == 1:
@@ -1582,7 +1636,7 @@ def _resolve_bulk_path(
 
         raise ValueError(
             f"Could not determine bulk supercell calculation folder in {out_root}, found "
-            f"{len(possible_bulk_folders)} folders containing any of {CALC_OUTPUT_MASK} in "
+            f"{len(possible_bulk_folders)} folders containing any of {calc_output_mask} in "
             f"filenames (in subfolders) and '{_BULK_FOLDER_PATTERN}' in the folder name. Please specify "
             f"`bulk_path` manually."
         )
@@ -1597,7 +1651,12 @@ def _resolve_bulk_path(
     return bulk_path.resolve()  # convert to absolute path
 
 
-def _append_subfolder_if_needed(bulk_path: Path, subfolder: PathLike, user_set: bool) -> Path:
+def _append_subfolder_if_needed(
+    bulk_path: Path,
+    subfolder: PathLike,
+    user_set: bool,
+    calc_output_mask: tuple[str, ...] = ("vasprun.xml", "vasprun.xml.gz"),
+) -> Path:
     """
     Ensure ``bulk_path`` actually contains calculation files; dive into
     ``subfolder`` if needed.
@@ -1609,28 +1668,30 @@ def _append_subfolder_if_needed(bulk_path: Path, subfolder: PathLike, user_set: 
             Subfolder with calculation output files.
         user_set (bool):
             Whether the subfolder was explicitly set by the user.
+        calc_output_mask (tuple[str, ...]):
+            Filename patterns identifying calculation output files.
 
     Returns:
         Path:
             Path to the bulk calculation directory, with subfolder if needed.
     """
     if (bulk_path / subfolder).is_dir() and any(
-        k in f.name for k in CALC_OUTPUT_MASK for f in (bulk_path / subfolder).iterdir()
+        k in f.name for k in calc_output_mask for f in (bulk_path / subfolder).iterdir()
     ):  # subfolder contains calculation output files, so add to bulk path
         return bulk_path / subfolder
 
-    if not any(k in f.name for k in CALC_OUTPUT_MASK for f in bulk_path.iterdir()):  # no outputs
+    if not any(k in f.name for k in calc_output_mask for f in bulk_path.iterdir()):  # no outputs
         possible_bulk_subfolders = [
             p
             for p in bulk_path.iterdir()
-            if p.is_dir() and any(k in f.name for k in CALC_OUTPUT_MASK for f in p.iterdir())
+            if p.is_dir() and any(k in f.name for k in calc_output_mask for f in p.iterdir())
         ]
         if len(possible_bulk_subfolders) == 1 and not user_set:
             # if only one subfolder with calculation outputs, and `subfolder` not explicitly set, use this:
             return possible_bulk_subfolders[0].resolve()
 
         raise FileNotFoundError(
-            f"No files with any of {CALC_OUTPUT_MASK} in names found under {bulk_path} (subfolder "
+            f"No files with any of {calc_output_mask} in names found under {bulk_path} (subfolder "
             f"{subfolder}). Please ensure bulk supercell calculation files are present and/or specify "
             f"`bulk_path` manually."
         )
@@ -1641,6 +1702,7 @@ def _format_and_raise_parsing_warnings(
     per_defect_warnings: list[tuple[str, str, dict[str, tuple[type, str, int]]]],
     bulk_path: str = "bulk",
     subfolder: str = ".",
+    file_parsing_actions: dict[str, str] | None = None,
 ) -> None:
     """
     Process and display parsing warnings in an organized manner, grouping
@@ -1658,6 +1720,11 @@ def _format_and_raise_parsing_warnings(
         subfolder (str):
             Subfolder of the defect calculation directory (just for formatted
             error / warning messages). Default is ``"."``.
+        file_parsing_actions (dict[str, str]):
+            The calculation output file types parsed by the calculator
+            backend, and what they are used for (the backend
+            ``FILE_PARSING_ACTIONS`` constant), for grouping multiple-files
+            warnings. Default is ``None`` (no grouping).
     """
     per_defect_warnings = [pdw for pdw in per_defect_warnings if pdw[2]]  # drop no-warning cases
     if not per_defect_warnings:
@@ -1701,7 +1768,7 @@ def _format_and_raise_parsing_warnings(
         return warning
 
     multiple_files_warning_dict: dict[str, list[tuple]] = {
-        file_type: [] for file_type in _vasp_file_parsing_action_dict
+        file_type: [] for file_type in (file_parsing_actions or {})
     }
     non_duplicate_warnings: list[tuple[str, str | None]] = []
     for defect_folder, defect_path, warning_info in per_defect_warnings:
@@ -1749,7 +1816,7 @@ def _format_and_raise_parsing_warnings(
                 f"Multiple `{file_type}` files found in certain defect directories:\n"
                 f"(directory: chosen file for parsing):\n"
                 f"{joined_info_string}\n"
-                f"{file_type} files are used to {FILE_PARSING_ACTIONS[file_type]}"
+                f"{file_type} files are used to {(file_parsing_actions or {})[file_type]}"
             )
 
     for message, lookup_key in non_duplicate_warnings:
@@ -1786,17 +1853,12 @@ def _get_defect_folder(entry: DefectEntry, subfolder: str = ".") -> str:
     )
 
 
-def _get_total_energies(computed_entry=None, vr=None):
+def _get_total_energies(computed_entry=None):
     """
-    Get the total energies from the defect entry or vasprun.
+    Get the known total energy / energies from a parsed defect or bulk computed
+    entry, for cross-checking parsed output files.
     """
-    energies = [
-        computed_entry.energy if computed_entry else None,
-        vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"] if vr else None,
-    ]
-    with contextlib.suppress(Exception):
-        energies.append(vr.final_energy if vr else None)
-    return [energy for energy in energies if energy is not None]
+    return [computed_entry.energy] if computed_entry else []
 
 
 def _name_parsed_defect_entries(
@@ -1916,51 +1978,19 @@ def _name_parsed_defect_entries(
     return sort_defect_entries(defect_dict)
 
 
-def _warn_calculation_mismatches(defect_dict: dict[str, DefectEntry]) -> None:
+def _warn_calculation_mismatches(
+    defect_dict: dict[str, DefectEntry], mismatch_warning_specs: dict[str, dict]
+) -> None:
     """
     Generic handler for mismatching calculation parameters, stored in
     ``DefectEntry.calculation_metadata``.
+
+    ``mismatch_warning_specs`` is the calculator backend
+    ``MISMATCH_WARNING_SPECS`` constant: for each metadata key, the
+    human-readable setting name (``"object_name"``) and the value transform &
+    message formatting functions.
     """
-    # key = mismatch key, value = dict with transform of DefectEntry.calculation_metadata[mismatch key],
-    # and message format function:
-    mismatch_dict: dict[str, dict] = {
-        "mismatching_INCAR_tags": {
-            "transform": set,
-            "message": lambda lst: (
-                "'Defects: (INCAR tag, value in defect calculation, value in bulk calculation))':\n"
-                f"{_format_mismatching_incar_warning(lst)}\n"
-                "In general, the same INCAR settings should be used in all final calculations for these "
-                "tags which can affect energies!"
-            ),
-        },
-        "mismatching_KPOINTS": {
-            "transform": lambda defect_and_bulk_kpoints_lists: [
-                [[float(kpt) for kpt in kpoints] for kpoints in kpoints_list]
-                for kpoints_list in defect_and_bulk_kpoints_lists
-            ],
-            "message": lambda lst: (
-                "(defect kpoints, bulk kpoints)):\n" + "\n".join(f"{n}: {m}" for n, m in lst) + "\n"
-                "In general, the same KPOINTS settings should be used for all final calculations for "
-                "accurate results!"
-            ),
-        },
-        "mismatching_POTCAR_symbols": {
-            "transform": lambda v: v,
-            "message": lambda lst: (
-                "(defect POTCARs, bulk POTCARs)):\n" + "\n".join(f"{n}: {m}" for n, m in lst) + "\n"
-                "In general, the same POTCAR settings should be used for all calculations for accurate "
-                "results!"
-            ),
-        },
-    }
-
-    for mismatch_key, mismatch_spec in mismatch_dict.items():
-        mismatch_object = mismatch_key.split("_")[1]  # "mismatching_INCAR_tags" -> "INCAR" (for message)
-        if mismatch_object == "INCAR":
-            mismatch_object = "INCAR tags"
-        elif mismatch_object == "POTCAR":
-            mismatch_object = "POTCAR symbols"  # otherwise "KPOINTS" stays as is
-
+    for mismatch_key, mismatch_spec in mismatch_warning_specs.items():
         mismatches = [
             (name, mismatch_spec["transform"](entry.calculation_metadata[mismatch_key]))
             for name, entry in defect_dict.items()
@@ -1973,9 +2003,9 @@ def _warn_calculation_mismatches(defect_dict: dict[str, DefectEntry]) -> None:
         mismatches.sort(key=lambda x: (len(x[1]), x[0]), reverse=True)
 
         warnings.warn(
-            f"There are mismatching {mismatch_object} for (some of) your defect and bulk calculations "
-            f"which are likely to cause errors in the parsed results (energies). Found the following "
-            f"differences:\n(in the format: {mismatch_spec['message'](mismatches)})"
+            f"There are mismatching {mismatch_spec['object_name']} for (some of) your defect and bulk "
+            f"calculations which are likely to cause errors in the parsed results (energies). Found the "
+            f"following differences:\n(in the format: {mismatch_spec['message'](mismatches)})"
         )
 
 

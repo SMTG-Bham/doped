@@ -1021,6 +1021,7 @@ FILE_PARSING_ACTIONS = {
     "vasprun.xml": "parse the calculation energy and metadata.",
     "OUTCAR": "parse core levels and compute the Kumagai (eFNV) image charge correction.",
     "LOCPOT": "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
+    "PROCAR": "parse orbital projections for eigenvalue analysis.",
 }
 """
 The (VASP) calculation output file types parsed by ``doped``, and what they are
@@ -1028,6 +1029,52 @@ used for (for informative warning messages).
 
 Part of the ``doped.io``
 backend protocol.
+"""
+
+MISMATCH_WARNING_SPECS = {
+    "mismatching_INCAR_tags": {
+        "object_name": "INCAR tags",
+        "per_defect_warning_prefix": "There are mismatching",
+        "transform": set,
+        "message": lambda lst: (
+            "'Defects: (INCAR tag, value in defect calculation, value in bulk calculation))':\n"
+            f"{_format_mismatching_incar_warning(lst)}\n"
+            "In general, the same INCAR settings should be used in all final calculations for these "
+            "tags which can affect energies!"
+        ),
+    },
+    "mismatching_KPOINTS": {
+        "object_name": "KPOINTS",
+        "per_defect_warning_prefix": "The KPOINTS",
+        "transform": lambda defect_and_bulk_kpoints_lists: [
+            [[float(kpt) for kpt in kpoints] for kpoints in kpoints_list]
+            for kpoints_list in defect_and_bulk_kpoints_lists
+        ],
+        "message": lambda lst: (
+            "(defect kpoints, bulk kpoints)):\n" + "\n".join(f"{n}: {m}" for n, m in lst) + "\n"
+            "In general, the same KPOINTS settings should be used for all final calculations for "
+            "accurate results!"
+        ),
+    },
+    "mismatching_POTCAR_symbols": {
+        "object_name": "POTCAR symbols",
+        "per_defect_warning_prefix": "The POTCAR",
+        "transform": lambda v: v,
+        "message": lambda lst: (
+            "(defect POTCARs, bulk POTCARs)):\n" + "\n".join(f"{n}: {m}" for n, m in lst) + "\n"
+            "In general, the same POTCAR settings should be used for all calculations for accurate "
+            "results!"
+        ),
+    },
+}
+"""
+Specifications for collectively warning about mismatching (VASP) defect/bulk
+calculation settings, as stored in ``DefectEntry.calculation_metadata`` by
+``check_run_compatibility()``: for each metadata key, the human-readable
+setting name, the per-defect warning prefix (for identifying warnings to
+aggregate), and the value transform & message formatting functions.
+
+Part of the ``doped.io`` backend protocol.
 """
 
 
