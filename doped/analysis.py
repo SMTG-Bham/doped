@@ -3012,72 +3012,66 @@ class DefectParser:
         mpid = mpid or self.kwargs.get("mpid", None)
         api_key = api_key or self.kwargs.get("api_key", None)
 
-        if use_MP and mpid is None:
+        if mpid is not None:
+            print(f"Using user-provided mp-id for bulk structure: {mpid}.")
+        elif use_MP:  # search MP for lowest-number mp-id with matching composition & structure:
             try:
                 with MPRester(api_key=api_key) as mpr:
-                    tmp_mplist = mpr.get_entries_in_chemsys(list(bulk_sc_structure.symbol_set))
-                mplist = [
-                    mp_ent.entry_id
-                    for mp_ent in tmp_mplist
-                    if mp_ent.composition.reduced_composition
-                    == bulk_sc_structure.composition.reduced_composition
-                ]
+                    candidate_mpids = [
+                        entry.entry_id
+                        for entry in mpr.get_entries_in_chemsys(list(bulk_sc_structure.symbol_set))
+                        if entry.composition.reduced_composition
+                        == bulk_sc_structure.composition.reduced_composition
+                    ]
+                    matching_mpids = [
+                        trial_mpid
+                        for trial_mpid in candidate_mpids
+                        if StructureMatcher_scan_stol(
+                            bulk_sc_structure,
+                            mpr.get_structure_by_material_id(trial_mpid),
+                            func_name="fit",
+                            primitive_cell=True,
+                            scale=False,
+                            attempt_supercell=True,
+                            allow_subset=False,
+                        )
+                    ]
             except Exception as exc:
                 raise ValueError(
                     f"Error with querying MPRester for {bulk_sc_structure.composition.reduced_formula}:"
                 ) from exc
 
-            mpid_fit_list = []
-            for trial_mpid in mplist:
-                with MPRester(api_key=api_key) as mpr:
-                    mpstruct = mpr.get_structure_by_material_id(trial_mpid)
-                if StructureMatcher_scan_stol(
-                    bulk_sc_structure,
-                    mpstruct,
-                    func_name="fit",
-                    primitive_cell=True,
-                    scale=False,
-                    attempt_supercell=True,
-                    allow_subset=False,
-                ):
-                    mpid_fit_list.append(trial_mpid)
-
-            if len(mpid_fit_list) == 1:
-                mpid = mpid_fit_list[0]
-                print(f"Single mp-id found for bulk structure:{mpid}.")
-            elif len(mpid_fit_list) > 1:
-                num_mpid_list = [int(mpid.split("-")[1]) for mpid in mpid_fit_list]
-                num_mpid_list.sort()
-                mpid = f"mp-{num_mpid_list[0]!s}"
-                print(
-                    f"Multiple mp-ids found for bulk structure:{mpid_fit_list}. Will use lowest "
-                    f"number mpid for bulk band structure = {mpid}."
-                )
+            if matching_mpids:
+                mpid = min(matching_mpids, key=lambda mp_string: int(mp_string.split("-")[1]))
+                if len(matching_mpids) > 1:
+                    print(
+                        f"Multiple mp-ids found for bulk structure: {matching_mpids}. Will use lowest "
+                        f"number mpid for bulk band structure = {mpid}."
+                    )
+                else:
+                    print(f"Single mp-id found for bulk structure: {mpid}.")
             else:
                 print(
-                    "Could not find bulk structure in MP database after tying the following "
-                    f"list:\n{mplist}"
+                    "Could not find bulk structure in MP database after trying the following "
+                    f"list:\n{candidate_mpids}"
                 )
-                mpid = None
 
         if mpid is not None:
-            print(f"Using user-provided mp-id for bulk structure: {mpid}.")
-            with MPRester(api_key=api_key) as mpr:
-                bs = mpr.get_bandstructure_by_material_id(mpid)
+            bs = None
+            with MPRester(api_key=api_key) as mpr, contextlib.suppress(Exception):
+                bs = mpr.get_bandstructure_by_material_id(mpid)  # None/error if no bandstructure entry
+
             if bs:
                 cbm = bs.get_cbm()["energy"]
                 vbm = bs.get_vbm()["energy"]
                 band_gap = bs.get_band_gap()["energy"]
                 gap_calculation_metadata["MP_gga_BScalc_data"] = bs.get_band_gap().copy()
-
-        if (vbm is None or band_gap is None or cbm is None or not bulk_band_gap_outputs) and (
-            mpid and band_gap is None
-        ):
-            warnings.warn(
-                f"MPID {mpid} was provided, but no bandstructure entry currently exists for it. "
-                f"Reverting to use of bulk supercell calculation for band edge extrema."
-            )
-            gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
+            else:
+                warnings.warn(
+                    f"MPID {mpid} was provided, but no bandstructure entry currently exists for it. "
+                    f"Reverting to use of bulk supercell calculation for band edge extrema."
+                )
+                gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
 
         if bulk_band_gap_outputs is not None:
             if not isinstance(bulk_band_gap_outputs, CalculationOutputs):
