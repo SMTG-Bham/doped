@@ -2669,9 +2669,20 @@ class DefectParser:
         # determine charge correction to use, based on what output files are available (`LOCPOT`s or
         # `OUTCAR`s), and whether the supplied dielectric is isotropic or not
         def _check_folder_for_file_match(folder, filename):
-            return any(
+            return os.path.isdir(folder) and any(
                 filename.lower() in folder_filename.lower() for folder_filename in os.listdir(folder)
             )
+
+        # pre-loaded bulk data (``bulk_site_potentials``/``bulk_locpot_dict`` kwargs) also counts as
+        # available, without needing the bulk output files:
+        efnv_data_available = _check_folder_for_file_match(defect_path, "OUTCAR") and (
+            self.kwargs.get("bulk_site_potentials") is not None
+            or _check_folder_for_file_match(bulk_path, "OUTCAR")
+        )
+        fnv_data_available = _check_folder_for_file_match(defect_path, "LOCPOT") and (
+            self.kwargs.get("bulk_locpot_dict") is not None
+            or _check_folder_for_file_match(bulk_path, "LOCPOT")
+        )
 
         # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
         isotropic_dielectric = all(np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric))
@@ -2679,15 +2690,11 @@ class DefectParser:
         # regardless, try parsing OUTCAR files first (quickest, more robust for cases where defect
         # charge is localised somewhat off the (auto-determined) defect site (e.g. split-interstitials
         # etc) and also works regardless of isotropic/anisotropic)
-        if _check_folder_for_file_match(defect_path, "OUTCAR") and _check_folder_for_file_match(
-            bulk_path, "OUTCAR"
-        ):
+        if efnv_data_available:
             try:
                 self.load_eFNV_data()
             except Exception as kumagai_exc:
-                if _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
-                    bulk_path, "LOCPOT"
-                ):
+                if fnv_data_available:
                     try:
                         if not isotropic_dielectric:
                             # convert anisotropic dielectric to harmonic mean of the diagonal:
@@ -2730,9 +2737,7 @@ class DefectParser:
                     )
                     skip_corrections = True
 
-        elif _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
-            bulk_path, "LOCPOT"
-        ):
+        elif fnv_data_available:
             try:
                 if not isotropic_dielectric:
                     # convert anisotropic dielectric to harmonic mean of the diagonal:
