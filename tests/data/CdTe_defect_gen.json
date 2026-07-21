@@ -1,7 +1,7 @@
 {
     "@class": "DefectsGenerator",
     "@module": "doped.generation",
-    "@version": "3.2.1",
+    "@version": "3.2.0",
     "_BilbaoCS_conv_cell_vector_mapping": [
         0,
         1,
@@ -1528,7 +1528,7 @@
         "Cd_Te_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -7007,7 +7007,7 @@
         "Cd_Te_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -12486,7 +12486,7 @@
         "Cd_Te_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -17965,7 +17965,7 @@
         "Cd_Te_+4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -23444,7 +23444,7 @@
         "Cd_Te_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -28944,7 +28944,7 @@
         "Cd_i_C3v_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -38271,7 +38271,7 @@
         "Cd_i_C3v_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -47598,7 +47598,7 @@
         "Cd_i_C3v_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -56946,7 +56946,7 @@
         "Cd_i_Td_Cd2.83_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -62412,7 +62412,7 @@
         "Cd_i_Td_Cd2.83_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -67878,7 +67878,7 @@
         "Cd_i_Td_Cd2.83_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -73365,7 +73365,7 @@
         "Cd_i_Td_Te2.83_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -78831,7 +78831,7 @@
         "Cd_i_Td_Te2.83_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -84297,7 +84297,7 @@
         "Cd_i_Td_Te2.83_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -89784,7 +89784,7 @@
         "Te_Cd_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -95343,7 +95343,7 @@
         "Te_Cd_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -100902,7 +100902,7 @@
         "Te_Cd_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -106461,7 +106461,7 @@
         "Te_Cd_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -112020,7 +112020,7 @@
         "Te_Cd_-3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -117579,7 +117579,7 @@
         "Te_Cd_-4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -123138,7 +123138,7 @@
         "Te_Cd_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -128718,7 +128718,7 @@
         "Te_i_C3v_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -138125,7 +138125,7 @@
         "Te_i_C3v_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -147532,7 +147532,7 @@
         "Te_i_C3v_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -156939,7 +156939,7 @@
         "Te_i_C3v_+4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -166346,7 +166346,7 @@
         "Te_i_C3v_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -175753,7 +175753,7 @@
         "Te_i_C3v_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -185160,7 +185160,7 @@
         "Te_i_C3v_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -194588,7 +194588,7 @@
         "Te_i_Td_Cd2.83_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -200134,7 +200134,7 @@
         "Te_i_Td_Cd2.83_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -205680,7 +205680,7 @@
         "Te_i_Td_Cd2.83_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -211226,7 +211226,7 @@
         "Te_i_Td_Cd2.83_+4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -216772,7 +216772,7 @@
         "Te_i_Td_Cd2.83_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -222318,7 +222318,7 @@
         "Te_i_Td_Cd2.83_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -227864,7 +227864,7 @@
         "Te_i_Td_Cd2.83_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -233431,7 +233431,7 @@
         "Te_i_Td_Te2.83_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -238977,7 +238977,7 @@
         "Te_i_Td_Te2.83_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -244523,7 +244523,7 @@
         "Te_i_Td_Te2.83_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -250069,7 +250069,7 @@
         "Te_i_Td_Te2.83_+4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -255615,7 +255615,7 @@
         "Te_i_Td_Te2.83_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -261161,7 +261161,7 @@
         "Te_i_Td_Te2.83_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -266707,7 +266707,7 @@
         "Te_i_Td_Te2.83_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -272274,7 +272274,7 @@
         "v_Cd_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -277737,7 +277737,7 @@
         "v_Cd_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -283200,7 +283200,7 @@
         "v_Cd_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -288663,7 +288663,7 @@
         "v_Cd_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -294147,7 +294147,7 @@
         "v_Te_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -299610,7 +299610,7 @@
         "v_Te_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -305073,7 +305073,7 @@
         "v_Te_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -310536,7 +310536,7 @@
         "v_Te_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -316023,7 +316023,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -316470,7 +316470,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -317175,7 +317175,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -317622,7 +317622,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -318069,7 +318069,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -318774,7 +318774,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -319223,7 +319223,7 @@
             {
                 "@class": "Substitution",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -319723,7 +319723,7 @@
             {
                 "@class": "Substitution",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -320225,7 +320225,7 @@
             {
                 "@class": "Vacancy",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -320721,7 +320721,7 @@
             {
                 "@class": "Vacancy",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,

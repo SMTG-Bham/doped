@@ -2,7 +2,7 @@
     "v_O_1_0": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.1",
+        "@version": "3.2.0",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,
@@ -59674,7 +59674,7 @@
     "v_O_2_0": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.1",
+        "@version": "3.2.0",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,
@@ -119346,7 +119346,7 @@
     "v_O_3_0": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.1",
+        "@version": "3.2.0",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,

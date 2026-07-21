@@ -298,31 +298,38 @@ def get_defect_in_supercell(
         wsr_target = get_wigner_seitz_radius(target_supercell)
         trans_to_match_target = None
         fake_target_supercell_w_big_supercell_lattice = None
-        for r_factor in orientation_template_radii_range:
-            fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
-                target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                r=r_factor * wsr_target,
-            )
-            if not fake_target_supercell_sites:
-                continue
-            fake_target_supercell_w_big_supercell_lattice = Structure(
-                big_bulk_supercell.lattice,
-                [site.species for site in fake_target_supercell_sites],
-                [site.coords for site in fake_target_supercell_sites],
-                coords_are_cartesian=True,
-            )
-            fake_big_supercell = Structure.from_sites(
-                big_bulk_supercell.get_sites_in_sphere(
-                    big_bulk_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                    r=r_factor * wsr_target / 0.8,  # slightly larger r for fake big supercell
+        # scan all sampling-sphere (orientation template) radii at tight ``stol`` values, before loosening
+        # and re-scanning over template radii
+        stol_tiers = [0.02, 0.05, 0.1, 0.5]
+        for min_stol, max_stol in zip([None, *stol_tiers[:-1]], stol_tiers, strict=True):  # min = prev max
+            for r_factor in orientation_template_radii_range:
+                fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
+                    target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
+                    r=r_factor * wsr_target,
                 )
-            )
-            trans_to_match_target = get_transformation_from_s2_to_s1(
-                fake_target_supercell_w_big_supercell_lattice,
-                fake_big_supercell,
-                allow_subset=True,  # allow subset to match, likely different number of atoms here
-                max_stol=0.5,
-            )
+                if not fake_target_supercell_sites:
+                    continue
+                fake_target_supercell_w_big_supercell_lattice = Structure(
+                    big_bulk_supercell.lattice,
+                    [site.species for site in fake_target_supercell_sites],
+                    [site.coords for site in fake_target_supercell_sites],
+                    coords_are_cartesian=True,
+                )
+                fake_big_supercell = Structure.from_sites(
+                    big_bulk_supercell.get_sites_in_sphere(
+                        big_bulk_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
+                        r=r_factor * wsr_target / 0.8,  # slightly larger r for fake big supercell
+                    )
+                )
+                trans_to_match_target = get_transformation_from_s2_to_s1(
+                    fake_target_supercell_w_big_supercell_lattice,
+                    fake_big_supercell,
+                    allow_subset=True,  # allow subset to match, likely different number of atoms here
+                    **({"min_stol": min_stol} if min_stol else {}),
+                    max_stol=max_stol,
+                )
+                if trans_to_match_target is not None:
+                    break
             if trans_to_match_target is not None:
                 break
 

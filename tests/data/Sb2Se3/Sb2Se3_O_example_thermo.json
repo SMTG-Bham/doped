@@ -1,7 +1,7 @@
 {
     "@class": "DefectThermodynamics",
     "@module": "doped.thermodynamics",
-    "@version": "3.2.1",
+    "@version": "3.2.0",
     "band_gap": 1.4734000000000007,
     "bulk_dos": null,
     "bulk_formula": "Sb2Se3",
@@ -11,7 +11,7 @@
         "O_Se_Cs_Sb2.65_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -37125,7 +37125,7 @@
         "O_Se_Cs_Sb2.65_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -74299,7 +74299,7 @@
         "O_Se_Cs_Sb2.65_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -111413,7 +111413,7 @@
         "O_Se_Cs_Sb2.65_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -148522,7 +148522,7 @@
         "O_Se_Cs_Sb2.65_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,

@@ -2954,7 +2954,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         supercell_matrix = np.array(
             [[-2, -2, 2], [-2, 2, 2], [-2, 2, -2]]
             if generate_supercell
-            else [[0.0, 2.0, 0.0], [-2.0, 2.0, 0.0], [-1.0, 1.0, 1.0]]
+            else [[0, -2, 2], [2, -2, 0], [1, -1, 1]]
         )
         assert any(np.isclose(agcu_defect_gen.min_image_distance, i, atol=0.01) for i in [10.21, 5.11])
         assert np.allclose(agcu_defect_gen.supercell_matrix, supercell_matrix)

@@ -910,6 +910,39 @@ def _get_orientation_preserving_primitive(
 _TRIAL_SYMPREC_DIST_TOL_FACTORS = np.array([1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1])
 
 
+def _orbit_site_symmetry_consistent(
+    structure: Structure,
+    n_equiv_sites: int,
+    site_symmetry_symbol: str,
+    symprec: float = 0.01,
+) -> bool:
+    """
+    Check the Wyckoff orbit-stabilizer relation for a generated site orbit: the
+    per-primitive-cell orbit multiplicity times the site point group order must
+    equal the host crystal point group order.
+
+    This catches undercounted orbits and (more commonly) under-certified site
+    symmetries from slightly-noisy site coordinates -- e.g. a parsed (relaxed)
+    interstitial site sitting ~``symprec`` off its ideal position, where site
+    symmetry analysis gives a spurious subgroup `consistently` for all orbit
+    sites (so uniformity alone cannot catch it).
+
+    Returns ``True`` if consistent, or if the relation cannot be evaluated
+    (e.g. ``spglib`` failure) -- only a definite violation returns ``False``.
+    """
+    try:
+        site_pg_order = group_order_from_schoenflies(schoenflies_from_hermann(site_symmetry_symbol))
+        prim_and_matrix = _get_orientation_preserving_primitive(structure, symprec=symprec)
+        host = structure if prim_and_matrix is None else prim_and_matrix[0]
+        n_prim = round(len(structure) / len(host))
+        host_pg_order = group_order_from_schoenflies(
+            schoenflies_from_hermann(get_sga(host, symprec=symprec).get_point_group_symbol())
+        )
+    except Exception:  # can't evaluate (unrecognised symbol, spglib failure...); don't block acceptance
+        return True
+    return n_equiv_sites * site_pg_order == host_pg_order * n_prim
+
+
 def _raw_get_all_equiv_sites(
     frac_coords: ArrayLike,
     structure: Structure,
@@ -1022,6 +1055,7 @@ def _raw_get_all_equiv_sites(
     # ``symprec``) are self-consistent, and adjust ``symprec`` if not:
     trial_symprecs = _TRIAL_SYMPREC_DIST_TOL_FACTORS * symprec
     trial_dist_tol_factors = _TRIAL_SYMPREC_DIST_TOL_FACTORS * dist_tol_factor
+    fallback = None  # first uniform-site-symmetry result failing the orbit-stabilizer check, as fallback
     for trial_dist_tol_factor, trial_symprec in product(trial_dist_tol_factors, trial_symprecs):
         equiv_sites = _get_equiv_sites_with_given_symprec(
             trial_symprec, trial_dist_tol_factor, just_frac_coords=False
@@ -1030,16 +1064,30 @@ def _raw_get_all_equiv_sites(
         sga_with_all_X = get_sga(struct_with_all_X, symprec=trial_symprec)
         site_sym_symbols = sga_with_all_X.get_symmetry_dataset().site_symmetry_symbols[-len(equiv_sites) :]
         if len(set(site_sym_symbols)) == 1:
-            symprec = trial_symprec
-            dist_tol_factor = trial_dist_tol_factor
-            equiv_sites = [s.frac_coords for s in equiv_sites] if just_frac_coords else equiv_sites
+            if _orbit_site_symmetry_consistent(
+                structure, len(equiv_sites), site_sym_symbols[0], trial_symprec
+            ):
+                symprec = trial_symprec
+                dist_tol_factor = trial_dist_tol_factor
+                equiv_sites = [s.frac_coords for s in equiv_sites] if just_frac_coords else equiv_sites
+                if verbose:
+                    print(
+                        f"Equivalent site generation succeeded (with consistent site symmetries) with "
+                        f"symprec = {symprec} & dist_tol_factor = {dist_tol_factor}, giving "
+                        f"{len(equiv_sites)} equivalent sites in the input structure."
+                    )
+                break
+            if fallback is None:  # uniform site symmetries, but violating the orbit-stabilizer relation;
+                # keep as fallback in case no trial satisfies both criteria:
+                fallback = (equiv_sites, trial_symprec, trial_dist_tol_factor)
             if verbose:
                 print(
-                    f"Equivalent site generation succeeded (with consistent site symmetries) with symprec "
-                    f"= {symprec} & dist_tol_factor = {dist_tol_factor}, giving "
-                    f"{len(equiv_sites)} equivalent sites in the input structure."
+                    f"Equivalent site generation gave uniform site symmetries but violated the "
+                    f"orbit-stabilizer relation with symprec = {trial_symprec} & dist_tol_factor = "
+                    f"{trial_dist_tol_factor}, giving {len(equiv_sites)} equivalent sites in the input "
+                    f"structure."
                 )
-            break
+            continue
 
         if verbose:
             print(
@@ -1047,6 +1095,10 @@ def _raw_get_all_equiv_sites(
                 f"= {trial_dist_tol_factor}, giving {len(equiv_sites)} equivalent sites in the input "
                 f"structure."
             )
+    else:  # no trial passed both checks; fall back to the first uniform-site-symmetry result if any
+        if fallback is not None:
+            equiv_sites, symprec, dist_tol_factor = fallback
+            equiv_sites = [s.frac_coords for s in equiv_sites] if just_frac_coords else equiv_sites
 
     return (equiv_sites, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else equiv_sites
 
@@ -3537,7 +3589,10 @@ def local_point_symmetry(
     # translation |t| bound: symmetry operation fixed point(s) must stay local (near the defect / cluster
     # centre), and the test region ``(radius - |t| - 2*symprec)`` must cover the defect's first
     # coordination shell:
-    min_coordination_shell_distance = float(dists.min()) + 0.5  # just past the 1st coordination shell
+    non_centre_dists = dists[dists > 0.75]  # distances beyond the defect/cluster centre (site) itself
+    min_coordination_shell_distance = (
+        float(non_centre_dists.min()) if non_centre_dists.size else float(dists.min())
+    ) + 0.5  # just past the 1st coordination shell
     t_max = max(min(2 * centre_error_range, radius - 2 * symprec - min_coordination_shell_distance), 1e-3)
     match_tol = max(4 * symprec, 0.5)  # generous pair-matching radius for iterative refinement
 
