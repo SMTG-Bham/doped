@@ -102,6 +102,16 @@ def _write_qe_pw_input(
     }
     resolved_pseudos.update(pseudo_map or {})
 
+    if (namelist_settings.get("system") or {}).get("starting_magnetization") is not None:
+        namelist_settings = {nl: dict(settings) for nl, settings in namelist_settings.items()}
+        system_settings = namelist_settings["system"]
+        if not isinstance(system_settings["starting_magnetization"], list | tuple):
+            system_settings["starting_magnetization"] = [
+                system_settings["starting_magnetization"]
+            ] * len(unique_species)
+        if not system_settings.get("noncolin"):  # nspin is not allowed with noncolinear (SOC) calcs
+            system_settings.setdefault("nspin", 2)
+
     fixed_cell_calcs = {"relax", "scf", "nscf", "bands"}
     calc_type = namelist_settings.get("control", {}).get("calculation", "vc-relax")
 
@@ -133,6 +143,14 @@ def _write_qe_pw_input(
         kx, ky, kz = kpoints
         k_points_card = KPointsCard("automatic", [kx, ky, kz], list(kpoints_shift), [], [], [])
 
+    atomic_positions_card = AtomicPositionsCard(
+        "angstrom",
+        [site.species_string for site in structure],
+        np.array([site.coords for site in structure]),
+        None,
+    )
+    atomic_positions_card.force_multipliers = None
+
     cards = {
         "atomic_species": AtomicSpeciesCard(
             None,
@@ -140,12 +158,7 @@ def _write_qe_pw_input(
             [float(Element(sp).atomic_mass) for sp in unique_species],
             [resolved_pseudos[sp] for sp in unique_species],
         ),
-        "atomic_positions": AtomicPositionsCard(
-            "angstrom",
-            [site.species_string for site in structure],
-            np.array([site.coords for site in structure]),
-            None,
-        ),
+        "atomic_positions": atomic_positions_card,
         "k_points": k_points_card,
         "cell_parameters": CellParametersCard(
             "angstrom",
@@ -155,7 +168,12 @@ def _write_qe_pw_input(
         ),
     }
 
-    PWin(namelists, cards).to_file(filepath)
+    pwin = PWin(namelists, cards)
+    pwin._indent = 2  # matches PWin.to_file's default indent
+    # strip the trailing whitespace left on the ATOMIC_POSITIONS lines by the dropped `if_pos`:
+    pw_str = "\n".join(line.rstrip() for line in str(pwin).splitlines()) + "\n"
+    with open(filepath, "w", encoding="ascii") as f:
+        f.write(pw_str)
 
 
 def _build_qe_base_settings(
@@ -166,18 +184,28 @@ def _build_qe_base_settings(
     user_system_settings: dict | None,
     user_electron_settings: dict | None,
     use_hse: bool = False,
+    user_ions_settings: dict | None = None,
+    user_cell_settings: dict | None = None,
+    soc: bool = False,
 ) -> dict:
     """
     Build the per-structure base namelist dict from the SSSP convergence
     YAML defaults (or the HSE06 hybrid-DFT defaults if ``use_hse``): sets
     ``ibrav=0``, ``nat``, ``ntyp``, ``pseudo_dir``, optional metallic
-    smearing, and merges any user overrides.
+    smearing / spin-orbit coupling (``soc``), and merges any user overrides.
+
+    Note that ``&IONS``/``&CELL`` overrides (``user_ions_settings`` /
+    ``user_cell_settings``) only affect relaxation inputs: for the SCF
+    convergence calculations QE ignores ``&IONS`` and ``&CELL`` is not
+    written, and ``&CELL`` is also dropped for fixed-cell (``relax``) inputs.
     """
     base = copy.deepcopy(default_qe_HSE_set if use_hse else default_qe_SSSP_set)
     base["control"]["pseudo_dir"] = pseudo_dir
     base["control"].update(user_control_settings or {})
     base["system"].update(user_system_settings or {})
     base["electrons"].update(user_electron_settings or {})
+    base["ions"].update(user_ions_settings or {})
+    base["cell"].update(user_cell_settings or {})
 
     base["system"]["ibrav"] = 0
     base["system"]["nat"] = len(structure)
@@ -188,17 +216,22 @@ def _build_qe_base_settings(
         base["system"].setdefault("smearing", "gaussian")
         base["system"].setdefault("degauss", 0.005)
 
+    if soc:  # spin-orbit coupling: noncolinear magnetisation with fully-relativistic pseudopotentials.
+        base["system"].setdefault("noncolin", True)
+        base["system"].setdefault("lspinorb", True)
+
     return base
 
 
 def qe_convergence_setup_from_structure(
     structure: Structure,
-    output_dir: PathLike = "QE_convergence",
+    output_dir: PathLike | None = None,
     kpoint_density_range: tuple = (20, 200, 20),
     kpoint_sweep_ecutwfc: int | None = None,
     ecut_range: tuple = (20, 90, 10),
     ecut_sweep_kpoint_density: int = 100,
     is_metal: bool = False,
+    soc: bool = False,
     pseudo_dir: str = "./pseudo_folder_name/",
     pseudo_map: dict | None = None,
     kpoints_shift: tuple[int, int, int] = (0, 0, 0),
@@ -233,8 +266,12 @@ def qe_convergence_setup_from_structure(
 
     Args:
         structure: Input structure (no MP lookup is performed).
-        output_dir: Root folder for the two sub-trees. Default
-            ``"QE_convergence"``.
+        output_dir: Root folder for the two sub-trees. If ``None`` (default),
+            written to a host-named parent folder as
+            ``"{host_formula}_QE/Bulk_convergence"`` (e.g.
+            ``"MgO_QE/Bulk_convergence"``), so all QE inputs for a given host
+            live under a single ``{host}_QE`` folder (matching the VASP
+            example layout).
         kpoint_density_range: ``(min, max, step)`` reciprocal k-point
             density (Å^-3) sweep for the k-grid test (``max`` exclusive,
             matching ``range``). Default ``(20, 200, 20)``.
@@ -247,6 +284,9 @@ def qe_convergence_setup_from_structure(
             while ``ecutwfc`` is swept. Default 100.
         is_metal: If ``True``, set ``occupations='smearing'``,
             ``smearing='gaussian'``, ``degauss=0.005`` in ``&SYSTEM``.
+        soc: If ``True``, include spin-orbit coupling by setting
+            ``noncolin=.true.`` and ``lspinorb=.true.`` in ``&SYSTEM``
+            (requires fully-relativistic pseudopotentials). Default ``False``.
         pseudo_dir: Path written to ``&CONTROL.pseudo_dir``.
         pseudo_map: ``{element: UPF filename}`` overrides on top of SSSP.
         kpoints_shift: ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
@@ -259,6 +299,9 @@ def qe_convergence_setup_from_structure(
         ``{"kpoint_converge": [...], "ecut_convergence": [...]}`` listing
         every ``pw.in`` path written.
     """
+    if output_dir is None:
+        output_dir = os.path.join(f"{structure.composition.reduced_formula}_QE", "Bulk_convergence")
+
     base = _build_qe_base_settings(
         structure,
         pseudo_dir,
@@ -266,6 +309,7 @@ def qe_convergence_setup_from_structure(
         user_control_settings,
         user_system_settings,
         user_electron_settings,
+        soc=soc,
     )
 
     written: dict[str, list[str]] = {"kpoint_converge": [], "ecut_convergence": []}
@@ -320,17 +364,21 @@ def qe_relax_setup_from_structure(
     structure: Structure,
     ecutwfc: int,
     kpoint_density: int,
-    output_dir: PathLike = "QE_relax",
+    output_dir: PathLike | None = None,
     ecutrho: int | None = None,
     calculation: str = "vc-relax",
     is_metal: bool = False,
     use_hse: bool = False,
+    soc: bool = False,
     pseudo_dir: str = "./pseudo_folder_name/",
     pseudo_map: dict | None = None,
     kpoints_shift: tuple[int, int, int] = (0, 0, 0),
     user_control_settings: dict | None = None,
     user_system_settings: dict | None = None,
     user_electron_settings: dict | None = None,
+    user_ions_settings: dict | None = None,
+    user_cell_settings: dict | None = None,
+    starting_magnetization: float | None = None,
 ) -> str:
     """
     Generate a QE ``pw.in`` for a final relaxation, using the converged
@@ -350,7 +398,11 @@ def qe_relax_setup_from_structure(
             the k-grid sweep. Required.
         output_dir: Calculation folder; ``pw.in`` is written into an
             ``espresso_std`` subfolder of it (``output_dir/espresso_std/pw.in``,
-            matching the layout ``doped`` parses). Default ``"QE_relax"``.
+            matching the layout ``doped`` parses). If ``None`` (default),
+            written to a host-named parent folder as
+            ``"{host_formula}_QE/Bulk_relax"`` (e.g. ``"MgO_QE/Bulk_relax"``),
+            so all QE inputs for a given host live under a single ``{host}_QE``
+            folder (matching the VASP example layout).
         ecutrho: Optional ``ecutrho`` (Ry); ``None`` keeps the set default.
         calculation: ``"vc-relax"`` (default, full cell+ions) or
             ``"relax"`` (ions only, fixed cell).
@@ -360,6 +412,11 @@ def qe_relax_setup_from_structure(
             (``doped/QE_sets/HSE_set.yaml``) as the base set instead of the
             (GGA) SSSP set. Should be consistent with the defect supercell
             calculations. Default ``False``.
+        soc: If ``True``, include spin-orbit coupling by setting
+            ``noncolin=.true.`` and ``lspinorb=.true.`` in ``&SYSTEM``
+            (requires fully-relativistic pseudopotentials). Should be
+            consistent with the convergence tests / defect supercell
+            calculations. Default ``False``.
         pseudo_dir: Path written to ``&CONTROL.pseudo_dir``.
         pseudo_map: ``{element: UPF filename}`` overrides on top of SSSP.
         kpoints_shift: ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
@@ -367,10 +424,23 @@ def qe_relax_setup_from_structure(
             (Γ-shifted) Monkhorst-Pack mesh. Default ``(0, 0, 0)`` (no shift).
         user_control_settings, user_system_settings, user_electron_settings:
             Per-namelist overrides merged on top of the YAML defaults.
+        user_ions_settings: Overrides for the ``&IONS`` namelist (e.g.
+            ``{"ion_dynamics": "bfgs"}``).
+        user_cell_settings: Overrides for the ``&CELL`` namelist (e.g.
+            ``{"cell_dofree": "all"}``), applied to the variable-cell
+            relaxation. Ignored for ``calculation="relax"`` (fixed cell), for
+            which ``&CELL`` is not written.
+        starting_magnetization: If not ``None``, set the QE ``&SYSTEM``
+            ``starting_magnetization`` to this value for every atomic species
+            (and ``nspin=2``), seeding a spin-polarised calculation. Default
+            ``None`` (no spin polarisation).
 
     Returns:
         Path of the written ``pw.in`` (``output_dir/espresso_std/pw.in``).
     """
+    if output_dir is None:
+        output_dir = os.path.join(f"{structure.composition.reduced_formula}_QE", "Bulk_relax")
+
     base = _build_qe_base_settings(
         structure,
         pseudo_dir,
@@ -379,11 +449,16 @@ def qe_relax_setup_from_structure(
         user_system_settings,
         user_electron_settings,
         use_hse=use_hse,
+        user_ions_settings=user_ions_settings,
+        user_cell_settings=user_cell_settings,
+        soc=soc,
     )
     base["control"]["calculation"] = calculation
     base["system"]["ecutwfc"] = ecutwfc
     if ecutrho is not None:
         base["system"]["ecutrho"] = ecutrho
+    if starting_magnetization is not None:
+        base["system"]["starting_magnetization"] = starting_magnetization
 
     kgrid = _kpoints_grid_from_reciprocal_density(structure, kpoint_density)
     filepath = os.path.join(str(output_dir), "espresso_std", "pw.in")
@@ -402,16 +477,19 @@ def qe_defect_setup_from_generator(
     defect_generator: DefectsGenerator,
     ecutwfc: int,
     kpoint_density: int,
-    output_dir: PathLike = "QE_defects",
+    output_dir: PathLike | None = None,
     ecutrho: int | None = None,
     is_metal: bool = False,
     use_hse: bool = False,
+    soc: bool = False,
     pseudo_dir: str = "./pseudo_folder_name/",
     pseudo_map: dict | None = None,
     kpoints_shift: tuple[int, int, int] = (0, 0, 0),
     user_control_settings: dict | None = None,
     user_system_settings: dict | None = None,
     user_electron_settings: dict | None = None,
+    user_ions_settings: dict | None = None,
+    starting_magnetization: float | None = 0.1,
     include_bulk: bool = True,
 ) -> dict[str, str]:
     """
@@ -423,7 +501,8 @@ def qe_defect_setup_from_generator(
     ``tot_charge`` set from the entry's ``charge_state`` (``doped``/QE convention:
     ``tot_charge`` = electrons removed = positive charge state).
      The neutral bulk supercell reference is also written to
-    ``output_dir/bulk/espresso_std/pw.in`` when ``include_bulk`` is ``True``.
+    ``output_dir/{host_formula}_bulk/espresso_std/pw.in`` (e.g.
+    ``MgO_bulk``) when ``include_bulk`` is ``True``.
     Each calculation thus lives in its own ``espresso_std`` subfolder, matching
     the layout ``doped`` parses.
 
@@ -440,14 +519,24 @@ def qe_defect_setup_from_generator(
         defect_generator: A ``doped`` :class:`~doped.generation.DefectsGenerator` instance.
         ecutwfc: Converged plane-wave cutoff (Ry). Required.
         kpoint_density: Converged reciprocal k-point density (Å^-3). Required.
-        output_dir: Root folder for the per-defect (and ``bulk``) sub-folders.
-            Default ``"QE_defects"``.
+        output_dir: Root folder for the per-defect (and ``{host}_bulk``)
+            sub-folders. If ``None`` (default), written to a host-named parent
+            folder as ``"{host_formula}_QE/Defects"`` (e.g.
+            ``"MgO_QE/Defects"``), so all QE inputs for a given host live under
+            a single ``{host}_QE`` folder (matching the VASP example layout).
         ecutrho: Optional ``ecutrho`` (Ry); ``None`` keeps the set default.
         is_metal: If ``True``, set ``occupations='smearing'``,
             ``smearing='gaussian'``, ``degauss=0.005`` in ``&SYSTEM``.
         use_hse: If ``True``, use the HSE06 hybrid-DFT ``&SYSTEM`` defaults
             (``doped/QE_sets/HSE_set.yaml``) as the base set for all defect
             (and bulk) inputs instead of the (GGA) SSSP set. Should be
+            consistent with the bulk relaxation. Default ``False``.
+        soc: If ``True``, include spin-orbit coupling by setting
+            ``noncolin=.true.`` and ``lspinorb=.true.`` in ``&SYSTEM`` of
+            every defect (and bulk) input (requires fully-relativistic
+            pseudopotentials). Note that ``nspin`` is not written for
+            noncolinear calculations (not allowed by QE); the
+            ``starting_magnetization`` spin seeding still applies. Should be
             consistent with the bulk relaxation. Default ``False``.
         pseudo_dir: Path written to ``&CONTROL.pseudo_dir``.
         pseudo_map: ``{element: UPF filename}`` overrides on top of SSSP.
@@ -458,13 +547,29 @@ def qe_defect_setup_from_generator(
             Per-namelist overrides merged on top of the YAML defaults. Note
             that ``tot_charge`` in ``user_system_settings`` is overridden
             per defect by its charge state.
+        user_ions_settings: Overrides for the ``&IONS`` namelist (e.g.
+            ``{"ion_dynamics": "bfgs"}``), applied to the fixed-cell ionic
+            relaxation of each defect (and bulk) supercell. There is no
+            ``&CELL`` override here as the defect supercells are relaxed at
+            fixed cell (``relax``), for which ``&CELL`` is not written.
+        starting_magnetization: Default value for the QE ``&SYSTEM``
+            ``starting_magnetization`` (applied to every atomic species, with
+            ``nspin=2``) in every defect ``pw.in``, giving a spin-polarised
+            starting point. The neutral bulk reference is non spin-polarised. Default ``0.1``.
         include_bulk: If ``True`` (default), also write the neutral bulk
-            supercell reference to ``output_dir/bulk/pw.in``.
+            supercell reference to
+            ``output_dir/{host_formula}_bulk/espresso_std/pw.in``.
 
     Returns:
         ``{name: pw.in path}`` for every written input file (defect names,
-        plus ``"bulk"`` when ``include_bulk`` is ``True``).
+        plus ``"{host_formula}_bulk"`` (e.g. ``"MgO_bulk"``) when
+        ``include_bulk`` is ``True``).
     """
+    host_formula = defect_generator.bulk_supercell.composition.reduced_formula
+    if output_dir is None:
+        output_dir = os.path.join(f"{host_formula}_QE", "Defects")
+    bulk_name = f"{host_formula}_bulk"
+
     structures: dict[str, Structure] = {}
     charges: dict[str, int] = {}
     for name, defect_entry in defect_generator.defect_entries.items():
@@ -478,8 +583,8 @@ def qe_defect_setup_from_generator(
         charges[name] = defect_entry.charge_state
 
     if include_bulk:
-        structures["bulk"] = defect_generator.bulk_supercell
-        charges["bulk"] = 0
+        structures[bulk_name] = defect_generator.bulk_supercell
+        charges[bulk_name] = 0
 
     written: dict[str, str] = {}
     for name, structure in structures.items():
@@ -492,12 +597,16 @@ def qe_defect_setup_from_generator(
             calculation="relax",  # fixed cell relaxation of the defect supercell based on the optimized bulk structure
             is_metal=is_metal,
             use_hse=use_hse,
+            soc=soc,
             pseudo_dir=pseudo_dir,
             pseudo_map=pseudo_map,
             kpoints_shift=kpoints_shift,
             user_control_settings=user_control_settings,
             user_system_settings={**(user_system_settings or {}), "tot_charge": charges[name]},
             user_electron_settings=user_electron_settings,
+            user_ions_settings=user_ions_settings,
+            # the neutral bulk reference is left non-spin-polarised:
+            starting_magnetization=None if name == bulk_name else starting_magnetization,
         )
 
     return written
