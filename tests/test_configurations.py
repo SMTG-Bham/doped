@@ -209,10 +209,10 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
             orient_s2_like_s1, self.V_Se_m1_supercell, self.V_Se_m2_supercell, verbose=True
         )
         # tutorial reference: ΔQ(s1/s2) = 9.91, ΔQ(s2_like_s1/s2) = 4.88,
-        # ΔQ(s1/s2_like_s1) = 8.63 amu^(1/2)Å (\u212b = angstrom sign)
-        assert "\u0394Q(s1/s2) = 9.91 amu^(1/2)\u212b" in output
-        assert "\u0394Q(s2_like_s1/s2) = 4.88 amu^(1/2)\u212b" in output
-        assert "\u0394Q(s1/s2_like_s1) = 8.63 amu^(1/2)\u212b" in output
+        # ΔQ(s1/s2_like_s1) = 8.63 amu^(1/2)Å
+        assert "\u0394Q(s1/s2) = 9.91 amu^(1/2)Å" in output
+        assert "\u0394Q(s2_like_s1/s2) = 4.88 amu^(1/2)Å" in output
+        assert "\u0394Q(s1/s2_like_s1) = 8.63 amu^(1/2)Å" in output
         assert not w
 
         # without ``verbose=True`` nothing is printed:

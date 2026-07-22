@@ -214,10 +214,10 @@ def get_neighbour_distances_and_symbols(
     r"""
     Get a list of sorted tuples of (distance, element) for the ``n``\th closest
     sites to the input ``site`` in ``structure``, where each consecutive
-    neighbour in the list must be at least 0.02 Å further away than the
+    neighbour in the list must be at least 0.02 Å further away than the
     previous neighbour.
 
-    If there are multiple elements with the same distance (to within ~0.01 Å),
+    If there are multiple elements with the same distance (to within ~0.01 Å),
     then the preference for which element to return is controlled by
     ``element_list``. If ``element_list`` is not provided, then it is set to
     match the order of appearance in the structure composition.
@@ -244,14 +244,14 @@ def get_neighbour_distances_and_symbols(
         dist_tol_prefactor (float):
             Initial distance tolerance prefactor to use when searching for
             neighbours, where the initial search radius is set to
-            ``dist_tol_prefactor * sqrt(n)`` Å. This value is dynamically
+            ``dist_tol_prefactor * sqrt(n)`` Å. This value is dynamically
             updated as needed, and so should only be adjusted if providing
             odd systems with very small/large bond lengths for which
             efficiency improvements are possible. Default is 3.0.
         min_dist (float):
-            Minimum distance in Å of neighbours from ``site``. Intended as a
+            Minimum distance in Å of neighbours from ``site``. Intended as a
             distance tolerance to exclude the site itself from the neighbour
-            list, for which the default value (0.02 Å) should be perfectly
+            list, for which the default value (0.02 Å) should be perfectly
             fine in most cases. Set to 0 to include the site itself in the
             output list (in which case it counts toward ``n``).
 
@@ -264,7 +264,7 @@ def get_neighbour_distances_and_symbols(
 
     neighbour_tuples: list[tuple[float, str]] = []
     while len(neighbour_tuples) < n:
-        # for efficiency, ignore sites further than dist_tol*sqrt(n) Å away
+        # for efficiency, ignore sites further than dist_tol*sqrt(n) Å away
         # dynamic upscaling of the distance tolerance is required for weird structures (e.g. mp-674158,
         # mp-1208561):
         neighbours_w_site_itself = structure.get_sites_in_sphere(
@@ -275,7 +275,7 @@ def get_neighbour_distances_and_symbols(
         dist_tol_prefactor += 0.5  # increase the distance tolerance if no other sites are found
         if dist_tol_prefactor > 40:
             warnings.warn(
-                "No other sites found within 40*sqrt(n) Å of the defect site, indicating a very "
+                "No other sites found within 40*sqrt(n) Å of the defect site, indicating a very "
                 "weird structure..."
             )
             break
@@ -293,7 +293,7 @@ def get_neighbour_distances_and_symbols(
             ],
             key=lambda x: (round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
         )
-        neighbour_tuples = [  # prune site_distances to remove any with distances within 0.02 Å of the
+        neighbour_tuples = [  # prune site_distances to remove any with distances within 0.02 Å of the
             # previous n (and the same element as the previous n):
             neighbour_tuples[i]
             for i in range(len(neighbour_tuples))
@@ -329,13 +329,13 @@ def closest_site_info(
     closest site to the defect site in the input |DefectEntry| or |Defect|
     object.
 
-    If there are multiple elements with the same distance (to within ~0.01 Å),
+    If there are multiple elements with the same distance (to within ~0.01 Å),
     then the preference for which element to return is controlled by
     ``element_list``. If ``element_list`` is not provided, then it is set to
     match the order of appearance in the structure composition.
 
     If ``n`` > 1, then it returns the nth closest site, where the nth site must
-    be at least 0.02 Å further away than the (n-1)th site.
+    be at least 0.02 Å further away than the (n-1)th site.
 
     Args:
         defect_entry_or_defect (|DefectEntry| | |Defect|):
@@ -1135,7 +1135,7 @@ def get_ideal_supercell_matrix(
     The ideal supercell is the smallest possible supercell which has a minimum
     image distance (i.e. minimum distance between periodic images of
     atoms/sites in a lattice) greater than ``min_image_distance`` (default = 10
-    Å -- which is a typical threshold value used in QM/DFT defect supercell
+    Å -- which is a typical threshold value used in QM/DFT defect supercell
     calculations) and a number of atoms greater than ``min_atoms`` (default =
     50). Once these criteria have been reached, ``doped`` will then continue
     searching up to supercell sizes (numbers of atoms) ``1 + ideal_threshold``
@@ -1163,7 +1163,7 @@ def get_ideal_supercell_matrix(
         structure (|Structure|):
             Primitive unit cell structure to generate supercell for.
         min_image_distance (float):
-            Minimum image distance in Å of the supercell (i.e. minimum distance
+            Minimum image distance in Å of the supercell (i.e. minimum distance
             between periodic images of atoms/sites in the lattice).
             (Default = 10.0)
         min_atoms (int):
@@ -1236,7 +1236,7 @@ def get_ideal_supercell_matrix(
         target_size += 1
         if pbar is not None:
             pbar.set_description(
-                f"Best min distance: {best_min_dist:.2f} Å, trialling size = {target_size} unit cells..."
+                f"Best min distance: {best_min_dist:.2f} Å, trialling size = {target_size} unit cells..."
             )
         optimal_P, best_min_dist = supercells.find_ideal_supercell(
             structure.lattice.matrix,
@@ -1252,7 +1252,7 @@ def get_ideal_supercell_matrix(
         for alt_target_size in range(target_size + 1, max_target_size + 1):
             if pbar is not None:
                 pbar.set_description(
-                    f"Best min distance: {best_min_dist:.2f} Å, trialling size = {alt_target_size} unit "
+                    f"Best min distance: {best_min_dist:.2f} Å, trialling size = {alt_target_size} unit "
                     f"cells..."
                 )
             alt_optimal_P, alt_best_min_dist = supercells.find_ideal_supercell(
@@ -1277,7 +1277,7 @@ def get_ideal_supercell_matrix(
 
     if pbar is not None:
         pbar.set_description(
-            f"Best min distance: {best_min_dist:.2f} Å, with size = {target_size} unit cells"
+            f"Best min distance: {best_min_dist:.2f} Å, with size = {target_size} unit cells"
         )
 
     return optimal_P
@@ -1318,7 +1318,7 @@ class DefectsGenerator(MSONable):
         By default, supercells are generated for each defect using the
         ``doped`` ``get_ideal_supercell_matrix()`` function (see docstring),
         with default settings of ``min_image_distance = 10`` (minimum distance
-        between periodic images of 10 Å), ``min_atoms = 50`` (minimum 50 atoms
+        between periodic images of 10 Å), ``min_atoms = 50`` (minimum 50 atoms
         in the supercell) and ``ideal_threshold = 0.1`` (allow up to 10% larger
         supercell if it is a diagonal expansion of the primitive or
         conventional cell). This uses a custom algorithm in ``doped`` to
@@ -1328,7 +1328,7 @@ class DefectsGenerator(MSONable):
         ``ideal_threshold`` constraints. These settings can be controlled by
         specifying keyword arguments with ``supercell_gen_kwargs``, which are
         passed to ``get_ideal_supercell_matrix()`` (e.g. for a minimum image
-        distance of 15 Å with at least 100 atoms, ``supercell_gen_kwargs``
+        distance of 15 Å with at least 100 atoms, ``supercell_gen_kwargs``
         would be: ``{'min_image_distance': 15, 'min_atoms': 100}``). If the
         input structure already satisfies these constraints (for the same
         number of atoms as the ``doped``-generated supercell), then it will be
@@ -1427,8 +1427,8 @@ class DefectsGenerator(MSONable):
             interstitial_gen_kwargs (dict, bool):
                 Keyword arguments to be passed to
                 :func:`~doped.generation.get_interstitial_sites()` (such as
-                ``min_dist`` (0.9 Å, or 0.5 Å for Hydrogen), ``clustering_tol``
-                (0.8 Å), ``symm_pref_dist_factor`` (0.85), ``stol`` (0.32),
+                ``min_dist`` (0.9 Å, or 0.5 Å for Hydrogen), ``clustering_tol``
+                (0.8 Å), ``symm_pref_dist_factor`` (0.85), ``stol`` (0.32),
                 ``tight_stol`` (0.02), ``symprec`` (0.01), ``vacuum_radius``
                 (1.5 * bulk bond length), ``include_unique_wyckoffs`` (False)
                 -- see its docstring, parentheses indicate default values), or
@@ -1644,7 +1644,7 @@ class DefectsGenerator(MSONable):
         pbar: tqdm,
         sga: symmetry.SpacegroupAnalyzer | None = None,
     ):
-        # check if input structure is already greater than ``min_image_distance`` Å in each direction:
+        # check if input structure is already greater than ``min_image_distance`` Å in each direction:
         input_min_image_distance = supercells.get_min_image_distance(self.structure)
 
         if self.generate_supercell:
@@ -1666,11 +1666,11 @@ class DefectsGenerator(MSONable):
             >= self.supercell_gen_kwargs["min_atoms"]
         ):
             if input_min_image_distance < 10:
-                # input structure is <10 Å in at least one direction, and generate_supercell=False,
+                # input structure is <10 Å in at least one direction, and generate_supercell=False,
                 # so use input structure but warn user:
                 warnings.warn(
-                    f"\nInput structure is <10 Å in at least one direction (minimum image distance = "
-                    f"{input_min_image_distance:.2f} Å, which is usually too "
+                    f"\nInput structure is <10 Å in at least one direction (minimum image distance = "
+                    f"{input_min_image_distance:.2f} Å, which is usually too "
                     f"small for accurate defect calculations, but generate_supercell = False, so "
                     f"using input structure as defect & bulk supercells. Caution advised!"
                 )
@@ -1735,12 +1735,12 @@ class DefectsGenerator(MSONable):
         # flagging issues) min image distance of supercell:
         self.min_image_distance = np.round(supercells.get_min_image_distance(self.bulk_supercell), 3)
 
-        # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
+        # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
         if self.min_image_distance < specified_min_image_distance and self.generate_supercell:
             raise ValueError(
                 f"Error in supercell generation! Auto-generated supercell is less than chosen minimum "
-                f"image distance ({specified_min_image_distance:.2f} Å) in at least one direction ("
-                f"minimum image distance = {self.min_image_distance:.2f} Å), which should not happen. "
+                f"image distance ({specified_min_image_distance:.2f} Å) in at least one direction ("
+                f"minimum image distance = {self.min_image_distance:.2f} Å), which should not happen. "
                 f"If you used force_cubic or force_diagonal, you may need to relax these constraints "
                 f"to find an appropriate supercell -- otherwise please report this to the developers!"
             )
@@ -1947,9 +1947,9 @@ class DefectsGenerator(MSONable):
                 warnings.warn(
                     f"\nNote that some manually-specified interstitial sites were skipped due to "
                     f"being too close to host lattice sites (minimum distance = `min_dist` = "
-                    f"{interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some "
+                    f"{interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some "
                     f"reason you still want to include these sites, you can adjust `min_dist` ("
-                    f"default = 0.9 Å), or just use the default Voronoi tessellation algorithm "
+                    f"default = 0.9 Å), or just use the default Voronoi tessellation algorithm "
                     f"for generating interstitials (by not setting the `interstitial_coords` "
                     f"argument)."
                 )
@@ -2767,15 +2767,15 @@ def get_interstitial_sites(
     You can see what Cartesian distance the chosen ``stol`` corresponds to
     using the ``get_stol_equiv_dist`` function. Note that you will likely want
     to reduce ``min_dist`` for hydrogen interstitials! (This is done by default
-    with |DefectsGenerator|, reducing it to 0.5 Å for Hydrogen.)
+    with |DefectsGenerator|, reducing it to 0.5 Å for Hydrogen.)
 
     Args:
         host_structure (|Structure|): Host structure.
         min_dist (float):
             Minimum distance from host atoms for interstitial sites.
-            Defaults to 0.9 Å.
+            Defaults to 0.9 Å.
         clustering_tol (float):
-            Tolerance for clustering interstitial sites. Defaults to 0.8 Å.
+            Tolerance for clustering interstitial sites. Defaults to 0.8 Å.
         symm_pref_dist_factor (float):
             Minimum acceptable ratio of distance to host atoms for
             symmetry-favoured sites vs distance-to-host-favoured sites, for
@@ -2850,7 +2850,7 @@ def get_interstitial_sites(
     sites_array = remove_collisions(sites_list, structure=host_structure, min_dist=min_dist)
     if sites_array.size == 0:
         warnings.warn(
-            f"No interstitial sites found after removing those within {min_dist} Å of host atoms!"
+            f"No interstitial sites found after removing those within {min_dist} Å of host atoms!"
         )
         return []
 
@@ -2862,7 +2862,7 @@ def get_interstitial_sites(
     )
 
     label_equiv_fpos_dict: dict[int, list[np.ndarray]] = {}
-    tight_dist = get_stol_equiv_dist(tight_stol, host_structure)  # 0.06 Å for CdTe, Sb2Si2Te6
+    tight_dist = get_stol_equiv_dist(tight_stol, host_structure)  # 0.06 Å for CdTe, Sb2Si2Te6
 
     # this now depends on symprec in `get_all_equiv_sites` (doesn't matter in most cases,
     # but e.g. changes results in Ag2Se where we have some slight differences in site coordinations)
@@ -2900,7 +2900,7 @@ def get_interstitial_sites(
 
     loose_dist = get_stol_equiv_dist(
         stol,  # matches pymatgen-analysis-defects default
-        host_structure,  # ~1 Å for CdTe, Sb2Si2Te6
+        host_structure,  # ~1 Å for CdTe, Sb2Si2Te6
     )
     looser_site_matched_dict: dict[int, list] = defaultdict(list)
     for i, tight_cand_site_mul_and_equiv_fpos in enumerate(tight_cand_site_mul_and_equiv_fpos_list):
@@ -2911,7 +2911,7 @@ def get_interstitial_sites(
                 np.min(
                     host_structure.lattice.get_all_distances(
                         # only match to first equiv_fpos in list of matched sites, so we don't get a
-                        # chaining effect (e.g. site 1 -> 1 Å from site 2 -> 1 Å from site 3 (but 2 Å
+                        # chaining effect (e.g. site 1 -> 1 Å from site 2 -> 1 Å from site 3 (but 2 Å
                         # from site 1) etc.)
                         sublist[0][2],
                         tight_cand_site_mul_and_equiv_fpos[0],

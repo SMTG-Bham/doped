@@ -44,10 +44,10 @@ Mis-matching Bulk and Defect Supercells
 When parsing defect calculations with ``doped``, if you provide bulk and defect supercells which do not
 match, you will see the following warning:
 
-    Detected atoms far from the defect site (>X Å) with major displacements (>0.5 Å) in the defect
+    Detected atoms far from the defect site (>X Å) with major displacements (>0.5 Å) in the defect
     supercell. This likely indicates a mismatch between the bulk and defect supercell definitions or an
     unconverged supercell size, both of which could cause errors in parsing. The mean displacement of the
-    following species, at sites far from the determined defect position, is >0.5 Å: ...
+    following species, at sites far from the determined defect position, is >0.5 Å: ...
 
 This can sometimes happen due to the use of a bulk supercell which does not match the atomic positions of
 the defect supercell, but is symmetry-equivalent by a translation and/or rotation. This causes issues for

@@ -1,7 +1,7 @@
 {
     "@class": "DefectsGenerator",
     "@module": "doped.generation",
-    "@version": "3.2.1",
+    "@version": "3.2.0",
     "_BilbaoCS_conv_cell_vector_mapping": [
         0,
         1,
@@ -5198,7 +5198,7 @@
         "Y_Ti_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -20851,7 +20851,7 @@
         "Y_i_C2v_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -38190,7 +38190,7 @@
         "v_Y_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -53786,7 +53786,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -54891,7 +54891,7 @@
             {
                 "@class": "Substitution",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -55917,7 +55917,7 @@
             {
                 "@class": "Vacancy",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,

@@ -57,8 +57,10 @@ from doped.utils.symmetry import (
     _simple_spin_degeneracy_from_num_electrons,
     get_orientational_degeneracy,
     get_primitive_structure,
+    get_sga,
     point_symmetry_from_defect_entry,
     point_symmetry_from_structure,
+    schoenflies_from_hermann,
 )
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
@@ -996,7 +998,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             atol=1e-3,
         )
 
-        # get indices of sites within 3 Å of the defect site when projected along the _a_ lattice vector
+        # get indices of sites within 3 Å of the defect site when projected along the _a_ lattice vector
         # (inter-layer direction in our supercell)
         sites_within_3A = [
             i
@@ -1114,10 +1116,39 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert len(dp.defect_dict) == 3
         check_DefectsParser(dp)
 
-        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
-        assert dp.defect_dict["vac_O_2"].calculation_metadata["relaxed point symmetry"] == "C2v"
+        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures; residual
+        # structural noise here is ~0.1 Å so these sit near certification boundaries (e.g. ``spglib`` on
+        # the vac_O_2 supercell gives Cs/C2v/D4h at symprec = 0.05/0.1/0.15):
+        assert dp.defect_dict["vac_O_2"].calculation_metadata["relaxed point symmetry"] == "Cs"
         assert dp.defect_dict["vac_O_1"].calculation_metadata["relaxed point symmetry"] == "Cs"
-        assert dp.defect_dict["vac_O_0"].calculation_metadata["relaxed point symmetry"] == "C2v"
+        assert dp.defect_dict["vac_O_0"].calculation_metadata["relaxed point symmetry"] == "D4h"
+
+        # cross-check the local isometry analysis against global spglib analysis (fine here as this
+        # supercell is not periodicity-breaking) at a range of symprec values; the two agree at all symprec
+        # values except the knife-edge symprec = 0.1 Å for vac_O_0/vac_O_2, where the residual distortions
+        # sit right at tolerance and the methods' differing residual metrics land on different (sub)groups:
+        expected_symms = {  # (local, global) for symprec = 0.05, 0.1, 0.15
+            "vac_O_0": [("C2v", "C2v"), ("D4h", "C2v"), ("D4h", "D4h")],
+            "vac_O_1": [("Cs", "Cs"), ("Cs", "Cs"), ("C2v", "C2v")],
+            "vac_O_2": [("Cs", "Cs"), ("Cs", "C2v"), ("D4h", "D4h")],
+        }
+        for name, per_symprec_symms in expected_symms.items():
+            entry = dp.defect_dict[name]
+            for symprec, (local_symm, global_symm) in zip(
+                [0.05, 0.1, 0.15], per_symprec_symms, strict=True
+            ):
+                print(
+                    f"Checking local ({local_symm}) and global ({global_symm}) symmetries for {name} "
+                    f"with {symprec=}"  # for debugging
+                )
+                assert point_symmetry_from_defect_entry(entry, symprec=symprec) == local_symm
+                assert (
+                    schoenflies_from_hermann(
+                        get_sga(entry.defect_supercell, symprec=symprec).get_point_group_symbol()
+                    )
+                    == global_symm
+                )
+
         thermo = dp.get_defect_thermodynamics()
 
         # hardcoded check of bulk_site_concentration property:
@@ -1286,6 +1317,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             thermo = dp.get_defect_thermodynamics()
         assert not w  # no warnings (e.g. for grouping defects by distance etc)
 
+        # save thermo to JSON (used in ``test_thermodynamics`` etc.) before ``symprec`` mutation below
+        thermo.dist_tol = 2.5  # merges Al interstitials together
+        for defect_entry in thermo.defect_entries.values():  # remove eigenvalue_data/run_metadata for JSON
+            defect_entry.calculation_metadata["eigenvalue_data"] = None
+            defect_entry.calculation_metadata["run_metadata"] = None
+        thermo.to_json(os.path.join(self.ZnS_DATA_DIR, "ZnS_thermo.json"))
+
         # the ZnS non-diagonal supercell breaks the host periodicity (and stenciling to a
         # periodicity-restored supercell is not possible either, as it is a different lattice definition
         # / supercell tiling), but relaxed point symmetries are determined fine via local isometry analyses
@@ -1341,16 +1379,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert any(float(g) < 1.0 for g in interstitial_rows["g_Orient"])
             if symprec is None:  # inter_26_Al_+3: C3v -> C2v (symmetry lowering, g_Orient = 1.5)
                 assert any(float(g) > 1.0 for g in interstitial_rows["g_Orient"])
-            else:
-                assert all(float(g) < 1.0 for g in interstitial_rows["g_Orient"])
+            else:  # inter_26_Al_+1 is C1 -> C1 (g_Orient = 1.0 exactly), while others give C3v -> Td
+                assert all(float(g) <= 1.0 for g in interstitial_rows["g_Orient"])
 
-        thermo.dist_tol = 2.5  # merges Al interstitials together
-        # remove eigenvalue_data and run_metadata from each entry to save space:
-        for defect_entry in thermo.defect_entries.values():
-            defect_entry.calculation_metadata["eigenvalue_data"] = None
-            defect_entry.calculation_metadata["run_metadata"] = None
-        thermo.to_json(os.path.join(self.ZnS_DATA_DIR, "ZnS_thermo.json"))
-        return thermo.plot()
+        return thermo.plot()  # saved (``dist_tol = 2.5``) state, as previously plotted here
 
     def test_solid_solution_oxi_state_handling(self):
         """
@@ -2691,8 +2723,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 _print_warning_info(w)  # for debugging
                 if stdev >= 0.4:  # average displacement is roughly 1.6 * stdev
                     assert (
-                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
-                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
+                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
+                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
                     ) in str(w[-1].message)
                 rattled_relaxed_defect_coords = (
                     rattled_defect_supercell[
@@ -2773,8 +2805,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 _print_warning_info(w)  # for debugging
                 if stdev >= 0.4:  # average displacement is roughly 1.6 * stdev
                     assert (
-                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
-                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
+                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
+                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
                     ) in str(w[-1].message)
                 assert np.allclose(
                     defect_site_in_bulk.frac_coords,
@@ -4206,7 +4238,7 @@ def test_guess_defect_position_with_bulk_supercell():
     Se_i = Structure.from_file(os.path.join(Se_EXAMPLE_DIR, "Se_i_C2_0_20Å_Stenciled_POSCAR"))
     guess_no_bulk = guess_defect_position(Se_i)
     guess_with_bulk = guess_defect_position(Se_i, bulk_supercell=bulk)
-    assert np.linalg.norm(guess_no_bulk - guess_with_bulk) < 0.5  # with 0.5 Å of each other
+    assert np.linalg.norm(guess_no_bulk - guess_with_bulk) < 0.5  # with 0.5 Å of each other
 
     # (3) Extrinsic interstitial F_i_C2_1: single F site, so the short-circuit should return its exact
     # coordinates in both cases:

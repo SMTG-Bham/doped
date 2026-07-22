@@ -180,6 +180,7 @@ def assert_figures_equivalent(doped_fig, pyscfermi_fig, tol=2, test_name=""):
         f2 = os.path.join(tmpdir, "b.png")
         doped_fig.savefig(f1, bbox_inches="tight")
         pyscfermi_fig.savefig(f2, bbox_inches="tight")
+        doped_fig.set_layout_engine("none")  # freeze the layout after this first draw/save
         diff = compare_images(f1, f2, tol=tol)
     if diff is not None:  # save files to local dir for debugging:
         doped_fig.savefig(f"debug_{test_name}_doped_fig.png", bbox_inches="tight")

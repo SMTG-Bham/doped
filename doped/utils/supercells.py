@@ -735,7 +735,7 @@ def find_ideal_supercell(
             symmetric, with mostly positive diagonals and c >= b >= a).
             (Default = True)
         return_min_dist (bool):
-            Whether to return the minimum image distance (in Å) as a second
+            Whether to return the minimum image distance (in Å) as a second
             return value. (Default = False)
         verbose (bool):
             Whether to print out extra information about the supercell search.
@@ -744,7 +744,7 @@ def find_ideal_supercell(
     Returns:
         np.ndarray | tuple[np.ndarray, float]:
             The supercell transformation matrix (P), and if ``return_min_dist``
-            is ``True``, the minimum image distance (in Å).
+            is ``True``, the minimum image distance (in Å).
     """
     if target_size == 1:  # just identity innit
         identity = np.eye(3, dtype=int)

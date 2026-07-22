@@ -591,7 +591,7 @@ def get_kumagai_correction(
     bulk_supercell = _get_bulk_supercell(defect_entry).copy()
     bulk_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
     if bulk_supercell.lattice != defect_supercell.lattice:  # pydefect will crash
-        # check if the difference is tolerable (< 0.01 Å)
+        # check if the difference is tolerable (< 0.01 Å)
         if not np.allclose(bulk_supercell.lattice.matrix, defect_supercell.lattice.matrix, atol=1e-2):
             warnings.warn(
                 f"Bulk and defect supercells have different lattices, and so the eFNV (Kumagai) "

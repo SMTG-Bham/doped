@@ -902,7 +902,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             # Int_Te_3_Unperturbed_1 is 1.24 Å from Int_Te_3_1 and 0.7 Å from Int_Te_3_2, the latter of
             # which are 1.73 Å apart from each other.
             # So, all Int_Te_3 merged with default dist_tol = 1.5 Å (or higher):
-            self._check_CdTe_example_dist_tol(defect_thermo, 3)  # 1.5 Å default
+            self._check_CdTe_example_dist_tol(defect_thermo, 3)  # 1.5 Å default
             self._set_and_check_dist_tol(2.0, defect_thermo, 3)
             # for dist_tol < 1.24 Å (but greater than 0.7 Å), Int_Te_3_Unperturbed_1 and Int_Te_3_2 are
             # merged but Int_Te_3_1 it on its own:

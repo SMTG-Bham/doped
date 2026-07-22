@@ -260,7 +260,7 @@ def _check_defect_entry(
             )
             nn_distances = np.array([nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms])
             if len(nn_distances[nn_distances > 0.01]) == 0:
-                # no NNs within 5 Å, expand search to max lattice vector to ensure at least one NN:
+                # no NNs within 5 Å, expand search to max lattice vector to ensure at least one NN:
                 nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
                     equiv_site.coords,
                     max(defect_entry.defect.structure.lattice.abc) + 0.1,
@@ -1291,8 +1291,8 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             assert len(w) == 1
             assert issubclass(w[-1].category, UserWarning)
             assert (
-                f"Input structure is <10 Å in at least one direction (minimum image distance ="
-                f" {min_image_distance:.2f} Å, which is usually too small for accurate defect "
+                f"Input structure is <10 Å in at least one direction (minimum image distance ="
+                f" {min_image_distance:.2f} Å, which is usually too small for accurate defect "
                 f"calculations, but generate_supercell = False, so using input structure as "
                 f"defect & bulk supercells. Caution advised!" in str(w[-1].message)
             )
@@ -1852,9 +1852,9 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             assert len(non_ignored_warnings) == 1
             assert (
                 "Note that some manually-specified interstitial sites were skipped due to being too "
-                "close to host lattice sites (minimum distance = `min_dist` = 0.90 Å). If for some "
+                "close to host lattice sites (minimum distance = `min_dist` = 0.90 Å). If for some "
                 "reason you still want to include these sites, you can adjust `min_dist` (default = 0.9 "
-                "Å), or just use the default Voronoi tessellation algorithm for generating interstitials ("
+                "Å), or just use the default Voronoi tessellation algorithm for generating interstitials ("
                 "by not setting the `interstitial_coords` argument)."
                 in str(non_ignored_warnings[-1].message)
             )
@@ -2363,16 +2363,16 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
                 total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
             )
             mocked_instance.set_description.assert_any_call(
-                "Best min distance: 12.24 Å, trialling size = 26 unit cells..."
+                "Best min distance: 12.24 Å, trialling size = 26 unit cells..."
             )
             mocked_instance.set_description.assert_any_call(
-                "Best min distance: 12.24 Å, trialling size = 27 unit cells..."
+                "Best min distance: 12.24 Å, trialling size = 27 unit cells..."
             )
             mocked_instance.set_description.assert_any_call(
-                "Best min distance: 13.88 Å, trialling size = 28 unit cells..."
+                "Best min distance: 13.88 Å, trialling size = 28 unit cells..."
             )
             mocked_instance.set_description.assert_any_call(
-                "Best min distance: 13.88 Å, with size = 27 unit cells"
+                "Best min distance: 13.88 Å, with size = 27 unit cells"
             )
             mocked_instance.set_description.assert_any_call("Getting primitive structure")
             mocked_instance.set_description.assert_any_call("Generating vacancies")
@@ -2423,7 +2423,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             )
             assert not np.allclose(
                 ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
-            )  # different supercell because Kat YTOS one has 198 atoms but unnecessary, >10Å is 88 atoms,
+            )  # different supercell because Kat YTOS one has 198 atoms but unnecessary, >10Å is 88 atoms,
             # or 3x3x1 supercell with 99 atoms (favoured because gives diagonal expansion with only
             # slight extra expansion)
         else:
@@ -2554,7 +2554,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         return defect_gen
 
     def test_ytos_supercell_input(self):
-        # note that this tests the case of an input structure which is >10 Å in each direction and has
+        # note that this tests the case of an input structure which is >10 Å in each direction and has
         # more atoms (198) than the pmg supercell (99), so the pmg supercell is used
         ytos_defect_gen, output = self._generate_and_test_no_warnings(self.ytos_bulk_supercell)
 
@@ -2570,7 +2570,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
     @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")  # Skip one YTOS test on GH
     def test_ytos_no_generate_supercell(self):
-        # tests the case of an input structure which is >10 Å in each direction, has
+        # tests the case of an input structure which is >10 Å in each direction, has
         # more atoms (198) than the pmg supercell (99), but generate_supercell = False,
         # so the _input_ supercell is used
         ytos_defect_gen, output = self._generate_and_test_no_warnings(
@@ -2708,7 +2708,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_lmno_defect_gen.to_json(f"{data_dir}/lmno_defect_gen.json")  # for testing in test_vasp.py
 
     def test_lmno_no_generate_supercell(self):
-        # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
+        # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
         # generate_supercell = False
         lmno_defect_gen, output = self._generate_and_test_no_warnings(
             self.lmno_primitive, min_image_distance=8.28, generate_supercell=False
@@ -2832,7 +2832,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._load_and_test_defect_gen_jsons(zns_defect_gen)
 
     def test_zns_no_generate_supercell(self):
-        # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
+        # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
         # generate_supercell = False
         zns_defect_gen, output = self._generate_and_test_no_warnings(
             self.non_diagonal_ZnS, min_image_distance=7.67, generate_supercell=False
@@ -2955,7 +2955,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         supercell_matrix = np.array(
             [[-2, -2, 2], [-2, 2, 2], [-2, 2, -2]]
             if generate_supercell
-            else [[0.0, 2.0, 0.0], [-2.0, 2.0, 0.0], [-1.0, 1.0, 1.0]]
+            else [[0, -2, 2], [2, -2, 0], [1, -1, 1]]
         )
         assert any(np.isclose(agcu_defect_gen.min_image_distance, i, atol=0.01) for i in [10.21, 5.11])
         assert np.allclose(agcu_defect_gen.supercell_matrix, supercell_matrix)
@@ -3176,7 +3176,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )  # for testing in test_vasp.py
 
         # don't need to test generate_supercell = False with this one. Already takes long enough as is,
-        # and we've tested the handling of input >10 Å supercells in CdTe tests above
+        # and we've tested the handling of input >10 Å supercells in CdTe tests above
 
     @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")
     def test_supercell_w_substitution_N_doped_diamond(self):
@@ -3738,10 +3738,10 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
     def test_gen_spaced_structure(self):
         """
         Test defect generation in an odd structure where the minimum
-        interatomic distance is very large (15 Å here).
+        interatomic distance is very large (15 Å here).
 
         Originally this failed due to code in ``get_neighbour_distances_and_symbols``
-        assuming interatomic distances < 5 Å. Fixed when this issue was flagged when
+        assuming interatomic distances < 5 Å. Fixed when this issue was flagged when
         generating defects for all structures in the Materials Project in
         https://arxiv.org/abs/2412.19330; then accidentally reverted... Now fixed
         again and tested.

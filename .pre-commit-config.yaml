@@ -2,6 +2,15 @@ x-skip-docs: &skip_docs  # causes pre-commit warning but can be safely ignored
   exclude: '^docs/'
 exclude: ^(examples|.github)
 repos:
+  # forbid U+212B ANGSTROM SIGN: visually identical to U+00C5 (the NFC form, produced by keyboards), but breaks string matching
+  - repo: local
+    hooks:
+      - id: no-angstrom-sign
+        name: forbid U+212B ANGSTROM SIGN (use U+00C5)
+        language: pygrep
+        entry: "\u212B"
+        types: [text]
+
   # Lint and format, isort, docstrings...
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.15  # keep in sync with locally installed ruff (rev must be a specific tag)

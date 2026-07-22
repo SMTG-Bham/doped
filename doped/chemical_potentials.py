@@ -136,7 +136,7 @@ def _attach_summary_data_to_entries(
 def make_molecule_in_a_box(element: str) -> Structure:
     """
     Generate an X2 'molecule-in-a-box' structure for the input element X, (i.e.
-    a 30 Å cuboid supercell with a single X2 molecule in the centre).
+    a 30 Å cuboid supercell with a single X2 molecule in the centre).
 
     This is the natural state of several elemental competing phases, such as
     O2, N2, H2, F2 and Cl2. Initial bond lengths are set to the experimental
@@ -1501,14 +1501,14 @@ class CompetingPhases(MSONable):
 
         Args:
             kpoints_metals (tuple[float, float, float]):
-                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
+                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
                 for metallic entries (those with zero band gap), as a
                 ``(min, max, step)`` tuple. Note that only unique kpoint
                 combinations are generated, so small step sizes (as default)
                 just results in each k-points choice between ``min`` and
                 ``max`` being included.
             kpoints_nonmetals (tuple[float, float, float]):
-                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
+                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
                 for non-metallic entries (those with a non-zero band gap), as a
                 ``(min, max, step)`` tuple. Note that only unique kpoint
                 combinations are generated, so small step sizes (as default)
@@ -1625,14 +1625,14 @@ class CompetingPhases(MSONable):
 
         Args:
             kpoints_metals (tuple[float, float, float]):
-                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
+                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
                 for metallic entries (those with zero band gap), as a
                 ``(min, max, step)`` tuple. Note that only unique kpoint
                 combinations are generated, so small step sizes (as default)
                 just results in each k-points choice between ``min`` and
                 ``max`` being included.
             kpoints_nonmetals (tuple[float, float, float]):
-                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
+                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
                 for non-metallic entries (those with a non-zero band gap), as a
                 ``(min, max, step)`` tuple. Note that only unique kpoint
                 combinations are generated, so small step sizes (as default)
@@ -1736,15 +1736,15 @@ class CompetingPhases(MSONable):
 
         Args:
             kpoints_metals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
-                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
+                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
+                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
                 Note that you may want to specify custom k-point settings for
                 each material individually based on convergence testing to
                 minimise cost.
             kpoints_nonmetals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for
+                Kpoint density per inverse volume (kpoints/Å⁻³) for
                 non-metallic entries (those with non-zero band gap). Default is
-                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
+                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
                 you may want to specify custom k-point settings for each
                 material individually based on convergence testing to minimise
                 cost.
@@ -1881,15 +1881,15 @@ class CompetingPhases(MSONable):
 
         Args:
             kpoints_metals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
-                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
+                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
+                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
                 Note that you may want to specify custom k-point settings for
                 each material individually based on convergence testing to
                 minimise cost.
             kpoints_nonmetals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for
+                Kpoint density per inverse volume (kpoints/Å⁻³) for
                 non-metallic entries (those with non-zero band gap). Default is
-                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
+                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
                 you may want to specify custom k-point settings for each
                 material individually based on convergence testing to minimise
                 cost.
@@ -2033,15 +2033,15 @@ class CompetingPhases(MSONable):
 
         Args:
             kpoints_metals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
-                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
+                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
+                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
                 Note that you may want to specify custom k-point settings for
                 each material individually based on convergence testing to
                 minimise cost.
             kpoints_nonmetals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for
+                Kpoint density per inverse volume (kpoints/Å⁻³) for
                 non-metallic entries (those with non-zero band gap). Default is
-                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
+                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
                 you may want to specify custom k-point settings for each
                 material individually based on convergence testing to minimise
                 cost.
@@ -2205,15 +2205,15 @@ class CompetingPhases(MSONable):
 
         Args:
             kpoints_metals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
-                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
+                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
+                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
                 Note that you may want to specify custom k-point settings for
                 each material individually based on convergence testing to
                 minimise cost.
             kpoints_nonmetals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for
+                Kpoint density per inverse volume (kpoints/Å⁻³) for
                 non-metallic entries (those with non-zero band gap). Default is
-                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
+                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
                 you may want to specify custom k-point settings for each
                 material individually based on convergence testing to minimise
                 cost.

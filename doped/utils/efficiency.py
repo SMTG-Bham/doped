@@ -1039,9 +1039,9 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
 
     top_analyzer = DopedTopographyAnalyzer(prim_structure)
     voronoi_coords = [v.frac_coords for v in top_analyzer.vnodes]
-    # remove nodes less than 0.5 Å from sites in the structure
+    # remove nodes less than 0.5 Å from sites in the structure
     voronoi_coords = remove_collisions(voronoi_coords, structure=prim_structure, min_dist=0.5)
-    # cluster nodes within 0.2 Å of each other:
+    # cluster nodes within 0.2 Å of each other:
     prim_vnodes = doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
 
     voronoi_struct = Structure.from_sites(

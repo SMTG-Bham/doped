@@ -5,6 +5,7 @@ Core functions and classes for defects in doped.
 import collections
 import contextlib
 import warnings
+from collections.abc import Iterable
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, cast
 
@@ -13,7 +14,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core, thermo, utils
 from pymatgen.core.bond_valence import BVAnalyzer
 from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
-from pymatgen.core.structure_matcher import ElementComparator, SpeciesComparator
+from pymatgen.core.structure_matcher import SpeciesComparator
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
@@ -29,6 +30,7 @@ from doped.utils.efficiency import (
     StructureMatcher_scan_stol,
     cache_species,
 )
+from doped.utils.mappings import get_matching_site
 
 if TYPE_CHECKING:
     import matplotlib as mpl
@@ -1468,7 +1470,7 @@ class DefectEntry(thermo.DefectEntry):
         V_O in SrTiO3, returns the site concentration of (symmetry-equivalent)
         oxygen atoms in SrTiO3).
         """
-        volume_in_cm3 = self.defect.volume * 1e-24  # convert volume in Å^3 to cm^3
+        volume_in_cm3 = self.defect.volume * 1e-24  # convert volume in Å^3 to cm^3
         return self.defect.multiplicity / volume_in_cm3
 
     def __repr__(self):
@@ -2318,6 +2320,10 @@ class Defect(core.Defect):
     the defect ``site`` is the `relaxed` interstitial site, placed in the
     (unrelaxed) host structure. ``Defect.site`` is used for site multiplicity
     and bulk site point symmetry analyses.
+
+    The ``defect_structure`` attribute included with ``Defect`` objects from
+    ``pymatgen-analysis-defects`` (which places the 'defect' in a primitive
+    cell) is not used nor (directly) supported with ``doped``.
     """
 
     def __init__(
@@ -2610,7 +2616,7 @@ class Defect(core.Defect):
                 Dummy species to highlight the defect position (for visualizing
                 vacancies).
             min_image_distance (float):
-                Minimum image distance in Å of the generated supercell (i.e.
+                Minimum image distance in Å of the generated supercell (i.e.
                 minimum distance between periodic images of atoms/sites in the
                 lattice), if ``sc_mat`` is None.
                 (Default = 10.0)
@@ -2690,16 +2696,15 @@ class Defect(core.Defect):
                 ),
             )[0]
 
-        sc_defect = self.__class__(
-            structure=self.structure * sc_mat,
-            site=sc_site,
-            oxi_state=self.oxi_state,
-            multiplicity=1,  # so doesn't break for interstitials
-        )
-        sc_defect_struct = sc_defect.defect_structure
-        sc_defect_struct.remove_oxidation_states()
+        sc_defect_struct = defect_structure_from_sites(
+            self.structure * sc_mat,  # ``self.structure`` may be oxi-state-decorated
+            vacancy_sites=sc_site if isinstance(self, core.Vacancy) else None,
+            interstitial_sites=sc_site if isinstance(self, core.Interstitial) else None,
+            substitution_sites=sc_site if isinstance(self, core.Substitution) else None,
+        )  # TODO: Input parameters to be updated for defect complexes
 
-        # also remove oxidation states from sites:
+        # remove oxidation states from supercell structure and sites:
+        sc_defect_struct.remove_oxidation_states()
         for site in [sc_site, *equiv_sites]:
             remove_site_oxi_state(site)
 
@@ -2814,6 +2819,9 @@ class Defect(core.Defect):
         issues with periodicity-breaking supercells (where direct supercell
         symmetry analysis undercounts orbits) and boosting efficiency.
 
+        The determined site orbit is also used to populate
+        ``self.equivalent_sites``, if not already set.
+
         Args:
             symprec (float):
                 Symmetry precision to use for determining symmetry operations
@@ -2831,7 +2839,7 @@ class Defect(core.Defect):
                 Distance tolerance for clustering generated sites (to ensure
                 they are truly distinct), as a multiplicative factor of
                 ``symprec``. Default is 1.0 (i.e. ``dist_tol = symprec``, in
-                Å). If ``fixed_symprec_and_dist_tol_factor`` is ``False``
+                Å). If ``fixed_symprec_and_dist_tol_factor`` is ``False``
                 (default), this value will also be automatically adjusted if
                 necessary (up to 10x, down to 0.1x)(after ``symprec``
                 adjustments) until the identified equivalent sites from
@@ -2862,16 +2870,22 @@ class Defect(core.Defect):
         from doped.utils.symmetry import get_all_equiv_sites
 
         assert isinstance(self.structure, Structure)
-        return len(
-            get_all_equiv_sites(  # folds to the primitive cell by default (``fold_to_primitive=True``),
-                self.site.frac_coords,  # giving the complete orbit even in periodicity-breaking cells
-                self.structure,
-                just_frac_coords=True,
-                symprec=symprec or self.symprec,
-                dist_tol_factor=dist_tol_factor,
-                **kwargs,
-            )
+        equiv_frac_coords = get_all_equiv_sites(  # folds to the primitive cell by default
+            self.site.frac_coords,  # (``fold_to_primitive=True``), giving the complete orbit even in
+            self.structure,  # periodicity-breaking cells
+            just_frac_coords=True,
+            symprec=symprec or self.symprec,
+            dist_tol_factor=dist_tol_factor,
+            **kwargs,
         )
+        # populate ``equivalent_sites`` if not set, for use in e.g. ``get_supercell_structure()``;
+        # attribute existence check as the parent ``__init__`` calls this method before setting it:
+        if hasattr(self, "equivalent_sites") and not self.equivalent_sites:
+            self.equivalent_sites: list[PeriodicSite] = [
+                PeriodicSite(self.site.species, frac_coords, self.structure.lattice, to_unit_cell=True)
+                for frac_coords in equiv_frac_coords
+            ]
+        return len(equiv_frac_coords)
 
     def __setattr__(self, name, value):
         """
@@ -2893,26 +2907,33 @@ class Defect(core.Defect):
         """
         Determine whether two |Defect| objects are equal.
 
-        Redefined from the parent method to be more robust (too loose ``stol``
-        used in ``pymatgen-analysis-defects``) and much more efficient.
+        Redefined from the parent method to be more robust and much more
+        efficient; comparing defects based on the (1) defect type, (2) defect
+        name, (3) host material (``structure``) and (4) the defect ``site``/s
+        (if they are equivalent (to within ``self.symprec`` Å; 0.01 Å by
+        default) and correspond to the same element).
+
+        Structures and sites are compared in their canonical primitive cell
+        representations, so equivalent defects defined in
+        differently-oriented/-defined host cells (e.g. primitive vs supercell
+        definitions, or differently oxi-state-decorated hosts) are recognised
+        as equal.
         """
         if not isinstance(other, type(self) | core.Defect):
             raise TypeError("Can only compare `Defect`s with `Defect`s!")
 
-        if self.defect_type != other.defect_type:
+        if self is other:
+            return True
+
+        if self.defect_type != other.defect_type or self.name != other.name:
             return False
 
-        return (
-            self is other
-            or hash(self) == hash(other)  # hash match sufficient for equality (-> same site and structure)
-            or StructureMatcher_scan_stol(
-                self.defect_structure,
-                other.defect_structure,
-                func_name="fit",
-                max_stol=0.2,
-                comparator=ElementComparator(),
-            )
-        )
+        if hash(self) == hash(other):
+            return True  # Defect hash match sufficient for equality (-> same name, site and structure)
+
+        from doped.utils.symmetry import get_min_dist_between_equiv_sites
+
+        return get_min_dist_between_equiv_sites(self, other, symprec=self.symprec) < self.symprec
 
     @cached_property
     def defect_site(self) -> PeriodicSite:
@@ -3004,6 +3025,89 @@ def remove_site_oxi_state(site: PeriodicSite):
         sym = el.symbol
         new_sp[Element(sym)] += occu
     site.species = Composition(new_sp)
+
+
+def defect_structure_from_sites(
+    bulk_supercell: Structure,
+    vacancy_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
+    interstitial_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
+    substitution_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
+) -> Structure:
+    """
+    Generate a defect structure (single defect or defect complex), given the
+    bulk supercell and the site(s) of the defect(s) to create.
+
+    The coordinates of the input defect sites should correspond to the input
+    ``bulk_supercell``. For vacancies/substitutions, the closest site in the
+    bulk supercell to the supplied site(s) will be removed (and replaced with
+    the input ``substitution_sites`` for substitutions).
+
+    Args:
+        bulk_supercell (Structure):
+            The bulk supercell structure in which to generate the defect(s).
+        vacancy_sites (Iterable[PeriodicSite] | PeriodicSite | None):
+            The site(s) of vacancies to include in the defect structure.
+            Default is None.
+        interstitial_sites (Iterable[PeriodicSite] | PeriodicSite | None):
+            The site(s) of interstitials to include in the defect structure.
+            Default is None.
+        substitution_sites (Iterable[PeriodicSite] | PeriodicSite | None):
+            The site(s) of substitutions to include in the defect structure.
+            Default is None.
+
+    Returns:
+        Structure: The defect supercell structure.
+    """
+    from doped.utils.symmetry import get_distance_matrix
+
+    defect_dict = {
+        "vacancy_sites": vacancy_sites or [],
+        "interstitial_sites": interstitial_sites or [],
+        "substitution_sites": substitution_sites or [],
+    }
+    for key, value in list(defect_dict.items()):
+        if isinstance(value, PeriodicSite):
+            defect_dict[key] = [value]  # convert to Iterable
+
+        if defect_dict[key] and (
+            not isinstance(defect_dict[key], Iterable)
+            or not isinstance(next(iter(defect_dict[key])), PeriodicSite)
+        ):
+            raise TypeError(
+                f"Defect sites input arguments must be a list, set, or tuple of defect sites. Got "
+                f"{type(defect_dict[key])} for {key}."
+            )
+
+    # check no sites are the same:
+    frac_coords = [site.frac_coords for sites in defect_dict.values() for site in sites]
+    distance_matrix = get_distance_matrix(frac_coords, bulk_supercell.lattice)
+    np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
+    if np.min(distance_matrix) < 0.1:
+        warnings.warn(
+            "Some input defect sites are less than 0.1 Å from each other, indicating they may be the same "
+            "site, which will prevent complex defect generation!"
+        )
+
+    defect_struct = bulk_supercell.copy()
+
+    # matching ``pymatgen-analysis-defect`` ``get_supercell_structure()`` site placement:
+    for site in defect_dict["vacancy_sites"]:
+        vac_site = get_matching_site(site, bulk_supercell)
+        defect_struct.remove(vac_site)
+
+    for site in defect_dict["interstitial_sites"]:
+        defect_struct.insert(
+            0,
+            species=site.specie,
+            coords=site.frac_coords,
+        )
+
+    for site in defect_dict["substitution_sites"]:
+        bulk_site_idx = defect_struct.index(get_matching_site(site, bulk_supercell, anonymous=True))
+        defect_struct.remove_sites([bulk_site_idx])
+        defect_struct.insert(bulk_site_idx, species=site.specie, coords=site.frac_coords)
+
+    return defect_struct
 
 
 def doped_defect_from_pmg_defect(

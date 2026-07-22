@@ -285,7 +285,7 @@ the error in the charge correction.
 
 To fix this, we can use the optional ``defect_region_radius`` or ``excluded_indices`` parameters in
 |DefectEntry| :meth:`~doped.core.DefectEntry.get_kumagai_correction()`, to exclude those
-points from the sampling. For ``defect_region_radius``, we can just set this to 8.75 Å here to avoid those 
+points from the sampling. For ``defect_region_radius``, we can just set this to 8.75 Å here to avoid those 
 sites in the defective layer. Often it may not be so simple to exclude the intra-layer sites in this way 
 (depending on the supercell), and so alternatively we can use ``excluded_indices`` for more fine-grained 
 control. As we can see in the structure image above, the `a` lattice vector is aligned along the 

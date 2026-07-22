@@ -139,7 +139,7 @@ def _get_num_places_for_dist_precision(
     """
     Given a structure or lattice, get the number of decimal places that we need
     to keep / can round to for `fractional coordinates` (``frac_coords``), to
-    maintain a distance precision of ``dist_precision`` in Å.
+    maintain a distance precision of ``dist_precision`` in Å.
 
     Intended for use with the ``_round_floats()`` function, to achieve cleanly
     formatted structure outputs while ensuring no significant rounding errors
@@ -150,7 +150,7 @@ def _get_num_places_for_dist_precision(
         structure (|Structure| | |Lattice|):
             The input structure or lattice.
         dist_precision (float):
-            The desired distance precision in Å (default: 0.001).
+            The desired distance precision in Å (default: 0.001).
 
     Returns:
         int:
@@ -176,7 +176,7 @@ def _round_struct_coords(structure: Structure, dist_precision: float = 0.001, to
         structure:
             The input structure.
         dist_precision:
-            The desired distance precision in Å (default: 0.001).
+            The desired distance precision in Å (default: 0.001).
         to_unit_cell:
             Whether to round the fractional coordinates to the unit cell
             (default: False).
@@ -466,7 +466,7 @@ def summed_dist(
 ) -> float:
     """
     Get the summed distance between closest-matched sites of two structures, in
-    Å.
+    Å.
 
     Note that this assumes the lattices of the two structures are equal!
 
@@ -479,7 +479,7 @@ def summed_dist(
 
     Returns:
         float:
-            The summed distance between the sites of the two structures, in Å.
+            The summed distance between the sites of the two structures, in Å.
     """
     # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
     # (though this assumes lattices are equal)
@@ -542,7 +542,7 @@ def cluster_coords(
 
     ``method`` chooses the clustering algorithm to use with ``linkage()``
     (``"single"`` by default, matching the ``scipy`` default), along with a
-    ``dist_tol`` distance tolerance in Å. ``"single"`` corresponds to the
+    ``dist_tol`` distance tolerance in Å. ``"single"`` corresponds to the
     Nearest Point algorithm and is the recommended choice for ``method`` when
     ``dist_tol`` is small, but can be sensitive to how many fractional
     coordinates are included in ``fcoords`` (allowing for daisy-chaining of
@@ -561,7 +561,7 @@ def cluster_coords(
             |Structure| or |Lattice| to which the fractional coordinates
             correspond.
         dist_tol (float):
-            Distance tolerance for clustering, in Å (default: 0.01). For the
+            Distance tolerance for clustering, in Å (default: 0.01). For the
             most part, fractional coordinates with distances less than this
             tolerance will be clustered together (when ``method = "single"``,
             giving the Nearest Point algorithm, as is the default).
@@ -770,7 +770,7 @@ def get_all_equiv_sites(
         dist_tol_factor (float):
             Distance tolerance for clustering generated sites (to ensure they
             are truly distinct), as a multiplicative factor of ``symprec``.
-            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
+            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
             ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
             value will also be automatically adjusted if necessary (up to 10x,
             down to 0.1x)(after ``symprec`` adjustments) until the identified
@@ -904,6 +904,39 @@ def _get_orientation_preserving_primitive(
 _TRIAL_SYMPREC_DIST_TOL_FACTORS = np.array([1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1])
 
 
+def _orbit_site_symmetry_consistent(
+    structure: Structure,
+    n_equiv_sites: int,
+    site_symmetry_symbol: str,
+    symprec: float = 0.01,
+) -> bool:
+    """
+    Check the Wyckoff orbit-stabilizer relation for a generated site orbit: the
+    per-primitive-cell orbit multiplicity times the site point group order must
+    equal the host crystal point group order.
+
+    This catches undercounted orbits and (more commonly) under-certified site
+    symmetries from slightly-noisy site coordinates -- e.g. a parsed (relaxed)
+    interstitial site sitting ~``symprec`` off its ideal position, where site
+    symmetry analysis gives a spurious subgroup `consistently` for all orbit
+    sites (so uniformity alone cannot catch it).
+
+    Returns ``True`` if consistent, or if the relation cannot be evaluated
+    (e.g. ``spglib`` failure) -- only a definite violation returns ``False``.
+    """
+    try:
+        site_pg_order = group_order_from_schoenflies(schoenflies_from_hermann(site_symmetry_symbol))
+        prim_and_matrix = _get_orientation_preserving_primitive(structure, symprec=symprec)
+        host = structure if prim_and_matrix is None else prim_and_matrix[0]
+        n_prim = round(len(structure) / len(host))
+        host_pg_order = group_order_from_schoenflies(
+            schoenflies_from_hermann(get_sga(host, symprec=symprec).get_point_group_symbol())
+        )
+    except Exception:  # can't evaluate (unrecognised symbol, spglib failure...); don't block acceptance
+        return True
+    return n_equiv_sites * site_pg_order == host_pg_order * n_prim
+
+
 def _raw_get_all_equiv_sites(
     frac_coords: ArrayLike,
     structure: Structure,
@@ -1016,6 +1049,7 @@ def _raw_get_all_equiv_sites(
     # ``symprec``) are self-consistent, and adjust ``symprec`` if not:
     trial_symprecs = _TRIAL_SYMPREC_DIST_TOL_FACTORS * symprec
     trial_dist_tol_factors = _TRIAL_SYMPREC_DIST_TOL_FACTORS * dist_tol_factor
+    fallback = None  # first uniform-site-symmetry result failing the orbit-stabilizer check, as fallback
     for trial_dist_tol_factor, trial_symprec in product(trial_dist_tol_factors, trial_symprecs):
         equiv_sites = _get_equiv_sites_with_given_symprec(
             trial_symprec, trial_dist_tol_factor, just_frac_coords=False
@@ -1024,16 +1058,30 @@ def _raw_get_all_equiv_sites(
         sga_with_all_X = get_sga(struct_with_all_X, symprec=trial_symprec)
         site_sym_symbols = sga_with_all_X.get_symmetry_dataset().site_symmetry_symbols[-len(equiv_sites) :]
         if len(set(site_sym_symbols)) == 1:
-            symprec = trial_symprec
-            dist_tol_factor = trial_dist_tol_factor
-            equiv_sites = [s.frac_coords for s in equiv_sites] if just_frac_coords else equiv_sites
+            if _orbit_site_symmetry_consistent(
+                structure, len(equiv_sites), site_sym_symbols[0], trial_symprec
+            ):
+                symprec = trial_symprec
+                dist_tol_factor = trial_dist_tol_factor
+                equiv_sites = [s.frac_coords for s in equiv_sites] if just_frac_coords else equiv_sites
+                if verbose:
+                    print(
+                        f"Equivalent site generation succeeded (with consistent site symmetries) with "
+                        f"symprec = {symprec} & dist_tol_factor = {dist_tol_factor}, giving "
+                        f"{len(equiv_sites)} equivalent sites in the input structure."
+                    )
+                break
+            if fallback is None:  # uniform site symmetries, but violating the orbit-stabilizer relation;
+                # keep as fallback in case no trial satisfies both criteria:
+                fallback = (equiv_sites, trial_symprec, trial_dist_tol_factor)
             if verbose:
                 print(
-                    f"Equivalent site generation succeeded (with consistent site symmetries) with symprec "
-                    f"= {symprec} & dist_tol_factor = {dist_tol_factor}, giving "
-                    f"{len(equiv_sites)} equivalent sites in the input structure."
+                    f"Equivalent site generation gave uniform site symmetries but violated the "
+                    f"orbit-stabilizer relation with symprec = {trial_symprec} & dist_tol_factor = "
+                    f"{trial_dist_tol_factor}, giving {len(equiv_sites)} equivalent sites in the input "
+                    f"structure."
                 )
-            break
+            continue
 
         if verbose:
             print(
@@ -1041,6 +1089,10 @@ def _raw_get_all_equiv_sites(
                 f"= {trial_dist_tol_factor}, giving {len(equiv_sites)} equivalent sites in the input "
                 f"structure."
             )
+    else:  # no trial passed both checks; fall back to the first uniform-site-symmetry result if any
+        if fallback is not None:
+            equiv_sites, symprec, dist_tol_factor = fallback
+            equiv_sites = [s.frac_coords for s in equiv_sites] if just_frac_coords else equiv_sites
 
     return (equiv_sites, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else equiv_sites
 
@@ -1062,7 +1114,7 @@ def cluster_sites_by_dist_tol(
         structure (|Structure| | |Lattice|):
             |Structure| or |Lattice| to which the sites correspond.
         dist_tol (float):
-            Distance tolerance for clustering, in Å (default: 0.01).
+            Distance tolerance for clustering, in Å (default: 0.01).
         method (str):
             Clustering algorithm to use with ``scipy``\'s ``linkage()``
             clustering function in ``cluster_coords``. Default is ``"single"``,
@@ -1106,6 +1158,8 @@ def get_min_dist_between_equiv_sites(
     site_1: PeriodicSite | Sequence[float] | Defect | DefectEntry,
     site_2: PeriodicSite | Sequence[float] | Defect | DefectEntry,
     structure: Structure | None = None,
+    structure_2: Structure | None = None,
+    strip_oxi_states: bool | None = None,
     symprec: float = 0.01,
     dist_tol_factor: float = 1.0,
     return_symprec_and_dist_tol_factor: bool = False,
@@ -1113,8 +1167,8 @@ def get_min_dist_between_equiv_sites(
     verbose: bool = False,
 ) -> float | tuple[float, float, float]:
     """
-    Get the minimum distance (in Å) between equivalent sites of two input
-    site/|Defect|/|DefectEntry| objects in a structure.
+    Get the minimum distance (in Å) between equivalent sites of two input
+    site/|Defect|/|DefectEntry| objects.
 
     Args:
         site_1 (|PeriodicSite| | Sequence[float, float, float] | |Defect| | |DefectEntry|):
@@ -1129,8 +1183,29 @@ def get_min_dist_between_equiv_sites(
             |Defect|/|DefectEntry| object.
         structure (|Structure|):
             |Structure| to use for determining symmetry-equivalent sites of
-            ``site_1`` and ``site_2``. Required if ``site_1`` and ``site_2``
-            are not |Defect| or |DefectEntry| objects. Default: None.
+            ``site_1`` (and ``site_2``, if ``structure_2`` is not set).
+            Required if ``site_1`` and ``site_2`` are not |Defect| or
+            |DefectEntry| objects. Default: None.
+        structure_2 (|Structure|):
+            Separate host |Structure| for ``site_2``, if the two sites are
+            potentially defined in different (but equivalent) host frames --
+            e.g. differently-oriented/-defined cells, primitive vs supercell
+            definitions, or differently oxi-state-decorated hosts. Each site
+            is then folded via its own host into a shared canonical primitive
+            cell (from ``get_primitive_structure``) for comparison, returning
+            ``np.inf`` if the two hosts do not correspond to matching primitive
+            structures. If ``None`` (default), taken from ``site_2`` if it is a
+            |Defect|/|DefectEntry| object, otherwise assumed to match
+            ``structure``.
+        strip_oxi_states (bool | None):
+            Whether to strip oxidation states from the host structure(s)
+            before symmetry analysis / host matching. If ``None`` (default),
+            oxidation states are only stripped when the two host structures
+            (``structure``/``structure_2``) have mismatching oxi-state
+            decorations (which can otherwise hinder host matching) -- so
+            consistently-decorated hosts retain any decoration-dependent
+            symmetry (e.g. inequivalent sites in mixed-valence hosts). Set to
+            ``True``/``False`` to always/never strip oxidation states.
         symprec (float):
             Symmetry precision to use for determining symmetry operations.
             Default is 0.01. If ``fixed_symprec_and_dist_tol_factor`` is
@@ -1145,7 +1220,7 @@ def get_min_dist_between_equiv_sites(
         dist_tol_factor (float):
             Distance tolerance for clustering generated sites (to ensure they
             are truly distinct), as a multiplicative factor of ``symprec``.
-            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
+            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
             ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
             value will also be automatically adjusted if necessary (up to 10x,
             down to 0.1x)(after ``symprec`` adjustments) until the identified
@@ -1171,7 +1246,7 @@ def get_min_dist_between_equiv_sites(
 
     Returns:
         float | tuple[float, float, float]:
-            Minimum distance (in Å) between equivalent sites of ``site_1``
+            Minimum distance (in Å) between equivalent sites of ``site_1``
             and ``site_2``, or a tuple of  (minimum distance, ``symprec``,
             ``dist_tol_factor``) if ``return_symprec_and_dist_tol_factor`` is
             ``True``.
@@ -1186,6 +1261,11 @@ def get_min_dist_between_equiv_sites(
         raise ValueError(
             "Structure must be provided if site_1 and site_2 are not DefectEntry or Defect objects."
         )
+    if structure_2 is None:  # take ``site_2`` host if provided as a ``Defect``/``DefectEntry``:
+        if isinstance(site_2, DefectEntry):
+            structure_2 = site_2.defect.structure
+        elif isinstance(site_2, Defect):
+            structure_2 = site_2.structure
 
     def _parse_site_to_PeriodicSite(site):
         if isinstance(site, DefectEntry):
@@ -1203,12 +1283,39 @@ def get_min_dist_between_equiv_sites(
 
     primitive = get_primitive_structure(structure)
 
-    def _get_equiv_fcoords_symprec_and_dist_tol(site, symprec=symprec, dist_tol_factor=dist_tol_factor):
+    if strip_oxi_states is None:  # default: strip only when mismatching decorations
+        strip_oxi_states = structure_2 is not None and (
+            {str(sp) for sp in structure.composition} != {str(sp) for sp in structure_2.composition}
+        )  # compare based on species string sets; Composition equality is oxi-state-insensitive
+
+    if strip_oxi_states:
+        structure = structure.copy()
+        structure.remove_oxidation_states()
+        if structure_2 is not None:
+            structure_2 = structure_2.copy()
+            structure_2.remove_oxidation_states()
+        primitive = get_primitive_structure(structure)
+
+    if different_structures := structure_2 is not None and structure_2 != structure:
+        assert structure_2 is not None  # given ``different_structures``; for ``mypy``
+        # fold each site via its own host into a shared canonical primitive:
+        prim_2 = get_primitive_structure(structure_2)
+        if (  # fast-fail for clearly-different host crystals, before matching structures below
+            len(prim_2) != len(primitive)
+            or prim_2.composition.reduced_formula != primitive.composition.reduced_formula
+        ):
+            return (np.inf, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else np.inf
+    else:
+        structure_2 = structure
+
+    def _get_equiv_fcoords_symprec_and_dist_tol(
+        site, host_structure, symprec=symprec, dist_tol_factor=dist_tol_factor
+    ):
         frac_coords = _parse_site_to_frac_coords(site)
-        equiv_fcoords, symprec, dist_tol_factor = get_equiv_frac_coords_in_primitive(
+        return get_equiv_frac_coords_in_primitive(  # returns ``None`` if no mapping found
             frac_coords,
             primitive,
-            structure,
+            host_structure,
             symprec=symprec,
             dist_tol_factor=dist_tol_factor,
             return_symprec_and_dist_tol_factor=True,
@@ -1216,12 +1323,24 @@ def get_min_dist_between_equiv_sites(
             verbose=verbose,
         )
 
-        return equiv_fcoords, symprec, dist_tol_factor
+    with warnings.catch_warnings():
+        if different_structures:  # host equivalence not guaranteed; map failure -> ``inf`` (not an error):
+            warnings.filterwarnings("ignore", message="Could not find a mapping")
+        try:
+            output_1 = _get_equiv_fcoords_symprec_and_dist_tol(site_1, structure)
+            output_2 = _get_equiv_fcoords_symprec_and_dist_tol(site_2, structure_2) if output_1 else None
+        except RuntimeError:  # e.g. ``StructureMatcher.get_transformation()`` failure for similar but
+            if not different_structures:  # non-equivalent different host lattices
+                raise
+            output_1 = output_2 = None
 
-    equiv_fcoords_1, symprec, dist_tol_factor = _get_equiv_fcoords_symprec_and_dist_tol(site_1)
-    equiv_fcoords_2, symprec, dist_tol_factor = _get_equiv_fcoords_symprec_and_dist_tol(site_2)
+    if output_1 is None or output_2 is None:  # no mapping found between host structure(s) and primitive
+        min_dist = np.inf
+    else:
+        equiv_fcoords_1, symprec, dist_tol_factor = output_1
+        equiv_fcoords_2, symprec, dist_tol_factor = output_2
+        min_dist = np.min(primitive.lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
 
-    min_dist = np.min(primitive.lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
     return (min_dist, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else min_dist
 
 
@@ -1424,7 +1543,7 @@ def get_equiv_frac_coords_in_primitive(
         dist_tol_factor (float):
             Distance tolerance for clustering generated sites (to ensure they
             are truly distinct), as a multiplicative factor of ``symprec``.
-            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
+            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
             ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
             value will also be automatically adjusted if necessary (up to 10x,
             down to 0.1x)(after ``symprec`` adjustments) until the identified
@@ -2081,7 +2200,7 @@ def get_clean_structure(
             structure lattice to the new structure lattice (T * Orig = New).
             (Default = False)
         dist_precision (float):
-            The desired distance precision in Å for rounding of lattice
+            The desired distance precision in Å for rounding of lattice
             parameters and fractional coordinates. (Default: 0.001)
         niggli_reduce (bool):
             Whether to Niggli reduce the lattice before searching for the
@@ -3531,7 +3650,10 @@ def local_point_symmetry(
     # translation |t| bound: symmetry operation fixed point(s) must stay local (near the defect / cluster
     # centre), and the test region ``(radius - |t| - 2*symprec)`` must cover the defect's first
     # coordination shell:
-    min_coordination_shell_distance = float(dists.min()) + 0.5  # just past the 1st coordination shell
+    non_centre_dists = dists[dists > 0.75]  # distances beyond the defect/cluster centre (site) itself
+    min_coordination_shell_distance = (
+        float(non_centre_dists.min()) if non_centre_dists.size else float(dists.min())
+    ) + 0.5  # just past the 1st coordination shell
     t_max = max(min(2 * centre_error_range, radius - 2 * symprec - min_coordination_shell_distance), 1e-3)
     match_tol = max(4 * symprec, 0.5)  # generous pair-matching radius for iterative refinement
 

@@ -6,7 +6,7 @@ identification etc.).
 
 import warnings
 from copy import deepcopy
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -103,12 +103,12 @@ def get_defect_type_and_site_indices(
             the distance threshold for matching is set to the product of
             ``site_tol`` and the shortest bond length in the bulk structure for
             the given species, otherwise the value is used directly (as a
-            length in Å).
+            length in Å).
             If ``None`` (default), the defect is assumed to be a point defect,
             and the largest site mismatch is assigned as the defect site.
         abs_tol (bool):
             Whether to use ``site_tol`` as an absolute distance tolerance (in
-            Å) instead of a fractional tolerance (in terms of the shortest bond
+            Å) instead of a fractional tolerance (in terms of the shortest bond
             length in the structure). Default is ``False``.
         use_oxi_states (bool):
             Whether to use the oxidation states of the sites in the bulk and
@@ -237,7 +237,7 @@ def get_matching_site(
     Get the (closest) matching |PeriodicSite| in ``structure`` for the input
     ``site``, which can be a |PeriodicSite| or fractional coordinates.
 
-    If the closest matching site in ``structure`` is > ``tol`` Å (0.5 Å by
+    If the closest matching site in ``structure`` is > ``tol`` Å (0.5 Å by
     default) away from the input ``site`` coordinates, an error is raised.
 
     Automatically accounts for possible differences in assigned oxidation
@@ -335,11 +335,11 @@ def _create_unrelaxed_defect_structure(
 ) -> Structure:
     """
     Create the unrelaxed defect structure, which corresponds to the bulk
-    supercell with the unrelaxed defect site.
+    supercell with the `"unrelaxed"` defect site.
 
     The unrelaxed defect site corresponds to the vacancy/substitution site in
-    the pristine (bulk) supercell for vacancies/substitutions, and the `final`
-    relaxed interstitial site for interstitials (as the assignment of their
+    the pristine (bulk) supercell for vacancies/substitutions, and the
+    `relaxed` interstitial site for interstitials (as the assignment of their
     initial site is ambiguous).
 
     Args:
@@ -348,7 +348,7 @@ def _create_unrelaxed_defect_structure(
         bulk_supercell (Structure):
             The bulk structure.
         defect_site_idx (int):
-            The index of the defect site to use in the unreleaxed defect
+            The index of the defect site to use in the `"unreleaxed"` defect
             structure. Just for consistency with the relaxed defect structure.
         bulk_site_idx (int):
             The index of the site in the bulk structure that corresponds to the
@@ -361,7 +361,7 @@ def _create_unrelaxed_defect_structure(
 
     Returns:
         Structure:
-            The unrelaxed defect structure.
+            The `"unrelaxed"` defect structure.
     """
     unrelaxed_defect_structure = bulk_supercell.copy()  # create unrelaxed defect structure
 
@@ -378,6 +378,64 @@ def _create_unrelaxed_defect_structure(
         unrelaxed_defect_structure.insert(defect_site_idx, defect_site_in_defect.species, defect_coords)
 
     return unrelaxed_defect_structure
+
+
+def _guess_initial_defect_structure(
+    unrelaxed_defect_structure: Structure,
+    bulk_supercell: Structure,
+    defect_type: str,
+    defect_site: PeriodicSite,
+    defect_site_in_bulk: PeriodicSite,
+    defect_site_index: int | None,
+) -> tuple[Structure, PeriodicSite]:
+    """
+    Guess the initial defect structure, corresponding to
+    ``unrelaxed_defect_structure`` but with interstitials placed at the closest
+    candidate interstitial site in the bulk supercell (based on default
+    ``doped`` interstitial generation settings) to the relaxed interstitial
+    site -- as this is likely the `initial` interstitial site.
+
+    ``defect_site_in_bulk`` is updated to this guessed initial site if it is
+    within 1 Å of the relaxed site, otherwise left unchanged (the relaxed
+    site). For vacancies/substitutions, just returns a copy of
+    ``unrelaxed_defect_structure`` and the unchanged ``defect_site_in_bulk``.
+
+    Returns:
+        tuple[Structure, PeriodicSite]:
+            The guessed initial defect structure, and the (possibly updated)
+            ``defect_site_in_bulk``.
+    """
+    guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
+    if defect_type != "interstitial":
+        return guessed_initial_defect_structure, defect_site_in_bulk
+
+    from doped.generation import get_interstitial_sites
+
+    # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
+    # settings) to the relaxed interstitial site, as this is likely the _initial_ interstitial site
+    int_site = guessed_initial_defect_structure.pop(defect_site_index)
+    int_gen_kwargs: dict[str, Any] = {"min_dist": 0.5} if int_site.species_string == "H" else {}
+    all_equiv_fpos = [  # all candidate interstitial frac coords in the bulk supercell
+        fpos
+        for *_, equiv_fpos in get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
+        for fpos in equiv_fpos
+    ]
+    closest_cand_int_fcoords = all_equiv_fpos[  # closest candidate interstitial frac coords
+        np.argmin(bulk_supercell.lattice.get_all_distances(defect_site.frac_coords, all_equiv_fpos))
+    ]
+    guessed_initial_defect_structure.insert(
+        defect_site_index,  # place defect at same position as in supercell calculation
+        int_site.species_string,
+        closest_cand_int_fcoords,
+        coords_are_cartesian=False,
+        validate_proximity=True,
+    )
+    # if guessed initial site is sufficiently close to the relaxed site, then use it as
+    # "defect_site_in_bulk", otherwise use the relaxed site:
+    if defect_site_in_bulk.distance_and_image_from_frac_coords(closest_cand_int_fcoords)[0] < 1:
+        defect_site_in_bulk = guessed_initial_defect_structure[defect_site_index]
+
+    return guessed_initial_defect_structure, defect_site_in_bulk
 
 
 def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
@@ -516,15 +574,15 @@ def check_atom_mapping_far_from_defect(
         )
     }:
         message = (
-            f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
-            f"displacements (>{displacement_tol} Å) in the defect supercell. This likely indicates a "
+            f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
+            f"displacements (>{displacement_tol} Å) in the defect supercell. This likely indicates a "
             f"mismatch between the bulk and defect supercell definitions (-> see troubleshooting docs) or "
             f"an unconverged supercell size, both of which could cause errors in parsing. The mean (or at "
             f"least {fraction_tol:.0%}) of displacements of the following species, at sites far from the "
             f"determined defect position, is >{displacement_tol} Å: {list(large_disps_outside_ws.keys())}"
         )
         if warning == "verbose":
-            message += f", with displacements (Å): {large_disps_outside_ws}"
+            message += f", with displacements (Å): {large_disps_outside_ws}"
         if warning:
             warnings.warn(message)
 
@@ -654,7 +712,7 @@ def get_site_mappings(
             the same site in ``struct2``. Default is ``False``.
         threshold (float):
             If the distance between a pair of matched sites is larger than
-            this, then a warning will be thrown. Default is 2.0 Å.
+            this, then a warning will be thrown. Default is 2.0 Å.
         anonymous (bool):
             If ``True``, the species of the sites will not be considered when
             matching sites. Default is ``False`` (only matching species can be
@@ -802,7 +860,7 @@ def reorder_s2_like_s1(s1_structure: Structure, s2_structure: Structure, thresho
             The structure to reorder, to match ``s1_structure``.
         threshold (float):
             If the distance between a pair of matched sites is larger than
-            this value in Å, then a warning will be thrown. Default is 5.0 Å.
+            this value in Å, then a warning will be thrown. Default is 5.0 Å.
 
     Returns:
         Structure:
@@ -849,9 +907,9 @@ def get_dimer_bonds(structure: Structure, rtol: float = 1.05) -> dict[str, list[
     Returns:
         dict[str, list[float]]:
             A dictionary of element names with values being sub-dictionaries of
-            site names and their homoionic neighbours and distances (in Å)
+            site names and their homoionic neighbours and distances (in Å)
             which are classified as dimer bonds.
-            (e.g. {'O': {'O(1)': {'O(3)': '1.44 Å'}}})
+            (e.g. {'O': {'O(1)': {'O(3)': '1.44 Å'}}})
     """
     from shakenbreak.analysis import get_homoionic_bonds
     from shakenbreak.distortions import get_dimer_bond_length

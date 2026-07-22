@@ -178,7 +178,7 @@ def get_defect_in_supercell(
             at the edge of the stenciled supercell to scan over, when
             determining the best match of sites to stencil out in the new
             supercell (of ``target_supercell`` dimension). Default is ``None``,
-            in which case the default range is used (0.2 to 4 Å in 0.2 Å
+            in which case the default range is used (0.2 to 4 Å in 0.2 Å
             increments). Once a stenciling solution which satisfies the
             ``min_dist_tol_factor`` tolerance is found for a given
             ``edge_tol``, the search is terminated. See
@@ -296,31 +296,38 @@ def get_defect_in_supercell(
         wsr_target = get_wigner_seitz_radius(target_supercell)
         trans_to_match_target = None
         fake_target_supercell_w_big_supercell_lattice = None
-        for r_factor in orientation_template_radii_range:
-            fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
-                target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                r=r_factor * wsr_target,
-            )
-            if not fake_target_supercell_sites:
-                continue
-            fake_target_supercell_w_big_supercell_lattice = Structure(
-                big_bulk_supercell.lattice,
-                [site.species for site in fake_target_supercell_sites],
-                [site.coords for site in fake_target_supercell_sites],
-                coords_are_cartesian=True,
-            )
-            fake_big_supercell = Structure.from_sites(
-                big_bulk_supercell.get_sites_in_sphere(
-                    big_bulk_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                    r=r_factor * wsr_target / 0.8,  # slightly larger r for fake big supercell
+        # scan all sampling-sphere (orientation template) radii at tight ``stol`` values, before loosening
+        # and re-scanning over template radii
+        stol_tiers = [0.02, 0.05, 0.1, 0.5]
+        for min_stol, max_stol in zip([None, *stol_tiers[:-1]], stol_tiers, strict=True):  # min = prev max
+            for r_factor in orientation_template_radii_range:
+                fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
+                    target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
+                    r=r_factor * wsr_target,
                 )
-            )
-            trans_to_match_target = get_transformation_from_s2_to_s1(
-                fake_target_supercell_w_big_supercell_lattice,
-                fake_big_supercell,
-                allow_subset=True,  # allow subset to match, likely different number of atoms here
-                max_stol=0.5,
-            )
+                if not fake_target_supercell_sites:
+                    continue
+                fake_target_supercell_w_big_supercell_lattice = Structure(
+                    big_bulk_supercell.lattice,
+                    [site.species for site in fake_target_supercell_sites],
+                    [site.coords for site in fake_target_supercell_sites],
+                    coords_are_cartesian=True,
+                )
+                fake_big_supercell = Structure.from_sites(
+                    big_bulk_supercell.get_sites_in_sphere(
+                        big_bulk_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
+                        r=r_factor * wsr_target / 0.8,  # slightly larger r for fake big supercell
+                    )
+                )
+                trans_to_match_target = get_transformation_from_s2_to_s1(
+                    fake_target_supercell_w_big_supercell_lattice,
+                    fake_big_supercell,
+                    allow_subset=True,  # allow subset to match, likely different number of atoms here
+                    **({"min_stol": min_stol} if min_stol else {}),
+                    max_stol=max_stol,
+                )
+                if trans_to_match_target is not None:
+                    break
             if trans_to_match_target is not None:
                 break
 
@@ -489,8 +496,8 @@ def get_defect_in_supercell(
         if new_bulk_min_bond_length < bulk_min_bond_length * 0.995:
             warnings.warn(
                 f"Note that the stenciled `bulk` supercell has a minimum interatomic distance of "
-                f"{new_bulk_min_bond_length:.2f} Å, smaller than 99.5% of the original bond length "
-                f"({bulk_min_bond_length:.2f} Å). This is typically the result of different bond lengths "
+                f"{new_bulk_min_bond_length:.2f} Å, smaller than 99.5% of the original bond length "
+                f"({bulk_min_bond_length:.2f} Å). This is typically the result of different bond lengths "
                 f"/ interatomic distances between the original bulk and target supercells, which affects "
                 f"the stenciling process. If the difference is relatively small, then this is easily "
                 f"resolved by relaxing the output bulk supercell to re-equilibrate the interatomic "
@@ -604,7 +611,7 @@ def stencil_target_cell_from_big_cell(
             at the edge of the stenciled supercell to scan over, when
             determining the best match of sites to stencil out in the new
             supercell (of ``target_supercell`` dimension). Default is ``None``,
-            in which case the default range is used (0.2 to 4 Å in 0.2 Å
+            in which case the default range is used (0.2 to 4 Å in 0.2 Å
             increments).
             In the stenciling search, we scan over ``edge_tol_range`` first,
             before iterating over ``min_dist_tol_factor_range``.
@@ -748,7 +755,7 @@ def stencil_target_cell_from_big_cell(
 
             if pbar is not None:
                 pbar.set_description(
-                    f"Calculating best match (edge_tol = {edge_tol} Å, possible combos = {num_combos})"
+                    f"Calculating best match (edge_tol = {edge_tol} Å, possible combos = {num_combos})"
                 )  # 40% of pbar
 
             species_symbols = [site.specie.symbol for site in candidate_new_supercell_sites]
@@ -797,9 +804,9 @@ def stencil_target_cell_from_big_cell(
                 idx_combo_min_dist = min_interatomic_distances_tuple_combo_list[0][0][0]
                 if idx_combo_min_dist < (bulk_min_bond_length * min_dist_tol_factor):
                     raise RuntimeError(
-                        f"Minimum interatomic distance ({idx_combo_min_dist:.2f} Å) near the edge (within "
-                        f"{edge_tol:.2f} Å) of the target cell is less than the minimum distance "
-                        f"tolerance ({bulk_min_bond_length * min_dist_tol_factor:.2f} Å), indicating a "
+                        f"Minimum interatomic distance ({idx_combo_min_dist:.2f} Å) near the edge (within "
+                        f"{edge_tol:.2f} Å) of the target cell is less than the minimum distance "
+                        f"tolerance ({bulk_min_bond_length * min_dist_tol_factor:.2f} Å), indicating a "
                         f"fatal issue with the stenciling process. Aborting."
                     )
 
@@ -812,10 +819,10 @@ def stencil_target_cell_from_big_cell(
                     inner_range = max(bulk_min_bond_length, edge_tol * 2)
                     warnings.warn(
                         f"Note that the generated stenciled structure has a minimum interatomic distance "
-                        f"of {idx_combo_min_dist:.2f} Å near the cell edge (within {inner_range:.2f} Å), "
+                        f"of {idx_combo_min_dist:.2f} Å near the cell edge (within {inner_range:.2f} Å), "
                         f"smaller than the warning threshold ({min_dist_warning_tol_factor} of the bulk "
-                        f"minimum interatomic distance ({bulk_min_bond_length:.2f} Å) = "
-                        f"{min_dist_warning_tol:.2f} Å). Some remnant structural noise is of course "
+                        f"minimum interatomic distance ({bulk_min_bond_length:.2f} Å) = "
+                        f"{min_dist_warning_tol:.2f} Å). Some remnant structural noise is of course "
                         f"expected when stenciling with relatively small original/target supercells, so "
                         f"consider if this is reasonable for your system!"
                     )
@@ -840,7 +847,7 @@ def stencil_target_cell_from_big_cell(
                 pbar.n = 20  # decrease pbar progress back to 20%
                 pbar.refresh()
                 pbar.set_description(
-                    f"Trying edge_tol = {edge_tol:.2f} Å, min_dist_tol_factor = {min_dist_tol_factor:.2f}"
+                    f"Trying edge_tol = {edge_tol:.2f} Å, min_dist_tol_factor = {min_dist_tol_factor:.2f}"
                 )
             continue
 

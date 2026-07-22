@@ -323,7 +323,7 @@ def orient_s2_like_s1(
     vector definitions.
 
     If ``verbose=True``, information about the mass-weighted displacement (ΔQ
-    in amu^(1/2)Å) between the input and re-oriented structures is printed.
+    in amu^(1/2)Å) between the input and re-oriented structures is printed.
     This is the typical x-axis unit in configurational coordinate diagrams (see
     e.g. 10.1103/PhysRevB.90.075202).
 
@@ -346,7 +346,7 @@ def orient_s2_like_s1(
             raised.
         verbose (bool):
             Print information about the mass-weighted displacement
-            (ΔQ in amu^(1/2)Å) between the input and re-oriented structures.
+            (ΔQ in amu^(1/2)Å) between the input and re-oriented structures.
             Default: ``False``
         check_mapping (bool):
             If ``True`` (default), check the atom mapping between ``struct1``
@@ -406,12 +406,12 @@ def orient_s2_like_s1(
         delQ_s1_s2_like_s1_pmg = get_dQ(struct1, struct2_like_struct1, ignored_species=ignored_species)
         warnings.warn(
             f"StructureMatcher.get_s2_like_s1() appears to have failed. The mass-weighted displacement "
-            f"(ΔQ in amu^(1/2)Å) for the input structures is:\n"
-            f"ΔQ(s1/s2) = {delQ_s1_s2:.2f} amu^(1/2)Å\n"
+            f"(ΔQ in amu^(1/2)Å) for the input structures is:\n"
+            f"ΔQ(s1/s2) = {delQ_s1_s2:.2f} amu^(1/2)Å\n"
             f"Using ``StructureMatcher.get_s2_like_s1()`` directly gives:\n"
-            f"ΔQ(s1/s2_like_s1_pmg) = {delQ_s1_s2_like_s1_pmg:.2f} amu^(1/2)Å\n"
+            f"ΔQ(s1/s2_like_s1_pmg) = {delQ_s1_s2_like_s1_pmg:.2f} amu^(1/2)Å\n"
             f"Then using the re-oriented structure gives:\n"
-            f"ΔQ(s1/s2_like_s1_doped) = {delQ_s1_s2_like_s1:.2f} amu^(1/2)Å\n"
+            f"ΔQ(s1/s2_like_s1_doped) = {delQ_s1_s2_like_s1:.2f} amu^(1/2)Å\n"
             f"which should always be less than or equal to the previous two values... Please report this "
             f"case to the doped developers!"
             f"\n{struct1}"
@@ -421,9 +421,9 @@ def orient_s2_like_s1(
         )
 
     if verbose:
-        print(f"ΔQ(s1/s2) = {delQ_s1_s2:.2f} amu^(1/2)Å")
-        print(f"ΔQ(s2_like_s1/s2) = {delQ_s2_like_s1_s2:.2f} amu^(1/2)Å")
-        print(f"ΔQ(s1/s2_like_s1) = {delQ_s1_s2_like_s1:.2f} amu^(1/2)Å")
+        print(f"ΔQ(s1/s2) = {delQ_s1_s2:.2f} amu^(1/2)Å")
+        print(f"ΔQ(s2_like_s1/s2) = {delQ_s2_like_s1_s2:.2f} amu^(1/2)Å")
+        print(f"ΔQ(s1/s2_like_s1) = {delQ_s1_s2_like_s1:.2f} amu^(1/2)Å")
 
     if check_mapping and not sm_kwargs.get("allow_subset"):
         # check that after re-orientation the atomic basis matches between ``struct1`` and the re-oriented
@@ -468,7 +468,7 @@ def get_dQ(
     **sm_kwargs,
 ) -> float:
     """
-    Get the mass-weighted displacement (ΔQ in amu^(1/2)Å) between two
+    Get the mass-weighted displacement (ΔQ in amu^(1/2)Å) between two
     structures, assuming matched atomic indices (unless ``reorient`` is set to
     ``True``).
 
@@ -491,7 +491,7 @@ def get_dQ(
 
     Returns:
         float:
-            The mass-weighted displacement (ΔQ in amu^(1/2)Å) between the two
+            The mass-weighted displacement (ΔQ in amu^(1/2)Å) between the two
             structures. Returns ``np.inf`` if the structures are not matching.
     """
     if reorient:

@@ -303,7 +303,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         return plot_site_displacements(self.F_i_m1_defect_entry, vector_to_project_on=[1, 1, 1])
 
     @custom_mpl_image_compare(filename="v_Cd_0_disp_ellipsoid_plot.png", style=STYLE)
-    def test_plot_displacements_ellipsoid_ellipsoid(self):
+    def test_plot_displacements_ellipsoid(self):
         return plot_displacements_ellipsoid(self.v_Cd_0_defect_entry, plot_ellipsoid=True)
 
     @custom_mpl_image_compare(filename="v_Cd_0_disp_anisotropy_plot.png", style=STYLE)
@@ -313,19 +313,19 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         )
 
     @custom_mpl_image_compare(filename="Te_Cd_1_disp_ellipsoid_plot.png", style=STYLE)
-    def test_plot_displacements_ellipsoid_ellipsoid_Te_Cd_1(self):
+    def test_plot_displacements_ellipsoid_Te_Cd_1(self):
         return plot_displacements_ellipsoid(self.Te_Cd_1_defect_entry, plot_anisotropy=True)[0]
 
     @custom_mpl_image_compare(filename="Te_Cd_1_disp_anisotropy_plot.png", style=STYLE)
-    def test_plot_displacements_ellipsoid_anisotropy_Te_Cd_1(self):
+    def test_plot_displacements_ellipsoid_Te_Cd_1_anisotropy(self):
         return plot_displacements_ellipsoid(self.Te_Cd_1_defect_entry, plot_anisotropy=True)[1]
 
     @custom_mpl_image_compare(filename="F_i_-1_disp_ellipsoid_plot.png", style=STYLE)
-    def test_plot_displacements_ellipsoid_ellipsoid_F_i_m1(self):
+    def test_plot_displacements_ellipsoid_F_i_m1(self):
         return plot_displacements_ellipsoid(self.F_i_m1_defect_entry, plot_ellipsoid=True)
 
     @custom_mpl_image_compare(filename="F_i_-1_disp_anisotropy_plot.png", style=STYLE)
-    def test_plot_displacements_ellipsoid_anisotropy_F_i_m1(self):
+    def test_plot_displacements_ellipsoid_F_i_m1_anisotropy(self):
         return plot_displacements_ellipsoid(
             self.F_i_m1_defect_entry, plot_ellipsoid=False, plot_anisotropy=True
         )
