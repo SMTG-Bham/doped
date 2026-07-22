@@ -5,6 +5,7 @@ Core functions and classes for defects in doped.
 import collections
 import contextlib
 import warnings
+from collections.abc import Iterable
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, cast
 
@@ -35,6 +36,7 @@ from doped.utils.parsing import (
     _num_electrons_from_charge_state,
     _simple_spin_degeneracy_from_num_electrons,
     _update_defect_entry_structure_metadata,
+    get_matching_site,
     get_procar,
     get_vasprun,
     spin_degeneracy_from_vasprun,
@@ -2235,6 +2237,10 @@ class Defect(core.Defect):
     the defect ``site`` is the `relaxed` interstitial site, placed in the
     (unrelaxed) host structure. ``Defect.site`` is used for site multiplicity
     and bulk site point symmetry analyses.
+
+    The ``defect_structure`` attribute included with ``Defect`` objects from
+    ``pymatgen-analysis-defects`` (which places the 'defect' in a primitive
+    cell) is not used nor (directly) supported with ``doped``.
     """
 
     def __init__(
@@ -2607,16 +2613,15 @@ class Defect(core.Defect):
                 ),
             )[0]
 
-        sc_defect = self.__class__(
-            structure=self.structure * sc_mat,
-            site=sc_site,
-            oxi_state=self.oxi_state,
-            multiplicity=1,  # so doesn't break for interstitials
-        )
-        sc_defect_struct = sc_defect.defect_structure
-        sc_defect_struct.remove_oxidation_states()
+        sc_defect_struct = defect_structure_from_sites(
+            self.structure * sc_mat,  # ``self.structure`` may be oxi-state-decorated
+            vacancy_sites=sc_site if isinstance(self, core.Vacancy) else None,
+            interstitial_sites=sc_site if isinstance(self, core.Interstitial) else None,
+            substitution_sites=sc_site if isinstance(self, core.Substitution) else None,
+        )  # TODO: Input parameters to be updated for defect complexes
 
-        # also remove oxidation states from sites:
+        # remove oxidation states from supercell structure and sites:
+        sc_defect_struct.remove_oxidation_states()
         for site in [sc_site, *equiv_sites]:
             remove_site_oxi_state(site)
 
@@ -2921,6 +2926,89 @@ def remove_site_oxi_state(site: PeriodicSite):
         sym = el.symbol
         new_sp[Element(sym)] += occu
     site.species = Composition(new_sp)
+
+
+def defect_structure_from_sites(
+    bulk_supercell: Structure,
+    vacancy_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
+    interstitial_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
+    substitution_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
+) -> Structure:
+    """
+    Generate a defect structure (single defect or defect complex), given the
+    bulk supercell and the site(s) of the defect(s) to create.
+
+    The coordinates of the input defect sites should correspond to the input
+    ``bulk_supercell``. For vacancies/substitutions, the closest site in the
+    bulk supercell to the supplied site(s) will be removed (and replaced with
+    the input ``substitution_sites`` for substitutions).
+
+    Args:
+        bulk_supercell (Structure):
+            The bulk supercell structure in which to generate the defect(s).
+        vacancy_sites (Iterable[PeriodicSite] | PeriodicSite | None):
+            The site(s) of vacancies to include in the defect structure.
+            Default is None.
+        interstitial_sites (Iterable[PeriodicSite] | PeriodicSite | None):
+            The site(s) of interstitials to include in the defect structure.
+            Default is None.
+        substitution_sites (Iterable[PeriodicSite] | PeriodicSite | None):
+            The site(s) of substitutions to include in the defect structure.
+            Default is None.
+
+    Returns:
+        Structure: The defect supercell structure.
+    """
+    from doped.utils.symmetry import get_distance_matrix
+
+    defect_dict = {
+        "vacancy_sites": vacancy_sites or [],
+        "interstitial_sites": interstitial_sites or [],
+        "substitution_sites": substitution_sites or [],
+    }
+    for key, value in list(defect_dict.items()):
+        if isinstance(value, PeriodicSite):
+            defect_dict[key] = [value]  # convert to Iterable
+
+        if defect_dict[key] and (
+            not isinstance(defect_dict[key], Iterable)
+            or not isinstance(next(iter(defect_dict[key])), PeriodicSite)
+        ):
+            raise TypeError(
+                f"Defect sites input arguments must be a list, set, or tuple of defect sites. Got "
+                f"{type(defect_dict[key])} for {key}."
+            )
+
+    # check no sites are the same:
+    frac_coords = [site.frac_coords for sites in defect_dict.values() for site in sites]
+    distance_matrix = get_distance_matrix(frac_coords, bulk_supercell.lattice)
+    np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
+    if np.min(distance_matrix) < 0.1:
+        warnings.warn(
+            "Some input defect sites are less than 0.1 Å from each other, indicating they may be the same "
+            "site, which will prevent complex defect generation!"
+        )
+
+    defect_struct = bulk_supercell.copy()
+
+    # matching ``pymatgen-analysis-defect`` ``get_supercell_structure()`` site placement:
+    for site in defect_dict["vacancy_sites"]:
+        vac_site = get_matching_site(site, bulk_supercell)
+        defect_struct.remove(vac_site)
+
+    for site in defect_dict["interstitial_sites"]:
+        defect_struct.insert(
+            0,
+            species=site.specie,
+            coords=site.frac_coords,
+        )
+
+    for site in defect_dict["substitution_sites"]:
+        bulk_site_idx = defect_struct.index(get_matching_site(site, bulk_supercell, anonymous=True))
+        defect_struct.remove_sites([bulk_site_idx])
+        defect_struct.insert(bulk_site_idx, species=site.specie, coords=site.frac_coords)
+
+    return defect_struct
 
 
 def doped_defect_from_pmg_defect(
