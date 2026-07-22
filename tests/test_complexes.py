@@ -21,11 +21,10 @@ from test_generation import _check_defect_entry
 from doped.complexes import (
     are_equivalent_molecules,
     classify_vacancy_geometry,
-    generate_complex_from_defect_sites,
     get_complex_defect_multiplicity,
     get_split_vacancies,
 )
-from doped.core import Interstitial, Vacancy, _get_oxi_state_modes
+from doped.core import Interstitial, Vacancy, _get_oxi_state_modes, defect_structure_from_sites
 from doped.generation import DefectsGenerator
 from doped.utils.parsing import get_matching_site
 from doped.utils.symmetry import (
@@ -146,7 +145,7 @@ class ComplexDefectGenerationTest(unittest.TestCase):
 
         # check they are all classified as split vacancies as expected:
         for split_vac_dict in list(self.Ga2O3_candidate_split_vacs.values()):
-            structure = generate_complex_from_defect_sites(
+            structure = defect_structure_from_sites(
                 self.Ga2O3_defect_gen.bulk_supercell,
                 vacancy_sites=[split_vac_dict["vacancy_1_site"], split_vac_dict["vacancy_2_site"]],
                 interstitial_sites=split_vac_dict["interstitial_site"],
@@ -157,9 +156,9 @@ class ComplexDefectGenerationTest(unittest.TestCase):
                 == "Split Vacancy"
             )
 
-    # def test_Ga2O3_generate_complex_from_defect_sites(self):
+    # def test_Ga2O3_defect_structure_from_sites(self):
     #     """
-    #     Test the ``generate_complex_from_defect_sites`` function, using R-3c
+    #     Test the ``defect_structure_from_sites`` function, using R-3c
     #     Ga2O3 as an example case.
     #     """
     #     # TODO
@@ -167,19 +166,19 @@ class ComplexDefectGenerationTest(unittest.TestCase):
 
     def test_complex_defect_same_site_warning(self):
         with warnings.catch_warnings(record=True) as w, pytest.raises(ValueError):
-            generate_complex_from_defect_sites(
+            defect_structure_from_sites(
                 self.Ga2O3_defect_gen.bulk_supercell,
                 vacancy_sites=[self.Ga2O3_defect_gen["v_Ga_-3"].defect_supercell_site],
                 substitution_sites=[self.Ga2O3_defect_gen["Si_Ga_+1"].defect_supercell_site],
             )
 
         assert any(
-            "Some input defect sites are less than 0.1 Å from each other" in str(warning.message)
+            "Some input defect sites are less than 0.1" in str(warning.message)  # no Å/Å codepoint issues
             for warning in w
         )
 
         with warnings.catch_warnings(record=True) as w:
-            generate_complex_from_defect_sites(
+            defect_structure_from_sites(
                 self.Ga2O3_defect_gen.bulk_supercell,
                 vacancy_sites=[self.Ga2O3_defect_gen["v_Ga_-3"].defect_supercell_site],
                 # using one of the equivalent sites here, to avoid placing V_Ga and Si_Ga at same site:
@@ -187,7 +186,7 @@ class ComplexDefectGenerationTest(unittest.TestCase):
             )
 
         assert not any(
-            "Some input defect sites are less than 0.1 Å from each other" in str(warning.message)
+            "Some input defect sites are less than 0.1" in str(warning.message)  # no Å/Å codepoint issues
             for warning in w
         )
 
@@ -338,7 +337,7 @@ class SymmetryMultiplicityTest(unittest.TestCase):
         ]
 
         for energy, subdict in ml_calculated_split_vac_dicts:
-            orig_split_vacancy = generate_complex_from_defect_sites(
+            orig_split_vacancy = defect_structure_from_sites(
                 info_dict["bulk_supercell"],
                 vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
                 interstitial_sites=[subdict["interstitial_site"]],
@@ -454,7 +453,7 @@ class SymmetryMultiplicityTest(unittest.TestCase):
         ]
 
         for energy, subdict in ml_calculated_split_vac_dicts:
-            orig_split_vacancy = generate_complex_from_defect_sites(
+            orig_split_vacancy = defect_structure_from_sites(
                 info_dict["bulk_supercell"],
                 vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
                 interstitial_sites=[subdict["interstitial_site"]],
@@ -594,7 +593,7 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                     ml_calculated_split_vac_dicts, min(10, len(ml_calculated_split_vac_dicts))
                 )
             for energy, subdict in ml_calculated_split_vac_dicts:
-                orig_split_vacancy = generate_complex_from_defect_sites(
+                orig_split_vacancy = defect_structure_from_sites(
                     info_dict["bulk_supercell"],
                     vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
                     interstitial_sites=[subdict["interstitial_site"]],

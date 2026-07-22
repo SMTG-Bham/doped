@@ -8,7 +8,7 @@ import warnings
 from collections.abc import Iterable
 from copy import deepcopy
 from functools import lru_cache
-from itertools import chain, combinations, product
+from itertools import combinations, product
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -26,7 +26,6 @@ from doped.utils.parsing import (
     get_matching_site,
 )
 from doped.utils.symmetry import (
-    get_distance_matrix,
     get_equiv_frac_coords_in_primitive,
     get_primitive_structure,
     is_periodic_image,
@@ -203,89 +202,6 @@ def _estimate_ES_time(num_candidates: int, cell_size: int) -> float:
         candidate structures, in seconds.
     """
     return 1.7e-5 * num_candidates * cell_size**2
-
-
-def generate_complex_from_defect_sites(
-    bulk_supercell: Structure,
-    vacancy_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
-    interstitial_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
-    substitution_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
-) -> Structure:
-    """
-    Generate the supercell containing a defect complex, given the bulk
-    supercell and the sites of the defects to be included in the complex.
-
-    The coordinates of the input defect sites should correspond to the input
-    bulk supercell. For substitutions, the closest site in the bulk supercell
-    to the supplied site(s) will be removed, and replaced with the input
-    ``substitution_sites``.
-
-    Args:
-        bulk_supercell (Structure):
-            The bulk supercell structure in which to generate the defect
-            complex.
-        vacancy_sites (Iterable[PeriodicSite] | PeriodicSite | None):
-            The site(s) of vacancies to include in the defect complex
-            supercell. Default is None.
-        interstitial_sites (Iterable[PeriodicSite] | PeriodicSite | None):
-            The site(s) of interstitials to include in the defect complex
-            supercell. Default is None.
-        substitution_sites (Iterable[PeriodicSite] | PeriodicSite | None):
-            The site(s) of substitutions to include in the defect complex
-            supercell. Default is None.
-
-    Returns:
-        Structure: The defect complex supercell structure.
-    """
-    # TODO: Combine with _create_unrelaxed_defect_structure, and just make it
-    #  create_defect_structure_from_sites?
-    defect_dict = {
-        "vacancy_sites": vacancy_sites or [],
-        "interstitial_sites": interstitial_sites or [],
-        "substitution_sites": substitution_sites or [],
-    }
-    for key, value in list(defect_dict.items()):
-        if isinstance(value, PeriodicSite):
-            defect_dict[key] = [value]  # convert to Iterable
-
-        if defect_dict[key] and (
-            not isinstance(defect_dict[key], Iterable)
-            or not isinstance(next(iter(defect_dict[key])), PeriodicSite)
-        ):
-            raise TypeError(
-                f"Defect sites input arguments must be a list, set, or tuple of defect sites. Got "
-                f"{type(defect_dict[key])} for {key}."
-            )
-
-    # check no sites are the same:
-    frac_coords = [site.frac_coords for site in chain.from_iterable(defect_dict.values())]
-    distance_matrix = get_distance_matrix(frac_coords, bulk_supercell.lattice)
-    np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
-    if np.min(distance_matrix) < 0.1:
-        warnings.warn(
-            "Some input defect sites are less than 0.1 Å from each other, indicating they may be the same "
-            "site, which will prevent complex defect generation!"
-        )
-
-    defect_struct = bulk_supercell.copy()
-
-    for site in defect_dict["vacancy_sites"]:
-        vac_site = get_matching_site(site, bulk_supercell)
-        defect_struct.remove(vac_site)
-
-    for site in defect_dict["interstitial_sites"]:
-        defect_struct.insert(
-            0,
-            species=site.specie,
-            coords=site.frac_coords,
-        )
-
-    for site in defect_dict["substitution_sites"]:
-        bulk_site_idx = defect_struct.index(get_matching_site(site, bulk_supercell, anonymous=True))
-        defect_struct.remove_sites([bulk_site_idx])
-        defect_struct.insert(bulk_site_idx, species=site.specie, coords=site.frac_coords)
-
-    return defect_struct
 
 
 def get_equivalent_complex_defect_sites_in_primitive(
