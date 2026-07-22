@@ -1164,6 +1164,8 @@ def get_min_dist_between_equiv_sites(
     site_1: PeriodicSite | Sequence[float] | Defect | DefectEntry,
     site_2: PeriodicSite | Sequence[float] | Defect | DefectEntry,
     structure: Structure | None = None,
+    structure_2: Structure | None = None,
+    strip_oxi_states: bool | None = None,
     symprec: float = 0.01,
     dist_tol_factor: float = 1.0,
     return_symprec_and_dist_tol_factor: bool = False,
@@ -1172,7 +1174,7 @@ def get_min_dist_between_equiv_sites(
 ) -> float | tuple[float, float, float]:
     """
     Get the minimum distance (in Å) between equivalent sites of two input
-    site/|Defect|/|DefectEntry| objects in a structure.
+    site/|Defect|/|DefectEntry| objects.
 
     Args:
         site_1 (|PeriodicSite| | Sequence[float, float, float] | |Defect| | |DefectEntry|):
@@ -1187,8 +1189,29 @@ def get_min_dist_between_equiv_sites(
             |Defect|/|DefectEntry| object.
         structure (|Structure|):
             |Structure| to use for determining symmetry-equivalent sites of
-            ``site_1`` and ``site_2``. Required if ``site_1`` and ``site_2``
-            are not |Defect| or |DefectEntry| objects. Default: None.
+            ``site_1`` (and ``site_2``, if ``structure_2`` is not set).
+            Required if ``site_1`` and ``site_2`` are not |Defect| or
+            |DefectEntry| objects. Default: None.
+        structure_2 (|Structure|):
+            Separate host |Structure| for ``site_2``, if the two sites are
+            potentially defined in different (but equivalent) host frames --
+            e.g. differently-oriented/-defined cells, primitive vs supercell
+            definitions, or differently oxi-state-decorated hosts. Each site
+            is then folded via its own host into a shared canonical primitive
+            cell (from ``get_primitive_structure``) for comparison, returning
+            ``np.inf`` if the two hosts do not correspond to matching primitive
+            structures. If ``None`` (default), taken from ``site_2`` if it is a
+            |Defect|/|DefectEntry| object, otherwise assumed to match
+            ``structure``.
+        strip_oxi_states (bool | None):
+            Whether to strip oxidation states from the host structure(s)
+            before symmetry analysis / host matching. If ``None`` (default),
+            oxidation states are only stripped when the two host structures
+            (``structure``/``structure_2``) have mismatching oxi-state
+            decorations (which can otherwise hinder host matching) -- so
+            consistently-decorated hosts retain any decoration-dependent
+            symmetry (e.g. inequivalent sites in mixed-valence hosts). Set to
+            ``True``/``False`` to always/never strip oxidation states.
         symprec (float):
             Symmetry precision to use for determining symmetry operations.
             Default is 0.01. If ``fixed_symprec_and_dist_tol_factor`` is
@@ -1244,6 +1267,11 @@ def get_min_dist_between_equiv_sites(
         raise ValueError(
             "Structure must be provided if site_1 and site_2 are not DefectEntry or Defect objects."
         )
+    if structure_2 is None:  # take ``site_2`` host if provided as a ``Defect``/``DefectEntry``:
+        if isinstance(site_2, DefectEntry):
+            structure_2 = site_2.defect.structure
+        elif isinstance(site_2, Defect):
+            structure_2 = site_2.structure
 
     def _parse_site_to_PeriodicSite(site):
         if isinstance(site, DefectEntry):
@@ -1261,12 +1289,39 @@ def get_min_dist_between_equiv_sites(
 
     primitive = get_primitive_structure(structure)
 
-    def _get_equiv_fcoords_symprec_and_dist_tol(site, symprec=symprec, dist_tol_factor=dist_tol_factor):
+    if strip_oxi_states is None:  # default: strip only when mismatching decorations
+        strip_oxi_states = structure_2 is not None and (
+            {str(sp) for sp in structure.composition} != {str(sp) for sp in structure_2.composition}
+        )  # compare based on species string sets; Composition equality is oxi-state-insensitive
+
+    if strip_oxi_states:
+        structure = structure.copy()
+        structure.remove_oxidation_states()
+        if structure_2 is not None:
+            structure_2 = structure_2.copy()
+            structure_2.remove_oxidation_states()
+        primitive = get_primitive_structure(structure)
+
+    if different_structures := structure_2 is not None and structure_2 != structure:
+        assert structure_2 is not None  # given ``different_structures``; for ``mypy``
+        # fold each site via its own host into a shared canonical primitive:
+        prim_2 = get_primitive_structure(structure_2)
+        if (  # fast-fail for clearly-different host crystals, before matching structures below
+            len(prim_2) != len(primitive)
+            or prim_2.composition.reduced_formula != primitive.composition.reduced_formula
+        ):
+            return (np.inf, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else np.inf
+    else:
+        structure_2 = structure
+
+    def _get_equiv_fcoords_symprec_and_dist_tol(
+        site, host_structure, symprec=symprec, dist_tol_factor=dist_tol_factor
+    ):
         frac_coords = _parse_site_to_frac_coords(site)
-        equiv_fcoords, symprec, dist_tol_factor = get_equiv_frac_coords_in_primitive(
+        return get_equiv_frac_coords_in_primitive(  # returns ``None`` if no mapping found
             frac_coords,
             primitive,
-            structure,
+            host_structure,
             symprec=symprec,
             dist_tol_factor=dist_tol_factor,
             return_symprec_and_dist_tol_factor=True,
@@ -1274,12 +1329,24 @@ def get_min_dist_between_equiv_sites(
             verbose=verbose,
         )
 
-        return equiv_fcoords, symprec, dist_tol_factor
+    with warnings.catch_warnings():
+        if different_structures:  # host equivalence not guaranteed; map failure -> ``inf`` (not an error):
+            warnings.filterwarnings("ignore", message="Could not find a mapping")
+        try:
+            output_1 = _get_equiv_fcoords_symprec_and_dist_tol(site_1, structure)
+            output_2 = _get_equiv_fcoords_symprec_and_dist_tol(site_2, structure_2) if output_1 else None
+        except RuntimeError:  # e.g. ``StructureMatcher.get_transformation()`` failure for similar but
+            if not different_structures:  # non-equivalent different host lattices
+                raise
+            output_1 = output_2 = None
 
-    equiv_fcoords_1, symprec, dist_tol_factor = _get_equiv_fcoords_symprec_and_dist_tol(site_1)
-    equiv_fcoords_2, symprec, dist_tol_factor = _get_equiv_fcoords_symprec_and_dist_tol(site_2)
+    if output_1 is None or output_2 is None:  # no mapping found between host structure(s) and primitive
+        min_dist = np.inf
+    else:
+        equiv_fcoords_1, symprec, dist_tol_factor = output_1
+        equiv_fcoords_2, symprec, dist_tol_factor = output_2
+        min_dist = np.min(primitive.lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
 
-    min_dist = np.min(primitive.lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
     return (min_dist, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else min_dist
 
 

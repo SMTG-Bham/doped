@@ -14,7 +14,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core, thermo, utils
 from pymatgen.core.bond_valence import BVAnalyzer
 from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
-from pymatgen.core.structure_matcher import ElementComparator, SpeciesComparator
+from pymatgen.core.structure_matcher import SpeciesComparator
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
@@ -2815,26 +2815,33 @@ class Defect(core.Defect):
         """
         Determine whether two |Defect| objects are equal.
 
-        Redefined from the parent method to be more robust (too loose ``stol``
-        used in ``pymatgen-analysis-defects``) and much more efficient.
+        Redefined from the parent method to be more robust and much more
+        efficient; comparing defects based on the (1) defect type, (2) defect
+        name, (3) host material (``structure``) and (4) the defect ``site``/s
+        (if they are equivalent (to within ``self.symprec`` Å; 0.01 Å by
+        default) and correspond to the same element).
+
+        Structures and sites are compared in their canonical primitive cell
+        representations, so equivalent defects defined in
+        differently-oriented/-defined host cells (e.g. primitive vs supercell
+        definitions, or differently oxi-state-decorated hosts) are recognised
+        as equal.
         """
         if not isinstance(other, type(self) | core.Defect):
             raise TypeError("Can only compare `Defect`s with `Defect`s!")
 
-        if self.defect_type != other.defect_type:
+        if self is other:
+            return True
+
+        if self.defect_type != other.defect_type or self.name != other.name:
             return False
 
-        return (
-            self is other
-            or hash(self) == hash(other)  # hash match sufficient for equality (-> same site and structure)
-            or StructureMatcher_scan_stol(
-                self.defect_structure,
-                other.defect_structure,
-                func_name="fit",
-                max_stol=0.2,
-                comparator=ElementComparator(),
-            )
-        )
+        if hash(self) == hash(other):
+            return True  # Defect hash match sufficient for equality (-> same name, site and structure)
+
+        from doped.utils.symmetry import get_min_dist_between_equiv_sites
+
+        return get_min_dist_between_equiv_sites(self, other, symprec=self.symprec) < self.symprec
 
     @cached_property
     def defect_site(self) -> PeriodicSite:
