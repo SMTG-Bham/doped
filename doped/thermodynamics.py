@@ -310,7 +310,7 @@ def group_defects_by_type_and_distance(
             A list of |DefectEntry| objects to group together based on type
             and distance between symmetry-equivalent sites.
         dist_tol (float):
-            Distance threshold (in Å) for clustering equivalent defect sites.
+            Distance threshold (in Å) for clustering equivalent defect sites.
             (Default: 1.5)
         symprec (float):
             Symmetry precision for finding equivalent sites in the bulk
@@ -386,7 +386,7 @@ def group_defects_by_distance(
         entry_list ([|DefectEntry|, ...]):
             A list of |DefectEntry| objects to group together.
         dist_tol (float):
-            Distance threshold (in Å) for clustering equivalent defect sites.
+            Distance threshold (in Å) for clustering equivalent defect sites.
             (Default: 1.5)
         symprec (float):
             Symmetry precision for finding equivalent sites in the bulk
@@ -446,7 +446,7 @@ def _group_defects_by_distance(
 
     # Clustering Workflow:
     # 1. Generate ``equiv_fcoords_entries_dict``: {(equiv defect sites): entry list}, initially joining
-    #    together any entries which are within min(0.05, dist_tol) Å of each other (i.e. (near-)exact
+    #    together any entries which are within min(0.05, dist_tol) Å of each other (i.e. (near-)exact
     #    matches).
     # 2. Cluster equivalent defect sites using ``cluster_coords`` with ``dist_tol``.
     # 3. Take unique clusters (of equivalent sites) and start with the largest (i.e. accounting for the
@@ -829,7 +829,7 @@ class DefectThermodynamics(MSONable):
                 ``calculation_metadata`` dict attributes of the |DefectEntry|
                 objects in ``defect_entries``.
             dist_tol (float):
-                Distance threshold (in Å) to use for clustering (equivalent)
+                Distance threshold (in Å) to use for clustering (equivalent)
                 defect sites (for plotting, transition level analysis and
                 defect concentration calculations; see ``plot()`` and
                 ``get_fermi_level_and_concentrations()`` for more information).
@@ -887,7 +887,7 @@ class DefectThermodynamics(MSONable):
             band_gap (float):
                 Band gap of the host, to use for analysis.
             dist_tol (float):
-                Distance threshold (in Å) to use for clustering (equivalent)
+                Distance threshold (in Å) to use for clustering (equivalent)
                 defect sites (for plotting, transition level analysis and
                 defect concentration calculations).
             transition_levels (dict):
@@ -1164,7 +1164,7 @@ class DefectThermodynamics(MSONable):
         Defect entries of the same type (e.g. ``Te_i``, ``v_Cd``) are grouped
         together (for plotting and transition level analysis) based on the
         minimum distance between (equivalent) defect sites, controlled by
-        ``dist_tol`` (1.5 Å by default), to distinguish between different
+        ``dist_tol`` (1.5 Å by default), to distinguish between different
         inequivalent sites. Each defect group is then named according to the
         most common name (without charge) for defects in that cluster, with
         shorter defect names (and lower energies) preferred if this is not a
@@ -1802,7 +1802,7 @@ class DefectThermodynamics(MSONable):
     @property
     def dist_tol(self):
         r"""
-        Distance threshold (in Å) to use for clustering (equivalent) defect
+        Distance threshold (in Å) to use for clustering (equivalent) defect
         sites (for plotting, transition level analysis and defect concentration
         calculations; see ``plot()`` and
         ``get_fermi_level_and_concentrations()`` for more information). See
@@ -1813,7 +1813,7 @@ class DefectThermodynamics(MSONable):
         these functions for greater control.
 
         With default settings, |DefectEntry|\s `of the same type` and with
-        distances between equivalent defect sites less than ``dist_tol`` (1.5 Å
+        distances between equivalent defect sites less than ``dist_tol`` (1.5 Å
         by default) are `mostly` grouped together. If a |DefectEntry|\'s site
         has a distance less than ``dist_tol`` to multiple sets of equivalent
         sites, then it should be matched to the one with the lowest minimum

@@ -74,7 +74,7 @@ def calc_site_displacements(
             given as vectors in Cartesian space).
         threshold (float):
             If the distance between a pair of matched sites is larger than
-            this, then a warning will be thrown. Default is 2.0 Å.
+            this, then a warning will be thrown. Default is 2.0 Å.
 
     Returns:
         ``pandas`` ``DataFrame`` with site displacements (compared to pristine
@@ -361,13 +361,13 @@ def plot_site_displacements(
                 **add_trace_kwargs,
             )
         layout_updates = {
-            "xaxis_title": "Distance to defect (\u212b)",
+            "xaxis_title": "Distance to defect (Å)",
             "yaxis_title": ylabel,
         }
         # Also update additional subplot axes when present (e.g. 1x2 or 1x3 layouts)
         for axis_num in (2, 3):
             if f"xaxis{axis_num}" in _fig.layout:
-                layout_updates[f"xaxis{axis_num}_title"] = "Distance to defect (\u212b)"
+                layout_updates[f"xaxis{axis_num}_title"] = "Distance to defect (Å)"
         _fig.update_layout(**layout_updates)
         return _fig
 
@@ -393,7 +393,7 @@ def plot_site_displacements(
         if relative_to_defect:
             fig = _plotly_plot_total_disp(
                 disp_type_key="Displacement wrt defect",
-                ylabel="Displacement wrt defect (\u212b)",
+                ylabel="Displacement wrt defect (Å)",
                 disp_df=disp_df,
                 fig=fig,
             )
@@ -411,7 +411,7 @@ def plot_site_displacements(
                 )
             fig = _plotly_plot_total_disp(
                 disp_type_key="Displacement projected along vector",
-                ylabel="Displacement (\u212b)",
+                ylabel="Displacement (Å)",
                 disp_df=disp_df,
                 fig=fig,
                 row=1,
@@ -420,7 +420,7 @@ def plot_site_displacements(
             )
             fig = _plotly_plot_total_disp(
                 disp_type_key="Absolute displacement perpendicular to vector",
-                ylabel="Displacement (\u212b)",
+                ylabel="Displacement (Å)",
                 disp_df=disp_df,
                 fig=fig,
                 row=1,
@@ -428,14 +428,12 @@ def plot_site_displacements(
                 hover_ylabel="|Perpendicular displacement|",
                 showlegend=False,  # don't duplicate legend
             )
-            fig.update_layout(
-                xaxis_title="Distance to defect (\u212b)", yaxis_title="Displacement (\u212b)"
-            )
+            fig.update_layout(xaxis_title="Distance to defect (Å)", yaxis_title="Displacement (Å)")
 
         elif not separated_by_direction:  # total displacement
             fig = _plotly_plot_total_disp(
                 disp_type_key="Displacement",
-                ylabel="Absolute displacement (\u212b)",
+                ylabel="Absolute displacement (Å)",
                 disp_df=disp_df,
                 fig=fig,
             )
@@ -471,7 +469,7 @@ def plot_site_displacements(
             ):
                 fig = _plotly_plot_total_disp(
                     disp_type_key=disp_key,
-                    ylabel="Displacement (\u212b)" if signed else "Absolute displacement (\u212b)",
+                    ylabel="Displacement (Å)" if signed else "Absolute displacement (Å)",
                     disp_df=disp_df,
                     fig=fig,
                     row=1,
@@ -985,7 +983,7 @@ def plot_displacements_ellipsoid(
             # Part 1: Displacement Distribution Box Plot
             axs[0].boxplot(disp_df["Displacement"], orientation="vertical", patch_artist=True)
             axs[0].set_title("Displacement Norm Distribution")
-            axs[0].set_ylabel("Displacement Norm (Å)")
+            axs[0].set_ylabel("Displacement Norm (Å)")
             axs[0].grid(False)
             axs[0].xaxis.set_visible(False)  # Hide x-axis labels for box plot
 
@@ -1003,10 +1001,10 @@ def plot_displacements_ellipsoid(
 
                 # Add colorbar
                 cbar = plt.colorbar(scatter, ax=axs[1])
-                cbar.set_label("Ellipsoid Maximum Radius (Å)")
+                cbar.set_label("Ellipsoid Maximum Radius (Å)")
 
                 # Set titles and labels
-                axs[1].set_title(f"Anisotropy (Threshold = {anisotropy_df['Threshold'].iloc[0]:.3f} Å)")
+                axs[1].set_title(f"Anisotropy (Threshold = {anisotropy_df['Threshold'].iloc[0]:.3f} Å)")
                 axs[1].set_xlabel("2nd-Largest Radius / Largest Radius")
                 axs[1].set_ylabel("Shortest Radius / Largest Radius")
                 axs[1].set_xlim([0, 1])
@@ -1022,7 +1020,7 @@ def plot_displacements_ellipsoid(
             cols=2,
             subplot_titles=[
                 "Displacement Norm Distribution",
-                f"Anisotropy (Threshold = {anisotropy_df['Threshold'].iloc[0]:.3f} Å)",
+                f"Anisotropy (Threshold = {anisotropy_df['Threshold'].iloc[0]:.3f} Å)",
             ],
             column_widths=[0.5, 0.5],
         )
@@ -1035,7 +1033,7 @@ def plot_displacements_ellipsoid(
         # Add frame to Displacement Distribution plot
         fig.update_xaxes(linecolor="black", linewidth=1, row=1, col=1, mirror=True)
         fig.update_yaxes(
-            title_text="Displacement Norm (Å)", linecolor="black", linewidth=1, row=1, col=1, mirror=True
+            title_text="Displacement Norm (Å)", linecolor="black", linewidth=1, row=1, col=1, mirror=True
         )
 
         # Part 2: Anisotropy Scatter Plot
@@ -1049,7 +1047,7 @@ def plot_displacements_ellipsoid(
                     "opacity": 0.5,
                     "color": anisotropy_df["Longest Radius"],  # set color according to column "a"
                     "colorscale": "rainbow",
-                    "colorbar": {"title": "Ellipsoid Maximum Radius (Å)", "titleside": "right"},
+                    "colorbar": {"title": "Ellipsoid Maximum Radius (Å)", "titleside": "right"},
                 },
                 text=anisotropy_df["Longest Radius"],
                 hoverinfo="text",

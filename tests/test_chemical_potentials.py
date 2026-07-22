@@ -575,7 +575,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert dict_set.incar["GGA"] == "Pe"
         with open(f"{ZrO2_EaH_0_std_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
-            assert "KPOINTS from doped, with reciprocal_density = 64.0/Å" in contents[0]
+            assert "KPOINTS from doped, with reciprocal_density = 64.0/Å" in contents[0]
             assert contents[3] == "4 4 4\n"
 
         with open(f"{ZrO2_EaH_0_std_folder}/POTCAR.spec", encoding="utf-8") as file:

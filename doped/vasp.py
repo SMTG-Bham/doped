@@ -120,7 +120,7 @@ class DopedKpoints(Kpoints):
     happen on some old HPCs/Linux systems.
 
     If an encoding error occurs upon file writing, then changes Γ to Gamma and
-    Å to Angstrom in the ``KPOINTS`` comment.
+    Å to Angstrom in the ``KPOINTS`` comment.
     """
 
     def __repr__(self):
@@ -134,7 +134,7 @@ class DopedKpoints(Kpoints):
             return super().__repr__()
 
         except UnicodeEncodeError:
-            self.comment = self.comment.replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
+            self.comment = self.comment.replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
             return super().__repr__()
 
 
@@ -349,7 +349,7 @@ class DopedDictSet(VaspInputSet):
         if kpt_density and all(i not in doped_kpoints.comment for i in ["doped", "ShakeNBreak"]):
             with contextlib.suppress(Exception):
                 assert np.prod(doped_kpoints.kpts[0])  # check if it's a kpoint mesh (not custom kpoints)
-                doped_kpoints.comment = f"KPOINTS from doped, with reciprocal_density = {kpt_density}/Å⁻³"
+                doped_kpoints.comment = f"KPOINTS from doped, with reciprocal_density = {kpt_density}/Å⁻³"
 
         elif all(i not in doped_kpoints.comment for i in ["doped", "ShakeNBreak"]):
             doped_kpoints.comment = "KPOINTS from doped"
@@ -580,7 +580,7 @@ class DefectDictSet(DopedDictSet):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 ``VaspInputSet`` format) e.g., ``{"reciprocal_density": 123}``,
                 or a ``Kpoints`` object. Default is Gamma-centred,
-                ``reciprocal_density = 100`` [kpoints/Å⁻³].
+                ``reciprocal_density = 100`` [kpoints/Å⁻³].
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is "PBE" and if this
                 fails, tries "PBE_52", then "PBE_54".
@@ -805,7 +805,7 @@ class DefectRelaxSet(MSONable):
                 or a ``Kpoints`` object, to use for the ``vasp_std``,
                 ``vasp_nkred_std`` and ``vasp_ncl`` ``DefectDictSet``\s (Γ-only
                 for ``vasp_gam``). Default is Gamma-centred,
-                ``reciprocal_density = 100`` [kpoints/Å⁻³].
+                ``reciprocal_density = 100`` [kpoints/Å⁻³].
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is "PBE" and if this
                 fails, tries "PBE_52", then "PBE_54".
@@ -994,7 +994,7 @@ class DefectRelaxSet(MSONable):
         if vasp_std is None and (warn or info):
             current_kpoint_settings = (
                 self.user_kpoints_settings
-                or "default `reciprocal_density = 100` [kpoints/Å⁻³] (see doped/VASP_sets/RelaxSet.yaml)"
+                or "default `reciprocal_density = 100` [kpoints/Å⁻³] (see doped/VASP_sets/RelaxSet.yaml)"
             )
             info_message = (
                 f"With the current kpoint settings ({current_kpoint_settings}), the k-point "
@@ -2282,7 +2282,7 @@ class DefectsSet(MSONable):
                 or a ``Kpoints`` object, to use for the ``vasp_std``,
                 ``vasp_nkred_std`` and ``vasp_ncl`` ``DefectDictSet``\s (Γ-only
                 for ``vasp_gam``). Default is Gamma-centred,
-                ``reciprocal_density = 100`` [kpoints/Å⁻³].
+                ``reciprocal_density = 100`` [kpoints/Å⁻³].
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is "PBE" and if this
                 fails, tries "PBE_52", then "PBE_54".

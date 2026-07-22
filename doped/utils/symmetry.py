@@ -145,7 +145,7 @@ def _get_num_places_for_dist_precision(
     """
     Given a structure or lattice, get the number of decimal places that we need
     to keep / can round to for `fractional coordinates` (``frac_coords``), to
-    maintain a distance precision of ``dist_precision`` in Å.
+    maintain a distance precision of ``dist_precision`` in Å.
 
     Intended for use with the ``_round_floats()`` function, to achieve cleanly
     formatted structure outputs while ensuring no significant rounding errors
@@ -156,7 +156,7 @@ def _get_num_places_for_dist_precision(
         structure (|Structure| | |Lattice|):
             The input structure or lattice.
         dist_precision (float):
-            The desired distance precision in Å (default: 0.001).
+            The desired distance precision in Å (default: 0.001).
 
     Returns:
         int:
@@ -182,7 +182,7 @@ def _round_struct_coords(structure: Structure, dist_precision: float = 0.001, to
         structure:
             The input structure.
         dist_precision:
-            The desired distance precision in Å (default: 0.001).
+            The desired distance precision in Å (default: 0.001).
         to_unit_cell:
             Whether to round the fractional coordinates to the unit cell
             (default: False).
@@ -472,7 +472,7 @@ def summed_dist(
 ) -> float:
     """
     Get the summed distance between closest-matched sites of two structures, in
-    Å.
+    Å.
 
     Note that this assumes the lattices of the two structures are equal!
 
@@ -485,7 +485,7 @@ def summed_dist(
 
     Returns:
         float:
-            The summed distance between the sites of the two structures, in Å.
+            The summed distance between the sites of the two structures, in Å.
     """
     # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
     # (though this assumes lattices are equal)
@@ -548,7 +548,7 @@ def cluster_coords(
 
     ``method`` chooses the clustering algorithm to use with ``linkage()``
     (``"single"`` by default, matching the ``scipy`` default), along with a
-    ``dist_tol`` distance tolerance in Å. ``"single"`` corresponds to the
+    ``dist_tol`` distance tolerance in Å. ``"single"`` corresponds to the
     Nearest Point algorithm and is the recommended choice for ``method`` when
     ``dist_tol`` is small, but can be sensitive to how many fractional
     coordinates are included in ``fcoords`` (allowing for daisy-chaining of
@@ -567,7 +567,7 @@ def cluster_coords(
             |Structure| or |Lattice| to which the fractional coordinates
             correspond.
         dist_tol (float):
-            Distance tolerance for clustering, in Å (default: 0.01). For the
+            Distance tolerance for clustering, in Å (default: 0.01). For the
             most part, fractional coordinates with distances less than this
             tolerance will be clustered together (when ``method = "single"``,
             giving the Nearest Point algorithm, as is the default).
@@ -776,7 +776,7 @@ def get_all_equiv_sites(
         dist_tol_factor (float):
             Distance tolerance for clustering generated sites (to ensure they
             are truly distinct), as a multiplicative factor of ``symprec``.
-            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
+            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
             ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
             value will also be automatically adjusted if necessary (up to 10x,
             down to 0.1x)(after ``symprec`` adjustments) until the identified
@@ -1120,7 +1120,7 @@ def cluster_sites_by_dist_tol(
         structure (|Structure| | |Lattice|):
             |Structure| or |Lattice| to which the sites correspond.
         dist_tol (float):
-            Distance tolerance for clustering, in Å (default: 0.01).
+            Distance tolerance for clustering, in Å (default: 0.01).
         method (str):
             Clustering algorithm to use with ``scipy``\'s ``linkage()``
             clustering function in ``cluster_coords``. Default is ``"single"``,
@@ -1173,7 +1173,7 @@ def get_min_dist_between_equiv_sites(
     verbose: bool = False,
 ) -> float | tuple[float, float, float]:
     """
-    Get the minimum distance (in Å) between equivalent sites of two input
+    Get the minimum distance (in Å) between equivalent sites of two input
     site/|Defect|/|DefectEntry| objects.
 
     Args:
@@ -1226,7 +1226,7 @@ def get_min_dist_between_equiv_sites(
         dist_tol_factor (float):
             Distance tolerance for clustering generated sites (to ensure they
             are truly distinct), as a multiplicative factor of ``symprec``.
-            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
+            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
             ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
             value will also be automatically adjusted if necessary (up to 10x,
             down to 0.1x)(after ``symprec`` adjustments) until the identified
@@ -1252,7 +1252,7 @@ def get_min_dist_between_equiv_sites(
 
     Returns:
         float | tuple[float, float, float]:
-            Minimum distance (in Å) between equivalent sites of ``site_1``
+            Minimum distance (in Å) between equivalent sites of ``site_1``
             and ``site_2``, or a tuple of  (minimum distance, ``symprec``,
             ``dist_tol_factor``) if ``return_symprec_and_dist_tol_factor`` is
             ``True``.
@@ -1549,7 +1549,7 @@ def get_equiv_frac_coords_in_primitive(
         dist_tol_factor (float):
             Distance tolerance for clustering generated sites (to ensure they
             are truly distinct), as a multiplicative factor of ``symprec``.
-            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
+            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
             ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
             value will also be automatically adjusted if necessary (up to 10x,
             down to 0.1x)(after ``symprec`` adjustments) until the identified
@@ -2206,7 +2206,7 @@ def get_clean_structure(
             structure lattice to the new structure lattice (T * Orig = New).
             (Default = False)
         dist_precision (float):
-            The desired distance precision in Å for rounding of lattice
+            The desired distance precision in Å for rounding of lattice
             parameters and fractional coordinates. (Default: 0.001)
         niggli_reduce (bool):
             Whether to Niggli reduce the lattice before searching for the

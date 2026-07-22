@@ -995,7 +995,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             atol=1e-3,
         )
 
-        # get indices of sites within 3 Å of the defect site when projected along the _a_ lattice vector
+        # get indices of sites within 3 Å of the defect site when projected along the _a_ lattice vector
         # (inter-layer direction in our supercell)
         sites_within_3A = [
             i
@@ -2720,8 +2720,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 _print_warning_info(w)  # for debugging
                 if stdev >= 0.4:  # average displacement is roughly 1.6 * stdev
                     assert (
-                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
-                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
+                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
+                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
                     ) in str(w[-1].message)
                 rattled_relaxed_defect_coords = (
                     rattled_defect_supercell[
@@ -2802,8 +2802,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 _print_warning_info(w)  # for debugging
                 if stdev >= 0.4:  # average displacement is roughly 1.6 * stdev
                     assert (
-                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
-                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
+                        "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
+                        ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
                     ) in str(w[-1].message)
                 assert np.allclose(
                     defect_site_in_bulk.frac_coords,
@@ -4235,7 +4235,7 @@ def test_guess_defect_position_with_bulk_supercell():
     Se_i = Structure.from_file(os.path.join(Se_EXAMPLE_DIR, "Se_i_C2_0_20Å_Stenciled_POSCAR"))
     guess_no_bulk = guess_defect_position(Se_i)
     guess_with_bulk = guess_defect_position(Se_i, bulk_supercell=bulk)
-    assert np.linalg.norm(guess_no_bulk - guess_with_bulk) < 0.5  # with 0.5 Å of each other
+    assert np.linalg.norm(guess_no_bulk - guess_with_bulk) < 0.5  # with 0.5 Å of each other
 
     # (3) Extrinsic interstitial F_i_C2_1: single F site, so the short-circuit should return its exact
     # coordinates in both cases:

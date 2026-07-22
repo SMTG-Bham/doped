@@ -1364,7 +1364,7 @@ class DefectsParser:
                 ``calculation_metadata`` dict attributes of the parsed
                 |DefectEntry| objects.
             dist_tol (float):
-                Threshold for the closest distance (in Å) between equivalent
+                Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
                 to be grouped together (for plotting, transition level analysis
                 and defect concentration calculations). For the most part, if

@@ -205,7 +205,7 @@ def _validate_stenciled_supercell(
         bulk_supercell=corresponding_bulk,
         defect_supercell=stenciled_supercell,
         defect_coords=stenciled_defect_frac_coords,
-        displacement_tol=0.25,  # less than 0.25 Å displacement from bulk site, outside of defect WZ region
+        displacement_tol=0.25,  # less than 0.25 Å displacement from bulk site, outside of defect WZ region
     )
 
     # 5. Defect nearest-neighbour distances preserved:
@@ -247,7 +247,7 @@ class DefectStencilingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.Se_example_dir = os.path.join(EXAMPLE_DIR, "Se")
-        cls.Se_20A_bulk_supercell = Structure.from_file(f"{cls.Se_example_dir}/Se_20Å_Supercell_POSCAR")
+        cls.Se_20A_bulk_supercell = Structure.from_file(f"{cls.Se_example_dir}/Se_20Å_Supercell_POSCAR")
         cls.Se_222_expanded_supercell = Structure.from_file(
             f"{cls.Se_example_dir}/Se_222_Expanded_Supercell_POSCAR"
         )
@@ -297,10 +297,10 @@ class DefectStencilingTest(unittest.TestCase):
                 Target supercell for stenciling.
             test_files_tag (str):
                 Substring to identify reference POSCAR files (e.g.
-                ``"20Å_Stenciled"``).
+                ``"20Å_Stenciled"``).
             name_split_tag (str):
                 String used to split the filename to recover the defect name
-                (e.g. ``"_20Å"``).
+                (e.g. ``"_20Å"``).
             get_input_fn (callable | None):
                 Maps a ``DefectEntry`` to the first argument of
                 ``get_defect_in_supercell`` (allowing easy switching between
@@ -348,29 +348,29 @@ class DefectStencilingTest(unittest.TestCase):
 
     def test_Se_20_A_supercell(self):
         """
-        Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
-        supercell to a 20.5 x 20.0 x 20.3 Å 234-atom Se supercell.
+        Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
+        supercell to a 20.5 x 20.0 x 20.3 Å 234-atom Se supercell.
 
         234-atom supercell was generated from
         ``DefectsGenerator(prim_Se, supercell_gen_kwargs={"min_dist":20})``.
         These supercells were explicitly tested by performing hybrid DFT
         relaxations and comparing to directly-generated defects (see
         https://doi.org/10.1039/D4EE04647A). Note: previously we got
-        non-tile-matching supercells for this 20Å target_supercell (raising
+        non-tile-matching supercells for this 20Å target_supercell (raising
         "Note that the atomic position basis..." warnings), but updated
         pre-stenciling re-orientation now returns tile-matching supercells.
         """
         # Note: Direct structure comparisons are the most sensitive tests here, and can break with
         # updated edge-site handling -- which may be fine if _validate_stenciled_supercell passes.
-        # stenciled.to(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")  # update refs
+        # stenciled.to(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")  # update refs
 
         def reference_fn(name, stenciled):
-            reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
+            reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
             # faster with ``primitive_cell=False`` when primitive reduction not possible:
             assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit", primitive_cell=False)
 
         self._run_stenciling_loop(
-            self.Se_20A_bulk_supercell, "20Å_Stenciled", "_20Å", reference_fn=reference_fn
+            self.Se_20A_bulk_supercell, "20Å_Stenciled", "_20Å", reference_fn=reference_fn
         )
 
     def test_Se_20_A_supercell_structure_tuple_input(self):
@@ -381,14 +381,14 @@ class DefectStencilingTest(unittest.TestCase):
         """
 
         def reference_fn(name, stenciled):
-            reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
+            reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
             # faster with ``primitive_cell=False`` when primitive reduction not possible:
             assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit", primitive_cell=False)
 
         self._run_stenciling_loop(
             self.Se_20A_bulk_supercell,
-            "20Å_Stenciled",
-            "_20Å",
+            "20Å_Stenciled",
+            "_20Å",
             get_input_fn=lambda de: (de.defect_supercell, de.bulk_supercell),
             reference_fn=reference_fn,
         )
@@ -402,14 +402,14 @@ class DefectStencilingTest(unittest.TestCase):
         """
 
         def reference_fn(name, stenciled):
-            reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
+            reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
             # faster with ``primitive_cell=False`` when primitive reduction not possible:
             assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit", primitive_cell=False)
 
         self._run_stenciling_loop(
             self.Se_20A_bulk_supercell,
-            "20Å_Stenciled",
-            "_20Å",
+            "20Å_Stenciled",
+            "_20Å",
             get_input_fn=lambda de: (
                 de.defect_supercell,
                 de.bulk_supercell,
@@ -420,8 +420,8 @@ class DefectStencilingTest(unittest.TestCase):
 
     def test_Se_222_expanded_supercell(self):
         """
-        Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
-        supercell to a 2x2x2 expansion of this cell; 26.0 x 26.0 x 29.8 Å
+        Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
+        supercell to a 2x2x2 expansion of this cell; 26.0 x 26.0 x 29.8 Å
         648-atom supercell.
 
         These supercells were explicitly tested by performing hybrid DFT
@@ -469,8 +469,8 @@ class DefectStencilingTest(unittest.TestCase):
                         defect_entry, self.Se_20A_bulk_supercell, min_dist_tol_factor_range=0.99
                     )
                 assert (
-                    "Minimum interatomic distance (2.09 \u212b) near the edge (within 3.80 \u212b) of "
-                    "the target cell is less than the minimum distance tolerance (2.34 \u212b), "
+                    "Minimum interatomic distance (2.09 Å) near the edge (within 3.80 Å) of "
+                    "the target cell is less than the minimum distance tolerance (2.34 Å), "
                     "indicating a fatal issue with the stenciling process. Aborting" in str(exc.value)
                 )
                 # the successful stenciling of this defect entry is tested in ``test_Se_20_A_supercell``
@@ -482,8 +482,8 @@ class DefectStencilingTest(unittest.TestCase):
                 _print_warning_info(w)
                 assert any(
                     "Note that the generated stenciled structure has a minimum interatomic distance of "
-                    "2.13 Å near the cell edge (within 2.36 Å), smaller than the warning threshold (0.99 "
-                    "of the bulk minimum interatomic distance (2.36 Å) = 2.34 Å). Some remnant "
+                    "2.13 Å near the cell edge (within 2.36 Å), smaller than the warning threshold (0.99 "
+                    "of the bulk minimum interatomic distance (2.36 Å) = 2.34 Å). Some remnant "
                     "structural noise is of course expected when stenciling with relatively small "
                     "original/target supercells, so consider if this is reasonable for your system!"
                     in str(warning.message)
@@ -602,8 +602,8 @@ class DefectStencilingTest(unittest.TestCase):
         Test stenciling with ``Mg_O_+2``; previously a failure case (issues
         with target composition handling).
 
-        Example MgO data is from a cubic 12 Å cell (90° angles), while this
-        uses a FCC-like 12 Å cell with ~62.5° angles as the stenciling target,
+        Example MgO data is from a cubic 12 Å cell (90° angles), while this
+        uses a FCC-like 12 Å cell with ~62.5° angles as the stenciling target,
         which also has a different volume per atom!
         """
         from doped.generation import get_ideal_supercell_matrix
@@ -631,7 +631,7 @@ class DefectStencilingTest(unittest.TestCase):
     def test_stenciling_displacement_plot_Mg_O_plus2_smaller_target(self):
         """
         Test stenciling with ``Mg_O_+2``; now using a target supercell which is
-        smaller (10 Å min image distance) than the original 12 Å cubic
+        smaller (10 Å min image distance) than the original 12 Å cubic
         supercell.
         """
         from doped.generation import get_ideal_supercell_matrix

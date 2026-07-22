@@ -110,7 +110,7 @@ class DefectDictSetTest(unittest.TestCase):
             "AEXX": 0.25,  # changed for HSE(a); HSE06 assumed by default
             "HFSCREEN": 0.208,  # # correct HSE screening parameter; changed for PBE0
         }
-        self.doped_std_kpoint_comment = "KPOINTS from doped, with reciprocal_density = 100/Å⁻³"
+        self.doped_std_kpoint_comment = "KPOINTS from doped, with reciprocal_density = 100/Å⁻³"
         self.doped_gam_kpoint_comment = "Γ-only KPOINTS from doped"
 
     def tearDown(self):
@@ -289,7 +289,7 @@ class DefectDictSetTest(unittest.TestCase):
 
     def test_neutral_defect_dict_set(self):
         dds = self._generate_and_check_dds(self.prim_cdte.copy())  # fine for bulk prim input as well
-        # reciprocal_density = 100/Å⁻³ for prim CdTe:
+        # reciprocal_density = 100/Å⁻³ for prim CdTe:
         self.kpts_nelect_nupdown_check(dds, 7, 18, 0)
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
@@ -297,7 +297,7 @@ class DefectDictSetTest(unittest.TestCase):
 
         defect_entry = self.CdTe_defect_gen["Te_Cd_0"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell)
-        # reciprocal_density = 100/Å⁻³ for CdTe supercell:
+        # reciprocal_density = 100/Å⁻³ for CdTe supercell:
         self.kpts_nelect_nupdown_check(dds, 2, 480, 0)
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, potcar_spec=True)
@@ -305,19 +305,19 @@ class DefectDictSetTest(unittest.TestCase):
 
     def test_charged_defect_incar(self):
         dds = self._generate_and_check_dds(self.prim_cdte.copy(), charge_state=1)  # fine w/bulk prim
-        self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # 100/Å⁻³ for prim CdTe
+        self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # 100/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
 
         defect_entry = self.CdTe_defect_gen["Te_Cd_0"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
-        self.kpts_nelect_nupdown_check(dds, 2, 482, 0)  # 100/Å⁻³ for CdTe supercell
+        self.kpts_nelect_nupdown_check(dds, 2, 482, 0)  # 100/Å⁻³ for CdTe supercell
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
 
         defect_entry = self.CdTe_defect_gen["Te_Cd_-2"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
-        self.kpts_nelect_nupdown_check(dds, 2, 482, 0)  # 100/Å⁻³ for CdTe supercell
+        self.kpts_nelect_nupdown_check(dds, 2, 482, 0)  # 100/Å⁻³ for CdTe supercell
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
 
@@ -347,7 +347,7 @@ class DefectDictSetTest(unittest.TestCase):
             charge_state=1,
             user_incar_settings=user_incar_settings,
         )
-        self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # reciprocal_density = 100/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
 
@@ -364,7 +364,7 @@ class DefectDictSetTest(unittest.TestCase):
             charge_state=10,
             user_incar_settings={"LHFCALC": False},
         )
-        self.kpts_nelect_nupdown_check(gga_dds, 7, 8, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
+        self.kpts_nelect_nupdown_check(gga_dds, 7, 8, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
 
@@ -399,7 +399,7 @@ class DefectDictSetTest(unittest.TestCase):
         )
         assert dds.incar["KPAR"] == 1  # converted to int without comment in pymatgen>=2026
 
-        self.kpts_nelect_nupdown_check(dds, 1, 18, 0)  # reciprocal_density = 1/Å⁻³ for prim CdTe
+        self.kpts_nelect_nupdown_check(dds, 1, 18, 0)  # reciprocal_density = 1/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
 
@@ -473,7 +473,7 @@ class DefectDictSetTest(unittest.TestCase):
             self._write_and_check_dds_files(dds, potcar_spec=True)  # can only test potcar_spec w/neutral
             self._write_and_check_dds_files(dds, poscar=False)
         self.kpts_nelect_nupdown_check(dds, [(2, 2, 1)], 1584, 0)
-        # reciprocal_density = 100/Å⁻³ for YTOS
+        # reciprocal_density = 100/Å⁻³ for YTOS
 
         if not _potcars_available():
             for test_warning_message in [
@@ -485,7 +485,7 @@ class DefectDictSetTest(unittest.TestCase):
         # check changing charge state
         dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy(), charge_state=1)
         self.kpts_nelect_nupdown_check(dds, [(2, 2, 1)], 1583, 1)
-        # reciprocal_density = 100/Å⁻³ for YTOS
+        # reciprocal_density = 100/Å⁻³ for YTOS
         self._write_and_check_dds_files(dds, output_path="YTOS_test_dir")
         self._write_and_check_dds_files(dds, poscar=False)
 
@@ -1302,7 +1302,7 @@ class DefectsSetTest(unittest.TestCase):
             test_kpoints = Kpoints.from_file(f"{data_dir}/{folder}/{vasp_type}/KPOINTS")
             kpoints = Kpoints.from_file(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS")
             if ascii_encoding:
-                test_kpoints.comment = test_kpoints.comment.replace("Å⁻³", "Angstrom^(-3)").replace(
+                test_kpoints.comment = test_kpoints.comment.replace("Å⁻³", "Angstrom^(-3)").replace(
                     "Γ", "Gamma"
                 )
 
@@ -1641,7 +1641,7 @@ class DefectsSetTest(unittest.TestCase):
             with open(f"{folder_name}/KPOINTS", encoding="utf-8") as f:
                 kpoints_lines = f.readlines()
             if "gam" not in folder_name:
-                assert kpoints_lines[0] == "KPOINTS from doped, with reciprocal_density = 100/Å⁻³\n"
+                assert kpoints_lines[0] == "KPOINTS from doped, with reciprocal_density = 100/Å⁻³\n"
                 assert kpoints_lines[3] == "2 2 2\n"
             else:
                 assert kpoints_lines[0] == "Γ-only KPOINTS from doped\n"

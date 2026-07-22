@@ -1496,7 +1496,7 @@ class DefectEntry(thermo.DefectEntry):
         V_O in SrTiO3, returns the site concentration of (symmetry-equivalent)
         oxygen atoms in SrTiO3).
         """
-        volume_in_cm3 = self.defect.volume * 1e-24  # convert volume in Å^3 to cm^3
+        volume_in_cm3 = self.defect.volume * 1e-24  # convert volume in Å^3 to cm^3
         return self.defect.multiplicity / volume_in_cm3
 
     def __repr__(self):
@@ -2533,7 +2533,7 @@ class Defect(core.Defect):
                 Dummy species to highlight the defect position (for visualizing
                 vacancies).
             min_image_distance (float):
-                Minimum image distance in Å of the generated supercell (i.e.
+                Minimum image distance in Å of the generated supercell (i.e.
                 minimum distance between periodic images of atoms/sites in the
                 lattice), if ``sc_mat`` is None.
                 (Default = 10.0)
@@ -2756,7 +2756,7 @@ class Defect(core.Defect):
                 Distance tolerance for clustering generated sites (to ensure
                 they are truly distinct), as a multiplicative factor of
                 ``symprec``. Default is 1.0 (i.e. ``dist_tol = symprec``, in
-                Å). If ``fixed_symprec_and_dist_tol_factor`` is ``False``
+                Å). If ``fixed_symprec_and_dist_tol_factor`` is ``False``
                 (default), this value will also be automatically adjusted if
                 necessary (up to 10x, down to 0.1x)(after ``symprec``
                 adjustments) until the identified equivalent sites from
