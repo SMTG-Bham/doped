@@ -31,7 +31,6 @@ from doped.core import Defect, DefectEntry, guess_and_set_oxi_states_with_timeou
 from doped.generation import (
     get_defect_name_from_defect,
     get_defect_name_from_entry,
-    get_interstitial_sites,
     name_defect_entries,
     sort_defect_entries,
 )
@@ -58,6 +57,7 @@ from doped.utils.parsing import (
     _get_calc_files_df,
     _get_defect_supercell_frac_coords,
     _get_output_files_and_check_if_multiple,
+    _guess_initial_defect_structure,
     _multiple_files_warning,
     _vasp_file_parsing_action_dict,
     check_atom_mapping_far_from_defect,
@@ -290,30 +290,16 @@ def defect_site_from_structures(
         return defect_site
 
     # for interstitials, we define the site-in-bulk (unrelaxed site) as the closest candidate interstitial
-    # site in the bulk supercell, to the relaxed site (in the defect supercell):
-    guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
-    if defect_type == "interstitial":
-        # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
-        # settings) to the relaxed interstitial site, as this is likely the _initial_ interstitial site
-        int_site = guessed_initial_defect_structure.pop(defect_site_index)
-        int_gen_kwargs: dict[str, Any] = {"min_dist": 0.5} if int_site.species_string == "H" else {}
-        sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
-        _, _, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
-        all_equiv_fpos = [fpos for equiv in equiv_fpos for fpos in equiv]
-        closest_cand_int_fcoords = all_equiv_fpos[  # closest candidate interstitial frac coords
-            np.argmin(bulk_supercell.lattice.get_all_distances(defect_site.frac_coords, all_equiv_fpos))
-        ]
-        guessed_initial_defect_structure.insert(
-            defect_site_index,  # Place defect at same position as in supercell calculation
-            int_site.species_string,
-            closest_cand_int_fcoords,
-            coords_are_cartesian=False,
-            validate_proximity=True,
-        )
-        # if guessed initial site is sufficiently close to the relaxed site, then use it as
-        # "defect_site_in_bulk", otherwise use the relaxed site:
-        if defect_site_in_bulk.distance_and_image_from_frac_coords(closest_cand_int_fcoords)[0] < 1:
-            defect_site_in_bulk = guessed_initial_defect_structure[defect_site_index]
+    # site in the bulk supercell (if within 1 Å, otherwise kept as the relaxed site), to the relaxed site
+    # (in the defect supercell), and use this for the ``guessed_initial_defect_structure``:
+    guessed_initial_defect_structure, defect_site_in_bulk = _guess_initial_defect_structure(
+        unrelaxed_defect_structure,
+        bulk_supercell,
+        defect_type,
+        defect_site,
+        defect_site_in_bulk,
+        defect_site_index,
+    )
 
     return (
         defect_site,

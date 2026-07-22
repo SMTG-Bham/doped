@@ -826,6 +826,118 @@ def get_matching_site(
     return closest_site
 
 
+def _create_unrelaxed_defect_structure(
+    defect_supercell: Structure,
+    bulk_supercell: Structure,
+    defect_site_idx: int | None = None,
+    bulk_site_idx: int | None = None,
+    defect_coords: bool = False,
+) -> Structure:
+    """
+    Create the unrelaxed defect structure, which corresponds to the bulk
+    supercell with the `"unrelaxed"` defect site.
+
+    The unrelaxed defect site corresponds to the vacancy/substitution site in
+    the pristine (bulk) supercell for vacancies/substitutions, and the
+    `relaxed` interstitial site for interstitials (as the assignment of their
+    initial site is ambiguous).
+
+    Args:
+        defect_supercell (Structure):
+            The defect structure.
+        bulk_supercell (Structure):
+            The bulk structure.
+        defect_site_idx (int):
+            The index of the defect site to use in the `"unreleaxed"` defect
+            structure. Just for consistency with the relaxed defect structure.
+        bulk_site_idx (int):
+            The index of the site in the bulk structure that corresponds to the
+            defect site in the defect structure.
+        defect_coords (bool):
+            Whether to use the fractional coordinates of the defect site in the
+            defect structure, or the bulk structure. Irrelevant for vacancies.
+            Parent functions in ``doped`` use ``True`` for interstitials, and
+            ``False`` for substitutions (i.e. use bulk site coords).
+
+    Returns:
+        Structure:
+            The `"unrelaxed"` defect structure.
+    """
+    unrelaxed_defect_structure = bulk_supercell.copy()  # create unrelaxed defect structure
+
+    if bulk_site_idx is not None:
+        unrelaxed_defect_structure.remove_sites([bulk_site_idx])
+
+    if defect_site_idx is not None:
+        defect_site_in_defect = defect_supercell[defect_site_idx]
+        if not defect_coords and bulk_site_idx is not None:
+            defect_coords = bulk_supercell[bulk_site_idx].frac_coords
+        else:
+            defect_coords = defect_site_in_defect.frac_coords
+
+        unrelaxed_defect_structure.insert(defect_site_idx, defect_site_in_defect.species, defect_coords)
+
+    return unrelaxed_defect_structure
+
+
+def _guess_initial_defect_structure(
+    unrelaxed_defect_structure: Structure,
+    bulk_supercell: Structure,
+    defect_type: str,
+    defect_site: PeriodicSite,
+    defect_site_in_bulk: PeriodicSite,
+    defect_site_index: int | None,
+) -> tuple[Structure, PeriodicSite]:
+    """
+    Guess the initial defect structure, corresponding to
+    ``unrelaxed_defect_structure`` but with interstitials placed at the closest
+    candidate interstitial site in the bulk supercell (based on default
+    ``doped`` interstitial generation settings) to the relaxed interstitial
+    site -- as this is likely the `initial` interstitial site.
+
+    ``defect_site_in_bulk`` is updated to this guessed initial site if it is
+    within 1 Å of the relaxed site, otherwise left unchanged (the relaxed
+    site). For vacancies/substitutions, just returns a copy of
+    ``unrelaxed_defect_structure`` and the unchanged ``defect_site_in_bulk``.
+
+    Returns:
+        tuple[Structure, PeriodicSite]:
+            The guessed initial defect structure, and the (possibly updated)
+            ``defect_site_in_bulk``.
+    """
+    guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
+    if defect_type != "interstitial":
+        return guessed_initial_defect_structure, defect_site_in_bulk
+
+    from doped.generation import get_interstitial_sites
+
+    # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
+    # settings) to the relaxed interstitial site, as this is likely the _initial_ interstitial site
+    int_site = guessed_initial_defect_structure.pop(defect_site_index)
+    int_gen_kwargs: dict[str, Any] = {"min_dist": 0.5} if int_site.species_string == "H" else {}
+    all_equiv_fpos = [  # all candidate interstitial frac coords in the bulk supercell
+        fpos
+        for *_, equiv_fpos in get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
+        for fpos in equiv_fpos
+    ]
+    closest_cand_int_fcoords = all_equiv_fpos[  # closest candidate interstitial frac coords
+        np.argmin(bulk_supercell.lattice.get_all_distances(defect_site.frac_coords, all_equiv_fpos))
+    ]
+    guessed_initial_defect_structure.insert(
+        defect_site_index,  # place defect at same position as in supercell calculation
+        int_site.species_string,
+        closest_cand_int_fcoords,
+        coords_are_cartesian=False,
+        validate_proximity=True,
+    )
+    # if guessed initial site is sufficiently close to the relaxed site, then use it as
+    # "defect_site_in_bulk", otherwise use the relaxed site:
+    if defect_site_in_bulk.distance_and_image_from_frac_coords(closest_cand_int_fcoords)[0] < 1:
+        defect_site_in_bulk = guessed_initial_defect_structure[defect_site_index]
+
+    return guessed_initial_defect_structure, defect_site_in_bulk
+
+
 def find_nearest_coords(
     candidate_frac_coords: list | np.ndarray,
     target_frac_coords: list | np.ndarray,
@@ -897,60 +1009,6 @@ def find_missing_idx(
     site_matches, _ = get_linear_assignment_solution(d_2)  # matching superset indices, of len(subset)
 
     return next(iter(set(np.arange(len(superset), dtype=int)) - set(site_matches)))
-
-
-def _create_unrelaxed_defect_structure(
-    defect_supercell: Structure,
-    bulk_supercell: Structure,
-    defect_site_idx: int | None = None,
-    bulk_site_idx: int | None = None,
-    defect_coords: bool = False,
-) -> Structure:
-    """
-    Create the unrelaxed defect structure, which corresponds to the bulk
-    supercell with the unrelaxed defect site.
-
-    The unrelaxed defect site corresponds to the vacancy/substitution site in
-    the pristine (bulk) supercell for vacancies/substitutions, and the `final`
-    relaxed interstitial site for interstitials (as the assignment of their
-    initial site is ambiguous).
-
-    Args:
-        defect_supercell (Structure):
-            The defect structure.
-        bulk_supercell (Structure):
-            The bulk structure.
-        defect_site_idx (int):
-            The index of the defect site to use in the unreleaxed defect
-            structure. Just for consistency with the relaxed defect structure.
-        bulk_site_idx (int):
-            The index of the site in the bulk structure that corresponds to the
-            defect site in the defect structure.
-        defect_coords (bool):
-            Whether to use the fractional coordinates of the defect site in the
-            defect structure, or the bulk structure. Irrelevant for vacancies.
-            Parent functions in ``doped`` use ``True`` for interstitials, and
-            ``False`` for substitutions (i.e. use bulk site coords).
-
-    Returns:
-        Structure:
-            The unrelaxed defect structure.
-    """
-    unrelaxed_defect_structure = bulk_supercell.copy()  # create unrelaxed defect structure
-
-    if bulk_site_idx is not None:
-        unrelaxed_defect_structure.remove_sites([bulk_site_idx])
-
-    if defect_site_idx is not None:
-        defect_site_in_defect = defect_supercell[defect_site_idx]
-        if not defect_coords and bulk_site_idx is not None:
-            defect_coords = bulk_supercell[bulk_site_idx].frac_coords
-        else:
-            defect_coords = defect_site_in_defect.frac_coords
-
-        unrelaxed_defect_structure.insert(defect_site_idx, defect_site_in_defect.species, defect_coords)
-
-    return unrelaxed_defect_structure
 
 
 def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
