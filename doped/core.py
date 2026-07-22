@@ -2736,6 +2736,9 @@ class Defect(core.Defect):
         issues with periodicity-breaking supercells (where direct supercell
         symmetry analysis undercounts orbits) and boosting efficiency.
 
+        The determined site orbit is also used to populate
+        ``self.equivalent_sites``, if not already set.
+
         Args:
             symprec (float):
                 Symmetry precision to use for determining symmetry operations
@@ -2784,16 +2787,22 @@ class Defect(core.Defect):
         from doped.utils.symmetry import get_all_equiv_sites
 
         assert isinstance(self.structure, Structure)
-        return len(
-            get_all_equiv_sites(  # folds to the primitive cell by default (``fold_to_primitive=True``),
-                self.site.frac_coords,  # giving the complete orbit even in periodicity-breaking cells
-                self.structure,
-                just_frac_coords=True,
-                symprec=symprec or self.symprec,
-                dist_tol_factor=dist_tol_factor,
-                **kwargs,
-            )
+        equiv_frac_coords = get_all_equiv_sites(  # folds to the primitive cell by default
+            self.site.frac_coords,  # (``fold_to_primitive=True``), giving the complete orbit even in
+            self.structure,  # periodicity-breaking cells
+            just_frac_coords=True,
+            symprec=symprec or self.symprec,
+            dist_tol_factor=dist_tol_factor,
+            **kwargs,
         )
+        # populate ``equivalent_sites`` if not set, for use in e.g. ``get_supercell_structure()``;
+        # attribute existence check as the parent ``__init__`` calls this method before setting it:
+        if hasattr(self, "equivalent_sites") and not self.equivalent_sites:
+            self.equivalent_sites: list[PeriodicSite] = [
+                PeriodicSite(self.site.species, frac_coords, self.structure.lattice, to_unit_cell=True)
+                for frac_coords in equiv_frac_coords
+            ]
+        return len(equiv_frac_coords)
 
     def __setattr__(self, name, value):
         """
