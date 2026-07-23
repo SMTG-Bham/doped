@@ -529,9 +529,10 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
     This function requires the input fcoords to be given as tuples, to allow
     hashing and caching for efficiency.
     """
-    # copy() to help avoid mutability issues with cached outputs:
-    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords).copy())
-    return (dist_matrix + dist_matrix.T) / 2
+    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
+    dist_matrix = (dist_matrix + dist_matrix.T) / 2  # ensure ij symmetry
+    dist_matrix.flags.writeable = False  # cached array shared across callers; prevent mutation
+    return dist_matrix
 
 
 def cluster_coords(
@@ -840,7 +841,10 @@ def get_all_equiv_sites(
         hash(key)
     except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
         return _raw_get_all_equiv_sites(frac_coords, *args)
-    return _cache_ready_get_all_equiv_sites(*key)
+    output = _cache_ready_get_all_equiv_sites(*key)
+    if return_symprec_and_dist_tol_factor:
+        return (list(output[0]), *output[1:])
+    return list(output)  # fresh list (incl. cache hits) so caller mutation can't corrupt the cache
 
 
 @lru_cache(maxsize=int(1e3))
@@ -856,7 +860,7 @@ def _cache_ready_get_all_equiv_sites(
     verbose: bool = False,
     fold_to_primitive: bool = True,
 ) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
-    output = _raw_get_all_equiv_sites(
+    return _raw_get_all_equiv_sites(
         frac_coords,
         structure,
         symprec,
@@ -868,13 +872,6 @@ def _cache_ready_get_all_equiv_sites(
         verbose,
         fold_to_primitive,
     )
-    # copy() to help avoid mutability issues with cached outputs:
-    if not return_symprec_and_dist_tol_factor:
-        assert isinstance(output, list)
-        return output.copy()
-
-    assert isinstance(output, tuple)  # typing
-    return output[0].copy(), output[1], output[2]
 
 
 def _get_orientation_preserving_primitive(
@@ -1391,7 +1388,10 @@ def _get_symm_dataset_of_struct_with_all_equiv_sites(
         hash(key)
     except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
         return _raw_get_symm_dataset_of_struct_with_all_equiv_sites(frac_coords, *args)
-    return _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(*key)
+    output = _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(*key)
+    # fresh unique-sites list on every call (incl. cache hits) so caller mutation can't corrupt the
+    # cache; the symmetry dataset is shared and should be treated as read-only:
+    return (output[0], list(output[1]), *output[2:])
 
 
 def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
@@ -2354,13 +2354,15 @@ def get_primitive_structure(
     cache_ready_ignored_species = tuple(ignored_species) if ignored_species is not None else None
     cache_ready_kwargs = tuple(kwargs.items()) if kwargs else None
 
-    return _cache_ready_get_primitive_structure(
+    output = _cache_ready_get_primitive_structure(
         structure,
         ignored_species=cache_ready_ignored_species,
         clean=clean,
         return_all=return_all,
         kwargs=cache_ready_kwargs,
     )
+    # copy on every call (incl. cache hits) so caller mutation can't corrupt the cached structure(s):
+    return [struct.copy() for struct in output] if return_all else output.copy()
 
 
 @lru_cache(maxsize=int(1e3))
@@ -2377,11 +2379,17 @@ def _cache_ready_get_primitive_structure(
     """
     # clean structure site_properties (if mismatching ``None`` values present, can mess with primitive
     # structure determination) -- this can happen if e.g. a slab structure is input with "bulk_wyckoff"
-    # etc site properties:
-    for key, val in list(structure.site_properties.items()):
-        if any(i is not None for i in val) and any(i is None for i in val):
-            structure.site_properties.pop(key, None)
-            for site in structure:
+    # etc site properties. Done on a copy, so that neither the caller's structure nor this function's
+    # (already-captured) ``lru_cache`` key is mutated:
+    mismatching_props = [
+        key
+        for key, val in structure.site_properties.items()
+        if any(i is not None for i in val) and any(i is None for i in val)
+    ]
+    if mismatching_props:
+        structure = structure.copy()
+        for site in structure:
+            for key in mismatching_props:
                 site.properties.pop(key, None)
 
     kwargs_dict = dict(kwargs) if kwargs is not None else {}
@@ -2408,8 +2416,7 @@ def _cache_ready_get_primitive_structure(
     if clean:
         prim_structs = [get_clean_structure(struct) for struct in prim_structs]
 
-    # copy() to help avoid mutability issues with cached outputs:
-    return prim_structs.copy() if return_all else _get_best_pos_det_structure(prim_structs[0]).copy()
+    return prim_structs if return_all else _get_best_pos_det_structure(prim_structs[0])
 
 
 def get_spglib_conv_structure(sga: SpacegroupAnalyzer) -> tuple[Structure, SpacegroupAnalyzer]:

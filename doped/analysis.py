@@ -1802,41 +1802,42 @@ def _name_parsed_defect_entries(
     # sort input entries for deterministic naming:
     parsed_defect_entries = sort_defect_entries(parsed_defect_entries)
 
-    # check if there are duplicate entries in the parsed defect entries, warn and remove:
-    energy_entries_dict: dict[float, list[DefectEntry]] = {}  # {energy: [defect_entry]}
-    for defect_entry in parsed_defect_entries:  # find duplicates by comparing supercell energies
-        if defect_entry.sc_entry_energy in energy_entries_dict:
-            energy_entries_dict[defect_entry.sc_entry_energy].append(defect_entry)
+    # check if there are duplicate entries (based on energy) in the parsed defect entries, warn and remove:
+    entry_groups: list[list[DefectEntry]] = []
+    for defect_entry in sorted(parsed_defect_entries, key=lambda x: x.sc_entry_energy):  # sort by energy
+        if entry_groups and defect_entry.sc_entry_energy - entry_groups[-1][-1].sc_entry_energy < 1e-5:
+            entry_groups[-1].append(defect_entry)  # matches previous entry energy to 1e-5 eV; duplicate
         else:
-            energy_entries_dict[defect_entry.sc_entry_energy] = [defect_entry]
+            entry_groups.append([defect_entry])
 
-    for energy, entries_list in energy_entries_dict.items():
-        if len(entries_list) > 1:  # more than one entry with the same energy
-            # sort any duplicates by name length, name, folder length, folder (shorter preferred)
-            energy_entries_dict[energy] = sorted(
-                entries_list,
-                key=lambda x: (
-                    len(x.name),
-                    x.name,
-                    len(_get_defect_folder(x, subfolder)),
-                    _get_defect_folder(x, subfolder),
-                ),
-            )
-
-    if any(len(entries_list) > 1 for entries_list in energy_entries_dict.values()):
+    duplicate_groups = [  # sort duplicates by name length, name, folder length, folder (shorter
+        sorted(  # preferred); the first of each group is kept
+            entries_list,
+            key=lambda x: (
+                len(x.name),
+                x.name,
+                len(_get_defect_folder(x, subfolder)),
+                _get_defect_folder(x, subfolder),
+            ),
+        )
+        for entries_list in entry_groups
+        if len(entries_list) > 1
+    ]
+    if duplicate_groups:
         duplicate_entry_names_folders_string = "\n".join(
             "["
             + ", ".join(f"{entry.name} ({_get_defect_folder(entry, subfolder)})" for entry in entries_list)
             + "]"
-            for entries_list in energy_entries_dict.values()
-            if len(entries_list) > 1
+            for entries_list in duplicate_groups
         )
         warnings.warn(
-            f"The following parsed defect entries were found to be duplicates (exact same defect "
-            f"supercell energies). The first of each duplicate group shown will be kept and the "
-            f"other duplicate entries omitted:\n{duplicate_entry_names_folders_string}"
+            f"The following parsed defect entries were found to be duplicates (matching defect "
+            f"supercell energies, to within 0.01 meV). The first of each duplicate group shown will be "
+            f"kept and the other duplicate entries omitted:\n{duplicate_entry_names_folders_string}"
         )
-    parsed_defect_entries = [next(iter(entries_list)) for entries_list in energy_entries_dict.values()]
+        # drop w/id(), not equality/hash (duplicates are eq-equal) and preserve parsed_defect_entries order
+        dropped_ids = {id(entry) for group in duplicate_groups for entry in group[1:]}
+        parsed_defect_entries = [entry for entry in parsed_defect_entries if id(entry) not in dropped_ids]
 
     # get any defect entries in parsed_defect_entries that share the same name (without charge):
     # first get any entries with duplicate names:

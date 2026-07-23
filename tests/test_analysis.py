@@ -922,8 +922,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             dielectric=self.Sb2Se3_dielectric,
         )  # for testing in test_thermodynamics.py
         assert any(
-            "The following parsed defect entries were found to be duplicates (exact same defect "
-            "supercell energies)" in str(warn.message)
+            "The following parsed defect entries were found to be duplicates (matching defect "
+            "supercell energies, to within 0.01 meV)" in str(warn.message)
             for warn in w
         )
         assert any(

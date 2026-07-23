@@ -2043,7 +2043,6 @@ class DefectsGenerator(MSONable):
             )  # multiply by 0.999 to avoid rounding errors, overshooting the 100% limit and getting
             # warnings from tqdm
 
-        Structure.__deepcopy__ = lambda x, y: x.copy()  # faster deepcopying, shallow copy fine
         for defect_name_wout_charge, neutral_defect_entry in defect_entry_dict.items():
             type_name = _defect_type_key_from_pmg_type(neutral_defect_entry.defect.defect_type)
             if self.kwargs.get("neutral_only", False):
@@ -2203,7 +2202,6 @@ class DefectsGenerator(MSONable):
             i.rsplit("_", 1)[0] for i in matching_entry_names_wout_charge
         }
 
-        Structure.__deepcopy__ = lambda x, y: x.copy()  # faster deepcopying, shallow copy fine
         for defect_entry_name_wout_charge in unique_matching_entry_names_wout_charge:
             previous_defect_entry = next(
                 entry

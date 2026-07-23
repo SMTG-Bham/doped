@@ -654,7 +654,9 @@ def prune_entries_to_border_candidates(
             downshifted by ``energy_above_hull`` eV/atom.
     """
     if not phase_diagram:
-        phase_diagram = PhaseDiagram({bulk_computed_entry, *entries})
+        phase_diagram = PhaseDiagram(
+            [bulk_computed_entry, *[entry for entry in entries if entry != bulk_computed_entry]]
+        )
 
     # cull to only include any phases that would border the host material on the phase
     # diagram, if their relative energy was downshifted by ``energy_above_hull``:
