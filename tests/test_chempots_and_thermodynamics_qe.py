@@ -93,25 +93,27 @@ def _compare_chempot_dicts(dict1: dict, dict2: dict):
 def _assert_valid_pw_input(pw: PWin):
     """Common structural checks for any generated competing-phase ``pw.in``."""
     # all structures are written with an explicit lattice (ibrav = 0):
-    assert pw.system["ibrav"] == 0
+    assert pw.system["ibrav"] == 0, "structure not written with an explicit lattice (ibrav != 0)"
     # required namelists / cards present:
     for nl in ("control", "system", "electrons"):
         assert pw.namelists[nl] is not None, f"&{nl.upper()} missing"
     for card in ("atomic_species", "atomic_positions", "k_points", "cell_parameters"):
         assert pw.cards[card] is not None, f"{card} card missing"
-    assert "calculation" in pw.control
+    assert "calculation" in pw.control, "&CONTROL calculation missing"
     for key in ("ecutwfc", "nat", "ntyp", "ecutrho", "ibrav"):
-        assert key in pw.system
+        assert key in pw.system, f"&SYSTEM {key} missing"
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        assert pw.validate() is True
+        assert pw.validate() is True, "generated pw.in failed PWin.validate()"
 
 #TODO: Mention that SSSP pseudopotentials must be downloaded by the user.
 def _assert_sssp_pseudos(pw: PWin):
     """ATOMIC_SPECIES uses the bundled SSSP 1.3.0 PBE Efficiency filenames."""
     files = dict(zip(pw.atomic_species.symbols, pw.atomic_species.files))
     for sym, fname in files.items():
-        assert fname == qe_SSSP_pseudo_filenames[sym], f"{sym}: {fname}"
+        assert fname == qe_SSSP_pseudo_filenames[sym], (
+            f"{sym} pseudo mismatch: {fname} != {qe_SSSP_pseudo_filenames[sym]}"
+        )
 
 
 def _phase_is_metal(phase: str) -> bool:
@@ -130,12 +132,12 @@ def _assert_smearing(pw: PWin, phase: str):
     molecules) have none (QE's default ``fixed`` occupations).
     """
     if _phase_is_metal(phase):
-        assert pw.system["occupations"] == "smearing"
-        assert pw.system["smearing"] == "gaussian"
-        assert pw.system["degauss"] == 0.005
+        assert pw.system["occupations"] == "smearing", f"metallic {phase}: expected smearing occupations"
+        assert pw.system["smearing"] == "gaussian", f"metallic {phase}: expected gaussian smearing"
+        assert pw.system["degauss"] == 0.005, f"metallic {phase}: expected degauss=0.005"
     else:
-        assert "smearing" not in pw.system
-        assert "degauss" not in pw.system
+        assert "smearing" not in pw.system, f"non-metal {phase}: unexpected smearing"
+        assert "degauss" not in pw.system, f"non-metal {phase}: unexpected degauss"
 
 
 
@@ -214,7 +216,7 @@ class CompetingPhasesQEExampleFilesTestCase(unittest.TestCase):
 
         assert not os.path.isdir(  
             os.path.join(COMPETING_PHASES_QE_DIR, MOLECULE_PHASE, "kpoint_converge")
-        )
+        ), f"{MOLECULE_PHASE} should have no kpoint_converge sweep"
 
     def test_ecut_convergence_inputs(self):
         """``ecut_convergence/ecutwfc_<N>/pw.in`` is an SCF at ``ecutwfc = N``."""
@@ -451,8 +453,12 @@ class QECompatibilityChecksTestCase(unittest.TestCase):
         _cpa, mismatch_warnings = self._init_cpa_with_warnings(entries)
         assert not mismatch_warnings
         for entry in entries:  # checks ran and passed on every entry:
-            assert entry.data["mismatching_QE_input_params"] is False, entry.name
-            assert entry.data["mismatching_pseudo_filenames"] is False, entry.name
+            assert entry.data["mismatching_QE_input_params"] is False, (
+                f"{entry.name} unexpectedly flagged mismatching QE input params"
+            )
+            assert entry.data["mismatching_pseudo_filenames"] is False, (
+                f"{entry.name} unexpectedly flagged mismatching pseudo filenames"
+            )
 
     def test_mismatching_pseudos_and_qe_input_params(self):
         """
@@ -487,9 +493,13 @@ class QECompatibilityChecksTestCase(unittest.TestCase):
         assert o2_entry.data["mismatching_pseudo_filenames"] == [("O_custom.UPF", orig_o_pseudo)]
         for entry in entries:
             if entry not in (mg_entry, o2_entry):
-                assert entry.data["mismatching_QE_input_params"] is False, entry.name
+                assert entry.data["mismatching_QE_input_params"] is False, (
+                    f"{entry.name} unexpectedly flagged mismatching QE input params"
+                )
             if entry is not o2_entry:
-                assert entry.data["mismatching_pseudo_filenames"] is False, entry.name
+                assert entry.data["mismatching_pseudo_filenames"] is False, (
+                    f"{entry.name} unexpectedly flagged mismatching pseudo filenames"
+                )
 
     def test_check_compatibility_false_skips_checks(self):
         """``check_compatibility=False`` skips both checks (no warnings, no flags)."""
@@ -546,17 +556,22 @@ class CompetingPhasesQEInputGenerationTestCase(unittest.TestCase):
     def test_generated_folder_structure(self):
         """Five phase folders, each with std + ecut sweeps; molecule has no k-sweep."""
         phases = {d for d in os.listdir(self.cp_dir) if os.path.isdir(os.path.join(self.cp_dir, d))}
-        assert phases == EXPECTED_PHASES
+        assert phases == EXPECTED_PHASES, f"unexpected phase folders: {phases ^ EXPECTED_PHASES}"
 
         for phase in phases:
-            assert os.path.isfile(os.path.join(self.cp_dir, phase, "espresso_std", "pw.in"))
+            std_input = os.path.join(self.cp_dir, phase, "espresso_std", "pw.in")
+            assert os.path.isfile(std_input), f"missing std input for {phase}: {std_input}"
             ecut_dir = os.path.join(self.cp_dir, phase, "ecut_convergence")
-            assert {f"ecutwfc_{e}" for e in EXPECTED_ECUTS} == set(os.listdir(ecut_dir))
+            assert {f"ecutwfc_{e}" for e in EXPECTED_ECUTS} == set(os.listdir(ecut_dir)), (
+                f"unexpected ecut sweep folders for {phase}: {set(os.listdir(ecut_dir))}"
+            )
             kpoint_dir = os.path.join(self.cp_dir, phase, "kpoint_converge")
             if phase == MOLECULE_PHASE:
-                assert not os.path.isdir(kpoint_dir)
+                assert not os.path.isdir(kpoint_dir), f"molecule {phase} should have no k-point sweep"
             else:
-                assert os.path.isdir(kpoint_dir) and os.listdir(kpoint_dir)
+                assert os.path.isdir(kpoint_dir) and os.listdir(kpoint_dir), (
+                    f"missing/empty k-point sweep for {phase}"
+                )
 
     def test_generated_std_inputs_use_sssp_defaults(self):
         """
@@ -568,9 +583,9 @@ class CompetingPhasesQEInputGenerationTestCase(unittest.TestCase):
             _assert_valid_pw_input(pw)
             _assert_sssp_pseudos(pw)
             _assert_smearing(pw, phase)
-            assert pw.control["calculation"] == "vc-relax"
-            assert pw.system["ecutwfc"] == 60  # SSSP set default
-            assert pw.system["ecutrho"] == 240
+            assert pw.control["calculation"] == "vc-relax", f"calculation should be vc-relax ({phase})"
+            assert pw.system["ecutwfc"] == 60, f"ecutwfc should be 60 (SSSP default) ({phase})"
+            assert pw.system["ecutrho"] == 240, f"ecutrho should be 240 (SSSP default) ({phase})"
 
         # metallic (3 Mg polymorphs) / non-metallic (MgO) / molecular (O2) classification:
         assert len(self.cp.entries) == len(EXPECTED_PHASES)
@@ -589,15 +604,17 @@ class CompetingPhasesQEInputGenerationTestCase(unittest.TestCase):
         ecut_dir = os.path.join(self.cp_dir, mgo, "ecut_convergence")
         for ecut in EXPECTED_ECUTS:
             pw = PWin.from_file(os.path.join(ecut_dir, f"ecutwfc_{ecut}", "pw.in"))
-            assert pw.control["calculation"] == "scf"
-            assert pw.system["ecutwfc"] == ecut
-            assert pw.system["ecutrho"] == 240
+            assert pw.control["calculation"] == "scf", f"calculation should be scf (ecutwfc_{ecut})"
+            assert pw.system["ecutwfc"] == ecut, f"ecutwfc mismatch: {pw.system['ecutwfc']} != {ecut}"
+            assert pw.system["ecutrho"] == 240, f"ecutrho should be 240 (ecutwfc_{ecut})"
 
         kpoint_dir = os.path.join(self.cp_dir, mgo, "kpoint_converge")
         for kname in os.listdir(kpoint_dir):
             pw = PWin.from_file(os.path.join(kpoint_dir, kname, "pw.in"))
-            assert pw.control["calculation"] == "scf"
-            assert list(pw.k_points.grid) == _kpoint_grid_from_folder_name(kname)
+            assert pw.control["calculation"] == "scf", f"calculation should be scf ({kname})"
+            assert list(pw.k_points.grid) == _kpoint_grid_from_folder_name(kname), (
+                f"k-grid {list(pw.k_points.grid)} should match folder name {kname}"
+            )
 
     def test_generated_molecule_handling(self):
         """O2 std input is a Γ-only spin-polarised fixed-cell relax."""
@@ -638,7 +655,7 @@ class CompetingPhasesQEInputGenerationTestCase(unittest.TestCase):
         _assert_valid_pw_input(pw)
 
         for key, val in user_system_settings.items():
-            assert pw.system[key] == val, f"&SYSTEM {key}"
+            assert pw.system[key] == val, f"&SYSTEM {key} mismatch: {pw.system[key]} != {val}"
 
     def test_ions_and_cell_overrides(self):
         """
@@ -659,19 +676,20 @@ class CompetingPhasesQEInputGenerationTestCase(unittest.TestCase):
        
         pw = PWin.from_file(os.path.join(cp_dir, "MgO_Fm-3m_EaH_0", "espresso_std", "pw.in"))
         _assert_valid_pw_input(pw)
-        assert pw.control["calculation"] == "vc-relax"
+        assert pw.control["calculation"] == "vc-relax", "solid phase should be a vc-relax"
         for key, val in user_ions_settings.items():
-            assert pw.ions[key] == val, f"&IONS {key}"
+            assert pw.ions[key] == val, f"&IONS {key} mismatch: {pw.ions[key]} != {val}"
         for key, val in user_cell_settings.items():
-            assert pw.cell[key] == val, f"&CELL {key}"
+            assert pw.cell[key] == val, f"&CELL {key} mismatch: {pw.cell[key]} != {val}"
 
     
         mol = PWin.from_file(os.path.join(cp_dir, MOLECULE_PHASE, "espresso_std", "pw.in"))
         _assert_valid_pw_input(mol)
-        assert mol.control["calculation"] == "relax"
+        assert mol.control["calculation"] == "relax", "molecule phase should be a fixed-cell relax"
         for key, val in user_ions_settings.items():
-            assert mol.ions[key] == val, f"&IONS {key}"
-        assert mol.cell is None  # &CELL is not written for fixed-cell (molecule) relaxations
+            assert mol.ions[key] == val, f"&IONS {key} mismatch: {mol.ions[key]} != {val}"
+        # &CELL is not written for fixed-cell (molecule) relaxations:
+        assert mol.cell is None, "&CELL should be dropped for fixed-cell (molecule) relaxations"
 
     def test_pseudo_map_and_dir_overrides(self):
         """``pseudo_map`` / ``pseudo_dir`` override the SSSP defaults."""
@@ -705,11 +723,11 @@ class CompetingPhasesQEInputGenerationTestCase(unittest.TestCase):
 
         # each override landed in its own namelist:
         for key, val in user_system_settings.items():
-            assert pw.system[key] == val, f"&SYSTEM {key}"
+            assert pw.system[key] == val, f"&SYSTEM {key} mismatch: {pw.system[key]} != {val}"
         for key, val in user_control_settings.items():
-            assert pw.control[key] == val, f"&CONTROL {key}"
+            assert pw.control[key] == val, f"&CONTROL {key} mismatch: {pw.control[key]} != {val}"
         for key, val in user_electron_settings.items():
-            assert pw.electrons[key] == val, f"&ELECTRONS {key}"
+            assert pw.electrons[key] == val, f"&ELECTRONS {key} mismatch: {pw.electrons[key]} != {val}"
 
         # generation-set keys survive the user overrides:
         assert pw.system["ibrav"] == 0
@@ -799,13 +817,16 @@ class QEDefectThermodynamicsTestCase(unittest.TestCase):
         assert pwxml.nelec == MGO_QE_DOS_NELECS  # QE valence electron count
         assert len(pwxml.final_structure) == 216  # bulk supercell
 
-        for dos in (dos_from_object, dos_explicit):
-            assert isinstance(dos, FermiDos)
-            assert dos.nelecs == self.bulk_dos.nelecs == MGO_QE_DOS_NELECS
-            assert dos.structure == self.bulk_dos.structure
-            assert np.isclose(dos.volume, pwxml.final_structure.volume)  # cm^-3 normalisation volume
-            assert np.allclose(dos.energies, self.bulk_dos.energies)
-            assert np.allclose(dos.get_densities(), self.bulk_dos.get_densities())
+        for label, dos in (("dos_from_object", dos_from_object), ("dos_explicit", dos_explicit)):
+            assert isinstance(dos, FermiDos), f"{label} is not a FermiDos"
+            assert dos.nelecs == self.bulk_dos.nelecs == MGO_QE_DOS_NELECS, f"{label} nelecs mismatch"
+            assert dos.structure == self.bulk_dos.structure, f"{label} structure mismatch"
+            # cm^-3 normalisation volume:
+            assert np.isclose(dos.volume, pwxml.final_structure.volume), f"{label} volume mismatch"
+            assert np.allclose(dos.energies, self.bulk_dos.energies), f"{label} energies mismatch"
+            assert np.allclose(dos.get_densities(), self.bulk_dos.get_densities()), (
+                f"{label} densities mismatch"
+            )
 
     def test_fermi_dos_requires_structure(self):
         """Without ``bulk_pwxml``/``structure`` there is no volume -> error."""
@@ -850,8 +871,10 @@ class QEDefectThermodynamicsTestCase(unittest.TestCase):
         assert np.isclose(tls[(4, 3)], 0.2178, atol=1e-4)
         assert np.isclose(tls[(3, 2)], 0.9030, atol=1e-4)
         assert np.isclose(tls[(2, 1)], 4.2836, atol=1e-4)
-        for energy in tls.values():  # all in-gap:
-            assert 0 < energy < MGO_QE_BAND_GAP
+        for charges, energy in tls.items():  # all in-gap:
+            assert 0 < energy < MGO_QE_BAND_GAP, (
+                f"transition level {charges} at {energy:.4f} eV not in gap (0, {MGO_QE_BAND_GAP})"
+            )
 
     def test_defect_level_diagram_plot(self):
         """
@@ -886,10 +909,12 @@ class QEDefectThermodynamicsTestCase(unittest.TestCase):
         }
         for (defect, q), (symm, g_orient, g_spin) in expected.items():
             row = df.loc[(defect, q)]
-            assert row["Defect_Symm"] == symm, f"{defect} {q}"
-            assert row["g_Orient"] == g_orient, f"{defect} {q}"
-            assert row["g_Spin"] == g_spin, f"{defect} {q}"
-            assert row["g_Total"] == g_orient * g_spin, f"{defect} {q}"
+            assert row["Defect_Symm"] == symm, f"{defect} {q}: Defect_Symm {row['Defect_Symm']} != {symm}"
+            assert row["g_Orient"] == g_orient, f"{defect} {q}: g_Orient {row['g_Orient']} != {g_orient}"
+            assert row["g_Spin"] == g_spin, f"{defect} {q}: g_Spin {row['g_Spin']} != {g_spin}"
+            assert row["g_Total"] == g_orient * g_spin, (
+                f"{defect} {q}: g_Total {row['g_Total']} != {g_orient * g_spin}"
+            )
 
 
     def test_annealed_carrier_concentrations(self):
