@@ -9,7 +9,7 @@ import unittest
 import numpy as np
 import pytest
 from pymatgen.core.operations import SymmOp
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import Lattice, Structure
 from test_utils import EXAMPLE_DIR, _run_func_and_capture_stdout_warnings, data_dir
 
 from doped.core import DefectEntry
@@ -1120,3 +1120,78 @@ class TestSmartRound(unittest.TestCase):
         rounded, decimals = _smart_round(0.5000001, tol=1e-9, return_decimals=True)
         assert decimals == 7
         assert np.isclose(rounded, 0.5000001)
+
+
+class TestGetSiteMappings(unittest.TestCase):
+    """
+    Tests for ``get_site_mappings``; specifically the branches which aren't
+    exercised by the main parsing/analysis workflows.
+    """
+
+    def setUp(self):
+        self.lattice = Lattice.cubic(8)
+        # both ``struct1`` Na sites are 0.4 Å from the _same_ ``struct2`` Na site (index 0), and no
+        # site pair is separated by a periodic boundary (so PBC and Cartesian distances are equal):
+        self.struct1 = Structure(
+            self.lattice, ["Na", "Na", "Cl"], [[0.1, 0.1, 0.1], [0.2, 0.1, 0.1], [0.5, 0.5, 0.5]]
+        )
+        self.struct2 = Structure(
+            self.lattice, ["Na", "Na", "Cl"], [[0.15, 0.1, 0.1], [0.55, 0.55, 0.55], [0.5, 0.5, 0.5]]
+        )
+
+    def test_linear_assignment_avoids_duplicate_matches(self):
+        """
+        With the default ``allow_duplicates=False``, linear assignment must
+        give a 1-to-1 site mapping even when multiple ``struct1`` sites share
+        the same closest ``struct2`` site.
+        """
+        matches = {i: (d, j) for d, i, j in get_site_mappings(self.struct1, self.struct2, threshold=1e10)}
+        assert len(matches) == 3
+        assert sorted(j for _d, j in matches.values()) == [0, 1, 2]  # no duplicate matches
+        assert np.isclose(matches[0][0], 0.4)  # [0.1, 0.1, 0.1] -> [0.15, 0.1, 0.1]
+        assert np.isclose(matches[1][0], 5.8103, atol=1e-4)  # forced onto the further Na site
+        assert np.isclose(matches[2][0], 0.0)
+
+    def test_allow_duplicates(self):
+        """
+        With ``allow_duplicates=True``, each ``struct1`` site independently
+        takes its closest ``struct2`` site, so both ``Na`` sites match the same
+        site here (each 0.4 Å away).
+        """
+        matches = {
+            i: (d, j)
+            for d, i, j in get_site_mappings(
+                self.struct1, self.struct2, threshold=1e10, allow_duplicates=True
+            )
+        }
+        # both Na sites matched to ``struct2`` site 0:
+        assert matches[0] == pytest.approx((0.4, 0))
+        assert matches[1] == pytest.approx((0.4, 0))
+        assert np.isclose(matches[2][0], 0.0)
+
+    def test_cartesian_matching(self):
+        """
+        ``frac_coords=False`` matches on Cartesian distances with no PBC, so
+        should give the same mapping when no site pair is separated by a
+        periodic boundary, but much larger distances when they are.
+        """
+        assert get_site_mappings(self.struct1, self.struct2, threshold=1e10, frac_coords=False) == (
+            get_site_mappings(self.struct1, self.struct2, threshold=1e10)
+        )
+
+        # Na at [0.95, 0.1, 0.1] is 1.2 Å from [0.1, 0.1, 0.1] under PBC, but 6.8 Å without:
+        s1 = Structure(self.lattice, ["Na"], [[0.1, 0.1, 0.1]])
+        s2 = Structure(self.lattice, ["Na"], [[0.95, 0.1, 0.1]])
+        assert np.isclose(get_site_mappings(s1, s2, threshold=1e10)[0][0], 1.2)
+        assert np.isclose(get_site_mappings(s1, s2, threshold=1e10, frac_coords=False)[0][0], 6.8)
+
+    def test_species_absent_from_struct2(self):
+        """
+        ``struct1`` sites of a species with no ``struct2`` sites (e.g.
+        extrinsic dopants) should be returned as unmatched.
+        """
+        extrinsic_struct1 = self.struct1.copy()
+        extrinsic_struct1.append("Mg", [0.25, 0.25, 0.25])
+        mapping = get_site_mappings(extrinsic_struct1, self.struct2, threshold=1e10)
+        assert (None, 3, None) in mapping
+        assert len([entry for entry in mapping if entry[0] is not None]) == 3

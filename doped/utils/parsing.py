@@ -1203,8 +1203,8 @@ def check_atom_mapping_far_from_defect(
 
 
 def _get_site_mapping_from_coords_and_indices(
-    s1_frac_coords: ArrayLike,
-    s2_frac_coords: ArrayLike,
+    s1_coords: ArrayLike,
+    s2_coords: ArrayLike,
     s1_indices: np.ndarray | None = None,
     s2_indices: np.ndarray | None = None,
     lattice: Lattice | None = None,
@@ -1215,21 +1215,23 @@ def _get_site_mapping_from_coords_and_indices(
     the shortest distances between sites.
 
     Args:
-        s1_frac_coords (np.ndarray[float]):
-            The fractional coordinates of the first set of sites.
-        s2_frac_coords (np.ndarray[float]):
-            The fractional coordinates of the second set of sites.
+        s1_coords (np.ndarray[float]):
+            The coordinates of the first set of sites; fractional if
+            ``lattice`` is given, otherwise Cartesian.
+        s2_coords (np.ndarray[float]):
+            The coordinates of the second set of sites; fractional if
+            ``lattice`` is given, otherwise Cartesian.
         s1_indices (np.ndarray[int] | None):
-            The indices of the first set of sites. If ``None``, the indices are
-            assumed to be the range of the number of sites in
-            ``s1_frac_coords``.
+            The indices of the first set of sites. If ``None``, assumed to be
+            the range of the number of sites in ``s1_coords``.
         s2_indices (np.ndarray[int] | None):
-            The indices of the second set of sites. If ``None``, the indices
-            are assumed to be the range of the number of sites in
-            ``s2_frac_coords``.
+            The indices of the second set of sites. If ``None``, assumed to be
+            the range of the number of sites in ``s2_coords``.
         lattice (Lattice | None):
-            The lattice of the structures. If ``None``, the identity matrix is
-            used.
+            The lattice of the structures, for which the input coordinates are
+            fractional and distances are computed under PBC. If ``None``
+            (default), the inputs are instead taken as Cartesian coordinates
+            and distances are computed directly, with no consideration of PBC.
         use_rms (bool):
             The returned site mapping (using linear assignment) will be that
             which minimises either the summed RMS distances (if ``use_rms`` is
@@ -1241,19 +1243,18 @@ def _get_site_mapping_from_coords_and_indices(
             A list of lists containing the distance, index from ``s1_indices``
             and index from ``s2_indices`` for each matched site.
     """
-    lattice = lattice or Lattice(np.eye(3))
-    s1_frac_coords = np.asarray(s1_frac_coords)
-    s2_frac_coords = np.asarray(s2_frac_coords)
+    s1_coords = np.asarray(s1_coords)
+    s2_coords = np.asarray(s2_coords)
     if s1_indices is None:
-        s1_indices = np.arange(len(s1_frac_coords))
+        s1_indices = np.arange(len(s1_coords))
     if s2_indices is None:
-        s2_indices = np.arange(len(s2_frac_coords))
+        s2_indices = np.arange(len(s2_coords))
 
-    for empty_coords, indices, tuple_idx in [
-        (s1_frac_coords, s2_indices, 2),
-        (s2_frac_coords, s1_indices, 1),
+    for empty_coords, indices, tuple_idx in [  # handle case of empty input coords
+        (s1_coords, s2_indices, 2),
+        (s2_coords, s1_indices, 1),
     ]:
-        if empty_coords.size == 0:  # handly case of empty input coords
+        if empty_coords.size == 0:
             if indices is None:
                 return [(None, None, None)]
             return [
@@ -1261,23 +1262,31 @@ def _get_site_mapping_from_coords_and_indices(
                 for i in indices
             ]
 
-    s1_is_subset = len(s1_frac_coords) < len(s2_frac_coords)
-    subset_fcoords, subset_indices = (
-        (s1_frac_coords, s1_indices) if s1_is_subset else (s2_frac_coords, s2_indices)
-    )
-    superset_fcoords, superset_indices = (
-        (s2_frac_coords, s2_indices) if s1_is_subset else (s1_frac_coords, s1_indices)
+    s1_is_subset = len(s1_coords) < len(s2_coords)
+    subset_coords, subset_indices = (s1_coords, s1_indices) if s1_is_subset else (s2_coords, s2_indices)
+    superset_coords, superset_indices = (
+        (s2_coords, s2_indices) if s1_is_subset else (s1_coords, s1_indices)
     )
     # Note: if needed in future, could be sped up by using k-D trees and/or k-NN searching (rather than
     # global PBC dists over all sites of the same species), but not a bottleneck for typical (~<10,000
     # atom) supercells currently
-    _vecs, d_2 = pbc_shortest_vectors(lattice, subset_fcoords, superset_fcoords, return_d2=True)
-    dists = np.sqrt(d_2)
-    site_matches, _ = get_linear_assignment_solution(d_2 if use_rms else dists)
+    dists = (
+        all_distances(subset_coords, superset_coords)
+        if lattice is None
+        else np.sqrt(pbc_shortest_vectors(lattice, subset_coords, superset_coords, return_d2=True)[1])
+    )
+    site_matches, _ = get_linear_assignment_solution(dists**2 if use_rms else dists)
+
+    # gather the matched distances and convert to native Python types:
+    matched_dists = dists[np.arange(len(site_matches)), site_matches].tolist()
+    site_matches = site_matches.tolist()
+    subset_indices = np.asarray(subset_indices).tolist()
+    superset_indices = np.asarray(superset_indices).tolist()
+
     site_mapping = [  # site_matches -> matching superset indices, of len(subset)
-        (dists[i, j], subset_indices[i], superset_indices[j]) for i, j in enumerate(site_matches)
+        (matched_dists[i], subset_indices[i], superset_indices[j]) for i, j in enumerate(site_matches)
     ]
-    for missing_index in set(range(len(superset_fcoords))) - set(site_matches):
+    for missing_index in set(range(len(superset_coords))) - set(site_matches):
         site_mapping.append((None, None, superset_indices[missing_index]))  # unmatched sites
 
     if not s1_is_subset:  # swap tuple order, to match (dist, s1_index, s2_index)
@@ -1312,9 +1321,11 @@ def get_site_mappings(
 
     Args:
         struct1 (|Structure|):
-            The input structure.
+            The first structure, for which the mappings to sites in ``struct2``
+            will be returned in the order of its sites.
         struct2 (|Structure|):
-            The template structure.
+            The second structure, for which to determine the mappings to sites
+            in ``struct1``.
         species (str):
             If provided, only sites of this species will be considered when
             matching sites. Default is ``None`` (all species).
@@ -1353,14 +1364,6 @@ def get_site_mappings(
     def get_coords(site: PeriodicSite):
         return list(site.frac_coords) if frac_coords else list(site.coords)
 
-    def get_distances(
-        coords1: np.ndarray | list, coords2: np.ndarray | list, lattice: Lattice | None = None
-    ):
-        if frac_coords:
-            assert lattice is not None, "Lattice needs to be given if frac_coords is True!"
-            return lattice.get_all_distances(coords1, coords2)
-        return all_distances(coords1, coords2)
-
     # Generate a site matching table between the input and the template
     min_dist_with_index: list[tuple] = []
     s1_species_symbols = (
@@ -1376,70 +1379,50 @@ def get_site_mappings(
     for s1_species_symbol in s1_species_symbols:
         if species is not None and s1_species_symbol != species and not anonymous:
             continue
-        # Build (struct1_index, coords) pairs for this species, preserving ``struct1`` order:
-        species_input = [
-            (i, get_coords(site))
-            for i, site in enumerate(struct1)
-            if (site.specie.symbol == s1_species_symbol or anonymous)
+        s1_species_indices = [
+            i for i, site in enumerate(struct1) if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
-        input_coords = [coords for _, coords in species_input]
-        species_s2_indices = [
+        s1_coords = [get_coords(struct1[i]) for i in s1_species_indices]
+        s2_species_indices = [
             i for i, site in enumerate(struct2) if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
-        template_coords = [get_coords(struct2[i]) for i in species_s2_indices]
+        s2_coords = [get_coords(struct2[i]) for i in s2_species_indices]
 
-        dmat = (
-            get_distances(input_coords, template_coords, lattice=struct1.lattice)
-            if template_coords
-            else None
-        )
-        dmat = dmat**2 if (use_rms and dmat is not None) else dmat  # square if use_rms is True
+        if not s2_coords:  # no sites of this species in struct2
+            min_dist_with_index.extend((None, index, None) for index in s1_species_indices)
+            continue
 
-        # TODO: Can _get_site_mapping_from_coords_and_indices be used instead here (with minimal
-        #  efficiency) loss:?
-        if not allow_duplicates and dmat is not None:
-            # Use linear assignment for order-independent optimal matching.
-            # get_linear_assignment_solution returns (col_ind, total_cost), where col_ind[i] is the
-            # template index assigned to input row i (requires n_rows <= n_cols). For n > m, transpose
-            # the problem (assign each template to one input) and invert the mapping:
-            if len(input_coords) <= len(template_coords):
-                tmpl_col_indices, _ = get_linear_assignment_solution(dmat)
-                input_to_template = dict(enumerate(tmpl_col_indices.tolist()))
-            else:
-                # dmat.T is (n_templates, n_inputs): each template row j is assigned input column
-                # input_col_indices[j]. We need input_idx -> tmpl_idx for the loop below:
-                input_col_indices, _ = get_linear_assignment_solution(dmat.T)
-                input_to_template = {int(input_col_indices[j]): j for j in range(len(template_coords))}
-        else:
-            input_to_template = None
+        # mapping entries are (dist, species-local struct1 index, species-local struct2 index):
+        if allow_duplicates:  # each input independently picks its closest template
+            dmat = (
+                struct1.lattice.get_all_distances(s1_coords, s2_coords)
+                if frac_coords
+                else all_distances(s1_coords, s2_coords)
+            )
+            mapping: list[tuple[float | None, int | None, int | None]] = [
+                (float(row.min()), i, int(row.argmin())) for i, row in enumerate(dmat)
+            ]
 
-        for input_idx, (index, _) in enumerate(species_input):
-            if dmat is None:
-                min_dist_with_index.append((None, index, None))
-                continue
+        else:  # linear assignment, for order-independent optimal matching
+            mapping = _get_site_mapping_from_coords_and_indices(
+                s1_coords,
+                s2_coords,
+                lattice=struct1.lattice if frac_coords else None,
+                use_rms=use_rms,
+            )
 
-            if input_to_template is not None:
-                if input_idx not in input_to_template:
-                    # No unique template available (more inputs than templates for this species)
-                    min_dist_with_index.append((None, index, None))
-                    continue
-                tmpl_idx = input_to_template[input_idx]
+        # struct2 sites with no matching struct1 site aren't reported by this function, so are dropped:
+        matched_s1 = [(dist, int(i), j) for dist, i, j in mapping if i is not None]
 
-            else:  # allow_duplicates=True: each input independently picks its closest template
-                dists = dmat[input_idx]
-                tmpl_idx = dists.argmin()
-
-            current_dist = float(dmat[input_idx, tmpl_idx]) ** (0.5 if use_rms else 1)
-            # Map species-local template index (tmpl_idx) to global struct2 index (species_s2_indices):
-            template_index = species_s2_indices[tmpl_idx]
-
-            if current_dist > threshold:
+        for dist, i, j in sorted(matched_s1, key=lambda entry: entry[1]):  # keep ``struct1`` ordering
+            index = s1_species_indices[i]  # map species-local indices to global ``struct1/2`` indices
+            s2_index = s2_species_indices[j] if j is not None else None
+            if dist is not None and dist > threshold:
                 warnings.warn(
-                    f"Large site displacement {current_dist:.2f} Å detected when matching atomic sites: "
-                    f"{struct1[index]} -> {struct2[template_index]}."
+                    f"Large site displacement {dist:.2f} Å detected when matching atomic sites: "
+                    f"{struct1[index]} -> {struct2[s2_index]}."
                 )
-
-            min_dist_with_index.append((current_dist, index, template_index))
+            min_dist_with_index.append((dist, index, s2_index))
 
     if not min_dist_with_index:
         raise RuntimeError(
