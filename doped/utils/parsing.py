@@ -580,7 +580,7 @@ def get_defect_type_and_site_indices(
     site_tol: float | None = None,  # TODO: Change to 0.5 and add complex defect handling
     abs_tol: bool = False,
     use_oxi_states: bool = False,
-    use_rms: bool = False,
+    rms: bool = False,
 ) -> tuple[str, list[int], list[int]]:
     """
     Get the defect type, and indices of defect sites in the bulk (vacancies /
@@ -605,8 +605,8 @@ def get_defect_type_and_site_indices(
             ``site_tol`` and the shortest bond length in the bulk structure for
             the given species, otherwise the value is used directly (as a
             length in Å).
-            If ``None`` (default), the defect is assumed to be a point defect,
-            and the largest site mismatch is assigned as the defect site.
+            If ``None`` (default), we assume a single point defect and return
+            the site of largest mismatch.
         abs_tol (bool):
             Whether to use ``site_tol`` as an absolute distance tolerance (in
             Å) instead of a fractional tolerance (in terms of the shortest bond
@@ -616,11 +616,12 @@ def get_defect_type_and_site_indices(
             defect structures when considering matching sites (such that e.g.
             ``Fe3+`` and ``Fe2+`` would be considered different species).
             Default is ``False``.
-        use_rms (bool):
+        rms (bool):
             Site mapping (using linear assignment) -- used to determine defect
-            sites -- will be that which minimises either the summed RMS
-            distances (if ``use_rms`` is ``True``) or just simple linear sum of
-            distances (if ``False``, default) between all paired sites.
+            sites -- will be that which minimises either the summed `squared`
+            distances (i.e. the RMS displacement; if ``rms`` is ``True``) or
+            the summed distances (if ``False``, default) between all paired
+            sites.
 
     Returns:
         defect_type (str):
@@ -690,7 +691,7 @@ def get_defect_type_and_site_indices(
             lattice=bulk_supercell.lattice,
             s1_indices=defect_species_indices,
             s2_indices=bulk_species_indices,
-            use_rms=use_rms,
+            rms=rms,
         )
         defect_site_mappings = [
             mapping
@@ -1034,19 +1035,15 @@ def find_missing_idx(
         lattice (|Lattice|):
             The lattice object to use with the fractional coordinates.
     """
-    subset, superset = (  # supa-set
-        (frac_coords1, frac_coords2)
-        if len(frac_coords1) < len(frac_coords2)
-        else (frac_coords2, frac_coords1)
+    # the unmatched entry (i.e. that with a ``dist`` of ``None``) has exactly one non-``None`` index,
+    # which is that of the missing/outlier coordinate in the larger set of coordinates:
+    return next(
+        idx1 if idx2 is None else idx2
+        for dist, idx1, idx2 in _get_site_mapping_from_coords_and_indices(
+            frac_coords1, frac_coords2, lattice=lattice, rms=True
+        )
+        if dist is None
     )
-    # in theory this could be made even faster using ``lll_frac_tol`` as in ``_cart_dists()`` in
-    # ``pymatgen``, with smart choice of initial ``lll_frac_tol`` and scanning upwards if the match is
-    # below the threshold tolerance (as in ``StructureMatcher_scan_stol()``), but in practice this
-    # function seems to be incredibly fast as is. Can revisit if it ever becomes a bottleneck
-    _vecs, d_2 = pbc_shortest_vectors(lattice, subset, superset, return_d2=True)
-    site_matches, _ = get_linear_assignment_solution(d_2)  # matching superset indices, of len(subset)
-
-    return next(iter(set(np.arange(len(superset), dtype=int)) - set(site_matches)))
 
 
 def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
@@ -1208,7 +1205,7 @@ def _get_site_mapping_from_coords_and_indices(
     s1_indices: np.ndarray | None = None,
     s2_indices: np.ndarray | None = None,
     lattice: Lattice | None = None,
-    use_rms: bool = False,
+    rms: bool = False,
 ) -> list[tuple[float | None, int | None, int | None]]:
     """
     Get the site mapping between two sets of coordinates and indices, based on
@@ -1232,11 +1229,11 @@ def _get_site_mapping_from_coords_and_indices(
             fractional and distances are computed under PBC. If ``None``
             (default), the inputs are instead taken as Cartesian coordinates
             and distances are computed directly, with no consideration of PBC.
-        use_rms (bool):
+        rms (bool):
             The returned site mapping (using linear assignment) will be that
-            which minimises either the summed RMS distances (if ``use_rms`` is
-            ``True``) or just simple linear sum of distances (if ``False``,
-            default) between all paired sites.
+            which minimises either the summed `squared` distances (i.e. the RMS
+            displacement; if ``rms`` is ``True``) or the summed distances (if
+            ``False``, default) between all paired sites.
 
     Returns:
         list:
@@ -1267,15 +1264,16 @@ def _get_site_mapping_from_coords_and_indices(
     superset_coords, superset_indices = (
         (s2_coords, s2_indices) if s1_is_subset else (s1_coords, s1_indices)
     )
-    # Note: if needed in future, could be sped up by using k-D trees and/or k-NN searching (rather than
-    # global PBC dists over all sites of the same species), but not a bottleneck for typical (~<10,000
-    # atom) supercells currently
-    dists = (
+    # Note: if needed in future, could be sped up by using k-D trees and/or k-NN searching, or an
+    # ``lll_frac_tol`` cutoff as in ``pymatgen``'s ``_cart_dists()`` (with a smart initial choice and
+    # scanning upwards, as in ``StructureMatcher_scan_stol()``), rather than global PBC dists over all
+    # sites of the same species -- but not a bottleneck for typical (~<10,000 atom) supercells currently
+    dists = (  # ``pbc_shortest_vectors`` only gives squared distances, so sqrt for the matched dists
         all_distances(subset_coords, superset_coords)
         if lattice is None
         else np.sqrt(pbc_shortest_vectors(lattice, subset_coords, superset_coords, return_d2=True)[1])
     )
-    site_matches, _ = get_linear_assignment_solution(dists**2 if use_rms else dists)
+    site_matches, _ = get_linear_assignment_solution(dists**2 if rms else dists)
 
     # gather the matched distances and convert to native Python types:
     matched_dists = dists[np.arange(len(site_matches)), site_matches].tolist()
@@ -1304,7 +1302,7 @@ def get_site_mappings(
     anonymous: bool = False,
     ignored_species: list[str] | None = None,
     frac_coords: bool = True,
-    use_rms: bool = False,
+    rms: bool = False,
 ) -> list[tuple[float | None, int | None, int | None]]:
     """
     Get the site mappings between two structures (from ``struct1`` to
@@ -1348,12 +1346,12 @@ def get_site_mappings(
             using the lattice of ``struct1``)(default). If ``False``, instead
             matches sites based on distances between their Cartesian
             coordinates, with no consideration of PBC.
-        use_rms (bool):
+        rms (bool):
             The returned site mapping (using linear assignment -- only
             applicable when ``allow_duplicates`` is ``False``) will be that
-            which minimises either the summed RMS distances (if ``use_rms`` is
-            ``True``) or just simple linear sum of distances (if ``False``,
-            default) between all paired sites.
+            which minimises either the summed `squared` distances (i.e. the RMS
+            displacement; if ``rms`` is ``True``) or the summed distances (if
+            ``False``, default) between all paired sites.
 
     Returns:
         list:
@@ -1408,11 +1406,11 @@ def get_site_mappings(
                 s1_coords,
                 s2_coords,
                 lattice=struct1.lattice if frac_coords else None,
-                use_rms=use_rms,
+                rms=rms,
             )
 
         # struct2 sites with no matching struct1 site aren't reported by this function, so are dropped:
-        matched_s1 = [(dist, int(i), j) for dist, i, j in mapping if i is not None]
+        matched_s1 = [(dist, i, j) for dist, i, j in mapping if i is not None]
 
         for dist, i, j in sorted(matched_s1, key=lambda entry: entry[1]):  # keep ``struct1`` ordering
             index = s1_species_indices[i]  # map species-local indices to global ``struct1/2`` indices
@@ -2019,9 +2017,9 @@ def _update_defect_entry_structure_metadata(
     if not getattr(defect_entry, "calculation_metadata", None):
         defect_entry.calculation_metadata = {}
 
-    # update any missing calculation_metadata:
+    # update any missing calculation_metadata (``is None`` rather than falsiness, for e.g. "..._index" = 0)
     for k, v in defect_structure_metadata.items():
-        if not defect_entry.calculation_metadata.get(k) or overwrite:
+        if defect_entry.calculation_metadata.get(k) is None or overwrite:
             defect_entry.calculation_metadata[k] = v
 
     for attr_name, value in {

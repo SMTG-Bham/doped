@@ -26,11 +26,12 @@ from doped.utils.configurations import (
 )
 from doped.utils.parsing import (
     check_atom_mapping_far_from_defect,
+    find_missing_idx,
     get_site_mappings,
     get_wigner_seitz_radius,
 )
 from doped.utils.supercells import min_dist
-from doped.utils.symmetry import get_clean_structure, point_symmetry_from_structure
+from doped.utils.symmetry import get_clean_structure, point_symmetry_from_structure, summed_dist
 
 
 class ConfigurationsTestCase(unittest.TestCase):
@@ -1195,3 +1196,94 @@ class TestGetSiteMappings(unittest.TestCase):
         mapping = get_site_mappings(extrinsic_struct1, self.struct2, threshold=1e10)
         assert (None, 3, None) in mapping
         assert len([entry for entry in mapping if entry[0] is not None]) == 3
+
+    def test_rms_vs_summed_distance_assignment(self):
+        """
+        ``rms=True`` minimises the summed `squared` distances, which can select
+        a different pairing to the default (summed distances).
+
+        Note that the two can only ever differ when some site is displaced by
+        more than half the nearest same-species site separation ``r``: a swap
+        costs at least ``2*r`` minus the two identity distances (reverse
+        triangle inequality), so it can only win if those sum to more than
+        ``r``.
+
+        Minimal discriminating case: two ``struct2`` sites ``P``, ``Q`` a
+        distance ``r`` apart, with one ``struct1`` site sitting exactly on
+        ``P``, and the other (``Y``) a distance ``a`` from ``P`` and ``b`` from
+        ``Q``. The two candidate pairings cost ``b`` (identity) vs ``r + a``
+        (swap), so with one site left exactly coincident the default
+        (``rms=False``) never takes the swap (by the triangle inequality),
+        whereas ``rms=True`` takes it whenever ``b**2 > r**2 + a**2``, i.e.
+        whenever angle ``YPQ`` is obtuse.
+
+        Here ``P = (0, 0, 0)``, ``Q = (2, 0, 0)``, ``Y = (-1.2, 1.6, 0)``, so
+        ``r = a = 2`` Å and ``b = sqrt(12.8) = 3.578`` Å: identity costs
+        ``3.578`` Å (sum) / ``12.8`` Å² (sum of squares), and the swap costs
+        ``4.0`` Å / ``8.0`` Å².
+        """
+        lattice = Lattice.cubic(20)  # large enough that PBC images are irrelevant here
+        struct2 = Structure(lattice, ["Na", "Na"], [[0, 0, 0], [0.1, 0, 0]])  # P, Q
+        struct1 = Structure(lattice, ["Na", "Na"], [[0, 0, 0], [-0.06, 0.08, 0]])  # on P, and Y
+
+        summed = get_site_mappings(struct1, struct2, threshold=1e10)
+        assert [(i, j) for _d, i, j in summed] == [(0, 0), (1, 1)]  # identity pairing
+        assert sum(d for d, _i, _j in summed) == pytest.approx(np.sqrt(12.8))
+
+        rms = get_site_mappings(struct1, struct2, threshold=1e10, rms=True)
+        assert [(i, j) for _d, i, j in rms] == [(0, 1), (1, 0)]  # swapped pairing
+        assert sum(d for d, _i, _j in rms) == pytest.approx(4.0)
+        assert all(d == pytest.approx(2.0) for d, _i, _j in rms)
+
+        # each objective does indeed minimise its own cost:
+        assert sum(d for d, *_ in summed) < sum(d for d, *_ in rms)
+        assert sum(d**2 for d, *_ in rms) < sum(d**2 for d, *_ in summed)
+
+
+class TestSummedDistAndFindMissingIdx(unittest.TestCase):
+    """
+    Tests for ``summed_dist`` and ``find_missing_idx``, which build on
+    ``get_site_mappings`` / ``_get_site_mapping_from_coords_and_indices``.
+    """
+
+    def setUp(self):
+        self.lattice = Lattice.cubic(6)
+        self.struct_a = Structure(self.lattice, ["Na", "Cl"], [[0, 0, 0], [0.5, 0.5, 0.5]])
+        self.struct_b = Structure(self.lattice, ["Na", "Cl"], [[0.01, 0, 0], [0.5, 0.5, 0.5]])
+
+    def test_summed_dist(self):
+        """
+        ``summed_dist`` should return a native ``float`` (not a ``numpy``
+        scalar, which would otherwise propagate to output metadata etc).
+        """
+        dist = summed_dist(self.struct_a, self.struct_b)
+        assert type(dist) is float  # not ``isinstance``; ``np.float64`` subclasses ``float``
+        assert dist == pytest.approx(0.06)
+        assert summed_dist(self.struct_a, self.struct_a) == 0.0
+
+    def test_summed_dist_unmatched_sites(self):
+        """
+        Structures with differing compositions have unmatched sites, which give
+        an infinite summed distance (rather than being silently dropped, which
+        would make such structures rank as `closer` matches for callers).
+        """
+        extrinsic = self.struct_a.copy()
+        extrinsic.append("Mg", [0.25, 0.25, 0.25])
+        assert summed_dist(extrinsic, self.struct_b) == float("inf")
+        assert summed_dist(extrinsic, self.struct_b, ignored_species=["Mg"]) == pytest.approx(0.06)
+
+    def test_find_missing_idx(self):
+        """
+        ``find_missing_idx`` should return the index of the missing/outlier
+        coordinate in the larger of the two sets, for either input ordering.
+        """
+        rng = np.random.default_rng(42)
+        for _ in range(100):
+            n_coords = int(rng.integers(2, 12))
+            full = rng.random((n_coords, 3))
+            dropped_idx = int(rng.integers(0, n_coords))
+            # delete one site, and jitter the rest (well within half the site separation):
+            partial = np.delete(full, dropped_idx, axis=0) + 0.005 * rng.standard_normal((n_coords - 1, 3))
+
+            for coords_1, coords_2 in ((partial, full), (full, partial)):  # both orderings
+                assert find_missing_idx(coords_1, coords_2, self.lattice) == dropped_idx

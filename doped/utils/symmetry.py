@@ -480,24 +480,19 @@ def summed_dist(
         struct_a: ``pymatgen`` |Structure| object.
         struct_b: ``pymatgen`` |Structure| object.
         ignored_species:
-            List of species to ignore when calculating the RMS distance
+            List of species to ignore when calculating the summed distance
             (default: None).
 
     Returns:
         float:
-            The summed distance between the sites of the two structures, in Å.
+            The summed distance between the sites of the two structures, in Å,
+            or ``inf`` if any site could not be matched (i.e. the structures
+            have differing compositions).
     """
-    # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
-    # (though this assumes lattices are equal)
-    # set threshold to a large number to avoid possible site-matching warnings
-    return np.array(
-        get_site_mappings(
-            struct_a,
-            struct_b,
-            threshold=1e10,
-            ignored_species=ignored_species,
-        )
-    )[:, 0].sum()
+    # This is orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen (though this
+    # assumes lattices are equal). Threshold set to a large number to avoid possible site-matching warnings
+    site_mappings = get_site_mappings(struct_a, struct_b, threshold=1e10, ignored_species=ignored_species)
+    return float(sum(dist if dist is not None else float("inf") for dist, _i, _j in site_mappings))
 
 
 def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
