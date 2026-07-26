@@ -1155,14 +1155,8 @@ def check_atom_mapping_far_from_defect(
         defect_species_outside_ws_fcoords = get_coords_and_idx_of_species(
             defect_sites_outside_wigner_radius, species.name
         )[0]
-        if (
-            min(
-                len(bulk_species_outside_near_ws_fcoords),
-                len(defect_species_outside_ws_fcoords),
-            )
-            == 0
-        ):
-            continue  # if no sites of this species outside the WS radius, skip
+        if not (len(bulk_species_outside_near_ws_fcoords) and len(defect_species_outside_ws_fcoords)):
+            continue  # no sites of this species outside the WS radius, skip
 
         site_mapping_outside_ws = _get_site_mapping_from_coords_and_indices(
             defect_species_outside_ws_fcoords,
