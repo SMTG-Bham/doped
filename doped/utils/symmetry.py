@@ -1441,70 +1441,6 @@ def _get_struct_with_all_X(struct, unique_sites):
     return struct_with_all_X
 
 
-@lru_cache(maxsize=int(1e3))
-def _get_supercell_to_prim_fold_map(
-    supercell: Structure, primitive: Structure, symprec: float = 0.01, dist_tol_factor: float = 1.0
-) -> tuple[np.ndarray, np.ndarray] | None:
-    """
-    Get the affine map ``f -> (f @ M + t) % 1`` taking fractional coordinates
-    in ``supercell`` to fractional coordinates in ``primitive``, as an ``(M,
-    t)`` tuple -- or ``None`` if no such map can be verified (e.g. for
-    distorted/noisy cells), in which case callers should fall back to explicit
-    structure-based folding.
-
-    ``M`` is the integer supercell matrix relating the two lattices (accounting
-    for any rigid rotation between their Cartesian frames, which leaves
-    fractional coordinates unchanged) and ``t`` aligns their origins. The map
-    is certified as a rigid isometry mapping every ``supercell`` atom onto a
-    ``primitive`` atom of the same element (within ``symprec*dist_tol_factor``
-    Å), so any two certified maps differ only by a symmetry operation of
-    ``primitive``, and downstream equivalent site generation is independent of
-    the choice made here. Cached, as the map depends only on the host
-    (supercell, primitive) pair and tolerances, not on individual sites.
-    """
-    dist_tol = symprec * dist_tol_factor
-    T = supercell.lattice.matrix @ np.linalg.inv(primitive.lattice.matrix)
-    if np.allclose(T, np.round(T), atol=1e-4):  # common case; Cartesian frames already aligned
-        M = np.round(T).astype(int)
-    else:  # frames differ by a rigid rotation; get the integer supercell matrix relating the lattices
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="No mapping")
-            _rotated_prim, M = _rotate_and_get_supercell_matrix(
-                primitive, supercell, ltol=symprec, atol=100 * symprec
-            )
-        if M is None or not np.allclose(M, np.round(M), atol=1e-4):
-            return None
-        M = np.round(M).astype(int)
-
-    if round(abs(np.linalg.det(M))) * len(primitive) != len(supercell):  # incorrect mapping
-        return None
-    W = np.linalg.inv(supercell.lattice.matrix) @ M @ primitive.lattice.matrix  # Cartesian linear part
-    if not np.allclose(W @ W.T, np.eye(3), atol=1e-4):  # must be a rigid isometry
-        return None
-
-    sc_elts = np.array([site.specie.symbol for site in supercell])
-    prim_elts = np.array([site.specie.symbol for site in primitive])
-    species_mismatch = sc_elts[:, None] != prim_elts[None, :]  # (N_supercell, N_primitive)
-    mapped_fracs = supercell.frac_coords @ M
-    # anchoring on the least-common element (fewest candidates), each primitive site of that element gives
-    # a candidate translation (mapping the first such supercell atom onto it); certify by checking all
-    # supercell atoms then map onto matching primitive atoms:
-    unique_elts, counts = np.unique(prim_elts, return_counts=True)
-    anchor_elt = unique_elts[np.argmin(counts)]
-    anchor_mapped_frac = mapped_fracs[np.argmax(sc_elts == anchor_elt)]  # first supercell atom of elt
-    for anchor_prim_frac in primitive.frac_coords[prim_elts == anchor_elt]:
-        translation = (anchor_prim_frac - anchor_mapped_frac) % 1
-        dists = primitive.lattice.get_all_distances(
-            (mapped_fracs + translation) % 1, primitive.frac_coords
-        )
-        dists[species_mismatch] = np.inf
-        if dists.min(axis=1).max() < dist_tol:
-            M.flags.writeable = translation.flags.writeable = False  # cached output; guard mutation
-            return M, translation
-
-    return None
-
-
 def get_equiv_frac_coords_in_primitive(
     frac_coords: ArrayLike,
     primitive: Structure,
@@ -1587,11 +1523,31 @@ def get_equiv_frac_coords_in_primitive(
             ``True``, also returns the final ``symprec`` and
             ``dist_tol_factor`` used for the equivalent site generation.
     """
-    fold_map = _get_supercell_to_prim_fold_map(supercell, primitive, symprec, dist_tol_factor)
-    if fold_map is not None:
-        # verified affine map from supercell to primitive frac coords, so just generate the equivalent
-        # supercell sites and fold directly (much faster than the structure-based folding below):
-        M, translation = fold_map
+    from doped.utils.configurations import get_transformation_from_s2_to_s1  # avoid circular import
+
+    # get the affine map ``f -> (f @ M + t) % 1`` taking supercell frac coords to primitive frac coords,
+    # using strict ``StructureMatcher`` tolerances so that a successful match certifies a rigid isometry
+    # mapping every supercell atom onto a same-element primitive atom within ``symprec * dist_tol_factor``
+    # Å (``stol`` is this distance tolerance in SM's normalised units: ``dist * (n/V)^(1/3)``). Any two
+    # such maps differ only by a symmetry operation of ``primitive``, so the generated equivalent sites are
+    # independent of the choice made here. Cached (in ``get_transformation_from_s2_to_s1``), as the map
+    # depends only on the host pair and tolerances:
+    stol = symprec * dist_tol_factor * (len(supercell) / supercell.volume) ** (1 / 3)
+    transformation = get_transformation_from_s2_to_s1(
+        supercell,
+        primitive,
+        min_stol=stol,
+        max_stol=stol,  # min = max -> single strict trial, no upward stol scanning
+        ltol=1e-4,
+        angle_tol=0.01,
+        scale=False,  # don't rescale volumes; hydrostatic strain must fail the match
+        attempt_supercell=True,
+    )
+    if transformation is not None:
+        # affine fold map found, so just generate the equivalent supercell sites and fold directly
+        # (much faster than the structure-based folding below):
+        M, t, _mapping = transformation  # M: integer supercell matrix relating the lattices
+        translation = (-t @ M) % 1  # SM convention: prim_supercell_frac + t = supercell_frac
         equiv_sites_output = get_all_equiv_sites(
             frac_coords,
             supercell,
@@ -1622,7 +1578,7 @@ def get_equiv_frac_coords_in_primitive(
             if np.linalg.norm(shift @ primitive.lattice.matrix) > 1e-6:  # keep exact coords (and thus
                 prim_X_frac_coords[i] = frac_coords_i + shift  # cache keys) unchanged for clean inputs
 
-    else:  # no verified affine map (e.g. distorted/noisy cells); fold via X-decorated structures instead
+    else:  # no strict affine map match (e.g. distorted/noisy cells); fold via X-decorated structures
         trial_symprecs = _TRIAL_SYMPREC_DIST_TOL_FACTORS * symprec
         trial_dist_tol_factors = _TRIAL_SYMPREC_DIST_TOL_FACTORS * dist_tol_factor
         for trial_dist_tol_factor, trial_symprec in product(trial_dist_tol_factors, trial_symprecs):
