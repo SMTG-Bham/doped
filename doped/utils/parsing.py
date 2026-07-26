@@ -638,15 +638,9 @@ def get_defect_type_and_site_indices(
     bulk_composition = bulk_supercell.composition
     defect_composition = defect_supercell.composition
 
-    try:
-        defect_type, comp_diff = get_defect_type_and_composition_diff(
-            defect_composition, bulk_composition, _parameter_order_warn=False
-        )  # internal call with correct (defect, bulk) ordering; don't warn
-    except RuntimeError as exc:
-        raise ValueError(
-            "Could not identify defect type from number of sites in structure: "
-            f"{len(bulk_supercell)} in bulk vs. {len(defect_supercell)} in defect?"
-        ) from exc
+    defect_type, comp_diff = get_defect_type_and_composition_diff(
+        defect_composition, bulk_composition, _parameter_order_warn=False
+    )  # internal call with correct (defect, bulk) ordering; don't warn
 
     if site_tol is None and defect_type == "complex":
         raise ValueError(
@@ -673,7 +667,6 @@ def get_defect_type_and_site_indices(
     }
     additional_defect_site_indices = []
     missing_bulk_site_indices = []
-    distance_matrix = bulk_supercell.distance_matrix
 
     for elt_symbol in elt_symbols:
         bulk_species_fcoords, bulk_species_indices = get_coords_and_idx_of_species(
@@ -685,7 +678,9 @@ def get_defect_type_and_site_indices(
         if bulk_species_indices.size == 0:  # extrinsic species
             site_dist_tol = None
         else:
-            species_distances = distance_matrix[bulk_species_indices]
+            species_distances = bulk_supercell.lattice.get_all_distances(
+                bulk_supercell.frac_coords[bulk_species_indices], bulk_supercell.frac_coords
+            )
             species_min_dist = max(species_distances[np.nonzero(species_distances)].min(), 1)
             site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * species_min_dist
 
@@ -707,6 +702,48 @@ def get_defect_type_and_site_indices(
                 missing_bulk_site_indices.append(bulk_idx)
             if defect_idx is not None:  # additional defect site (may be from same matched tuple if dist
                 additional_defect_site_indices.append(defect_idx)  # greater than site_dist_tol)
+
+    # Sanity checks; reasonable number of defects detected, and matching lattice definitions:
+    n_defect_sites = max(len(missing_bulk_site_indices), len(additional_defect_site_indices))
+    if not n_defect_sites:
+        warnings.warn(
+            f"No defect sites could be identified from the defect and bulk supercells (composition "
+            f"difference: {comp_diff}) with ``site_tol`` = {site_tol}, suggesting that ``site_tol`` is "
+            f"too large, or that the defect and bulk supercells are equivalent."
+        )
+        return defect_type, missing_bulk_site_indices, additional_defect_site_indices
+
+    if n_defect_sites > 0.1 * len(bulk_supercell):  # >10% of sites flagged; likely spurious
+        warnings.warn(
+            f"{n_defect_sites} sites were identified as defect sites (more than 10% of the "
+            f"{len(bulk_supercell)} sites in the bulk supercell) with ``site_tol`` = {site_tol}, "
+            f"suggesting that ``site_tol`` is too small, or that the defect and bulk supercells do not "
+            f"match -- unless this is expected (e.g. alloying / defect-ordering)."
+        )
+
+    # check lattice definitions; use a detected site as the reference position for the atom-mapping
+    # diagnostic; any site in the cell will do if the supercells globally mismatch
+    check_atom_mapping_far_from_defect(
+        defect_supercell,
+        bulk_supercell,
+        defect_supercell[additional_defect_site_indices[0]].frac_coords
+        if additional_defect_site_indices
+        else bulk_supercell[missing_bulk_site_indices[0]].frac_coords,
+    )  # throws informative warning about global site (lattice definition) mismatch
+    # Note: This function checks (and warns, if necessary) for large mismatches between defect and bulk
+    # supercells, where a common case is a symmetry-equivalent bulk supercell but with a different
+    # basis/definition for the atomic positions (discussion:
+    # doped.readthedocs.io/en/latest/Troubleshooting.html#mis-matching-bulk-and-defect-supercells )
+    # In theory, we could use orient_s2_like_s1 with allow_subset to shift the defect cell to match the
+    # (different definition) bulk cell, tracking the site matches, and accounting for the site matches
+    # properly with the charge corrections. But, beyond being a lot of work to allow the unnecessary (and
+    # usually easily fixed) case of mismatching supercells, which can also lead to other issues, it would
+    # require different definitions of 'defect supercell sites' (e.g. for a vacancy with a mismatching
+    # supercell definition, the supercell site should be the exact atom site in the bulk supercell, but
+    # this is now entirely different from the defect supercell). Also, the choice of matching orientation
+    # for the bulk supercell (and thus defect site) can become arbitrary in these situations, where there
+    # are many possible defect cell translations etc which match the bulk cell... Also difficulties with
+    # handling this for finite-size corrections.
 
     return defect_type, missing_bulk_site_indices, additional_defect_site_indices
 

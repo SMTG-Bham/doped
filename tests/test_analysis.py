@@ -20,6 +20,7 @@ from pymatgen.electronic_structure.dos import FermiDos
 from test_utils import (
     EXAMPLE_DIR,
     _print_warning_info,
+    _run_func_and_capture_stdout_warnings,
     assert_df_rows_equal,
     custom_mpl_image_compare,
     data_dir,
@@ -2304,6 +2305,48 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # assert auto-determined substitution site is correct (exact match because perfect supercell):
         assert np.array_equal(unrelaxed_defect_structure[defect_site_idx].frac_coords, [0.00, 0.00, 0.00])
+
+    def test_defect_site_indices_warnings(self):
+        """
+        Test the warnings thrown by ``get_defect_type_and_site_indices`` when
+        no sites, or an implausibly large number of sites, are identified as
+        defect sites (currently only with an explicitly-set ``site_tol``).
+        """
+        bulk_sc_structure = Structure.from_file(
+            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk/CdTe_bulk_supercell_POSCAR"
+        )
+        # same structure but with a different basis/origin definition (uniform shift), which should be
+        # flagged as a supercell mismatch by the ``check_atom_mapping_far_from_defect`` diagnostic:
+        shifted_bulk_sc_structure = bulk_sc_structure.copy()
+        shifted_bulk_sc_structure.translate_sites(range(len(shifted_bulk_sc_structure)), [0.1, 0, 0])
+
+        for defect_structure, site_tol, kwargs, expected_warnings in [
+            (bulk_sc_structure, 0.5, {}, ["No defect sites could be identified"]),  # bulk input; no defect
+            (  # shifted bulk, many defect sites and bulk mismatch
+                shifted_bulk_sc_structure,
+                0.2,
+                {"abs_tol": True},
+                ["sites were identified as defect sites", "Detected atoms far from the defect site"],
+            ),
+        ]:
+            _result, _output, w = _run_func_and_capture_stdout_warnings(
+                get_defect_type_and_site_indices,
+                defect_structure,
+                bulk_sc_structure,
+                site_tol=site_tol,
+                **kwargs,
+            )
+            for expected_warning in expected_warnings:
+                assert any(expected_warning in str(warning.message) for warning in w)
+
+        # no warnings for a normal point defect, with or without ``site_tol``:
+        vacancy_structure = bulk_sc_structure.copy()
+        vacancy_structure.remove_sites([0])
+        for site_tol in [None, 0.5]:
+            _result, _output, w = _run_func_and_capture_stdout_warnings(
+                get_defect_type_and_site_indices, vacancy_structure, bulk_sc_structure, site_tol=site_tol
+            )
+            assert not w
 
     @custom_mpl_image_compare("YTOS_Int_F_-1_eigenvalue_plot_ISPIN_1.png")
     def test_extrinsic_interstitial_parsing_and_kumagai(self):

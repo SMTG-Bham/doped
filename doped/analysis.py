@@ -60,7 +60,6 @@ from doped.utils.parsing import (
     _guess_initial_defect_structure,
     _multiple_files_warning,
     _vasp_file_parsing_action_dict,
-    check_atom_mapping_far_from_defect,
     get_core_potentials_from_outcar,
     get_defect_type_and_site_indices,
     get_dimer_bonds,
@@ -246,34 +245,21 @@ def defect_site_from_structures(
     """
     if _parameter_order_warn:
         _warn_parameter_order("defect_site_from_structures")  # TODO: Remove in doped v4.1
-    try:  # automatic defect site detection -- this gives us the "unrelaxed" defect structure
-        defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
-            get_defect_type_and_site_indices(defect_supercell, bulk_supercell)
-        )
-        # TODO: Update to use missing_bulk_site_indices and additional_defect_site_indices to handle
-        #  defect complexes; for now just taking first of each and assuming single point defect:
-        bulk_site_index = missing_bulk_site_indices[0] if missing_bulk_site_indices else None
-        defect_site_index = additional_defect_site_indices[0] if additional_defect_site_indices else None
-        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
-            defect_supercell,
-            bulk_supercell,
-            defect_site_idx=defect_site_index,
-            bulk_site_idx=bulk_site_index,
-            defect_coords=defect_type == "interstitial",
-        )
-
-    except RuntimeError as exc:
-        check_atom_mapping_far_from_defect(
-            defect_supercell,
-            bulk_supercell,
-            guess_defect_position(defect_supercell, bulk_supercell),
-            coords_are_cartesian=True,
-        )
-        raise RuntimeError(
-            f"Could not identify {defect_type} defect site in defect structure. Please check that your "
-            f"defect supercells are reasonable, and that they match the bulk supercell. If so, "
-            f"and this error is not resolved, please report this issue to the developers."
-        ) from exc
+    # automatic defect site detection -- this gives us the "unrelaxed" defect structure:
+    defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+        get_defect_type_and_site_indices(defect_supercell, bulk_supercell)
+    )
+    # TODO: Update to use missing_bulk_site_indices and additional_defect_site_indices to handle
+    #  defect complexes; for now just taking first of each and assuming single point defect:
+    bulk_site_index = missing_bulk_site_indices[0] if missing_bulk_site_indices else None
+    defect_site_index = additional_defect_site_indices[0] if additional_defect_site_indices else None
+    unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
+        defect_supercell,
+        bulk_supercell,
+        defect_site_idx=defect_site_index,
+        bulk_site_idx=bulk_site_index,
+        defect_coords=defect_type == "interstitial",
+    )
 
     if defect_type == "vacancy":
         site_in_bulk = defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_index]
@@ -316,7 +302,6 @@ def defect_from_structures(
     defect_supercell: Structure,
     bulk_supercell: Structure,
     return_all_info: bool = False,
-    skip_atom_mapping_check: bool = False,
     _parameter_order_warn: bool = True,
     **kwargs,
 ) -> Defect | tuple[Defect, PeriodicSite, PeriodicSite, int | None, int | None, Structure, Structure]:
@@ -350,13 +335,6 @@ def defect_from_structures(
         return_all_info (bool):
             If ``True``, returns additional info related to the site-matching;
             see return signature. (Default: ``False``)
-        skip_atom_mapping_check (bool):
-            If ``True``, skips the atom mapping check which ensures that the
-            bulk and defect supercell lattice definitions are matched
-            (important for accurate defect site determination and charge
-            corrections). Can be used to speed up parsing when you are sure
-            the cell definitions match (e.g. both supercells were generated
-            with ``doped``). Default is ``False``.
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec``, ``dist_tol_factor``,
@@ -418,25 +396,6 @@ def defect_from_structures(
     ) = defect_site_from_structures(
         defect_supercell, bulk_supercell, return_all_info=True, _parameter_order_warn=False
     )
-
-    if not skip_atom_mapping_check:
-        check_atom_mapping_far_from_defect(
-            defect_supercell, bulk_supercell, defect_site_in_bulk.frac_coords
-        )
-        # Note: This function checks (and warns, if necessary) for large mismatches between defect and bulk
-        # supercells, where a common case is a symmetry-equivalent bulk supercell but with a different
-        # basis/definition for the atomic positions (discussion:
-        # doped.readthedocs.io/en/latest/Troubleshooting.html#mis-matching-bulk-and-defect-supercells )
-        # In theory, we could use orient_s2_like_s1 with allow_subset to shift the defect cell to match
-        # the (different definition) bulk cell, tracking the site matches, and accounting for the site
-        # matches properly with the charge corrections. But, beyond being a lot of work to allow the
-        # unnecessary (and usually easily fixed) case of mismatching supercells, which can also lead to
-        # other issues, it would require different definitions of 'defect supercell sites' (e.g. for a
-        # vacancy with a mismatching supercell definition, the supercell site should be the exact atom site
-        # in the bulk supercell, but this is now entirely different from the defect supercell). Also, the
-        # choice of matching orientation for the bulk supercell (and thus defect site) can become arbitrary
-        # in these situations, where there are many possible defect cell translations etc which match the
-        # bulk cell...
 
     # get defect site in primitive structure, for Defect generation:
     primitive_structure = get_primitive_structure(bulk_supercell, symprec=kwargs.get("symprec") or 0.01)
@@ -509,7 +468,6 @@ def defect_from_structures(
 def defect_and_info_from_structures(
     defect_supercell: Structure,
     bulk_supercell: Structure,
-    skip_atom_mapping_check: bool = False,
     _parameter_order_warn: bool = True,
     **kwargs,
 ) -> tuple[Defect, PeriodicSite, dict]:
@@ -531,13 +489,6 @@ def defect_and_info_from_structures(
             Defect structure to use for identifying the defect site and type.
         bulk_supercell (|Structure|):
             Bulk supercell structure.
-        skip_atom_mapping_check (bool):
-            If ``True``, skips the atom mapping check which ensures that the
-            bulk and defect supercell lattice definitions are matched
-            (important for accurate defect site determination and charge
-            corrections). Can be used to speed up parsing when you are sure
-            the cell definitions match (e.g. both supercells were generated
-            with ``doped``). Default is ``False``.
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec``, ``dist_tol_factor``,
@@ -608,7 +559,6 @@ def defect_and_info_from_structures(
     ) = defect_from_structures(
         defect_supercell,
         bulk_supercell,
-        skip_atom_mapping_check=skip_atom_mapping_check,
         return_all_info=True,
         _parameter_order_warn=False,
         **kwargs,

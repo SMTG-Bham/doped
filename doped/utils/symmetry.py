@@ -3998,7 +3998,6 @@ def point_symmetry_from_structure(
     symprec: float | None = None,
     relaxed: bool = True,
     verbose: bool | None = None,
-    skip_atom_mapping_check: bool = False,
     **kwargs,
 ) -> str:
     r"""
@@ -4093,13 +4092,6 @@ def point_symmetry_from_structure(
         verbose (bool):
             If ``True``, prints diagnostic information about the local symmetry
             analysis. Default is ``None`` (no diagnostic output).
-        skip_atom_mapping_check (bool):
-            If ``True``, skips the atom mapping check which ensures that the
-            bulk and defect supercell lattice definitions are matched
-            (important for accurate defect site determination and charge
-            corrections). Can be used to speed up parsing when you are sure
-            the cell definitions match (e.g. both supercells were generated
-            with ``doped``). Default is ``False``.
         **kwargs:
             Additional keyword arguments to pass to ``local_point_symmetry``
             when ``relaxed=True`` (``centre_error_range``, ``bulk_symprec``),
@@ -4119,7 +4111,6 @@ def point_symmetry_from_structure(
             bulk_structure,
             oxi_state="Undetermined",
             multiplicity=1,
-            skip_atom_mapping_check=skip_atom_mapping_check,
         )
 
         return point_symmetry_from_defect_entry(
