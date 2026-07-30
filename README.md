@@ -77,6 +77,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - N.-R. Skogemyr **_First-Principles Defect Thermodynamics of MgSnN<sub>2</sub>: Origin and Suppression of Unintentional n-Type Conductivity_** [_MSc Thesis, Linköping University_](https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510) 2026
+- D. Sutarma and P. Kratzer **_Facet-Dependent Electronic Properties and Interfacial Point Defect Interactions in WS<sub>2</sub>/ZnO Heterostructures_** [_arXiv_](https://doi.org/10.48550/arXiv.2607.25999) 2026
 - A. S. Hauck, M. Jin and B. R. Tuttle **_Nonradiative carrier capture by point defects in irradiated GaN_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0325688) 2026
 - X. Lei et al. **_Enhanced antibonding coupling enables optical transparency in p-type semiconductors by orbital engineering_** [_Applied Physics Letters_](https://doi.org/10.1063/5.0342323) 2026
 - L.-B. Paşca, H. J. Snaith and V. L. Deringer **_Data-driven atomistic modelling of hybrid halide perovskite passivation_** [_arXiv_](https://doi.org/10.48550/arXiv.2607.05321) 2026
