@@ -26,6 +26,7 @@ from pymatgen.core.structure_matcher import get_linear_assignment_solution, pbc_
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
+from pymatgen.optimization.neighbors import find_points_in_spheres
 from pymatgen.util.coord import all_distances
 from pymatgen.util.typing import PathLike, SpeciesLike
 
@@ -1193,6 +1194,107 @@ def check_atom_mapping_far_from_defect(
     return True
 
 
+_PBC = np.array([1, 1, 1], dtype=np.int64)  # for ``find_points_in_spheres``, takes ints not bools for PBC
+
+
+def _min_separation(coords: np.ndarray, lattice: Lattice) -> float | None:
+    """
+    Get the minimum separation (under PBC) between the given fractional
+    coordinates.
+
+    Cached for efficiency. Returns ``None`` if no non-coincident neighbour is
+    found within ~twice the mean site spacing -- geometrically impossible (by
+    sphere packing) unless sites are stacked at identical positions (degenerate
+    input).
+    """
+    # keyed on the raw coordinate bytes, which is both exact (no hash collisions) and much cheaper than
+    # tuple conversion for arrays this size (~0.03 vs ~1.7 ms for 7k sites):
+    return _cached_min_separation(np.asarray(coords, dtype=float).tobytes(), lattice)
+
+
+@lru_cache(maxsize=int(1e2))  # maxsize on the order of 20 Mb for typical (large) supercells
+def _cached_min_separation(coords_bytes: bytes, lattice: Lattice) -> float | None:
+    coords = np.frombuffer(coords_bytes, dtype=float).reshape(-1, 3)
+    cart = lattice.get_cartesian_coords(coords)  # C-contiguous float64 arrays, as required for:
+    *_, self_dists = find_points_in_spheres(  # <- find_points_in_spheres
+        all_coords=cart,
+        center_coords=cart,
+        r=2 * (lattice.volume / len(coords)) ** (1 / 3),  # ~2x mean site spacing; always sufficient
+        pbc=_PBC,
+        lattice=lattice.matrix,
+        tol=1e-8,
+    )
+    separations = self_dists[self_dists > 1e-8]  # excluding each site's distance to itself
+    return float(separations.min()) if separations.size else None
+
+
+def _nearest_neighbour_site_mapping(
+    subset_coords: np.ndarray, superset_coords: np.ndarray, lattice: Lattice | None, r: float | None = None
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """
+    Get the site mapping from a neighbour list search, rather than the global
+    distance matrix, or ``None`` if this is not provably the exact solution.
+
+    Matching each ``subset`` site to its nearest ``superset`` site (i.e.
+    allowing duplicates) minimises each term of the cost independently, and so
+    lower-bounds the cost of `any` assignment. If those nearest matches happen
+    to all be distinct (no duplicate matches), then this assignment is the
+    linear assignment solution -- whether for linear or squared distance cost
+    functions. This is almost always the case (for defect supercells), and
+    avoids both the ``O(N*M)`` distance matrix and ``O(N^3)`` assignment,
+    giving large speedups for big (>~1,000 atom) supercells.
+
+    Only the search radius is a heuristic here (and never a correctness
+    concern); by default, the minimum separation within ``superset`` is used,
+    which is ample for any physically-reasonable displacement, and ``None`` is
+    returned if some ``subset`` site has no ``superset`` site within it (so its
+    nearest is unknown).
+
+    Args:
+        subset_coords (np.ndarray[float]):
+            Fractional coordinates of the smaller set of sites.
+        superset_coords (np.ndarray[float]):
+            Fractional coordinates of the larger set of sites.
+        lattice (Lattice | None):
+            The lattice of the structures, for PBC distances. If ``None``
+            (i.e. Cartesian coordinates, no PBC), the neighbour search is
+            skipped (returning ``None``).
+        r (float | None):
+            Search radius in Å. Only affects the acceptance rate (a larger
+            radius can only turn rejections into acceptances, with identical
+            results otherwise), never correctness. Default: the minimum
+            separation between ``superset`` sites.
+
+    Returns:
+        tuple | None:
+            The matched distances and matching ``superset`` indices, for each
+            ``subset`` site, or ``None`` if this could not be shown to be the
+            exact solution.
+    """
+    if lattice is None or (r := r or _min_separation(superset_coords, lattice)) is None:
+        return None
+
+    # anything found within ``r`` is that site's true nearest neighbour (nothing closer can lie outside the
+    # search radius), so the conditions reduce to each subset site having found a match, and no two subset
+    # sites having matched the same superset site:
+    centres, neighbours, _offsets, dists = find_points_in_spheres(
+        all_coords=lattice.get_cartesian_coords(superset_coords),  # = np.dot; C-contiguous f64, required
+        center_coords=lattice.get_cartesian_coords(subset_coords),
+        r=r,
+        pbc=_PBC,
+        lattice=lattice.matrix,
+        tol=1e-8,
+    )
+    # sort by distance within each subset site, then take the first entry per site (= its nearest):
+    order = np.lexsort((dists, centres))
+    nearest = order[np.unique(centres[order], return_index=True)[1]]
+    matched_dists, site_matches = dists[nearest], neighbours[nearest]
+
+    if len(site_matches) == len(subset_coords) == len(np.unique(site_matches)):
+        return matched_dists, site_matches
+    return None  # some site with no match within ``r``, or two sites matched to the same superset site
+
+
 def _get_site_mapping_from_coords_and_indices(
     s1_coords: ArrayLike,
     s2_coords: ArrayLike,
@@ -1258,19 +1360,22 @@ def _get_site_mapping_from_coords_and_indices(
     superset_coords, superset_indices = (
         (s2_coords, s2_indices) if s1_is_subset else (s1_coords, s1_indices)
     )
-    # Note: if needed in future, could be sped up by using k-D trees and/or k-NN searching, or an
-    # ``lll_frac_tol`` cutoff as in ``pymatgen``'s ``_cart_dists()`` (with a smart initial choice and
-    # scanning upwards, as in ``StructureMatcher_scan_stol()``), rather than global PBC dists over all
-    # sites of the same species -- but not a bottleneck for typical (~<10,000 atom) supercells currently
-    dists = (  # ``pbc_shortest_vectors`` only gives squared distances, so sqrt for the matched dists
-        all_distances(subset_coords, superset_coords)
-        if lattice is None
-        else np.sqrt(pbc_shortest_vectors(lattice, subset_coords, superset_coords, return_d2=True)[1])
-    )
-    site_matches, _ = get_linear_assignment_solution(dists**2 if rms else dists)
+    # try the (much faster) neighbour list search first; only valid under PBC and when it can prove itself
+    # exact, otherwise fall back to the global distance matrix and linear assignment:
+    nn_mapping = _nearest_neighbour_site_mapping(subset_coords, superset_coords, lattice)
+    if nn_mapping is not None:
+        matched_dists, site_matches = nn_mapping
+    else:
+        dists = (  # ``pbc_shortest_vectors`` only gives squared distances, so sqrt for matched dists
+            all_distances(subset_coords, superset_coords)
+            if lattice is None
+            else np.sqrt(pbc_shortest_vectors(lattice, subset_coords, superset_coords, return_d2=True)[1])
+        )
+        site_matches, _ = get_linear_assignment_solution(dists**2 if rms else dists)
+        matched_dists = dists[np.arange(len(site_matches)), site_matches]
 
-    # gather the matched distances and convert to native Python types:
-    matched_dists = dists[np.arange(len(site_matches)), site_matches].tolist()
+    # convert to native Python types:
+    matched_dists = matched_dists.tolist()
     site_matches = site_matches.tolist()
     subset_indices = np.asarray(subset_indices).tolist()
     superset_indices = np.asarray(superset_indices).tolist()
