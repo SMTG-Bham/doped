@@ -63,6 +63,7 @@ from doped.utils.parsing import (
     _find_calc_outputs,
     _format_mismatching_incar_warning,
     _get_output_files_and_check_if_multiple,
+    _handle_infinite_band_gap,
     _multiple_files_warning,
     get_magnetization_from_vasprun,
     get_vasprun,
@@ -3199,6 +3200,51 @@ def entries_from_chempot_limits(
     return entries
 
 
+def _format_kpoints_grid(kpoints_data: Any) -> str:
+    r"""
+    Format the k-point grid stored in ``entry.data["kpoints"]`` as a
+    ``"kx x ky x kz"`` string, for the ``k-points`` column of
+    :meth:`CompetingPhasesAnalyzer.get_formation_energy_df`.
+
+    Two layouts are accepted, as different calculators record the grid
+    differently:
+
+    - The nested single-grid form written by ``Vasprun.kpoints.kpts``
+      (e.g. ``[[6, 6, 6]]``).
+    - A flat ``(kx, ky, kz)`` grid, as parsed from the Quantum ESPRESSO
+      ``k_points_IBZ`` input block by
+      :func:`_parse_entry_from_espresso_and_catch_exception`.
+
+    Anything else -- most importantly an explicit list of k-points (line-mode
+    band structures, or QE ``K_POINTS crystal``/``tpiba`` cards), for which
+    there is no regular grid to report -- gives ``"N/A"``.
+
+    Args:
+        kpoints_data:
+            The ``entry.data["kpoints"]`` value (or ``None``).
+
+    Returns:
+        str:
+            e.g. ``"6x6x6"``, or ``"N/A"`` if no regular grid is available.
+    """
+    if kpoints_data is None or len(kpoints_data) == 0:
+        return "N/A"
+
+    if len(kpoints_data) == 1 and not np.isscalar(kpoints_data[0]):
+        grid = list(kpoints_data[0])  # nested ``[[kx, ky, kz]]``
+    elif len(kpoints_data) == 3 and all(np.isscalar(k) for k in kpoints_data):
+        grid = list(kpoints_data)  # flat ``(kx, ky, kz)``
+    else:
+        return "N/A"  # explicit k-point list; no regular grid
+
+    # guard against a single explicit k-point being mistaken for a grid (its fractional
+    # coordinates would otherwise be printed as if they were grid subdivisions):
+    if len(grid) != 3 or not all(float(k).is_integer() and float(k) > 0 for k in grid):
+        return "N/A"
+
+    return "x".join(str(int(k)) for k in grid)
+
+
 class CompetingPhasesAnalyzer(MSONable):
     def __init__(
         self,
@@ -3923,12 +3969,7 @@ class CompetingPhasesAnalyzer(MSONable):
         for entry in self.entries:
             composition = entry.composition
             formula_units = composition.get_reduced_composition_and_factor()[1]
-            kpoints_data = entry.data.get("kpoints")
-            kpoints_string = (
-                "x".join(str(k) for k in kpoints_data[0])
-                if (kpoints_data and len(kpoints_data) == 1)
-                else "N/A"
-            )
+            kpoints_string = _format_kpoints_grid(entry.data.get("kpoints"))
             space_group = (
                 entry.data.get("doped_name", f"{entry.name}_N/A_EaH_")
                 .split(f"{entry.name}_")[1]
@@ -5441,6 +5482,42 @@ def get_X_poor_limit(X: str, chempots: dict, **kwargs) -> str:
 # ──────────────────────────────────────────────────────────────────────────
 
 
+def _get_qe_kpoints_grid(pwxml) -> list[int] | None:
+    """
+    Get the ``[nk1, nk2, nk3]`` Monkhorst-Pack grid used for a QE calculation,
+    from the ``k_points_IBZ`` input block of its ``.xml`` output.
+
+    This is the QE analogue of ``Vasprun.kpoints.kpts[0]`` (the `input` grid),
+    as opposed to ``PWxml.kpoints_frac`` (the `irreducible` k-points actually
+    sampled, which is what QE reports in its output and is typically much
+    longer than 3 entries).
+
+    Γ-only calculations (written by ``doped`` as ``K_POINTS gamma`` for
+    molecules-in-a-box) record a single explicit k-point at the origin rather
+    than a grid, and are reported as ``[1, 1, 1]``.
+
+    Args:
+        pwxml (``PWxml``):
+            Parsed QE ``.xml`` output.
+
+    Returns:
+        list[int] or None:
+            The ``[nk1, nk2, nk3]`` grid, or ``None`` if an explicit k-point
+            list was used (for which there is no regular grid).
+    """
+    k_points_ibz = (getattr(pwxml, "parameters", None) or {}).get("k_points_IBZ") or {}
+
+    if mp_grid := k_points_ibz.get("monkhorst_pack"):
+        with contextlib.suppress(KeyError, TypeError, ValueError):
+            return [int(mp_grid[f"@nk{i}"]) for i in (1, 2, 3)]
+
+    if k_points_ibz.get("nk") == 1:  # single explicit k-point; Γ-only iff it sits at the origin
+        with contextlib.suppress(Exception):
+            if np.allclose(pwxml.kpoints_frac[0], 0):
+                return [1, 1, 1]
+
+    return None
+
 def _parse_entry_from_espresso_and_catch_exception(
     espresso_path: PathLike,
 ) -> tuple:
@@ -5461,9 +5538,13 @@ def _parse_entry_from_espresso_and_catch_exception(
         # ``entry_id`` to bypass that branch:
         entry = pwxml.get_computed_entry(entry_id=f"pwxml-{espresso_path}")
         unique_symbols = sorted(set(pwxml.atomic_symbols))
+        kpoints_grid = _get_qe_kpoints_grid(pwxml)
         summary_dict = {}
         with contextlib.suppress(Exception):
-            summary_dict["band_gap"] = pwxml.eigenvalue_band_properties[0]
+            band_gap, cbm, *_ = pwxml.eigenvalue_band_properties
+            # guard against infinite band gaps (common with band-gap materials in QE; no empty bands calculated without setting nbnd),
+            # which would otherwise break entry classification and JSON serialisation:
+            summary_dict["band_gap"] = _handle_infinite_band_gap(band_gap, cbm, espresso_path)[0]
             summary_dict["total_magnetization"] = get_magnetization_from_vasprun(pwxml)
 
         entry.data.update(
@@ -5474,7 +5555,9 @@ def _parse_entry_from_espresso_and_catch_exception(
                 "energy_per_atom": entry.energy_per_atom,
                 "elements": unique_symbols,
                 "nelements": len(unique_symbols),
-                "kpoints": list(pwxml.kpoints_frac),
+                "kpoints": (
+                    kpoints_grid if kpoints_grid is not None else list(pwxml.kpoints_frac)
+                ),
                 "qe_input": pwxml.parameters,
                 "pseudo_filenames": list(pwxml.potcar_spec),
                 "summary": summary_dict,
@@ -5561,7 +5644,6 @@ def _compare_qe_input_parameters(
 def _compare_pseudo_symbols(
     ref_pseudos: list[str],
     entry_pseudos: list[str],
-    warn: bool = True,
     only_matching_elements: bool = False,
 ) -> list | bool:
     """
@@ -5572,7 +5654,7 @@ def _compare_pseudo_symbols(
     ``(entry_pseudo, ref_pseudo)`` mismatching pairs.
     """
     def _elem_from_pseudo(fname: str) -> str:
-        return os.path.basename(fname).split(".")[0].split("_")[0]
+        return os.path.basename(fname).split(".")[0].split("_")[0].capitalize()
 
     ref_list = list(ref_pseudos or [])
     entry_list = list(entry_pseudos or [])
@@ -5592,14 +5674,6 @@ def _compare_pseudo_symbols(
             )
             mismatches.append((entry_match, ref_p))
 
-    if mismatches and warn:
-        warnings.warn(
-            f"There are mismatching pseudopotential filenames which are likely to cause errors in "
-            f"the parsed results. Found the following differences:\n"
-            f"(in the format: (entry pseudopotential, reference pseudopotential)):"
-            f"\n{mismatches}\n"
-            f"The same pseudopotentials should be used for all calculations for accurate results!"
-        )
     return mismatches if mismatches else True
 
 
@@ -5626,6 +5700,31 @@ def _format_mismatching_qe_input_warning(
     )
 
 
+def _default_qe_competing_phases_path(composition: str | Composition) -> str:
+    """
+    Get the default host-compound folder for QE competing phase calculations:
+    ``"{host}_QE/CompetingPhases_{host}_QE"`` (e.g.
+    ``"MgO_QE/CompetingPhases_MgO_QE"``), i.e. a ``{host}_QE`` parent folder
+    keyed on the host composition's reduced formula.
+
+    Used as the default ``output_path`` for
+    :meth:`CompetingPhasesQE.qe_convergence_setup` /
+    :meth:`CompetingPhasesQE.qe_std_setup` when writing inputs, and as the
+    default parsing path for :class:`CompetingPhasesAnalyzerQE`, so that
+    generated inputs are found again without having to specify the path.
+
+    Args:
+        composition (str or ``Composition``):
+            Composition of the host material (e.g. ``"MgO"``).
+
+    Returns:
+        str:
+            The default competing phases folder for this host composition.
+    """
+    host = Composition(composition).reduced_formula
+    return os.path.join(f"{host}_QE", f"CompetingPhases_{host}_QE")
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # CompetingPhasesQE: QE input file generation for competing phases
 # ──────────────────────────────────────────────────────────────────────────
@@ -5643,14 +5742,16 @@ class CompetingPhasesQE(CompetingPhases):
 
     def qe_convergence_setup(
         self,
-        kpoints_metals: tuple = (40, 1000, 5),
-        kpoints_nonmetals: tuple = (5, 120, 5),
+        output_path: PathLike | None = None,
+        kpoints_metals: tuple[float, float, float] = (40, 1000, 5),
+        kpoints_nonmetals: tuple[float, float, float] = (5, 120, 5),
         kpoint_sweep_ecutwfc: int | None = None,
         ecut_convergence: tuple = (20, 90, 10),
-        ecut_kpoints_metals: int = 200,
-        ecut_kpoints_nonmetals: int = 64,
+        ecut_kpoints_metals: float = 200,
+        ecut_kpoints_nonmetals: float = 64,
         pseudo_dir: str = "./pseudo_folder_name/",
         pseudo_map: dict | None = None,
+        soc: bool = False,
         kpoints_shift: tuple[int, int, int] = (0, 0, 0),
         user_system_settings: dict | None = None,
         user_control_settings: dict | None = None,
@@ -5661,7 +5762,9 @@ class CompetingPhasesQE(CompetingPhases):
         (``ecutwfc``) convergence testing of competing phases, using SSSP pseudopotentials by default.
         Analogous to ``CompetingPhases.convergence_setup`` for VASP.
 
-        Two separate sub-trees are written per phase:
+        All competing-phase inputs are written under a single host-compound folder.
+        Two separate sub-trees are written per phase (under
+        ``output_path/<phase>/``):
 
         - ``kpoint_converge/<kname>/pw.in``: k-point grid varied at fixed
           ``ecutwfc``. Skipped for diatomic molecules (Γ-only is exact for
@@ -5673,12 +5776,27 @@ class CompetingPhasesQE(CompetingPhases):
           following standard ``ecutwfc``-convergence methodology.
 
         Args:
-            kpoints_metals (tuple):
+            output_path (PathLike or None):
+                Host-compound parent folder under which all competing-phase
+                sub-folders are written. If ``None`` (default), this is set to
+                ``"{host_compound}_QE/CompetingPhases_{host_compound}_QE"``
+                (e.g. ``"MgO_QE/CompetingPhases_MgO_QE"``), i.e. a
+                ``{host}_QE`` parent folder keyed on the host composition's
+                reduced formula.
+            kpoints_metals (tuple[float, float, float]):
                 ``(min, max, step)`` reciprocal k-point density (Å^-3) range
-                to test for metallic phases. Default ``(40, 1000, 5)``.
-            kpoints_nonmetals (tuple):
+                to test for metallic phases (``max`` exclusive).
+                 Default ``(40, 1000, 5)``. Note that only
+                unique k-point grids are generated, so small step sizes (as
+                default) just result in each k-points choice between ``min``
+                and ``max`` being included.
+            kpoints_nonmetals (tuple[float, float, float]):
                 ``(min, max, step)`` reciprocal k-point density (Å^-3) range
-                to test for non-metallic phases. Default ``(5, 120, 5)``.
+                to test for non-metallic phases (``max`` exclusive). 
+                Default ``(5, 120, 5)``. Note that
+                only unique k-point grids are generated, so small step sizes
+                (as default) just result in each k-points choice between
+                ``min`` and ``max`` being included.
             kpoint_sweep_ecutwfc (int or None):
                 ``ecutwfc`` (Ry) held fixed while the k-grid is swept.
                 ``None`` (default) keeps the YAML set default (60 Ry).
@@ -5686,10 +5804,10 @@ class CompetingPhasesQE(CompetingPhases):
                 ``(min, max, step)`` ``ecutwfc`` range in Ry for the cutoff
                 convergence sweep, with ``max`` inclusive. Default
                 ``(20, 90, 10)`` (i.e. 20, 30, 40, 50, 60, 70, 80, 90 Ry).
-            ecut_kpoints_metals (int):
+            ecut_kpoints_metals (float):
                 Fixed reciprocal k-point density (Å^-3) used for metallic
                 phases during the ``ecutwfc`` sweep. Default 200.
-            ecut_kpoints_nonmetals (int):
+            ecut_kpoints_nonmetals (float):
                 Fixed reciprocal k-point density (Å^-3) used for non-metallic
                 phases during the ``ecutwfc`` sweep. Default 64. Molecules use
                 Γ-only sampling regardless.
@@ -5701,6 +5819,15 @@ class CompetingPhasesQE(CompetingPhases):
                 ``{"O": "O.pbe-n-kjpaw_psl.0.1.UPF"}``. Defaults to the SSSP
                 1.3.0 PBE Efficiency filename for each element; any entries
                 given here override that default per element.
+            soc (bool):
+                If ``True``, include spin-orbit coupling by setting
+                ``noncolin=.true.`` and ``lspinorb=.true.`` in ``&SYSTEM``
+                for every phase (requires fully-relativistic
+                pseudopotentials). Magnetic phases are then seeded via
+                ``starting_magnetization`` instead of
+                ``nspin``/``tot_magnetization`` (which QE does not allow
+                for noncolinear calculations). Should be consistent with the
+                defect supercell calculations. Default ``False``.
             kpoints_shift (tuple):
                 ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
                 ``K_POINTS automatic`` card, e.g. ``(1, 1, 1)`` for a
@@ -5714,13 +5841,18 @@ class CompetingPhasesQE(CompetingPhases):
             user_electron_settings (dict or None):
                 Override default ``&ELECTRONS`` namelist settings.
         """
+        if output_path is None:
+            output_path = _default_qe_competing_phases_path(self.composition)
+
         base = copy.deepcopy(_qe_SSSP_convergence_defaults)
         base["control"]["pseudo_dir"] = pseudo_dir
         base["control"]["calculation"] = "scf"  # convergence testing uses single-point SCF
         base["system"].update(user_system_settings or {})
         base["control"].update(user_control_settings or {})
         base["electrons"].update(user_electron_settings or {})
-
+        if soc:  # spin-orbit coupling: noncolinear magnetisation with fully-relativistic pseudos
+            base["system"].setdefault("noncolin", True)
+            base["system"].setdefault("lspinorb", True)
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
         ecut_kppvol_by_metallicity = {
             "non-metals": ecut_kpoints_nonmetals,
@@ -5732,12 +5864,18 @@ class CompetingPhasesQE(CompetingPhases):
             nl_settings = copy.deepcopy(base)
             nl_settings["system"]["ibrav"] = 0
             nl_settings["system"]["nat"] = len(structure)
+            # TODO: Input files for multi-oxidation states (as in ``doped/qe.py``); ``ntyp`` here
+            # counts distinct ``Species`` while ``_write_qe_pw_input`` strips oxidation states and
+            # writes one ``ATOMIC_SPECIES`` line per element, so a structure with multiple
+            # oxidation states of the same element (e.g. Fe(2+)/Fe(3+)) gives ``ntyp`` greater than
+            # the number of written species, which QE rejects.
             nl_settings["system"]["ntyp"] = len(set(structure.species))
 
             self._set_qe_spin_polarisation(nl_settings["system"], user_system_settings or {}, entry)
-            self._set_qe_default_metal_smearing(nl_settings["system"], user_system_settings or {})
+            if etype == "metals":  # only metallic phases get Gaussian smearing (as in ``QE.py``)
+                self._set_qe_default_metal_smearing(nl_settings["system"])
 
-            phase_folder = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}"
+            phase_folder = os.path.join(str(output_path), _get_competing_phase_folder_name(entry))
 
             # k-point convergence: vary k-grid at fixed ecut. Skipped for
             # molecules (Γ-only is exact for a molecule-in-a-box).
@@ -5746,8 +5884,13 @@ class CompetingPhasesQE(CompetingPhases):
                 if kpoint_sweep_ecutwfc is not None:
                     kpoint_nl_settings["system"]["ecutwfc"] = kpoint_sweep_ecutwfc
                 min_k, max_k, step_k = kpoints_by_metallicity[etype]
-                for kpoint in range(min_k, max_k, step_k):
+                seen_kgrids: set[tuple[int, int, int]] = set()
+                for kpoint in np.arange(min_k, max_k, step_k):
                     kgrid = _kpoints_grid_from_reciprocal_density(structure, kpoint)
+                    kgrid_tuple = (kgrid[0], kgrid[1], kgrid[2])
+                    if kgrid_tuple in seen_kgrids:
+                        continue
+                    seen_kgrids.add(kgrid_tuple)
                     kname = (
                         "k"
                         + ("_" * (kgrid[0] // 10))
@@ -5794,26 +5937,44 @@ class CompetingPhasesQE(CompetingPhases):
 
     def qe_std_setup(
         self,
-        kpoints_metals: int = 200,
-        kpoints_nonmetals: int = 64,
+        output_path: PathLike | None = None,
+        kpoints_metals: float = 200,
+        kpoints_nonmetals: float = 64,
         pseudo_dir: str = "./pseudo_folder_name/",
         pseudo_map: dict | None = None,
         use_hse: bool = False,
+        soc: bool = False,
         kpoints_shift: tuple[int, int, int] = (0, 0, 0),
         user_system_settings: dict | None = None,
         user_control_settings: dict | None = None,
         user_electron_settings: dict | None = None,
+        user_ions_settings: dict | None = None,
+        user_cell_settings: dict | None = None,
     ) -> None:
         """
-        Generates QE ``pw.in`` input files for standard relaxations of
-        competing phases, using HSE06 hybrid DFT by default.  Analogous to
-        ``CompetingPhases.vasp_std_setup`` for VASP.
+        Generates QE ``pw.in`` input files for standard (variable-cell)
+        relaxations of competing phases, using the SSSP settings by default
+        (i.e. the functional implied by the SSSP PBE pseudopotentials), or
+        HSE06 hybrid DFT if ``use_hse=True``.  Analogous to
+        ``CompetingPhases.vasp_std_setup`` for VASP -- note that the VASP
+        method uses HSE06 by default, while here PBE is the default.
+
+        Each phase input is written to
+        ``output_path/<phase>/espresso_std/pw.in``, i.e. under a single
+        host-compound parent folder.
 
         Args:
-            kpoints_metals (int):
+            output_path (PathLike or None):
+                Host-compound parent folder under which all competing-phase
+                sub-folders are written. If ``None`` (default), this is set to
+                ``"{host_compound}_QE/CompetingPhases_{host_compound}_QE"``
+                (e.g. ``"MgO_QE/CompetingPhases_MgO_QE"``), i.e. a
+                ``{host}_QE`` parent folder keyed on the host composition's
+                reduced formula.
+            kpoints_metals (float):
                 Reciprocal k-point density (Å^-3) for metallic phases.
                 Default 200.
-            kpoints_nonmetals (int):
+            kpoints_nonmetals (float):
                 Reciprocal k-point density (Å^-3) for non-metallic phases.
                 Default 64.
             pseudo_dir (str):
@@ -5824,11 +5985,20 @@ class CompetingPhasesQE(CompetingPhases):
                 SSSP 1.3.0 PBE Efficiency filename for each element; any
                 entries given here override that default per element.
             use_hse (bool):
-                If ``True`` (default), use HSE06 hybrid DFT settings. If
-                ``False``, use SSSP settings. Note that any changes to
+                If ``True``, use HSE06 hybrid DFT settings. If ``False``
+                (default), use SSSP settings. Note that any changes to
                 the functional should be consistent with those used for the
                 defect supercell calculations.
-                Default = 'False'
+                Default = ``False``
+            soc (bool):
+                If ``True``, include spin-orbit coupling by setting
+                ``noncolin=.true.`` and ``lspinorb=.true.`` in ``&SYSTEM``
+                for every phase (requires fully-relativistic
+                pseudopotentials). Magnetic phases are then seeded via
+                ``starting_magnetization`` instead of
+                ``nspin``/``tot_magnetization`` (which QE does not allow
+                for noncolinear calculations). Should be consistent with the
+                defect supercell calculations. Default ``False``.
             kpoints_shift (tuple):
                 ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
                 ``K_POINTS automatic`` card, e.g. ``(1, 1, 1)`` for a
@@ -5840,7 +6010,19 @@ class CompetingPhasesQE(CompetingPhases):
                 Override default ``&CONTROL`` namelist settings.
             user_electron_settings (dict or None):
                 Override default ``&ELECTRONS`` namelist settings.
+            user_ions_settings (dict or None):
+                Override default ``&IONS`` namelist settings (e.g.
+                ``{"ion_dynamics": "bfgs"}``). 
+            user_cell_settings (dict or None):
+                Override default ``&CELL`` namelist settings (e.g.
+                ``{"cell_dofree": "all", "press": 0.0}``). These apply to the
+                variable-cell relaxation performed for solid phases. Ignored
+                for molecules, which are relaxed at fixed cell (so ``&CELL`` is
+                not written).
         """
+        if output_path is None:
+            output_path = _default_qe_competing_phases_path(self.composition)
+
         base = copy.deepcopy(
             _qe_hse_relax_defaults if use_hse else _qe_SSSP_convergence_defaults
         )
@@ -5849,11 +6031,21 @@ class CompetingPhasesQE(CompetingPhases):
         base["system"].update(user_system_settings or {})
         base["control"].update(user_control_settings or {})
         base["electrons"].update(user_electron_settings or {})
+        base["ions"].update(user_ions_settings or {})
+        base["cell"].update(user_cell_settings or {})
+        if soc:  # spin-orbit coupling: noncolinear magnetisation with fully-relativistic pseudos
+            base["system"].setdefault("noncolin", True)
+            base["system"].setdefault("lspinorb", True)
 
         for entry, etype, structure in self._iter_entries_with_categories():
             nl_settings = copy.deepcopy(base)
             nl_settings["system"]["ibrav"] = 0
             nl_settings["system"]["nat"] = len(structure)
+            # TODO: Input files for multi-oxidation states (as in ``doped/qe.py``); ``ntyp`` here
+            # counts distinct ``Species`` while ``_write_qe_pw_input`` strips oxidation states and
+            # writes one ``ATOMIC_SPECIES`` line per element, so a structure with multiple
+            # oxidation states of the same element (e.g. Fe(2+)/Fe(3+)) gives ``ntyp`` greater than
+            # the number of written species, which QE rejects.
             nl_settings["system"]["ntyp"] = len(set(structure.species))
 
             if "molecule" in etype:
@@ -5865,10 +6057,11 @@ class CompetingPhasesQE(CompetingPhases):
                 kgrid = _kpoints_grid_from_reciprocal_density(structure, kpoints_metals)
 
             self._set_qe_spin_polarisation(nl_settings["system"], user_system_settings or {}, entry)
-            self._set_qe_default_metal_smearing(nl_settings["system"], user_system_settings or {})
+            if etype == "metals":  
+                self._set_qe_default_metal_smearing(nl_settings["system"])
 
-            folder = (
-                f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/espresso_std"
+            folder = os.path.join(
+                str(output_path), _get_competing_phase_folder_name(entry), "espresso_std"
             )
             _write_qe_pw_input(
                 filepath=os.path.join(folder, "pw.in"),
@@ -5892,17 +6085,18 @@ class CompetingPhasesQE(CompetingPhases):
         (``ISPIN`` / ``NUPDOWN``).
         """
         magnetization = entry.data.get("summary", {}).get("total_magnetization")
-        with contextlib.suppress(TypeError):
-            if magnetization > 0:
-                system_settings["nspin"] = user_system_settings.get("nspin", 2)
-                if "tot_magnetization" not in system_settings and int(magnetization) > 0:
-                    system_settings["tot_magnetization"] = int(magnetization)
+        if magnetization is not None and magnetization > 0.1:  # account for magnetic moment
+            if system_settings.get("noncolin"):
+                # noncolinear (SOC) calculations: ``nspin``/``tot_magnetization`` are LSDA-only
+                # (not allowed by QE with ``noncolin``), so seed the magnetisation via
+                # ``starting_magnetization`` instead (expanded per-species on writing):
+                system_settings.setdefault("starting_magnetization", 0.1)
+                return
+            system_settings["nspin"] = user_system_settings.get("nspin", 2)
+            if "tot_magnetization" not in system_settings and int(magnetization) > 0:
+                system_settings["tot_magnetization"] = int(magnetization)
 
-    def _set_qe_default_metal_smearing(
-        self,
-        system_settings: dict,
-        user_system_settings: dict,
-    ) -> None:
+    def _set_qe_default_metal_smearing(self, system_settings: dict) -> None:
         """
         Set ``occupations = 'smearing'``, ``smearing = 'gaussian'``
         and ``degauss = 0.005`` Ry in the QE ``&SYSTEM``
@@ -5910,9 +6104,9 @@ class CompetingPhasesQE(CompetingPhases):
         ``CompetingPhases._set_default_metal_smearing`` for VASP
         (``ISMEAR`` / ``SIGMA``).
         """
-        system_settings["occupations"] = "smearing"
-        system_settings["smearing"] = user_system_settings.get("smearing", "gaussian")
-        system_settings["degauss"] = user_system_settings.get("degauss", 0.005)
+        system_settings.setdefault("occupations", "smearing")
+        system_settings.setdefault("smearing", "gaussian")
+        system_settings.setdefault("degauss", 0.005)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -5929,17 +6123,18 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
     ``espresso.xml``).
 
     Usage is identical to ``CompetingPhasesAnalyzer`` — pass the path to a
-    ``CompetingPhases`` directory tree (generated by
+    competing phases directory tree (generated by
     ``CompetingPhasesQE.qe_std_setup``) or a list of paths to QE
-    ``.xml`` files.
+    ``.xml`` files. If no path is given, the default ``output_path`` written
+    by ``CompetingPhasesQE.qe_std_setup`` for this host composition is used.
     """
 
     def __init__(
         self,
         composition: str | Composition,
         entries: (
-            PathLike | list[PathLike] | list[ComputedEntry] | list[ComputedStructureEntry]
-        ) = "CompetingPhases",
+            PathLike | list[PathLike] | list[ComputedEntry] | list[ComputedStructureEntry] | None
+        ) = None,
         subfolder: PathLike | None = "espresso_std",
         single_extrinsic_phase_limits: bool = False,
         verbose: bool = True,
@@ -5950,12 +6145,16 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
         Args:
             composition (str, ``Composition``):
                 Composition of the host material (e.g. ``'MgO'``).
-            entries (PathLike, list[PathLike], list[ComputedEntry]):
-                Either a path to the base folder containing QE outputs (e.g.
-                ``"CompetingPhases"``; with subfolders like
-                ``formula_EaH_X/espresso_std/espresso.xml``), a list of paths
-                to QE ``.xml`` output files, or a list of pre-built
-                ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
+            entries (PathLike, list[PathLike], list[ComputedEntry], None):
+                Either a path to the base folder containing QE outputs (with
+                subfolders like ``formula_EaH_X/espresso_std/espresso.xml``),
+                a list of paths to QE ``.xml`` output files, or a list of
+                pre-built ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
+                If ``None`` (default), this is set to
+                ``"{host_compound}_QE/CompetingPhases_{host_compound}_QE"``
+                (e.g. ``"MgO_QE/CompetingPhases_MgO_QE"``), matching the
+                default ``output_path`` written by
+                ``CompetingPhasesQE.qe_std_setup``.
 
             subfolder (PathLike):
                 Subfolder within each calculation directory that contains the
@@ -5979,6 +6178,9 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
         self.intrinsic_elements = self.elements.copy()
         self.extrinsic_elements: list[str] = []
         self.single_extrinsic_phase_limits = single_extrinsic_phase_limits
+
+        if entries is None:  
+            entries = _default_qe_competing_phases_path(self.composition)
 
         if not isinstance(entries, str | PathLike | list):
             raise TypeError(
@@ -6008,7 +6210,7 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
 #TODO:  Some pymatgen-espresso helpers are not present, eg. Unconverged calculation warnings (Find every one of these discrepancies and fix - at least the ones relevant to doped)
     def _from_espresso_outputs(
         self,
-        path: PathLike | list[PathLike] = "CompetingPhases",
+        path: PathLike | list[PathLike] | None = None,
         subfolder: PathLike | None = "espresso_std",
         verbose: bool = True,
         processes: int | None = None,
@@ -6022,11 +6224,15 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
 
 
         Args:
-            path (PathLike or list):
+            path (PathLike or list or None):
                 Either a path to the base folder containing competing phase
                 calculation outputs (e.g.
                 ``path/formula_EaH_X/{subfolder}/espresso.xml``), or a list
-                of paths to QE ``.xml`` output files.
+                of paths to QE ``.xml`` output files. If ``None`` (default),
+                uses ``_default_qe_competing_phases_path(self.composition)``
+                (e.g. ``"MgO_QE/CompetingPhases_MgO_QE"``), matching the
+                default ``output_path`` written by
+                ``CompetingPhasesQE.qe_std_setup``.
             subfolder (PathLike):
                 Subfolder containing the QE ``.xml`` output within each
                 calculation directory. Default ``"espresso_std"``.
@@ -6042,51 +6248,29 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
         """
         skipped_folders: list = []
 
+        if path is None:
+            path = _default_qe_competing_phases_path(self.composition)
+
         if isinstance(path, list):
             for p in path:
                 if ".xml" in str(p) and os.path.isfile(p):
                     self.espresso_paths.append(str(p))
-                elif os.path.isdir(p) and (xml_files := sorted(Path(str(p)).glob("*.xml*"))):
-                    self.espresso_paths.append(str(xml_files[0]))
+                elif os.path.isdir(p) and (
+                    xml_path := self._find_espresso_xml_in_directory(p, subfolder)
+                ):
+                    self.espresso_paths.append(xml_path)
                 else:
-                    skipped_folders.append(p)
+                    skipped_folders.append(f"{p} or {p}/{subfolder}" if subfolder else p)
 
         elif isinstance(path, PathLike):
             for p in os.listdir(path):
                 if os.path.isdir(os.path.join(path, p)) and not str(p).startswith("."):
-                    xml_path = "null_directory"
-                    with contextlib.suppress(FileNotFoundError):
-                        xml_path, multiple = _get_output_files_and_check_if_multiple(
-                            ".xml", f"{os.path.join(path, p)}/{subfolder}"
-                        )
-                        if multiple:
-                            folder_name = (
-                                f"{os.path.join(path, p)}/{subfolder}"
-                                if subfolder
-                                else os.path.join(path, p)
-                            )
-                            warnings.warn(
-                                f"Multiple `.xml` files found in directory: "
-                                f"{folder_name}. Using {xml_path} to parse the calculation "
-                                f"energy and metadata."
-                            )
-
-                    if os.path.exists(xml_path):
+                    if xml_path := self._find_espresso_xml_in_directory(
+                        os.path.join(path, p), subfolder
+                    ):
                         self.espresso_paths.append(xml_path)
                     else:
-                        with contextlib.suppress(FileNotFoundError):
-                            xml_path, multiple = _get_output_files_and_check_if_multiple(
-                                ".xml", os.path.join(path, p)
-                            )
-                            if multiple:
-                                warnings.warn(
-                                    f"Multiple `.xml` files found in directory: "
-                                    f"{os.path.join(path, p)}. Using {xml_path} to parse."
-                                )
-                        if os.path.exists(xml_path):
-                            self.espresso_paths.append(xml_path)
-                        else:
-                            skipped_folders += [f"{p} or {p}/{subfolder}"]
+                        skipped_folders += [f"{p} or {p}/{subfolder}" if subfolder else str(p)]
         else:
             raise ValueError(
                 "`path` should either be a path to a folder (with competing phase "
@@ -6175,6 +6359,46 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
 
         self._from_entries_qe(self.entries, check_compatibility=check_compatibility)
 
+    @staticmethod
+    def _find_espresso_xml_in_directory(
+        directory: PathLike, subfolder: PathLike | None = "espresso_std"
+    ) -> str | None:
+        """
+        Find a single QE ``.xml`` output file in ``directory``, looking first in
+        ``directory/{subfolder}`` (if ``subfolder`` is given) and then in
+        ``directory`` itself.
+
+        Args:
+            directory (PathLike):
+                Calculation directory to search.
+            subfolder (PathLike or None):
+                Subfolder of ``directory`` to search first (e.g.
+                ``"espresso_std"``). If ``None``, only ``directory`` itself is
+                searched.
+
+        Returns:
+            str or None:
+                Path to the identified ``.xml`` file, or ``None`` if none was
+                found in either location. A warning is raised if multiple
+                ``.xml`` files are found in the matched directory.
+        """
+        search_dirs = [os.path.join(str(directory), str(subfolder))] if subfolder else []
+        search_dirs.append(str(directory))
+
+        for search_dir in search_dirs:
+            xml_path, multiple = None, False
+            with contextlib.suppress(FileNotFoundError, NotADirectoryError):
+                xml_path, multiple = _get_output_files_and_check_if_multiple(".xml", search_dir)
+            if xml_path and os.path.exists(xml_path):
+                if multiple:
+                    warnings.warn(
+                        f"Multiple `.xml` files found in directory: {search_dir}. Using "
+                        f"{xml_path} to parse the calculation energy and metadata."
+                    )
+                return str(xml_path)
+
+        return None
+
     def _from_entries_qe(
         self,
         entries: list[ComputedEntry | ComputedStructureEntry],
@@ -6184,11 +6408,6 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
         Initialises ``CompetingPhasesAnalyzerQE`` from a list of
         ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
 
-        Runs the full phase-diagram logic from
-        ``CompetingPhasesAnalyzer._from_entries`` (with VASP compatibility
-        checks disabled), then performs QE-specific compatibility checks on
-        pseudopotential filenames and key ``&SYSTEM`` input parameters.
-
         Args:
             entries (list):
                 ``ComputedEntry`` / ``ComputedStructureEntry`` objects to
@@ -6197,7 +6416,6 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
                 Whether to compare pseudopotential filenames and QE input
                 parameters across entries. Default ``True``.
         """
-        #TODO: add more QE relevant checks?
         self._from_entries(entries, check_compatibility=False)
 
         if not check_compatibility:
@@ -6256,7 +6474,6 @@ class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
                 pseudo_mismatches = _compare_pseudo_symbols(
                     pseudo_ref_entry.data["pseudo_filenames"],
                     entry.data.get("pseudo_filenames", []),
-                    warn=False,
                     only_matching_elements=True,
                 )
                 entry.data["mismatching_pseudo_filenames"] = (
