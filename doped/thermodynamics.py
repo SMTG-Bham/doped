@@ -31,7 +31,12 @@ from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 from tqdm import tqdm
 
-from doped.chemical_potentials import ChemicalPotentialGrid, get_X_rich_poor_limit, plot_chempot_heatmap
+from doped.chemical_potentials import (
+    ChemicalPotentialGrid,
+    _get_bulk_comp_from_chempots,
+    get_X_rich_poor_limit,
+    plot_chempot_heatmap,
+)
 from doped.core import DefectEntry, _get_abs_chempots, _no_chempots_warning
 from doped.generation import sort_defect_entries
 from doped.utils import _doped_obj_properties_methods
@@ -98,6 +103,47 @@ def _parse_limit(chempots: dict, limit: str | None = None):
             limit = get_X_rich_poor_limit(limit, chempots)
 
     return limit
+
+
+def _get_limits_to_plot(chempots: dict, composition: str | Composition | None = None) -> list[str]:
+    """
+    Get the default chemical potential limits for plotting: the most anion-rich
+    (i.e. most-electronegative-rich) and most cation-rich (i.e.
+    most-electropositive-rich) limits for the host ``composition``, in the
+    order they appear in ``chempots["limits"]`` and de-duplicated if they
+    correspond to the same limit (e.g. for elemental systems).
+
+    If ``composition`` is not provided, it is auto-determined from the limit
+    names in ``chempots`` (see
+    :func:`~doped.chemical_potentials._get_bulk_comp_from_chempots`).
+
+    Falls back to returning all limits if there are only <=2 limits, or if
+    anion/cation detection fails (e.g. undeterminable host composition, or
+    missing electronegativity data).
+    """
+    all_limits = list(chempots["limits"].keys())
+    if len(all_limits) <= 2:
+        return all_limits
+
+    try:
+        if composition is None:
+            composition = _get_bulk_comp_from_chempots(chempots)
+        if composition is None:
+            return all_limits
+        elements = Composition(composition).elements
+        cation = min(elements, key=lambda el: el.X)
+        anion = max(elements, key=lambda el: el.X)
+        if np.isnan(cation.X) or np.isnan(anion.X):
+            return all_limits
+        selected = {
+            get_X_rich_poor_limit(
+                el.symbol, chempots, warn_if_multiple=False, bulk_composition=composition
+            )
+            for el in (cation, anion)
+        }
+        return [limit for limit in all_limits if limit in selected]  # preserve chempots dict order
+    except Exception:  # electronegativity / limit detection failed, plot all limits
+        return all_limits
 
 
 def get_rich_poor_limit_dict(chempots: dict) -> dict:
@@ -2664,8 +2710,6 @@ class DefectThermodynamics(MSONable):
         defect_thermo_dict.update(kwargs)
         return DefectThermodynamics.from_dict(defect_thermo_dict)
 
-    # TODO: Default to plot both the most (most-electronegative-)anion-rich and the
-    #   (most-electropositive-)cation-rich chempot limits? (Rather than all limits)
     # TODO: Should have similar colours for similar defect types, an option to just show amalgamated
     #  lowest energy charge states for each _defect type_) -- equivalent to setting the dist_tol to
     #  infinity (but should be easier to just do here by taking the short defect name). NaP is an example
@@ -2744,8 +2788,11 @@ class DefectThermodynamics(MSONable):
                 The chemical potential limit for which to plot formation
                 energies. Can be either:
 
-                - ``None``, in which case plots are generated for all limits in
-                  ``chempots``.
+                - ``None``, in which case plots are generated for the most
+                  anion-rich (i.e. most-electronegative-rich) and most
+                  cation-rich (i.e. most-electropositive-rich) limits in
+                  ``chempots``, or for all limits if there are only <=2 limits
+                  or if anion/cation detection fails.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
                   (e.g. "Li-rich") -- see
@@ -2881,7 +2928,7 @@ class DefectThermodynamics(MSONable):
             }  # empty chempots dict to allow plotting, user will be warned
 
         limit = _parse_limit(chempots, limit)
-        limits = [limit] if limit is not None else list(chempots["limits"].keys())
+        limits = [limit] if limit is not None else _get_limits_to_plot(chempots, self.bulk_formula)
 
         if (
             chempots

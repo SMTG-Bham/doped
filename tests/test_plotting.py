@@ -509,15 +509,17 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe_multiple_figs_no_chempot_table(self):
-        # when limits not specified, plots all of them (second should be Te-rich here)
-        # chempot_table true by default with multiple figures, test setting to False
+        # when limits not specified, plots the cation-rich & anion-rich limits (i.e. all of them for CdTe;
+        # second should be Te-rich here)
+        # chempot_table true by default with multiple figures, test setting to False:
         fig = self.CdTe_defect_thermo.plot(self.CdTe_chempots, chempot_table=False)[1]
         fig.gca().set_title("")  # remove the title by setting it to an empty string
         return fig
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_plot_CdTe_Cd_rich(self):
-        # when limits not specified, plots all of them (first should be Cd-rich here)
+        # when limits not specified, plots the cation-rich & anion-rich limits (i.e. all of them for CdTe;
+        # first should be Cd-rich here)
         fig = self.CdTe_defect_thermo.plot(self.CdTe_chempots)[0]
         fig.gca().set_title("")  # remove the title by setting it to an empty string
         return fig
@@ -993,6 +995,43 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         assert any("Colormap 'Well shiii' not found in" in str(warn.message) for warn in w)
         assert any("Defaulting to 'tab10' colormap" in str(warn.message) for warn in w)
         return fig
+
+    def test_default_limits_anion_cation_rich(self):
+        """
+        Test that ``plot()`` with ``limit=None`` defaults to plotting the most
+        anion-rich and most cation-rich limits (rather than all limits), for
+        multi-limit (>2) systems -- with appropriate de-duplication and
+        fallback behaviour in ``_get_limits_to_plot``.
+        """
+        from doped.thermodynamics import _get_limits_to_plot
+
+        # BiSeI (ternary): 4 limits, but only I-rich (anion) & Bi-rich (cation) plotted by default, in
+        # ``chempots["limits"]`` dict order; composition auto-determined from the limit names:
+        chempots = self.Bi_Se_thermo.chempots
+        assert len(chempots["limits"]) == 4
+        assert _get_limits_to_plot(chempots) == ["BiSeI-Se-BiI3", "BiSeI-Bi2Se3-Bi"]
+        assert _get_limits_to_plot(chempots, "BiSeI") == ["BiSeI-Se-BiI3", "BiSeI-Bi2Se3-Bi"]
+        figs = self.Bi_Se_thermo.plot()
+        assert len(figs) == 2
+
+        # <=2 limits (e.g. binary CdTe) -> all limits, unchanged:
+        assert _get_limits_to_plot(self.CdTe_chempots) == list(self.CdTe_chempots["limits"])
+
+        # elemental host -> anion == cation, de-duplicated to a single (X-rich) limit:
+        fake_chempots = {
+            "limits": {
+                "Se-SeO2": {"Se": 0.0, "O": -5.0},
+                "Se-SeCl4": {"Se": -1.0, "O": -4.0},
+                "Se-As2Se3": {"Se": -2.0, "O": -3.0},
+            }
+        }
+        assert _get_limits_to_plot(fake_chempots) == ["Se-SeO2"]
+
+        # fallbacks to all limits; undeterminable composition or no electronegativity data (e.g. He):
+        undeterminable_chempots = {"limits": {name: {"Se": 0.0} for name in ["A", "B", "C"]}}
+        assert _get_limits_to_plot(undeterminable_chempots) == ["A", "B", "C"]
+        # throws pymatgen "No Pauling electronegativity for He" warning:
+        assert _get_limits_to_plot(fake_chempots, "He") == ["Se-SeO2", "Se-SeCl4", "Se-As2Se3"]
 
     def test_format_defect_name(self):
         """
