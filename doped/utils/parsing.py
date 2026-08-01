@@ -1260,10 +1260,9 @@ def _nearest_neighbour_site_mapping(
             (i.e. Cartesian coordinates, no PBC), the neighbour search is
             skipped (returning ``None``).
         r (float | None):
-            Search radius in Å. Only affects the acceptance rate (a larger
-            radius can only turn rejections into acceptances, with identical
-            results otherwise), never correctness. Default: the minimum
-            separation between ``superset`` sites.
+            Search radius in Å. Only affects the acceptance rate and not
+            correctness. Default is the minimum separation between ``superset``
+            sites.
 
     Returns:
         tuple | None:

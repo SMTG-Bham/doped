@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import Lattice, Structure
+from pymatgen.core.structure_matcher import get_linear_assignment_solution, pbc_shortest_vectors
 from test_utils import EXAMPLE_DIR, _run_func_and_capture_stdout_warnings, data_dir
 
 from doped.core import DefectEntry
@@ -25,6 +26,10 @@ from doped.utils.configurations import (
     write_path_structures,
 )
 from doped.utils.parsing import (
+    _cached_min_separation,
+    _get_site_mapping_from_coords_and_indices,
+    _min_separation,
+    _nearest_neighbour_site_mapping,
     check_atom_mapping_far_from_defect,
     find_missing_idx,
     get_site_mappings,
@@ -1287,3 +1292,159 @@ class TestSummedDistAndFindMissingIdx(unittest.TestCase):
 
             for coords_1, coords_2 in ((partial, full), (full, partial)):  # both orderings
                 assert find_missing_idx(coords_1, coords_2, self.lattice) == dropped_idx
+
+
+class TestNearestNeighbourSiteMapping(unittest.TestCase):
+    """
+    Tests for ``_nearest_neighbour_site_mapping``; the neighbour list search
+    used by ``_get_site_mapping_from_coords_and_indices`` when possible, which
+    must give exactly the linear assignment solution whenever it is used.
+    """
+
+    def setUp(self):
+        # 6x6x6 grids (216 sites), in orthogonal and non-orthogonal lattices;
+        # site separation ``r`` is 2.0 Å (cubic) / 1.91 Å (sheared):
+        self.coords = np.stack(np.meshgrid(*[np.arange(6) / 6] * 3, indexing="ij"), axis=-1).reshape(-1, 3)
+        self.lattices = [Lattice.cubic(12), Lattice([[12, 0, 0], [4.5, 11, 0], [3.5, 3, 10.5]])]
+        self.rng = np.random.default_rng(42)
+
+    @staticmethod
+    def _linear_assignment_mapping(subset_coords, superset_coords, lattice):
+        """
+        Reference mapping, from the full distance matrix and linear assignment.
+        """
+        dists = np.sqrt(pbc_shortest_vectors(lattice, subset_coords, superset_coords, return_d2=True)[1])
+        site_matches, _ = get_linear_assignment_solution(dists)
+        return dists[np.arange(len(site_matches)), site_matches], site_matches
+
+    def test_min_separation_and_caching(self):
+        """
+        ``_min_separation`` should give the true minimum separation (under
+        PBC), and be cached on repeat calls with the same coordinates and
+        lattice.
+        """
+        for lattice in self.lattices:
+            _cached_min_separation.cache_clear()
+            separation = _min_separation(self.coords, lattice)
+            all_dists = lattice.get_all_distances(self.coords, self.coords)
+            assert separation == pytest.approx(all_dists[all_dists > 1e-8].min())
+            assert type(separation) is float  # not a ``numpy`` scalar
+
+            # check caching working:
+            hits_before = _cached_min_separation.cache_info().hits
+            assert _min_separation(self.coords.copy(), lattice) == separation  # equal, not identical
+            assert _cached_min_separation.cache_info().hits == hits_before + 1
+
+    def test_matches_linear_assignment(self):
+        """
+        When each site's nearest neighbour is distinct, the neighbour list
+        search should be used, and give exactly the same result as the linear
+        assignment.
+        """
+        # 0.01 fractional noise = 0.12 Å per component: displacements ~0.2 Å (max ~0.5 Å << r ~ 2 Å)
+        for lattice in self.lattices:
+            displaced = self.coords + 0.01 * self.rng.standard_normal(self.coords.shape)
+            for subset in (displaced, np.delete(displaced, 5, axis=0)):  # equal-size, and vacancy-like
+                result = _nearest_neighbour_site_mapping(subset, self.coords, lattice)
+                assert result is not None
+                ref_dists, ref_matches = self._linear_assignment_mapping(subset, self.coords, lattice)
+                np.testing.assert_array_equal(result[1], ref_matches)
+                np.testing.assert_allclose(result[0], ref_dists)
+
+    def test_explicit_search_radius(self):
+        """
+        An explicit search radius ``r`` only affects the acceptance rate;
+        accepted mappings are identical at any radius.
+        """
+        for lattice in self.lattices:
+            displaced = self.coords + 0.01 * self.rng.standard_normal(self.coords.shape)
+            default = _nearest_neighbour_site_mapping(displaced, self.coords, lattice)
+            widened = _nearest_neighbour_site_mapping(displaced, self.coords, lattice, r=10.0)
+            assert default is not None
+            assert widened is not None
+            np.testing.assert_array_equal(widened[1], default[1])
+            np.testing.assert_allclose(widened[0], default[0])
+
+            # while a tiny radius finds no matches (displacements are ~0.2 Å here), so is rejected:
+            assert _nearest_neighbour_site_mapping(displaced, self.coords, lattice, r=0.01) is None
+
+    def test_competing_sites_rejected(self):
+        """
+        The rejection mode seen in practice: one site displaced past the
+        midpoint toward a neighbouring site, so that two sites share the same
+        nearest neighbour and the (greedy) match is no longer a valid
+        assignment -- while every other site is barely displaced.
+        """
+        for lattice in self.lattices:
+            displaced = self.coords + 0.002 * self.rng.standard_normal(self.coords.shape)
+            # site 1 moved just past halfway towards site 0, so both are nearest to site 0:
+            displaced[1] = self.coords[0] + 0.45 * (self.coords[1] - self.coords[0])
+            assert _nearest_neighbour_site_mapping(displaced, self.coords, lattice) is None
+
+            # ...and the fallback still gives the exact linear assignment solution:
+            ref_dists, _ref_matches = self._linear_assignment_mapping(displaced, self.coords, lattice)
+            mapping = _get_site_mapping_from_coords_and_indices(displaced, self.coords, lattice=lattice)
+            assert sum(d for d, *_ in mapping) == pytest.approx(ref_dists.sum())
+
+    def test_periodic_image_duplicates(self):
+        """
+        In slab-like cells the shortest lattice repeat can be the minimum site
+        separation, so the search returns the same site pair via several
+        periodic images.
+
+        The nearest neighbour per site (and hence the mapping) must still be
+        correct.
+        """
+        # one site per cell along c, so ``r`` is set by the c-axis periodic image:
+        xy = np.stack(np.meshgrid(*[np.arange(12) / 12] * 2, indexing="ij"), axis=-1).reshape(-1, 2)
+        coords = np.concatenate([xy, np.zeros((len(xy), 1))], axis=1)
+        lattice = Lattice([[60.0, 0, 0], [9.0, 60.0, 0], [1.1, 0.9, 3.0]])
+        cart = lattice.get_cartesian_coords(coords)
+        displaced = lattice.get_fractional_coords(cart + 0.1 * self.rng.standard_normal(cart.shape))
+
+        result = _nearest_neighbour_site_mapping(displaced, coords, lattice)
+        assert result is not None
+        ref_dists, ref_matches = self._linear_assignment_mapping(displaced, coords, lattice)
+        np.testing.assert_array_equal(result[1], ref_matches)
+        np.testing.assert_allclose(result[0], ref_dists)
+
+    def test_large_displacements_rejected(self):
+        """
+        Once displacements are large enough that two sites share the same
+        nearest neighbour (or that some site has none within the search
+        radius), the nearest neighbour match is no longer the linear assignment
+        solution, so the search must decline (returning ``None``, to fall back
+        to the full distance matrix).
+        """
+        for lattice in self.lattices:
+            displaced = self.coords + 0.15 * self.rng.standard_normal(self.coords.shape)
+            assert _nearest_neighbour_site_mapping(displaced, self.coords, lattice) is None
+
+            # ...but the full mapping still works, falling back to the linear assignment. Compared on
+            # total cost rather than pairing, as the optimal pairing need not be unique here:
+            ref_dists, _ref_matches = self._linear_assignment_mapping(displaced, self.coords, lattice)
+            mapping = _get_site_mapping_from_coords_and_indices(displaced, self.coords, lattice=lattice)
+            assert len(mapping) == len(self.coords)
+            assert sum(d for d, *_ in mapping) == pytest.approx(ref_dists.sum())
+
+    def test_get_site_mappings_with_vacancy(self):
+        """
+        End-to-end check through ``get_site_mappings``, including the unmatched
+        (vacant) site, which the search itself does not return.
+        """
+        for lattice in self.lattices:
+            bulk = Structure(lattice, ["Na"] * len(self.coords), self.coords)
+            # corresponding noisy vacancy structure:
+            displaced = self.coords + 0.02 * self.rng.standard_normal(self.coords.shape)
+            defect = Structure(lattice, ["Na"] * (len(self.coords) - 1), np.delete(displaced, 5, axis=0))
+
+            _dists, matches = self._linear_assignment_mapping(defect.frac_coords, self.coords, lattice)
+            assert [(i, j) for _d, i, j in get_site_mappings(defect, bulk, threshold=1e10)] == list(
+                enumerate(matches)
+            )
+
+            # ``get_site_mappings`` drops unmatched sites, so check these are retained one level down:
+            mapping = _get_site_mapping_from_coords_and_indices(
+                defect.frac_coords, self.coords, lattice=lattice
+            )
+            assert [j for dist, i, j in mapping if dist is None and i is None] == [5]  # the vacant site
