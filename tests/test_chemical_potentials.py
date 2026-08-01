@@ -3337,6 +3337,32 @@ class TestGetXRichPoorLimit(unittest.TestCase):
         assert len(w) == 1
         assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
 
+    def test_get_bulk_comp_from_chempots(self):
+        from doped.chemical_potentials import _get_bulk_comp_from_chempots
+
+        def _fake_chempots(*limit_names):
+            return {"limits": {name: {} for name in limit_names}}
+
+        # unique composition common to all limit names:
+        assert _get_bulk_comp_from_chempots(_fake_chempots("Cd-CdTe", "CdTe-Te")) == "CdTe"
+
+        # multiple common compositions (extrinsic La2Zr2O7 borders the host stability region at every
+        # limit; real La-doped ZrO2 example); earliest-listed composition (host ZrO2) preferred:
+        assert (
+            _get_bulk_comp_from_chempots(_fake_chempots("ZrO2-O2-La2Zr2O7", "Zr3O-ZrO2-La2Zr2O7"))
+            == "ZrO2"
+        )
+
+        # equal earliest positions -> fewest-element composition preferred (host MgO over MgAl2O4):
+        assert _get_bulk_comp_from_chempots(_fake_chempots("MgO-MgAl2O4-O2", "MgAl2O4-MgO-Mg")) == "MgO"
+
+        # single-limit system (e.g. extrinsically-doped elemental Se); earliest-listed preferred:
+        assert _get_bulk_comp_from_chempots(_fake_chempots("Se-SeO2-As2Se3-SeCl4")) == "Se"
+
+        # undeterminable -> None; no common composition, or non-composition limit names:
+        assert _get_bulk_comp_from_chempots(_fake_chempots("Cd-CdTe", "ZrO2-O2")) is None
+        assert _get_bulk_comp_from_chempots(_fake_chempots("A-B", "A-C")) is None
+
     def test_raises_missing_element(self):
         chempots = {"limits": {"A": {"O": -1.0}}, "elemental_refs": {}, "limits_wrt_el_refs": {}}
         with pytest.raises(ValueError, match="Could not find Cu"):

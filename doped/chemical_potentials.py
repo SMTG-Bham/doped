@@ -5241,6 +5241,40 @@ def _find_best_label_positions(
     return best_combo
 
 
+def _get_bulk_comp_from_chempots(chempots: dict) -> str | None:
+    """
+    Auto-determine the bulk/host composition from a ``doped`` chempots dict, as
+    the composition which is present in every limit name (limit names being
+    hyphen-separated composition strings; e.g. ``"CdTe-Te"``).
+
+    If multiple compositions are present in every limit name (e.g. extrinsic
+    chempots where an extrinsic competing phase borders the host stability
+    region at every limit, or single-limit systems where this is every listed
+    composition), the bulk composition is taken as that appearing earliest in
+    the limit names, then with the fewest elements, then alphabetically.
+
+    Returns ``None`` if the bulk composition cannot be determined (e.g. no
+    shared composition in the limit names, or non-composition limit names).
+    """
+    try:
+        limit_comps = [name.split("-") for name in chempots["limits"]]
+        common = set.intersection(*(set(comps) for comps in limit_comps))
+        bulk_comp = min(  # raises if ``common`` is empty or contains non-composition strings -> None
+            common,
+            key=lambda comp: (
+                min(comps.index(comp) for comps in limit_comps),  # earliest position in limit names
+                len(Composition(comp).elements),  # fewest elements
+                comp,  # alphabetically
+            ),
+        )
+        # ``Composition`` parses non-composition strings (e.g. "A") as dummy species, so check ``valid``:
+        return bulk_comp if Composition(bulk_comp).valid else None
+    except (KeyError, TypeError, ValueError):
+        # no "limits" key, empty limits dict (``TypeError`` from argument-less ``set.intersection()``),
+        # empty ``common`` (``ValueError`` from ``min()``) or invalid formula (from ``Composition``)
+        return None
+
+
 def get_X_rich_poor_limit(
     X: str,
     chempots: dict,
@@ -5269,7 +5303,7 @@ def get_X_rich_poor_limit(
 
     Then, for each element Y in the sorted list, the ``max`` / ``min`` (for
     rich / poor respectively) of the μ_Y values among the still-tied limits is
-    taken as μ_Y^*, and only limits with ``|μ_Y - μ_Y^*| < tol`` are kept. The
+    taken as μ_Y*, and only limits with ``|μ_Y - μ_Y*| < tol`` are kept. The
     process repeats until one limit remains, which is then returned. This is
     mostly equivalent to choosing the lexicographic ``max`` / ``min``
     (μ_Y, ...) tuple for X-rich/poor respectively, with a numerical tolerance
@@ -5301,7 +5335,7 @@ def get_X_rich_poor_limit(
             eV. Default is ``True``.
         tol (float):
             Energy tolerance in eV. Limits whose μ_X satisfies
-            ``|μ_X - μ_X^*| < tol``, with μ_X^* being the extremal value, are
+            ``|μ_X - μ_X*| < tol``, with μ_X* being the extremal value, are
             treated as tied. Default is 0.01 eV.
         bulk_composition (str | |Composition| | None):
             Host composition for intrinsic-vs-extrinsic ordering in ties. If
@@ -5331,55 +5365,44 @@ def get_X_rich_poor_limit(
     if not X_chempots:
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
 
-    ref = Element(X)
+    extremum_fn = max if rich else min
+    target = extremum_fn(X_chempot for _limit, X_chempot in X_chempots)
+    tied = [limit for limit, X_chempot in X_chempots if abs(X_chempot - target) < tol]
+    if len(tied) == 1:  # only one limit with the same extremal μ_X, return it
+        return tied[0]
 
-    def pauling_similar_first(sym: str) -> float:
-        a, b = Element(sym).X, ref.X  # electronegativities
-        if a is None or b is None:
+    if bulk_composition is None:  # auto-determine from limit names; ``None`` if undeterminable,
+        bulk_composition = _get_bulk_comp_from_chempots(chempots)
+
+    ref_EN = Element(X).X
+
+    def EN_diff(sym: str) -> float:
+        EN = Element(sym).X
+        try:
+            return abs(float(EN) - float(ref_EN))
+        except (TypeError, ValueError):
             return np.inf  # no electronegativity data available
-        af, bf = float(a), float(b)
-        return np.inf if np.isnan(af) or np.isnan(bf) else abs(af - bf)
 
-    target = (max if rich else min)(chempot for _limit, chempot in X_chempots)
-    tied = [limit for limit, chempot in X_chempots if abs(chempot - target) < tol]
-    if len(tied) == 1:
-        return next(iter(tied))  # only one limit with the same extremal μ_X, return it
-
+    bulk = {e.symbol for e in Composition(bulk_composition).elements} if bulk_composition else set()
     symbols = set().union(*(limits[limit] for limit in tied))
-    if bulk_composition is None and len(chempots["limits"]) > 1:  # auto-determine bulk composition
-        # (outside of the edge case of only one limit -- e.g. chemically unstable materials; can't
-        # auto-determine in those cases so we skip bulk composition filtering)
-        # bulk composition is the only one present in every limit (limits are "X-Y-Z" strings):
-        limit_comps = [set(limit.split("-")) for limit in chempots["limits"]]
-        bulk_composition = next(iter(set.intersection(*limit_comps)))
+    el_order = sorted(
+        (elt for elt in symbols if elt != X),
+        key=lambda elt: (elt not in bulk, EN_diff(elt), elt),
+    )  # sort by bulk presence (not extrinsic), then EN similarity, then alphabetically (for determinism)
 
-    # sort by pauling EN similarity first, then alphabetically (to aid determinism):
-    def _sort_key(sym: str) -> tuple[float, str]:
-        return pauling_similar_first(sym), sym
-
-    if bulk_composition is not None:
-        bulk = {element.symbol for element in Composition(bulk_composition).elements}
-        intr = sorted((element for element in symbols if element in bulk and element != X), key=_sort_key)
-        extr = sorted((element for element in symbols if element not in bulk), key=_sort_key)
-        el_order = intr + extr
-    else:
-        el_order = sorted((element for element in symbols if element != X), key=_sort_key)
-
-    orig_tied = tied.copy()
+    orig_tied = tied.copy()  # for later warning if necessary
     for element in el_order:
-        extremal = (max if rich else min)(limits[lim][element] for lim in tied)
-        tied = [lim for lim in tied if abs(limits[lim][element] - extremal) < tol]  # overwrites ``tied``
+        extremal = extremum_fn(limits[lim][element] for lim in tied)
+        tied = [lim for lim in tied if abs(limits[lim][element] - extremal) < tol]
         if len(tied) == 1:
             break
 
-    if len(tied) > 1:
-        # edge case handling; should very rarely get to this point (unless dealing w/tiny chempot ranges)
-        def mus_tuple(limit: str) -> tuple[float, ...]:
-            return tuple(limits[limit][element] for element in el_order)
-
-        return_limit = (max if rich else min)(sorted(tied), key=lambda lim: (mus_tuple(lim), lim))
-    else:
-        return_limit = next(iter(tied))
+    return_limit = (
+        tied[0]
+        if len(tied) == 1
+        # edge case handling; should very rarely get to this point (unless dealing w/tiny chempot ranges):
+        else extremum_fn(sorted(tied, key=lambda lim: (tuple(limits[lim][elt] for elt in el_order), lim)))
+    )
 
     if warn_if_multiple:
         tied_list = ", ".join(sorted(orig_tied))
