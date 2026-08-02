@@ -4,7 +4,7 @@ Code to generate Quantum ESPRESSO (``pw.x``) defect calculation input files.
 Please note that all structures are written with 'ibrav = 0' and the subsequent CELL_PARAMETERS card
 is used to write lattice vectors.
 """
-
+#TODO: Input files for multi-oxidation states
 import copy
 import os
 import warnings
@@ -51,7 +51,9 @@ qe_SSSP_pseudo_filenames: dict = {
 }
 
 
-def _kpoints_grid_from_reciprocal_density(structure: Structure, reciprocal_density: int) -> list[int]:
+def _kpoints_grid_from_reciprocal_density(
+    structure: Structure, reciprocal_density: float
+) -> list[int]:
     """``[kx, ky, kz]`` Monkhorst-Pack grid at the given k-points-per-Å^-3 density."""
     kpoints_obj = Kpoints.automatic_density_by_vol(structure, kppvol=reciprocal_density)
     return [int(k) for k in kpoints_obj.kpts[0]]
@@ -85,8 +87,15 @@ def _write_qe_pw_input(
     """
     os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
     # strip any oxidation states (e.g. on ``DefectsGenerator`` supercells) so that
-    # species labels are plain element symbols (For example:"O", not "O2-"), as QE expects:
-    oxi_states = sorted({str(sp) for sp in structure.species if getattr(sp, "oxi_state", None)})
+    # species labels are plain element symbols (For example:"O", not "O2-"), as QE expects.
+    # Note the ``is not None`` test: a *zero* oxidation state is still a decorated ``Species``
+    # which stringifies with a suffix ("Ge0+", not "Ge"), and guessed oxidation states are zero
+    # for elemental / intermetallic hosts (e.g. ``DefectsGenerator(Ge).bulk_supercell``), so a
+    # truthiness test here would leave those labels in place and break the ``Element`` lookups
+    # (and ``ATOMIC_POSITIONS``/``ATOMIC_SPECIES`` labels) below:
+    oxi_states = sorted(
+        {str(sp) for sp in structure.species if getattr(sp, "oxi_state", None) is not None}
+    )
     if oxi_states:
         print(
             f"Removing oxidation states ({', '.join(oxi_states)}) from the structure when "
@@ -321,7 +330,7 @@ def qe_convergence_setup_from_structure(
     if kpoint_sweep_ecutwfc is not None:
         kpoint_scf["system"]["ecutwfc"] = kpoint_sweep_ecutwfc
     seen_kgrids: set[tuple[int, int, int]] = set()
-    for density in range(kp_min, kp_max, kp_step):
+    for density in np.arange(kp_min, kp_max, kp_step):
         kgrid = _kpoints_grid_from_reciprocal_density(structure, density)
         kgrid_tuple = (kgrid[0], kgrid[1], kgrid[2])
         if kgrid_tuple in seen_kgrids:

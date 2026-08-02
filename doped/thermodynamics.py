@@ -47,6 +47,7 @@ from doped.utils.parsing import (
     _compare_kpoints,
     _compare_potcar_symbols,
     _get_bulk_supercell,
+    find_archived_fname,
     get_nelect_from_vasprun,
     get_vasprun,
 )
@@ -8989,7 +8990,7 @@ def get_fermi_dos_from_espresso_dos(
         dos = EspressoDos.from_fildos(dos)
 
     if bulk_pwxml is not None and not isinstance(bulk_pwxml, PWxml):
-        bulk_pwxml = PWxml(bulk_pwxml)
+        bulk_pwxml = PWxml(find_archived_fname(str(bulk_pwxml)))  # resolves ``.xml`` -> ``.xml.gz``
 
     if structure is None and isinstance(bulk_pwxml, PWxml):
         structure = bulk_pwxml.final_structure

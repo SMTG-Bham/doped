@@ -125,7 +125,7 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
 
         else:  # OUTCAR for VASP, or a LOCPOT/.cube path for atomic site potentials
             path_basename = os.path.basename(str(locpot_or_outcar_or_cube)).lower()
-            if path_basename.endswith(".cube") or "locpot" in path_basename:
+            if path_basename.endswith((".cube", ".cube.gz")) or "locpot" in path_basename:
                 site_potentials_dict = get_atomic_site_potentials(
                     locpot_or_outcar_or_cube, beta=beta
                 )
