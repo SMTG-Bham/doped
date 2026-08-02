@@ -60,6 +60,7 @@ from doped.utils.parsing import (
     _get_calc_files_df,
     _get_defect_supercell_frac_coords,
     _get_output_files_and_check_if_multiple,
+    _handle_infinite_band_gap,
     _multiple_files_warning,
     _vasp_file_parsing_action_dict,
     check_atom_mapping_far_from_defect,
@@ -4424,16 +4425,9 @@ class DefectParserEspresso:
 
         bulk_sc_structure = self.bulk_vr.initial_structure
         band_gap, cbm, vbm, _ = self.bulk_vr.eigenvalue_band_properties
-        # TODO: This can cause downstream failures if CBM and band_gap is inf (which happens if only bands
-        # up to VBM are calculated; common with QE). Should catch this case, warn and set to None.
-        if np.isinf(cbm) or np.isinf(band_gap):
-            warnings.warn(
-                "CBM and band_gap are infinite, which can cause downstream failures. "
-                "Reverting to use of bulk supercell calculation for band edge extrema."
-                "Add extra bands using the 'nbnd' parameter for QE"
-            )
-            cbm = None
-            band_gap = None
+        band_gap, cbm = _handle_infinite_band_gap(
+            band_gap, cbm, self.defect_entry.calculation_metadata.get("bulk_path")
+        )
 
         gap_calculation_metadata = {}
 
@@ -4509,10 +4503,16 @@ class DefectParserEspresso:
             gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
 
         if bulk_band_gap_vr:
-            if not isinstance(bulk_band_gap_vr, Vasprun):
-                bulk_band_gap_vr = get_vasprun(bulk_band_gap_vr, parse_projected_eigen=False)
+            if not isinstance(bulk_band_gap_vr, Vasprun):  # ``PWxml`` subclasses ``Vasprun``
+                bulk_band_gap_vr = RunParser("espresso").get_run(bulk_band_gap_vr)
 
             band_gap, cbm, vbm, _ = bulk_band_gap_vr.eigenvalue_band_properties
+            band_gap, cbm = _handle_infinite_band_gap(
+                band_gap,
+                cbm,
+                getattr(bulk_band_gap_vr, "_filename", None)
+                or getattr(bulk_band_gap_vr, "filename", None),
+            )
 
         gap_calculation_metadata.update(
             {
@@ -4763,7 +4763,9 @@ class FolderHandler:
         ``output_path`` if not an absolute directory).
         """
         out_root = Path(output_path).resolve()
-        xml_rows = folderdf[folderdf["filename"].str.contains(r"\.xml$", regex=True, na=False)]
+        xml_rows = folderdf[  # ``.xml`` or gzipped ``.xml.gz`` outputs:
+            folderdf["filename"].str.contains(r"\.xml(?:\.gz)?$", regex=True, na=False)
+        ]
 
         if bulk_path is None:
             if len(possible_bulk_folders) == 1:
@@ -5514,7 +5516,7 @@ class DefectsParserEspresso(DefectsParserVasp):
             defect_path = os.path.join(self.output_path, defect_folder, self.subfolder)
 
             df = FolderHandler._folder_to_dataframe(defect_path)
-            filename = df[df.filename.str.endswith("xml")]["filename"].iloc[0]
+            filename = df[df.filename.str.endswith(("xml", "xml.gz"))]["filename"].iloc[0]
 
             dp = DefectParser(code=self.code).from_paths(
                 defect_path=defect_path,
