@@ -3404,6 +3404,7 @@ def local_point_symmetry(
     symprec: float = 0.1,
     centre_error_range: float | None = None,
     bulk_symprec: float = 0.01,
+    radius: float | None = None,
     verbose: bool = False,
     _first_pass: bool = True,
 ) -> tuple[str, list[tuple[np.ndarray, np.ndarray]], dict]:
@@ -3507,6 +3508,14 @@ def local_point_symmetry(
             ``bulk_supercell`` is ``None``. Default is 0.01 Å (the ``pymatgen``
             / ``spglib`` default, appropriate for noise-free unrelaxed /
             idealised structures).
+        radius (float | None):
+            Radius (in Å) of the local atomic cluster extracted around the
+            defect centre for symmetry analysis. If ``None`` (default), uses
+            half the minimum periodic image distance of ``defect_supercell``
+            (capped at 12 Å) -- the maximum radius free of periodic-image
+            artefacts. Smaller values can be used to restrict the analysis to
+            a more local environment, e.g. to obtain the local point symmetry
+            of an individual point defect within a (separated) defect complex.
         verbose (bool):
             If ``True``, prints diagnostic information on the local symmetry
             analysis. Default is ``False``.
@@ -3544,7 +3553,8 @@ def local_point_symmetry(
               relaxed point symmetry (used automatically by
               |point_symmetry_from_defect_entry|).
     """
-    radius = min(get_min_image_distance(defect_supercell) / 2, 12)  # cap at 12 Å for very large supercells
+    if radius is None:
+        radius = min(get_min_image_distance(defect_supercell) / 2, 12)  # cap at 12 Å for large supercells
 
     # determine cluster centre:
     # only needs to be accurate to ~centre_error_range, as it is just used to place the local cluster
@@ -3760,6 +3770,7 @@ def local_point_symmetry(
                 symprec=symprec,
                 centre_error_range=centre_error_range,
                 bulk_symprec=bulk_symprec,
+                radius=radius,
                 verbose=verbose,
                 _first_pass=False,
             )
@@ -3860,7 +3871,9 @@ def point_symmetry_from_defect_entry(
 
     # split off ``local_point_symmetry`` (relaxed) kwargs from ``get_all_equiv_sites`` (unrelaxed)
     # kwargs, so a shared kwargs dict can be used for both (e.g. from ``get_orientational_degeneracy``):
-    local_kwargs = {k: kwargs.pop(k) for k in ("centre_error_range", "bulk_symprec") if k in kwargs}
+    local_kwargs = {
+        k: kwargs.pop(k) for k in ("centre_error_range", "bulk_symprec", "radius") if k in kwargs
+    }
 
     if relaxed:
         defect_supercell = _get_defect_supercell(defect_entry)
@@ -4092,7 +4105,7 @@ def point_symmetry_from_structure(
         defect_frac_coords=defect_frac_coords,  # if still None, guessed in ``local_point_symmetry``
         symprec=symprec,
         verbose=bool(verbose),
-        **{k: kwargs[k] for k in ("centre_error_range",) if k in kwargs},  # no bulk -> no bulk_symprec
+        **{k: kwargs[k] for k in ("centre_error_range", "radius") if k in kwargs},  # no bulk_symprec
     )
 
     # cross-check against global space-group analysis of the defect supercell, whose point group matches
