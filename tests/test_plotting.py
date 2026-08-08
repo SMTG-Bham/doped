@@ -743,6 +743,26 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         # shades), rather than the default one colour per defect type:
         return self.Se_ext_no_pnict_thermo.plot(color_grouping="element")
 
+    @custom_mpl_image_compare(filename="Se_ext_thermo_over_20_color_groups.png")
+    def test_Se_ext_over_20_color_groups(self):
+        # the full extrinsic Se thermo has 22 defect types, exceeding the base 20-colour petroff10
+        # palette and so uses colours 21+ of the default 40-colour palette:
+        from doped.utils.plotting import PETROFF10_EXTENDED_40, get_colors, get_defect_type_palette
+
+        rgba_palette = [to_rgba(c) for c in PETROFF10_EXTENDED_40]
+        assert np.allclose(get_colors(None, 22), rgba_palette[:22])
+        assert np.allclose(get_colors(None, 45)[40:], rgba_palette[:5])  # cycled beyond 40 colours
+
+        palette = get_defect_type_palette(self.Se_amalgamated_extrinsic_thermo)  # default type grouping
+        assert len(palette) == 22
+        assert np.allclose(list(palette.values()), rgba_palette[:22])
+
+        fig = self.Se_amalgamated_extrinsic_thermo.plot(unstable_entries=True)
+        label_colors = _legend_color_dict(fig)
+        assert len(label_colors) == 23  # 22 type groups; one type has two site-group (variant) lines
+        assert len(set(label_colors.values())) == 23  # all lines distinctly coloured
+        return fig
+
     @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_1pt6.png")
     def test_CdTe_LZ_all_defects_plot_dist_tol_1pt6(self):
         # Matches SK Thesis Fig 6.1b
@@ -1391,7 +1411,7 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             fig = self.Bi_Se_thermo.plot(limit="Se-rich", all_entries=True, colormap="Well shiii")
         _print_warning_info(w)
         assert any("Colormap 'Well shiii' not found in" in str(warn.message) for warn in w)
-        assert any("Defaulting to 'tab10' colormap" in str(warn.message) for warn in w)
+        assert any("Defaulting to 'petroff10_extended_40' colormap" in str(warn.message) for warn in w)
         return fig
 
     def test_default_limits_anion_cation_rich(self):

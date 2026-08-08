@@ -2951,9 +2951,13 @@ class DefectThermodynamics(MSONable):
                 ``{defect type, extrinsic element or group name: colour}``
                 user overrides (e.g. ``{"Te_i": "tab:pink"}`` or
                 ``{"F": "tab:green"}``; non-specified defects filled from the
-                default palette). If ``None`` (default), uses ``tab10`` with
-                ``alpha=0.75`` (if 10 or fewer colour groups) or ``batlow`` (if
-                more than 10; citation: https://zenodo.org/records/8409685).
+                default palette). If ``None`` (default), uses the ``doped``
+                default palette (``PETROFF10_EXTENDED_40``; ``petroff10``; see
+                https://matplotlib.org/stable/gallery/style_sheets/petroff10
+                and https://arxiv.org/abs/2107.02270 -- extended to 40
+                maximally-distinct colours with the ``glasbey`` algorithm;
+                cycled if more than 40 colour groups). Use
+                ``colormap="tab10_alpha_0.75"`` to match old ``doped``<4 plots.
 
                 Unless an explicit ``Colormap`` object is given (in which case
                 colours are assigned by line position, in order of appearance

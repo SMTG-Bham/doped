@@ -286,6 +286,29 @@ def get_linestyles(linestyles: str | list[str] = "-", num_lines: int = 1) -> lis
     return linestyles * (num_lines // len(linestyles)) + linestyles[: num_lines % len(linestyles)]
 
 
+# Default ``doped`` colour palette: the first 10 colours are petroff10 (M. Petroff, arXiv:2107.02270;
+# https://matplotlib.org/stable/gallery/style_sheets/petroff10;
+# matplotlib>=3.10 ``color_sequences["petroff10"]``), extended to 40 with maximally-distinct additions
+# (within muted lightness/chroma bounds, for visual harmony with the base palette and to avoid pale colours
+# that are hard to see as thin lines on white backgrounds) via the Glasbey et al. (2007) method, as
+# implemented in https://github.com/lmcinnes/glasbey: (glasbey==0.3.0)
+#     glasbey.extend_palette(PETROFF10, palette_size=20, lightness_bounds=(25, 75), chroma_bounds=(15, 45))
+# then extended again to 40 (``extend_palette(<20-colour palette>, palette_size=40, ...)`` with the same
+# bounds), which keeps the first 20 colours unchanged.
+PETROFF10_EXTENDED_40 = [
+    "#3f90da", "#ffa90e", "#bd1f01", "#94a4a2", "#832db6",
+    "#a96b59", "#e76300", "#b9ac70", "#717581", "#92dadd",
+    "#455904", "#dbaaff", "#048e61", "#005986", "#754104",
+    "#8edf96", "#8e7918", "#fb9e86", "#9abeff", "#9679ca",
+    "#355951", "#149ea6", "#59496d", "#696549", "#71a655",
+    "#49be9e", "#5d65a6", "#cac6df", "#a292aa", "#8e8a69",
+    "#187582", "#beceb2", "#be968a", "#5dbadb", "#c28639",
+    "#597d35", "#006939", "#c6d26d", "#7d96b2", "#59796d",
+]  # fmt: skip
+with contextlib.suppress(ValueError):  # already registered (e.g. re-import)
+    colormaps.register(ListedColormap(PETROFF10_EXTENDED_40, name="petroff10_extended_40"))
+
+
 def get_colors(colormap: str | Colormap | None, num_colors: int) -> np.ndarray:
     """
     Get a list of ``num_colors`` colours from a colormap, for plotting.
@@ -297,15 +320,20 @@ def get_colors(colormap: str | Colormap | None, num_colors: int) -> np.ndarray:
     Args:
         colormap (str, matplotlib.colors.Colormap):
             Colormap to sample, as accepted by ``get_colormap``. If ``None``
-            (default), uses ``tab10`` with ``alpha=0.75`` (if 10 or fewer
-            colours requested) or ``batlow`` otherwise.
+            (default), uses the ``doped`` default palette
+            (``PETROFF10_EXTENDED_40``; ``petroff10`` -- see
+            https://matplotlib.org/stable/gallery/style_sheets/petroff10 and
+            https://arxiv.org/abs/2107.02270 -- extended to 40
+            maximally-distinct colours; cycled if more than 40 colours
+            requested). ``tab10`` was the default in ``doped``<4; use
+            ``colormap="tab10_alpha_0.75"`` to match older plots.
         num_colors (int):
             Number of colours to output.
 
     Returns:
         np.ndarray: Array of RGBA colours, of length ``num_colors``.
     """
-    cmap = get_colormap(colormap, default="tab10_alpha_0.75" if num_colors <= 10 else "batlow")
+    cmap = get_colormap(colormap, default="petroff10_extended_40")
     if isinstance(cmap, ListedColormap):
         # normalise to RGBA, as listed colormaps can mix RGB / RGBA colours (-> inhomogeneous array):
         base = to_rgba_array(cmap.colors)
@@ -439,8 +467,7 @@ def get_defect_type_palette(
     unchanged upon later addition of extrinsic defects (when using a listed
     (discrete) colormap (default)), which is sampled by index (cycling if
     necessary); continuous colormaps are sampled evenly over the number of
-    colour groups and so cannot guarantee this (default when there are >10
-    groups to plot).
+    colour groups and so cannot guarantee this.
 
     Args:
         defect_thermodynamics (DefectThermodynamics):
@@ -456,8 +483,8 @@ def get_defect_type_palette(
             Colormap to sample, as accepted by ``get_colormap``, or a dict of
             ``{defect type, extrinsic element or group name: colour}`` user
             overrides (in which case non-specified defects are filled from the
-            default palette). If ``None`` (default), uses ``tab10`` with
-            ``alpha=0.75`` (if 10 or fewer colour groups) or ``batlow``.
+            default palette). If ``None`` (default), uses the ``doped`` default
+            palette (``PETROFF10_EXTENDED_40``) -- see ``get_colors``.
 
     Returns:
         dict: ``{colour group key: RGBA colour}`` palette.
@@ -1796,10 +1823,14 @@ def formation_energy_plot(
             ``ListedColormap`` object, or a dict of
             ``{defect type, extrinsic element or group name: colour}`` user
             overrides (e.g. ``{"Te_i": "tab:pink"}`` or ``{"F": "tab:green"}``;
-            non-specified defects filled from the default palette). If ``None``
-            (default), uses ``tab10`` with ``alpha=0.75`` (if 10 or fewer
-            colour groups) or ``batlow`` (if more than 10; citation:
-            https://zenodo.org/records/8409685).
+            non-specified defects filled from the default palette).
+            If ``None`` (default), uses the ``doped`` default palette
+            (``PETROFF10_EXTENDED_40``; ``petroff10``; see
+            https://matplotlib.org/stable/gallery/style_sheets/petroff10 and
+            https://arxiv.org/abs/2107.02270 -- extended to 40
+            maximally-distinct colours with the ``glasbey`` algorithm; cycled
+            if more than 40 colour groups). Use ``colormap="tab10_alpha_0.75"``
+            to match old ``doped``<4 plots.
 
             Unless an explicit ``Colormap`` object is given (in which case
             colours are assigned by line position, in order of appearance in
