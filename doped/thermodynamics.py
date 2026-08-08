@@ -1277,10 +1277,11 @@ class DefectThermodynamics(MSONable):
         self.clustered_defect_entries: dict[int, set[DefectEntry]] | dict[str, set[DefectEntry]]
         self.clustered_defect_entries_by_type: dict[str, Any]
         if np.isinf(self.dist_tol):  # fast path: skip clustering and amalgamate by type (``Defect.name``)
+            # `only`, for clustered_defect_entries_by_type, and amalgamate all for clustered_defect_entries
+            self.clustered_defect_entries = {0: set(self.defect_entries.values())}
             type_clusters: dict[str, set[DefectEntry]] = defaultdict(set)
             for entry in self.defect_entries.values():
                 type_clusters[entry.defect.name].add(entry)
-            self.clustered_defect_entries = dict(enumerate(type_clusters.values()))
             self.clustered_defect_entries_by_type = {
                 defect_type: {0: entry_set} for defect_type, entry_set in type_clusters.items()
             }
@@ -2964,10 +2965,11 @@ class DefectThermodynamics(MSONable):
                 ``"site"``-grouped colours (explicitly set, or auto-escalated
                 for single-defect-type systems) instead key on the plotted
                 group names -- see ``color_grouping``. Thus plots of the same
-                system should share colours for the same defects regardless of
-                ``dist_tol``, ``defect_subset`` or ``unstable_entries`` choices
-                (with intrinsic defect colours also unchanged upon later
-                addition of extrinsic defects, for listed/discrete colormaps).
+                system should share base colours for the same defects,
+                regardless of ``dist_tol``, ``defect_subset`` or
+                ``unstable_entries`` choices (with intrinsic defect base
+                colours also unchanged upon later addition of extrinsic
+                defects, for listed/discrete colormaps).
             linestyles (list):
                 Linestyles to use for the formation energy lines, either as a
                 single linestyle (``str``) or list of linestyles
@@ -3038,24 +3040,22 @@ class DefectThermodynamics(MSONable):
                 "of formation energies, but the transition level positions will be unaffected."
             )
 
-        thermo_to_plot = self.prune_to_stable_entries(  # unstable_entries pruning
+        thermo_to_plot = self
+        if dist_tol is not None and dist_tol != self.dist_tol:  # ephemeral dist_tol override; regroup
+            thermo_to_plot = DefectThermodynamics.from_dict(  # first, so that stability classification...
+                {**self.as_dict(), "dist_tol": dist_tol, "check_compatibility": False}  # ...in pruning...
+            )  # ...below uses the overridden grouping (stability windows depend on the defect grouping)
+        thermo_to_plot = thermo_to_plot.prune_to_stable_entries(  # unstable_entries pruning
             unstable_entries=unstable_entries,
-            **({"dist_tol": dist_tol} if dist_tol is not None else {}),  # ephemeral dist_tol override
             **kwargs,  # unstable entries kwargs
         )  # Note that this will need to be updated if we add other kwarg options to this function
-
-        if dist_tol is not None and thermo_to_plot is self and dist_tol != self.dist_tol:
-            # ``prune_to_stable_entries`` returns ``self`` unchanged for ``unstable_entries=True``
-            thermo_to_plot = DefectThermodynamics.from_dict(  # so regenerate with ``dist_tol`` here
-                {**self.as_dict(), "dist_tol": dist_tol, "check_compatibility": False}
-            )
 
         resolved_color_grouping = color_grouping or "type"  # (only used for palette computation below,
         # so the ``None`` -> ``"type"`` default here is inconsequential if user provides ``Colormap``)
         if color_grouping is None and not isinstance(colormap, colors.Colormap):
             # default; "type" grouping, with auto escalation to finer granularity if only one group
             resolved_color_grouping = _resolve_color_grouping(self, colormap=colormap)
-        group_palette = (  # from full (un-pruned) entry set, for colour stability across plot choices
+        group_palette = (  # from full (un-pruned) entry set for base-colour stability across plot choices:
             None  # ("site" grouping keys on group names, which can shift under pruning, so its palette
             # is instead computed from the pruned thermo within ``formation_energy_plot``):
             if isinstance(colormap, colors.Colormap) or resolved_color_grouping == "site"

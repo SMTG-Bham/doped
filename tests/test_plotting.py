@@ -1112,13 +1112,30 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         """
         thermo = self.CdTe_LZ_thermo_wout_meta
         default_colors = _legend_color_dict(thermo.plot(limit="Te-rich"))
-        label_colors = _legend_color_dict(thermo.plot(limit="Te-rich", colormap={"Te_i": "tab:pink"}))
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            thermo.plot, limit="Te-rich", colormap={"Te_i": "tab:pink"}
+        )
+        assert not any("`colormap` dict keys" in str(warn.message) for warn in w)  # no unmatched keys
+        label_colors = _legend_color_dict(fig)
         Te_i_colors = [color for label, color in label_colors.items() if label.startswith("Te$_{i")]
         assert Te_i_colors[0] == to_rgba("tab:pink")
         assert _hue(Te_i_colors[1]) == pytest.approx(_hue(to_rgba("tab:pink")))  # shaded variant
         for label, color in label_colors.items():  # all other defects keep default palette colours:
             if not label.startswith("Te$_{i"):
                 assert color == default_colors[label], label
+
+        # unmatched (e.g. typo'd) dict keys are warned about, and have no effect on the plot colours:
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            thermo.plot, limit="Te-rich", colormap={"Te_I": "tab:pink"}
+        )
+        _print_warning_info(w)
+        assert any(
+            "`colormap` dict keys do not match any defect group name, defect type or colour group key"
+            in str(warn.message)
+            and "['Te_I']" in str(warn.message)
+            for warn in w
+        )
+        assert _legend_color_dict(fig) == default_colors
 
     def test_all_entries_type_keyed_shades(self):
         """
@@ -1322,10 +1339,19 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         assert thermo.dist_tol == 1.5
         assert list(thermo.transition_level_map) == orig_groups
 
+        # pruning is applied under the overridden (amalgamated) grouping (i.e. regrouping applied first,
+        # then pruning); e.g. the Cd_i_Td_Cd2.83 +1/+2 entries are ground states of their own site group
+        # at ``dist_tol = 1.5``, but never for the amalgamated ``Cd_i`` type group, and so are also pruned
+        # with ``unstable_entries=False`` and ``dist_tol=np.inf`` here:
+        fig = thermo.plot(limit="Te-rich", all_entries=True, unstable_entries=False, dist_tol=np.inf)
+        assert len(_legend_color_dict(fig)) == 16  # 18 lines if pruned before dist_tol regrouping
+        assert thermo.dist_tol == 1.5
+
         # directly setting ``dist_tol = np.inf`` uses the type-amalgamation fast path, with groups
         # keyed/named by the plain defect type names:
         thermo.dist_tol = np.inf
         assert list(thermo.transition_level_map) == ["v_Cd", "v_Te", "Cd_Te", "Te_Cd", "Cd_i", "Te_i"]
+        assert next(iter(thermo.clustered_defect_entries.values())) == set(thermo.defect_entries.values())
         assert all(
             len(clusters) == 1 for clusters in thermo.clustered_defect_entries_by_type.values()
         )  # one amalgamated cluster per defect type

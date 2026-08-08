@@ -56,10 +56,23 @@ recognised_post_interstitial_strings = sorted(
     key=len,
     reverse=True,
 )
-lower_cap, upper_cap = (
-    -100,
-    100,
-)  # default min/max x/y range for defect formation energy plots
+# _trimmable_defect_type_strings is the subset of the above strings which are trimmed from defect names
+# when identifying the constituent elements, removing marker letters which could otherwise be misread as
+# element symbols (e.g. "V" / "I" / "In" in "Vac" / "Int"). Strings starting/ending with a lowercase "i"
+# (e.g. "i", "_i", "int") are excluded: their letters cannot be misread as (case-sensitive) element symbols
+# anyway, while blanket-replacing them could eat into genuine symbols containing "i" (Si, Ni, Bi...):
+_trimmable_defect_type_strings = [
+    substring
+    for substring in (
+        recognised_pre_vacancy_strings
+        + recognised_post_vacancy_strings
+        + recognised_pre_interstitial_strings
+        + recognised_post_interstitial_strings
+    )
+    if not (substring.endswith("i") or substring.startswith("i"))
+]
+
+lower_cap, upper_cap = -100, 100  # default min/max x/y range for defect formation energy plots
 
 
 @contextlib.contextmanager
@@ -186,6 +199,17 @@ def _chempot_warning(abs_chempots: dict | None) -> None:
         )
 
 
+def _split_colormap_alpha_suffix(name: str) -> tuple[str, float | None]:
+    """
+    Split a ``"{name}_alpha_{X}"`` colormap name into ``(name, X)``, with ``X =
+    None`` if there is no ``_alpha_`` suffix.
+    """
+    if "_alpha_" in name:
+        name, alpha = name.rsplit("_alpha_", maxsplit=1)
+        return name, float(alpha)
+    return name, None
+
+
 def get_colormap(colormap: str | Colormap | None = None, default: str = "batlow") -> Colormap:
     """
     Get a colormap from a string or a ``Colormap`` object.
@@ -212,18 +236,13 @@ def get_colormap(colormap: str | Colormap | None = None, default: str = "batlow"
 
     alpha = None
     if isinstance(colormap, str):  # get colormap from string
-        if "_alpha_" in colormap:
-            alpha = float(colormap.split("_alpha_")[-1])
-            colormap = colormap.split("_alpha_")[0]
-
-        # first check if it's a cmcrameri colormap:
-        cmap = cmc.cmaps.get(colormap, None)
-        if cmap is None:  # if not, check matplotlib colormaps
-            cmap = colormaps.get(colormap, None)
+        colormap, alpha = _split_colormap_alpha_suffix(colormap)
+        # first check if it's a cmcrameri colormap, if not check matplotlib colormaps:
+        cmap = cmc.cmaps.get(colormap, colormaps.get(colormap))
         if cmap is None:
-            if "_alpha_" in default:
-                alpha = float(default.rsplit("_alpha_", maxsplit=1)[-1])
-                default = default.split("_alpha_", maxsplit=1)[0]
+            default, default_alpha = _split_colormap_alpha_suffix(default)
+            if default_alpha is not None:
+                alpha = default_alpha
 
             warnings.warn(
                 f"Colormap '{colormap}' not found in `cmcrameri` "
@@ -287,12 +306,12 @@ def get_colors(colormap: str | Colormap | None, num_colors: int) -> np.ndarray:
         np.ndarray: Array of RGBA colours, of length ``num_colors``.
     """
     cmap = get_colormap(colormap, default="tab10_alpha_0.75" if num_colors <= 10 else "batlow")
-    base = (  # normalise to RGBA, as listed colormaps can mix RGB / RGBA colours (-> inhomogeneous array)
-        to_rgba_array(cmap.colors) if isinstance(cmap, ListedColormap) else np.empty(0)
-    )
-    if 0 < len(base) < 150:  # cmcrameri colormaps return 256 colours
-        # repeat (tile) the listed colours (cycling) until we have one per requested colour:
-        return np.tile(base, (int(np.ceil(num_colors / len(base))), 1))[:num_colors]
+    if isinstance(cmap, ListedColormap):
+        # normalise to RGBA, as listed colormaps can mix RGB / RGBA colours (-> inhomogeneous array):
+        base = to_rgba_array(cmap.colors)
+        if 0 < len(base) < 150:  # cmcrameri (continuous-like) listed colormaps return 256 colours (skip)
+            # repeat (tile) the listed colours (cycling) until we have one per requested colour:
+            return np.tile(base, (int(np.ceil(num_colors / len(base))), 1))[:num_colors]
 
     return cmap(np.linspace(0, 1, num_colors))
 
@@ -347,7 +366,7 @@ def _resolve_color_grouping(
     formation energy diagram (transition level diagram) from a
     |DefectThermodynamics| object, `when not explicitly set by the user` (only
     used in the default case of ``color_grouping=None`` in
-    ``DefectThermodynamics.plot()`` / ``formation_energy_plot``.
+    ``DefectThermodynamics.plot()`` / ``formation_energy_plot``).
 
     Starting from ``color_grouping`` (``"type"`` by default), the granularity
     is escalated (``"element"`` (skipped by default) -> ``"type"`` (default
@@ -391,13 +410,13 @@ def get_defect_type_palette(
     palette for the defects in a ``DefectThermodynamics`` object.
 
     Colours are keyed on defect identity rather than position in the plot
-    legend, so that plots of the same system share colours for the same defects
-    regardless of ``defect_subset``, ``dist_tol`` or ``unstable_entries``
-    choices (i.e. trying to maximise invariance of the plot style/colours wrt
-    to these customisation parameters). The ``color_grouping`` option controls
-    the granularity of the colour groups (defects within a colour group share a
-    base colour, to be differentiated by lightness shades / linestyles in
-    plotting):
+    legend, so that plots of the same system share base colours for the same
+    defects regardless of ``defect_subset``, ``dist_tol`` or
+    ``unstable_entries`` choices (i.e. trying to maximise invariance of the
+    base colours with respect to these customisation parameters). The
+    ``color_grouping`` option controls the granularity of the colour groups
+    (defects within a colour group share a base colour, to be differentiated by
+    lightness shades / linestyles in plotting):
 
     - ``"type"`` (default): one colour per defect type (i.e. ``Defect.name``;
       e.g. ``v_Cd``, ``Te_i``, ``F_O``).
@@ -418,7 +437,7 @@ def get_defect_type_palette(
     Intrinsic defects are assigned colours first (in their deterministic sorted
     order), followed by extrinsic defects, so that intrinsic defect colours are
     unchanged upon later addition of extrinsic defects (when using a listed
-    (discrete) colormap (default), which is sampled by index (cycling if
+    (discrete) colormap (default)), which is sampled by index (cycling if
     necessary); continuous colormaps are sampled evenly over the number of
     colour groups and so cannot guarantee this (default when there are >10
     groups to plot).
@@ -446,7 +465,7 @@ def get_defect_type_palette(
     _check_color_grouping(color_grouping)
     color_keys: dict[str, bool] = {}  # {colour key: is extrinsic}, in deterministic sorted order
     for group_name, entry_list in defect_thermodynamics.all_entries.items():  # group_name = key if "site"
-        defect = next(iter(entry_list)).defect
+        defect = entry_list[0].defect
         color_keys.setdefault(  # default key: value for color_keys dict
             group_name if color_grouping == "site" else _color_group_key(defect, color_grouping),  # key
             _extrinsic_element(defect) is not None,  # val (is extrinsic)
@@ -546,7 +565,7 @@ def _get_group_keyed_colors_and_linestyles(
         group_palette (dict):
             Pre-computed ``{colour group key: colour}`` palette (e.g. from
             the parent ``DefectThermodynamics`` before any pruning/subsetting,
-            for colour stability). If ``None`` (default), computed from
+            for base-colour stability). If ``None`` (default), computed from
             ``defect_thermodynamics``.
         line_xy (dict):
             ``{line key: [[x_vals], [y_vals]]}`` formation energy line data
@@ -576,10 +595,7 @@ def _get_group_keyed_colors_and_linestyles(
         group_palette = get_defect_type_palette(defect_thermodynamics, color_grouping, colormap)
 
     elif isinstance(colormap, dict):  # apply user overrides to pre-computed palette
-        group_palette = {
-            **group_palette,
-            **{k: to_rgba(v) for k, v in colormap.items() if k in group_palette},
-        }
+        group_palette = group_palette | {k: to_rgba(v) for k, v in colormap.items() if k in group_palette}
     user_colors = colormap if isinstance(colormap, dict) else {}
 
     def _variant_linestyle(index: int) -> str:
@@ -598,11 +614,20 @@ def _get_group_keyed_colors_and_linestyles(
     group_types: dict[str, str] = {}  # {defect group name: defect type}
     group_palette_keys: dict[str, str] = {}  # {defect group name: palette colour key}
     for group_name, entry_list in defect_thermodynamics.all_entries.items():
-        defect = next(iter(entry_list)).defect
+        defect = entry_list[0].defect
         group_types[group_name] = defect.name
         group_palette_keys[group_name] = (
             group_name if color_grouping == "site" else _color_group_key(defect, color_grouping)
         )  # colour key -> all_entries key for site color grouping, otherwise element/type key
+
+    if user_colors:  # warn about unmatched (e.g. typo'd) user colour override keys, which have no effect:
+        known_keys = {*group_types, *group_types.values(), *group_palette, *group_palette_keys.values()}
+        if unmatched_keys := sorted(set(user_colors) - known_keys):
+            warnings.warn(
+                f"The following `colormap` dict keys do not match any defect group name, defect type or "
+                f"colour group key for this system, and so will have no effect: {unmatched_keys}. See "
+                f"docs/docstrings for more info."
+            )
 
     def _color_group(group: str) -> str:
         """
@@ -674,17 +699,24 @@ def _plot_formation_energy_lines(
         **kwargs:
             Additional keyword arguments to pass to ``ax.plot``.
     """
-    for i, (x_vals, y_vals) in enumerate(xy.values()):
+    for (x_vals, y_vals), color, linestyle in zip(xy.values(), colors, linestyles, strict=True):
         ax.plot(
             x_vals,
             y_vals,
-            color=colors[i],
-            linestyle=linestyles[i],
-            markeredgecolor=colors[i],
+            color=color,
+            linestyle=linestyle,
+            markeredgecolor=color,
             lw=styled_linewidth * 1.2,
             markersize=styled_markersize * (4 / 6),
             **kwargs,
         )
+
+
+def _entry_with_charge(entries: Iterable, charge: int):
+    """
+    First entry in ``entries`` with the given charge state.
+    """
+    return next(e for e in entries if e.charge_state == charge)
 
 
 def _plot_transition_level_markers(
@@ -735,22 +767,17 @@ def _plot_transition_level_markers(
     """
     tl_map: dict[str, dict[float, list[int]]] = defect_thermodynamics.transition_level_map
     for i, def_name in enumerate(defect_names):
-        x_trans, y_trans, tl_labels, tl_label_type = [], [], [], []
+        x_trans, y_trans, tl_labels, tl_label_ha = [], [], [], []
         for x_val, chargeset in tl_map[def_name].items():
+            entry = _entry_with_charge(defect_thermodynamics.stable_entries[def_name], chargeset[0])
             x_trans.append(x_val)
-            y_trans.append(
-                next(
-                    defect_thermodynamics.get_formation_energy(
-                        defect_entry, chempots=abs_chempots, fermi_level=x_val
-                    )
-                    for defect_entry in defect_thermodynamics.stable_entries[def_name]
-                    if defect_entry.charge_state == chargeset[0]  # formation energy of first entry in TL
-                )
+            y_trans.append(  # formation energy of first entry in TL
+                defect_thermodynamics.get_formation_energy(entry, chempots=abs_chempots, fermi_level=x_val)
             )
             tl_labels.append(
                 _format_TL_charge_label((max(chargeset), min(chargeset)), prefix=r"$\epsilon$")
             )
-            tl_label_type.append("start_positive" if max(chargeset) > 0 else "end_negative")
+            tl_label_ha.append("right" if max(chargeset) > 0 else "left")  # label horizontal alignment
 
         if not x_trans:
             continue
@@ -767,15 +794,15 @@ def _plot_transition_level_markers(
             alpha=0.5 if all_entries is True else None,
         )
         if auto_labels:  # annotate each TL point with its charge transition label
-            for coords, label, label_type in zip(
-                zip(x_trans, y_trans, strict=True), tl_labels, tl_label_type, strict=True
+            for coords, label, ha in zip(
+                zip(x_trans, y_trans, strict=True), tl_labels, tl_label_ha, strict=True
             ):
                 ax.annotate(
                     label,
                     coords,
                     textcoords="offset points",
                     xytext=(0, 5),  # offset (x, y) from the point
-                    ha="right" if label_type == "start_positive" else "left",
+                    ha=ha,
                     size=styled_font_size * 0.9,
                     annotation_clip=True,  # only show label if coords in current axes
                 )
@@ -913,6 +940,14 @@ def _set_title_and_save_figure(
         fig.savefig(filename, dpi=600, bbox_inches="tight", transparent=True)
 
 
+def _signed_charge(charge: int) -> str:
+    """
+    Format a charge state with an explicit ``+`` for positive values (and no
+    sign for zero or negative values), e.g. ``+1``, ``0``, ``-2``.
+    """
+    return f"{charge:+}" if charge > 0 else str(charge)
+
+
 def format_defect_name(
     defect_species: str,
     include_site_info: bool = False,
@@ -983,9 +1018,10 @@ def format_defect_name(
     if not include_charge:
         defect_species += "_99"  # add dummy charge for parsing; 99 red balloons go by...
 
+    name_parts = defect_species.split("_")
     try:
-        charge = int(defect_species.split("_")[-1])  # charge comes last
-        charge_string = f"{charge:+}" if charge > 0 else f"{charge}"
+        charge = int(name_parts[-1])  # charge comes last
+        charge_string = _signed_charge(charge)
     except ValueError as e:
         raise ValueError(
             f"Problem reading defect name {defect_species}, should end with charge state after underscore "
@@ -1000,29 +1036,19 @@ def format_defect_name(
     # check if name is doped format, having site info as point group symbol (and more) after 2nd "_":
     with contextlib.suppress(IndexError):
         # from 2nd underscore to last underscore (before charge state) is site info:
-        point_group_symbol = defect_species.split("_")[2]
+        point_group_symbol = name_parts[2]
         if point_group_symbol in sch_symbols and all(  # recognised point group symbol?
             i not in pre_charge_name
-            for i in ["int", "Int", "vac", "Vac", "sub", "Sub", "as_"]  # no As_
+            for i in ("int", "Int", "vac", "Vac", "sub", "Sub", "as_")  # no As_
         ):
             # format point group symbol to (e.g. C1 -> C_1) (already in math mode here)
             doped_site_info = f"{point_group_symbol[0]}_{{{point_group_symbol[1:]}}}"
-            if defect_species.split("_")[3:-1]:  # if there is more site info after point group symbol
-                doped_site_info += "-" + "-".join(defect_species.split("_")[3:-1])
-            trimmed_pre_charge_name = pre_charge_name.replace(
-                f"_{'_'.join(defect_species.split('_')[2:-1])}", ""
-            )
+            if name_parts[3:-1]:  # if there is more site info after point group symbol
+                doped_site_info += "-" + "-".join(name_parts[3:-1])
+            trimmed_pre_charge_name = pre_charge_name.replace(f"_{'_'.join(name_parts[2:-1])}", "")
 
-    for substring in (  # trim any matching pre or post vacancy/interstitial strings from defect name
-        recognised_pre_vacancy_strings
-        + recognised_post_vacancy_strings
-        + recognised_pre_interstitial_strings
-        + recognised_post_interstitial_strings
-    ):
-        if substring in trimmed_pre_charge_name and not (
-            substring.endswith("i") or substring.startswith("i")
-        ):
-            trimmed_pre_charge_name = trimmed_pre_charge_name.replace(substring, "")
+    for substring in _trimmable_defect_type_strings:  # trim recognised defect-type strings from name
+        trimmed_pre_charge_name = trimmed_pre_charge_name.replace(substring, "")
 
     # Note throughout the element-matching below: ``trimmed_pre_charge_name`` (pre/post vacancy and
     # interstitial substrings removed) is used to `find` the constituent elements, while the untrimmed
@@ -1049,16 +1075,12 @@ def format_defect_name(
             )
 
             if possible_one_character_elements:
-                # in this case, we don't know the order of the 1-character vs 2-character elements in the
-                # name, so we try both orderings:
+                # don't know the order of the 1-character vs 2-character elements in name, so try both:
                 defect_name = _defect_name_from_matching_elements(
                     possible_two_character_elements + possible_one_character_elements, **matching_kwargs
+                ) or _defect_name_from_matching_elements(
+                    possible_one_character_elements + possible_two_character_elements, **matching_kwargs
                 )
-                if defect_name is None:
-                    defect_name = _defect_name_from_matching_elements(
-                        possible_one_character_elements + possible_two_character_elements,
-                        **matching_kwargs,
-                    )
 
     if defect_name is None and (
         possible_one_character_elements := _valid_symbols(trimmed_pre_charge_name)
@@ -1067,8 +1089,8 @@ def format_defect_name(
             possible_one_character_elements, **matching_kwargs
         )
 
-    if defect_name is None:  # try matching to PyCDT/old-doped style:
-        defect_name = _pycdt_style_defect_name(defect_species, charge_string, include_site_info)
+    # if still no match, try matching to PyCDT/old-doped style:
+    defect_name = defect_name or _pycdt_style_defect_name(defect_species, charge_string, include_site_info)
 
     return f"{defect_name.rsplit('^', 1)[0]}$" if (defect_name and not include_charge) else defect_name
 
@@ -1084,30 +1106,19 @@ def _pycdt_style_defect_name(
     Handles e.g. ``"vac_1_Cd"``, ``"Int_Cd_1"`` and ``"sub_2_Te_on_Cd"``,
     returning ``None`` if the name is not recognised.
     """
-    try:
-        defect_type = defect_species.split("_", maxsplit=1)[0]  # vac, as or int
-        if (
-            defect_type.capitalize() == "Int"
-        ):  # for interstitials, name formatting is different (eg Int_Cd_1 vs vac_1_Cd)
-            site_element = defect_species.split("_")[1]  # element then site for interstitials
-            site: str | None = defect_species.split("_")[2]
-            defect_name = _int_name(site_element, charge_string, site if include_site_info else None)
-        else:
-            site = defect_species.split("_")[1]  # number indicating defect site (from doped)
-            site_element = defect_species.split("_")[2]  # element at defect site
+    with contextlib.suppress(Exception):
+        name_parts = defect_species.split("_")
+        defect_type = name_parts[0].lower()  # vac, as/sub or int
+        if defect_type == "int":  # interstitial name formatting differs (e.g. Int_Cd_1 vs vac_1_Cd):
+            return _int_name(name_parts[1], charge_string, name_parts[2] if include_site_info else None)
 
-        site = site if include_site_info else None  # whether to include the site number
-        if defect_type.lower() == "vac":
-            defect_name = _vac_name(site_element, charge_string, site)
-        elif defect_type.lower() in ["as", "sub"]:
-            subs_element = defect_species.split("_")[4]
-            defect_name = _sub_name(site_element, subs_element, charge_string, site)
-        elif defect_type.capitalize() != "Int":
-            raise ValueError(f"Defect type {defect_type} not recognized. Please check spelling.")
-    except Exception:
-        return None
+        site = name_parts[1] if include_site_info else None  # number indicating defect site (from PyCDT)
+        if defect_type == "vac":  # name_parts[2] = element at defect site:
+            return _vac_name(name_parts[2], charge_string, site)
+        if defect_type in ("as", "sub"):
+            return _sub_name(name_parts[2], name_parts[4], charge_string, site)
 
-    return defect_name
+    return None  # defect type not recognised (or malformed name)
 
 
 # LaTeX defect-name builders, used by ``format_defect_name`` (``site`` = optional site-info subscript):
@@ -1164,12 +1175,8 @@ def _check_matching_defect_format(
     patterns = [f"{pre_def_type}{element}" for pre_def_type in pre_def_type_list] + [
         f"{element}{post_def_type}" for post_def_type in post_def_type_list
     ]
-    if any(name.startswith(pattern) for pattern in patterns):
-        return len(name)
-    for i in range(len(name) - 1):
-        if any(name[i : i + len(pattern)] == pattern for pattern in patterns):
-            return len(name) - i
-    return 0  # 0 -> False, no match found
+    match_indices = [i for pattern in patterns if (i := name.find(pattern)) != -1]
+    return len(name) - min(match_indices) if match_indices else 0  # 0 -> False, no match found
 
 
 def _check_matching_defect_format_with_old_site_info(
@@ -1224,21 +1231,17 @@ def _try_vacancy_interstitial_match(
     returning the formatted label, or ``None`` if no match found.
     """
     defect_name_without_site_info = defect_name_with_site_info = None
-
-    match_found, site_info = _check_matching_defect_format_with_old_site_info(
-        element, name, recognised_pre_vacancy_strings, recognised_post_vacancy_strings
-    )
-    if match_found:
-        defect_name_with_site_info = _vac_name(element, charge_string, site_info)
-        defect_name_without_site_info = _vac_name(element, charge_string)
-
-    else:
+    for name_func, pre_strings, post_strings in (
+        (_vac_name, recognised_pre_vacancy_strings, recognised_post_vacancy_strings),
+        (_int_name, recognised_pre_interstitial_strings, recognised_post_interstitial_strings),
+    ):
         match_found, site_info = _check_matching_defect_format_with_old_site_info(
-            element, name, recognised_pre_interstitial_strings, recognised_post_interstitial_strings
+            element, name, pre_strings, post_strings
         )
         if match_found:
-            defect_name_with_site_info = _int_name(element, charge_string, site_info)
-            defect_name_without_site_info = _int_name(element, charge_string)
+            defect_name_with_site_info = name_func(element, charge_string, site_info)
+            defect_name_without_site_info = name_func(element, charge_string)
+            break
 
     if include_site_info and defect_name_with_site_info is not None:
         return defect_name_with_site_info
@@ -1251,10 +1254,7 @@ def _try_vacancy_interstitial_match(
     )
 
     if vacancy_match_score == 0 and interstitial_match_score == 0:  # no match
-        if defect_name_without_site_info is not None:  # if match with old site-info format
-            return defect_name_without_site_info
-
-        return None
+        return defect_name_without_site_info  # old site-info format match if found earlier, else None
 
     name_func = _vac_name if vacancy_match_score > interstitial_match_score else _int_name
     if include_site_info and doped_site_info is not None:
@@ -1315,36 +1315,29 @@ def _defect_name_from_matching_elements(
     Determine the (formatted) defect label from candidate ``element_matches``
     in the (unformatted) ``name``.
     """
-    if len(element_matches) == 1:  # vacancy or interstitial?
-        defect_name = _try_vacancy_interstitial_match(
+
+    def _vac_int_try() -> str | None:
+        """
+        Vacancy/interstitial match with the first matched element.
+        """
+        return _try_vacancy_interstitial_match(
             element_matches[0], name, include_site_info, charge_string, doped_site_info
         )
-    elif len(element_matches) == 2:
-        # try substitution/antisite match, if not try vacancy/interstitial with first element
-        defect_name = _try_substitution_match(
+
+    def _sub_try() -> str | None:
+        """
+        Substitution/antisite match with the first two matched elements.
+        """
+        return _try_substitution_match(
             element_matches[0], element_matches[1], name, include_site_info, charge_string, doped_site_info
         )
-        if defect_name is None:
-            defect_name = _try_vacancy_interstitial_match(
-                element_matches[0], name, include_site_info, charge_string, doped_site_info
-            )
-    else:
-        # try use first match and see if we match vacancy or interstitial format; if not, try first and
-        # second matches and see if we match substitution format; otherwise fail
-        defect_name = _try_vacancy_interstitial_match(
-            element_matches[0], name, include_site_info, charge_string, doped_site_info
-        )
-        if defect_name is None:
-            defect_name = _try_substitution_match(
-                element_matches[0],
-                element_matches[1],
-                name,
-                include_site_info,
-                charge_string,
-                doped_site_info,
-            )
 
-    return defect_name
+    if len(element_matches) == 1:  # vacancy or interstitial?
+        return _vac_int_try()
+    if len(element_matches) == 2:  # try substitution/antisite match, then vacancy/interstitial if not:
+        return _sub_try() or _vac_int_try()
+    # 3+ matches: try vacancy/interstitial with the first match, then substitution; otherwise fail
+    return _vac_int_try() or _sub_try()
 
 
 def _iter_old_site_info_matches(name: str):
@@ -1359,7 +1352,7 @@ def _iter_old_site_info_matches(name: str):
             # ({site_preposition}[0-9]+{site_postposition}) -> 2nd group; pre, number(s), post
             match = re.match(f"([a-z_]+)({site_preposition}[0-9]+{site_postposition})", name, re.I)
             if match:
-                yield match.groups()[1]  # the site-info group (2nd)
+                yield match[2]  # the site-info group (2nd)
 
 
 def _try_format_defect_name(defect_entry_name: str, site_info: bool, include_charge: bool = False) -> str:
@@ -1373,12 +1366,9 @@ def _try_format_defect_name(defect_entry_name: str, site_info: bool, include_cha
             include_site_info=site_info,
             include_charge=include_charge,
         )
-        if formatted_name is None:  # fallback to exception handling below
-            raise RuntimeError(f"Defect entry {defect_entry_name} could not be formatted.")
-        return formatted_name
-
-    except Exception:  # if formatting fails, just use the defect_species name
+    except Exception:  # if formatting fails, just use the raw defect_species name
         return defect_entry_name
+    return formatted_name or defect_entry_name  # fall back to the raw name if unparsable (``None``)
 
 
 def format_defect_names(
@@ -1448,6 +1438,13 @@ def format_defect_names(
     # duplicates in entry names and site info doesn't (fully) solve it (or ``include_site_info=False``),
     # so append "a,b,c.." for different defect species with the same name:
     final_names: list[str] = []
+
+    def _rename_prev(old: str, new: str) -> None:
+        """
+        Rename a previously-added ``old`` name to ``new`` in ``final_names``.
+        """
+        final_names[final_names.index(old)] = new
+
     for defect_name in formatted_names:
         final_names.append(
             _uniquified_name(
@@ -1455,7 +1452,7 @@ def format_defect_names(
                 variant_exists=lambda base: any(base in i for i in final_names),
                 exact_exists=lambda n: n in final_names,
                 suffix=lambda base, i: f"{base}$_{{-{chr(96 + i)}}}$",
-                rename_prev=lambda old, new: final_names.__setitem__(final_names.index(old), new),
+                rename_prev=_rename_prev,
             )
         )
 
@@ -1585,18 +1582,12 @@ def _get_formation_energy_lines(
             defect_entry, chempots=abs_chempots, fermi_level=fermi_level
         )
 
-    def _entry_with_charge(entries, charge):
-        """
-        First entry in ``entries`` with the given charge state.
-        """
-        return next(e for e in entries if e.charge_state == charge)
-
     xy: dict = {}  # {defect_name: [[x_vals], [y_vals]]} for stable (ground-state) lines
     all_lines_xy: dict = {}  # as above, but for all entries (every charge state)
     all_line_groups: dict[str, str] = {}  # {all_lines_xy key: defect group name}
     y_range_vals: list[float] = []  # y-values at the x-limits, used to set the y-axis range
     all_entries_y_range_vals: list[float] = []  # y-values at the x-limits, used to set the y-axis range
-    ymin = 0
+    ymin = 0.0
 
     all_entries = _filter_by_defect_subset(defect_thermodynamics.all_entries, defect_subset)
     for group_name, defect_entry_list in all_entries.items():
@@ -1615,50 +1606,49 @@ def _get_formation_energy_lines(
     transition_level_map = _filter_by_defect_subset(
         defect_thermodynamics.transition_level_map, defect_subset
     )
+    assert defect_thermodynamics.band_gap is not None  # typing
+    in_gap_fermi_levels = np.linspace(0, defect_thermodynamics.band_gap, 1000)
     for def_name, def_tl in transition_level_map.items():
-        xy[def_name] = [[], []]
+        x_list: list[float] = []
+        y_list: list[float] = []
+        xy[def_name] = [x_list, y_list]
         stable_entries = defect_thermodynamics.stable_entries[def_name]
 
         if def_tl:
-            org_x = sorted(def_tl.keys())
+            org_x = sorted(def_tl)
             # lower x-bound, from the line of the most positive (stable) charge state:
             first_entry = _entry_with_charge(stable_entries, max(def_tl[org_x[0]]))
-            xy[def_name][0].append(lower_cap)
-            xy[def_name][1].append(_form_en(first_entry, lower_cap))
+            x_list.append(lower_cap)
+            y_list.append(_form_en(first_entry, lower_cap))
             y_range_vals.append(_form_en(first_entry, xlim[0]))
 
             for fl in org_x:  # iterate over stable charge state transitions
                 form_en = _form_en(_entry_with_charge(stable_entries, max(def_tl[fl])), fl)
-                xy[def_name][0].append(fl)
-                xy[def_name][1].append(form_en)
+                x_list.append(fl)
+                y_list.append(form_en)
                 y_range_vals.append(form_en)
 
             # upper x-bound, from the line of the most negative (stable) charge state:
             last_entry = _entry_with_charge(stable_entries, min(def_tl[org_x[-1]]))
-            xy[def_name][0].append(upper_cap)
-            xy[def_name][1].append(_form_en(last_entry, upper_cap))
+            x_list.append(upper_cap)
+            y_list.append(_form_en(last_entry, upper_cap))
             y_range_vals.append(_form_en(last_entry, xlim[1]))
 
         else:  # no transition level -> only one stable charge state, single line across the range:
             defect_entry = stable_entries[0]
-            xy[def_name] = [
-                [lower_cap, upper_cap],
-                [_form_en(defect_entry, lower_cap), _form_en(defect_entry, upper_cap)],
-            ]
+            x_list += [lower_cap, upper_cap]
+            y_list += [_form_en(defect_entry, lower_cap), _form_en(defect_entry, upper_cap)]
             y_range_vals.extend(_form_en(defect_entry, x_window) for x_window in xlim)
 
         # if xy corresponds to a line below 0 for all x in (0, band_gap), warn!
-        assert defect_thermodynamics.band_gap is not None  # typing
-
-        in_gap_fermi_levels = np.linspace(0, defect_thermodynamics.band_gap, 1000)
-        in_gap_formation_energies = np.interp(in_gap_fermi_levels, xp=xy[def_name][0], fp=xy[def_name][1])
-        if all(y < 0 for y in in_gap_formation_energies):  # Check if all y-values are below zero
+        in_gap_formation_energies = np.interp(in_gap_fermi_levels, xp=x_list, fp=y_list)
+        if (in_gap_formation_energies < 0).all():
             warnings.warn(
                 f"All formation energies for {def_name} are below zero across the entire band gap range. "
                 f"This is typically unphysical (see docs), and likely due to mis-specification of "
                 f"chemical potentials (see docstrings and/or tutorials)."
             )
-            ymin = min(ymin, *in_gap_formation_energies)
+            ymin = min(ymin, in_gap_formation_energies.min())
 
     if not y_range_vals:
         raise ValueError("No formation energy data available to plot.")
@@ -1820,11 +1810,11 @@ def formation_energy_plot(
             groupings key on the element symbol and ``"site"``-grouped colours
             (explicitly set, or auto-escalated for single-defect-type systems)
             instead key on the plotted group names -- see ``color_grouping``.
-            Thus plots of the same system should share colours for the same
-            defects regardless of ``dist_tol``, ``defect_subset`` or
-            ``unstable_entries`` choices (with intrinsic defect colours also
-            unchanged upon later addition of extrinsic defects, for listed /
-            discrete colormaps).
+            Thus plots of the same system should share base colours for the
+            same defects regardless of ``dist_tol``, ``defect_subset`` or
+            ``unstable_entries`` choices (with intrinsic defect base colours
+            also unchanged upon later addition of extrinsic defects, for listed
+            / discrete colormaps).
         linestyles (str, list[str]):
             Linestyles to use for the formation energy lines, either as a
             single linestyle (``str``) or list of linestyles (``list[str]``) in
@@ -1834,7 +1824,7 @@ def formation_energy_plot(
         group_palette (dict):
             Pre-computed ``{colour group key: colour}`` palette to use (e.g.
             from the parent ``DefectThermodynamics`` object before any pruning
-            / subsetting, for colour stability -- as in
+            / subsetting, for base-colour stability -- as in
             ``DefectThermodynamics.plot()``). If ``None`` (default), computed
             from ``defect_thermodynamics``.
         chempot_table (bool):
@@ -1914,10 +1904,7 @@ def formation_energy_plot(
         _plot_formation_energy_lines(  # grey 'all_lines_xy' not included in legend
             all_lines_xy,
             colors=[(0.8, 0.8, 0.8)] * len(all_lines_xy),
-            linestyles=[
-                "-",
-            ]
-            * len(all_lines_xy),
+            linestyles=["-"] * len(all_lines_xy),
             ax=ax,
             styled_linewidth=styled_linewidth,
             styled_markersize=styled_markersize,
@@ -1928,7 +1915,7 @@ def formation_energy_plot(
     _plot_transition_level_markers(
         ax,
         defect_thermodynamics,
-        (xy).keys(),
+        xy.keys(),
         colors,
         abs_chempots,
         styled_markersize=styled_markersize,
@@ -1938,7 +1925,7 @@ def formation_energy_plot(
     )
 
     legend_txt = format_defect_names(
-        list((plotting_xy).keys()),
+        list(plotting_xy),
         include_charge=all_entries is True,
         include_site_info=include_site_info,
     )
@@ -1951,7 +1938,7 @@ def formation_energy_plot(
         bbox_to_anchor=(1.05, 1),
         borderaxespad=0.0,  # adjust padding to move closer to the axes
         # max 10 labels per column with default settings:
-        ncol=np.ceil(len(legend_txt) / (10 * user_figsize_legend_fontsize_ratio)),
+        ncol=math.ceil(len(legend_txt) / (10 * user_figsize_legend_fontsize_ratio)),
     )
 
     if ylim is None:
@@ -1965,7 +1952,7 @@ def formation_energy_plot(
     _set_TLD_axis_labels_limits_ticks(ax, xlim, ylim)
 
     # dashed line for E_formation = 0 (in case ymin < 0) and Fermi level if provided:
-    ax.plot([xlim[0], xlim[1]], [0, 0], c="k", ls="--", alpha=0.7)
+    ax.axhline(0, c="k", ls="--", alpha=0.7)
     if fermi_level is not None:
         ax.axvline(x=fermi_level, linestyle="-.", color="k")
 
@@ -2004,20 +1991,23 @@ def plot_chemical_potential_table(
     """
     if el_refs is not None:
         chempots = {el: energy - el_refs[el] for el, energy in chempots.items()}
-    labels = [rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(chempots.keys())]
-    labels[0] = f"({labels[0]}"
-    labels[-1] = f"{labels[-1][:-1]})"  # [:-1] removes trailing comma
+    elements = sorted(chempots)
+
+    def _bracketed(strings: list[str]) -> list[str]:
+        """
+        Add brackets to the first and last (comma-separated) strings, removing
+        the trailing comma.
+        """
+        strings[0] = f"({strings[0]}"
+        strings[-1] = f"{strings[-1][:-1]})"
+        return strings
+
+    labels = _bracketed([rf"$\mathregular{{\mu_{{{s}}}}}$," for s in elements])
     labels = ["Chemical Potentials", *labels, " Units:"]
 
-    text_list = [f"{chempots[el]:.2f}," for el in sorted(chempots.keys())]
-
-    # add brackets to first and last entries:
-    text_list[0] = f"({text_list[0]}"
-    text_list[-1] = f"{text_list[-1][:-1]})"  # [:-1] removes trailing comma
-    if el_refs is not None:
-        text_list = ["(wrt Elemental refs)", *text_list, "  [eV]"]
-    else:
-        text_list = ["(from calculations)", *text_list, "  [eV]"]
+    text_list = _bracketed([f"{chempots[el]:.2f}," for el in elements])
+    header = "(wrt Elemental refs)" if el_refs is not None else "(from calculations)"
+    text_list = [header, *text_list, "  [eV]"]
     widths = [0.1] + [0.9 / len(chempots)] * (len(chempots) + 2)
     tab = ax.table(cellText=[text_list], colLabels=labels, colWidths=widths, loc="top", cellLoc=cellLoc)
     tab.auto_set_column_width(list(range(len(widths))))
@@ -2104,12 +2094,13 @@ def _get_transition_level_data(
         return sorted(tl_list, key=lambda x: x.TL_eV)  # sort by TL position wrt VBM
 
     # ground-state TLs (i.e. those visible on the formation energy diagram):
-    gs_per_defect: dict[str, list[TransitionLevel]] = {}
-    for defect_name, tl_dict in defect_thermodynamics.transition_level_map.items():
-        gs_per_defect[defect_name] = [
+    gs_per_defect: dict[str, list[TransitionLevel]] = {
+        defect_name: [
             TransitionLevel(float(TL), (max(chargeset), min(chargeset)), False, False, False)
             for TL, chargeset in tl_dict.items()
         ]
+        for defect_name, tl_dict in defect_thermodynamics.transition_level_map.items()
+    }
 
     if all is False:
         return {name: sorted_tls(tls) for name, tls in gs_per_defect.items()}
@@ -2121,7 +2112,7 @@ def _get_transition_level_data(
     # defect order = transition_level_map order (which respects defect appearance order), with any
     # defects that are only present in single_electron_TLs appended afterwards:
     ordered_names = list(
-        dict.fromkeys([*defect_thermodynamics.transition_level_map, *single_electron_TLs])
+        dict.fromkeys((*defect_thermodynamics.transition_level_map, *single_electron_TLs))
     )  # dict.fromkeys ensures unique keys, so only unique keys from single_electron_TLs are appended
 
     if all is True:
@@ -2129,19 +2120,22 @@ def _get_transition_level_data(
 
     # all not ``True`` or ``False``; in {"faded", "faded_labels"}: ground-state TLs solid, metastable
     # single-electron faded
-    out = {}
-    for name in ordered_names:
-        merged = list(gs_per_defect.get(name, []))  # GS, not faded
-        merged += [
-            tl._replace(faded=True)
-            for tl in single_electron_TLs.get(name, [])
-            if tl.pos_meta or tl.neg_meta
-        ]
-        out[name] = sorted_tls(merged)
-    return out
+    return {
+        name: sorted_tls(
+            gs_per_defect.get(name, [])  # GS, not faded
+            + [
+                tl._replace(faded=True)
+                for tl in single_electron_TLs.get(name, [])
+                if tl.pos_meta or tl.neg_meta
+            ]
+        )
+        for name in ordered_names
+    }
 
 
-def _format_TL_charge_label(charges, pos_meta=False, neg_meta=False, prefix=""):
+def _format_TL_charge_label(
+    charges: Sequence[int], pos_meta: bool = False, neg_meta: bool = False, prefix: str = ""
+) -> str:
     """
     Format a charge transition label like ``"(+1/0)"`` or ``"(+1*/0)"``.
 
@@ -2153,8 +2147,8 @@ def _format_TL_charge_label(charges, pos_meta=False, neg_meta=False, prefix=""):
     """
     q_pos, q_neg = charges
     return (
-        f"{prefix}({'+' if q_pos > 0 else ''}{q_pos}{'*' if pos_meta else ''}"
-        f"/{'+' if q_neg > 0 else ''}{q_neg}{'*' if neg_meta else ''})"
+        f"{prefix}({_signed_charge(q_pos)}{'*' if pos_meta else ''}"
+        f"/{_signed_charge(q_neg)}{'*' if neg_meta else ''})"
     )
 
 
@@ -2200,9 +2194,9 @@ def _label_axis_extent(x: float, alignment: str = "left", label_size: float = 8.
     of a label centred or anchored at ``x``, with alignment ``alignment`` and
     size (width/height) ``label_size``.
     """
-    if alignment in ["bottom", "left"]:
+    if alignment in ("bottom", "left"):
         return x, x + label_size  # text extends to the right of the anchor
-    if alignment in ["top", "right"]:
+    if alignment in ("top", "right"):
         return x - label_size, x  # text extends to the left of the anchor
     return x - 0.5 * label_size, x + 0.5 * label_size  # "center"
 
@@ -2508,17 +2502,12 @@ def _optimise_side_placements(
         for j, b in enumerate(picks):
             if b < 0 or j == i:  # b < 0 if not yet chosen, and ignore i-i pairs
                 continue
-            cost += pair_lookup[(i, j)][a][b] if i < j else pair_lookup[(j, i)][b][a]
+            cost += pair_lookup[(i, j)][a, b] if i < j else pair_lookup[(j, i)][b, a]
         return int(cost)
 
     picks = [-1] * n  # -1 == not yet chosen
     for i in range(n):  # greedy first-pick: lowest-cost candidate given prior picks
-        best_idx, best_cost = 0, float("inf")
-        for a in range(counts[i]):
-            c = _conditional_cost(i, a, picks)
-            if c < best_cost:
-                best_idx, best_cost = a, c
-        picks[i] = best_idx
+        picks[i] = min(range(counts[i]), key=functools.partial(_conditional_cost, i, picks=picks))
 
     for _ in range(max(n, 20)):  # hill-climbing refinement: swap to a lower-cost alternative until stable
         improved = False
@@ -2535,7 +2524,7 @@ def _optimise_side_placements(
         if not improved:  # no further improvement, break
             break
 
-    greedy_cost = sum(int(mat[picks[i]][picks[j]]) for (i, j), mat in pair_lookup.items())
+    greedy_cost = sum(int(mat[picks[i], picks[j]]) for (i, j), mat in pair_lookup.items())
     if greedy_cost == 0 or space * per_combo_reads > max_brute_force_ops:
         return [side_candidates_per_tl[k][picks[k]] for k in range(n)]  # use greedy result
 
@@ -2676,7 +2665,7 @@ def _place_inline_labels_for_column(
         y_min = y_min - clearance if TL_label.y < source_y else source_y
         y_max = y_max + clearance if TL_label.y > source_y else source_y
         # check collision with any other TL (except source TL):
-        return any(y_min <= TL_y <= y_max for TL_y in [ly for ly in TL_y_positions if ly != source_y])
+        return any(y_min <= TL_y <= y_max for TL_y in TL_y_positions if TL_y != source_y)
 
     def collides_with_placed(TL_label: TransitionLevelLabel) -> bool:
         """
@@ -2809,7 +2798,7 @@ def transition_level_diagram(
     the conduction band minimum (``self.vbm + self.band_gap``) is shown in the
     orange shaded region at the top of the plot. Within each defect column,
     each transition level is drawn as a short horizontal line, labelled with
-    the charge state transition (e.g. ``(+1/0)``)(if ``show_charge_labels`` is
+    the charge state transition (e.g. ``(+1/0)``) (if ``show_charge_labels`` is
     ``True``; default). Metastable charge states are denoted with a ``*`` in
     the label, as in the |DefectThermodynamics| methods.
 
@@ -2941,10 +2930,9 @@ def transition_level_diagram(
     label_y_max = ylim[1] + label_buf
     label_y_min = ylim[0] - label_buf
 
-    # Build per-column TL lists, neighbour data and headers; then draw the TL lines, do implement
-    # intelligent label placement algorithm. ``columns_data`` holds per-column
-    # ``(x_center, half_w, [TL y-positions in range])`` so that for each column we can pass the `other`
-    # columns as neighbour data to inform side-clearance picking:
+    # Build per-column TL lists, neighbour data and headers; then draw the TL lines, using intelligent
+    # label placement. ``columns_data`` holds per-column ``(x_center, half_w, [TL y-positions in range])``
+    # so that for each column we can pass the `other` columns as neighbour data to inform side-clearance:
     columns_data: list[tuple[float, float, list[float]]] = []
     column_in_range_tls: list[list[TransitionLevel]] = []
     for i, tls in enumerate(tl_data.values()):
@@ -2965,13 +2953,14 @@ def transition_level_diagram(
                 zorder=3,
             )
 
+    # ``column_positions[k]`` is column ``k``'s TL (& label) placement list (``TransitionLevelLabel`` or
+    # ``None`` per input TL), left as ``None`` when ``show_charge_labels=False``:
+    column_positions: list[list | None] = [None] * n_defects
     if show_charge_labels:  # label placement
-        # ``column_positions[k]`` is column ``k``'s TL (& label) placement list (``TransitionLevelLabel``
-        # or ``None`` per input TL). Placement is done globally in two stages: (1) place all inline
-        # (direct above/below) labels per column which don't overlap with other labels/TL lines,
-        # accumulating the leftover "side-bound" TLs; (2) cluster the side-bound TLs by locality and
-        # (globally) optimise each cluster's side-label positions:
-        column_positions: list[list | None] = [None] * n_defects
+        # Placement is done globally in two stages: (1) place all inline (direct above/below) labels per
+        # column which don't overlap with other labels/TL lines, accumulating the leftover "side-bound"
+        # TLs; (2) cluster the side-bound TLs by locality and (globally) optimise each cluster's side-label
+        # positions:
         side_bound: list[_SideBoundTL] = []
         for i in range(n_defects):
             column_positions[i], side_bound_i = _place_inline_labels_for_column(
@@ -3002,8 +2991,6 @@ def transition_level_diagram(
                 assert isinstance(this_defect_col_positions, list)  # typing
                 # set the optimised TL label for the corresponding entry in column_positions[sb.col_idx]:
                 this_defect_col_positions[sb.idx_in_col] = TL_label
-    else:
-        column_positions = [None] * n_defects
 
     # draw labels (and their connectors) for each column:
     for i in range(n_defects):
@@ -3025,19 +3012,12 @@ def transition_level_diagram(
                 zorder=4,
                 clip_on=False,
             )
-            if (
-                TL_label.conn_y is not None
-            ):  # draw a thin connector from TL to label (stopping 20% short, each side)
-                conn_x0 = TL_label.conn_x  # column-edge source x, set when the label was placed
+            # draw a thin connector from the TL line to the label (stopping 20% short, each side):
+            if (conn := _connector_endpoints(TL_label)) is not None:
+                x0, y0, x1, y1 = conn  # column-edge source (x0, y0) to label anchor (x1, y1)
                 ax.plot(
-                    [
-                        conn_x0 + 0.2 * (TL_label.x - conn_x0),
-                        conn_x0 + 0.8 * (TL_label.x - conn_x0),
-                    ],
-                    [
-                        TL_label.conn_y + 0.2 * (TL_label.y - TL_label.conn_y),
-                        TL_label.conn_y + 0.8 * (TL_label.y - TL_label.conn_y),
-                    ],
+                    [x0 + 0.2 * (x1 - x0), x0 + 0.8 * (x1 - x0)],
+                    [y0 + 0.2 * (y1 - y0), y0 + 0.8 * (y1 - y0)],
                     color="0.55" if tl_tuple.faded else "0.4",
                     alpha=faded_alpha if tl_tuple.faded else 1.0,
                     lw=plt.rcParams["lines.linewidth"] * 1.1 * 0.5,
@@ -3116,7 +3096,6 @@ def transition_level_diagram(
     for spine in ("top", "right", "bottom"):
         ax.spines[spine].set_visible(False)
 
-    if filename is not None:
-        fig.savefig(filename, dpi=600, bbox_inches="tight", transparent=True)
+    _set_title_and_save_figure(ax, filename=filename)
 
     return fig
