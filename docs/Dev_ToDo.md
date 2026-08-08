@@ -4,12 +4,10 @@
 - Parsing
 
 ## Post-processing / analysis / plotting
-- Better automatic defect formation energy plot colour handling (set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
-  - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in our chempot heatmap plotting)
-  - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
-  - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy!
-  - Separate `dist_tol` for interstitials vs (inequivalent) vacancies/substitutions? (See Xinwei chat) Any other options on this front?
-  - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this?
+- `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in our chempot heatmap plotting)
+- Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks.
+- Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy! (Unless combined with the degeneracy-weighted formation energy option)
+- Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this?
 - Charge corrections for polarons; code there, just need to allow inputs of bare calculation outputs (and then can extend to allow polaron input file generation and parsing/plotting). Then update ``ShakeNBreak_Polaron_Workflow`` example with this too.
 - Kumagai GKFO and CC diagram corrections. Implemented in `pydefect` and relatively easy to port?
 

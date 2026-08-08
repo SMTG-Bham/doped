@@ -14,13 +14,15 @@ Both build on ``DefectThermodynamicsSetupMixin`` (from ``test_thermodynamics``),
 extra objects (in ``setUpClass``) where the mixin does not already provide them.
 """
 
+import colorsys
 import os
 import warnings
 from copy import deepcopy
 
 import matplotlib as mpl
+import numpy as np
 import pytest
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import ListedColormap, to_rgba
 from monty.serialization import loadfn
 from test_thermodynamics import DefectThermodynamicsSetupMixin
 from test_utils import (
@@ -39,6 +41,36 @@ from doped.thermodynamics import DefectThermodynamics
 from doped.utils import plotting
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
+
+
+def _legend_color_dict(fig):
+    """
+    ``{legend label: RGBA line colour}`` for a ``matplotlib`` plot, to test.
+    """
+    legend = fig.axes[0].get_legend()
+    return {
+        text.get_text(): to_rgba(line.get_color())
+        for text, line in zip(legend.get_texts(), legend.get_lines(), strict=True)
+    }
+
+
+def _legend_linestyle_dict(fig):
+    """
+    ``{legend label: linestyle}`` for a ``matplotlib`` plot, to test.
+    """
+    legend = fig.axes[0].get_legend()
+    return {
+        text.get_text(): line.get_linestyle()
+        for text, line in zip(legend.get_texts(), legend.get_lines(), strict=True)
+    }
+
+
+def _hue(rgba):
+    return colorsys.rgb_to_hls(*rgba[:3])[0]
+
+
+def _lightness(rgba):
+    return colorsys.rgb_to_hls(*rgba[:3])[1]
 
 
 class DefectTransitionLevelPlotsTestCase(DefectThermodynamicsSetupMixin):
@@ -689,6 +721,28 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
     def test_CdTe_LZ_all_defects_plot(self):
         return self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich")
 
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_variant_style_both.png")
+    def test_CdTe_LZ_all_defects_plot_variant_style_both(self):
+        # same-type variants (Cd_i, Te_i site groups) differentiated by both lightness shades and cycled
+        # linestyles (solid/darkest = most thermodynamically-relevant line of each colour group):
+        return self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich", variant_style="both")
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_variant_style_linestyle.png")
+    def test_CdTe_LZ_all_defects_plot_variant_style_linestyle(self):
+        # same-type variants share the exact same colour, differentiated by cycled linestyles only:
+        return self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich", variant_style="linestyle")
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_color_grouping_site.png")
+    def test_CdTe_LZ_all_defects_plot_color_grouping_site(self):
+        # each defect group (inequivalent site cluster) gets its own distinct colour:
+        return self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich", color_grouping="site")
+
+    @custom_mpl_image_compare(filename="Se_ext_no_pnict_thermo_color_grouping_element.png")
+    def test_Se_ext_color_grouping_element(self):
+        # extrinsic defect types of the same element (e.g. F_Se & F_i) sharing a single colour (lightness
+        # shades), rather than the default one colour per defect type:
+        return self.Se_ext_no_pnict_thermo.plot(color_grouping="element")
+
     @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_1pt6.png")
     def test_CdTe_LZ_all_defects_plot_dist_tol_1pt6(self):
         # Matches SK Thesis Fig 6.1b
@@ -962,6 +1016,322 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             linestyles=self.Se_ext_linestyles,
         )
 
+    def test_type_keyed_colors_dist_tol_stability(self):
+        """
+        Test that line colours are keyed on defect type (``Defect.name``), and
+        so are stable to changes in ``dist_tol`` (and ``unstable_entries``)
+        which alter the grouping of defect entries.
+        """
+        colors_by_dist_tol = {}
+        for dist_tol in [0.5, 1.5, 2, 4]:
+            self.CdTe_LZ_thermo_wout_meta.dist_tol = dist_tol
+            fig = self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich")
+            colors_by_dist_tol[dist_tol] = _legend_color_dict(fig)
+
+        reference = colors_by_dist_tol[1.5]
+        for dist_tol, label_colors in colors_by_dist_tol.items():
+            for label, color in label_colors.items():
+                if label in reference:  # same defect groups keep identical colours across dist_tol
+                    assert color == reference[label], (dist_tol, label)
+
+        # merged groups (Cd_i, Te_i at dist_tol=4) keep the defect type's base colour, i.e. that of the
+        # first variant at lower dist_tol:
+        for label, color in colors_by_dist_tol[4].items():
+            assert color in reference.values(), label
+
+        # colours also stable to ``unstable_entries`` pruning choices:
+        self.CdTe_LZ_thermo_wout_meta.dist_tol = 1.5
+        unpruned = _legend_color_dict(
+            self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich", unstable_entries=True)
+        )
+        for label, color in reference.items():
+            assert unpruned[label] == color, label
+
+    def test_type_keyed_colors_subset_matches_full(self):
+        """
+        Test that ``defect_subset`` plots share colours with the full plot.
+        """
+        full = _legend_color_dict(self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich"))
+        subset = _legend_color_dict(
+            self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich", defect_subset=["Te_i", "v_Cd"])
+        )
+        assert 0 < len(subset) < len(full)
+        for label, color in subset.items():
+            assert color == full[label], label
+
+    def test_type_keyed_colors_variant_shading_and_linestyles(self):
+        """
+        Test that multiple plotted defects of the same type get lightness
+        variants of the type's base colour and/or cycled linestyles
+        (``variant_style``), with the same hue throughout.
+        """
+        thermo = self.CdTe_LZ_thermo_wout_meta  # two Te_i (and two Cd_i) groups at default dist_tol
+        label_colors = _legend_color_dict(thermo.plot(limit="Te-rich"))
+        Te_i_colors = [color for label, color in label_colors.items() if label.startswith("Te$_{i")]
+        assert len(Te_i_colors) == 2
+        assert Te_i_colors[0] != Te_i_colors[1]  # differentiated by lightness...
+        assert _hue(Te_i_colors[0]) == pytest.approx(_hue(Te_i_colors[1]))  # ...with the same hue
+        assert _lightness(Te_i_colors[0]) < _lightness(Te_i_colors[1])
+
+        # with variant_style="none", same-type variants share the exact same colour:
+        label_colors = _legend_color_dict(thermo.plot(limit="Te-rich", variant_style="none"))
+        Te_i_colors = [color for label, color in label_colors.items() if label.startswith("Te$_{i")]
+        assert Te_i_colors[0] == Te_i_colors[1]
+
+        # with variant_style="both", same-type variants get cycled linestyles (and shades):
+        label_linestyles = _legend_linestyle_dict(thermo.plot(limit="Te-rich", variant_style="both"))
+        assert [ls for label, ls in label_linestyles.items() if label.startswith("Te$_{i")] == ["-", "--"]
+        assert all(  # single-variant defect types keep solid lines:
+            linestyle == "-"
+            for label, linestyle in label_linestyles.items()
+            if not label.startswith(("Te$_{i", "Cd$_{i"))
+        )
+
+        # with variant_style="linestyle", same-type variants share the exact same colour but get cycled
+        # linestyles:
+        fig = thermo.plot(limit="Te-rich", variant_style="linestyle")
+        Te_i_colors = [
+            color for label, color in _legend_color_dict(fig).items() if label.startswith("Te$_{i")
+        ]
+        assert Te_i_colors[0] == Te_i_colors[1]
+        Te_i_linestyles = [
+            ls for label, ls in _legend_linestyle_dict(fig).items() if label.startswith("Te$_{i")
+        ]
+        assert Te_i_linestyles == ["-", "--"]
+
+        with pytest.raises(ValueError) as exc:
+            thermo.plot(limit="Te-rich", variant_style="wrong input")
+        assert "`variant_style` option must be either 'fade', 'linestyle', 'both' or 'none'" in str(
+            exc.value
+        )
+
+    def test_colormap_dict_overrides(self):
+        """
+        Test the ``{defect type: colour}`` dict input for ``colormap``, with
+        non-specified defect types keeping their default palette colours.
+        """
+        thermo = self.CdTe_LZ_thermo_wout_meta
+        default_colors = _legend_color_dict(thermo.plot(limit="Te-rich"))
+        label_colors = _legend_color_dict(thermo.plot(limit="Te-rich", colormap={"Te_i": "tab:pink"}))
+        Te_i_colors = [color for label, color in label_colors.items() if label.startswith("Te$_{i")]
+        assert Te_i_colors[0] == to_rgba("tab:pink")
+        assert _hue(Te_i_colors[1]) == pytest.approx(_hue(to_rgba("tab:pink")))  # shaded variant
+        for label, color in label_colors.items():  # all other defects keep default palette colours:
+            if not label.startswith("Te$_{i"):
+                assert color == default_colors[label], label
+
+    def test_all_entries_type_keyed_shades(self):
+        """
+        Test that with ``all_entries=True``, per-charge-state lines get
+        distinct lightness shades of their defect type's base colour (assuming
+        there is more than one defect type/group), with the base (darkest)
+        colour assigned to the line which is lowest in energy over the largest
+        fraction of the in-gap Fermi level range.
+        """
+        thermo = self.CdTe_LZ_thermo_wout_meta
+        fig = thermo.plot(limit="Te-rich", all_entries=True)
+        label_colors = _legend_color_dict(fig)
+        assert len(set(label_colors.values())) == len(label_colors)  # all lines distinctly coloured
+
+        labels = list(label_colors.keys())
+        prefix_hues: dict = {}  # same hue for all lines of the same label prefix (defect group):
+        for label in labels:
+            prefix_hues.setdefault(label.split("^")[0], set()).add(round(_hue(label_colors[label]), 4))
+        assert all(len(hues) == 1 for hues in prefix_hues.values())
+
+        # darkest (base colour) line of each colour group (i.e. same-hue lines; here both Cd_i groups share
+        # a colour group, for example) = lowest energy over the largest fraction of the gap:
+        plot_lines = fig.axes[0].lines[: len(labels)]  # formation energy lines, in legend order
+        fermi_levels = np.linspace(0, thermo.band_gap, 1000)
+        hue_indices: dict = {}  # group lines by colour group (hue)
+        for i, label in enumerate(labels):
+            hue_indices.setdefault(round(_hue(label_colors[label]), 4), []).append(i)
+        assert len(hue_indices) > 1
+        for hue, indices in hue_indices.items():
+            colors = [label_colors[labels[i]] for i in indices]
+            energies = np.vstack(
+                [
+                    np.interp(fermi_levels, plot_lines[i].get_xdata(), plot_lines[i].get_ydata())
+                    for i in indices
+                ]
+            )
+            lowest_fractions = np.bincount(np.argmin(energies, axis=0), minlength=len(indices))
+            darkest_index = min(range(len(colors)), key=lambda j: _lightness(colors[j]))
+            assert darkest_index == np.argmax(lowest_fractions), hue
+
+    def test_defect_type_palette_extrinsic_stability(self):
+        """
+        Test that intrinsic defect type colours are unchanged upon later
+        addition of extrinsic defects (with intrinsic types assigned colours
+        first), when staying within the same default palette regime (i.e. not
+        crossing the 10 colour group threshold).
+        """
+        intrinsic_thermo = DefectThermodynamics.from_json(f"{EXAMPLE_DIR}/Se/Se_Intrinsic_Thermo.json.gz")
+        extrinsic_entries = {  # subset of extrinsic defects, keeping total defect types <= 10:
+            name: entry
+            for name, entry in self.Se_amalgamated_extrinsic_thermo.defect_entries.items()
+            if entry.defect.name.split("_")[0] in ["O", "S", "Te"]
+        }
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            combined_thermo = DefectThermodynamics(
+                {**intrinsic_thermo.defect_entries, **extrinsic_entries},
+                vbm=intrinsic_thermo.vbm,
+                band_gap=intrinsic_thermo.band_gap,
+                check_compatibility=False,
+            )
+
+        intrinsic_palette = plotting.get_defect_type_palette(intrinsic_thermo)
+        combined_palette = plotting.get_defect_type_palette(combined_thermo)
+        assert list(combined_palette)[:2] == ["v_Se", "Se_i"]  # intrinsic defect types first
+        for defect_type, color in intrinsic_palette.items():
+            assert combined_palette[defect_type] == color, defect_type
+
+    def test_color_grouping_element(self):
+        """
+        Test that with ``color_grouping="element"``, extrinsic defect types of
+        the same element (substitutions and interstitials) share a single hue
+        (differentiated by lightness shades / cycled linestyles), while the
+        default (``color_grouping="type"``) gives one colour per defect type.
+        """
+        thermo = self.Se_ext_no_pnict_thermo  # extrinsic subs + interstitials (incl 2 H_i sites)
+        palette = plotting.get_defect_type_palette(thermo, color_grouping="element")
+        assert list(palette) == ["H", "O", "S", "Te", "F", "Cl", "Br", "I"]  # element colour keys
+        assert all(  # default ("type") palette keyed per defect type instead:
+            key.split("_")[0] in palette for key in plotting.get_defect_type_palette(thermo)
+        )
+        assert len(plotting.get_defect_type_palette(thermo)) > len(palette)
+
+        # default ("type") grouping -> one colour per defect type (F_Se and F_i differ):
+        label_colors = _legend_color_dict(thermo.plot())
+        F_colors = [color for label, color in label_colors.items() if label.startswith("F$")]
+        assert _hue(F_colors[0]) != pytest.approx(_hue(F_colors[1]))
+
+        label_colors = _legend_color_dict(thermo.plot(color_grouping="element"))
+        by_element: dict = {}  # group legend entries by element prefix (before the "$" subscript)
+        for label, color in label_colors.items():
+            by_element.setdefault(label.split("$")[0], []).append(color)
+        assert len(by_element) == 8
+        for element, colors in by_element.items():
+            assert len(colors) >= 2, element  # substitution + interstitial(s)
+            assert len({round(_hue(color), 4) for color in colors}) == 1, element  # same hue
+            assert len(set(colors)) == len(colors), element  # distinct lightness shades
+
+        # with variant_style="both", the dominant (base; solid & darkest) defect of each element group gets
+        # the base linestyle, with cycled linestyles for the others:
+        fig = thermo.plot(color_grouping="element", variant_style="both")
+        label_linestyles = _legend_linestyle_dict(fig)
+        element_styles: dict = {}
+        for label, color in _legend_color_dict(fig).items():
+            element_styles.setdefault(label.split("$")[0], []).append((label_linestyles[label], color))
+        for element, styles in element_styles.items():
+            solid = [color for linestyle, color in styles if linestyle == "-"]
+            assert len(solid) == 1, element  # one solid (base) line per element group...
+            assert _lightness(solid[0]) == min(  # ...which is also the darkest (base colour) line
+                _lightness(color) for _, color in styles
+            ), element
+
+        # element-level dict override applies to all defects of that element (dominant = exact colour):
+        label_colors = _legend_color_dict(
+            thermo.plot(color_grouping="element", colormap={"F": "tab:green"})
+        )
+        F_colors = [color for label, color in label_colors.items() if label.startswith("F$")]
+        assert min(F_colors, key=_lightness) == to_rgba("tab:green")
+        assert all(_hue(color) == pytest.approx(_hue(to_rgba("tab:green"))) for color in F_colors)
+
+    def test_color_grouping_site(self):
+        """
+        Test that ``color_grouping="site"`` gives each defect group (i.e. site
+        cluster) its own distinct colour, rather than lightness shades of the
+        defect type's base colour.
+        """
+        thermo = self.CdTe_LZ_thermo_wout_meta  # two Te_i (and two Cd_i) groups at default dist_tol
+        label_colors = _legend_color_dict(thermo.plot(limit="Te-rich", color_grouping="site"))
+        Te_i_colors = [color for label, color in label_colors.items() if label.startswith("Te$_{i")]
+        assert len(Te_i_colors) == 2
+        assert _hue(Te_i_colors[0]) != pytest.approx(_hue(Te_i_colors[1]))  # distinct colours
+        assert len(set(label_colors.values())) == len(label_colors)  # all lines distinctly coloured
+
+        with pytest.raises(ValueError) as exc:
+            thermo.plot(limit="Te-rich", color_grouping="wrong input")
+        assert "`color_grouping` option must be either 'element', 'type' or 'site'" in str(exc.value)
+
+    def test_color_grouping_explicit_no_escalation(self):
+        """
+        Test that an explicitly-set ``color_grouping`` is used as-is (no
+        automatic escalation); e.g. shades of a single colour for a single-
+        defect-type system with ``color_grouping="type"``, while the default
+        (unset) escalates to give a range of colours.
+        """
+        default_colors = _legend_color_dict(self.V2O5_defect_thermo.plot(limit="O-rich"))
+        assert len({round(_hue(color), 4) for color in default_colors.values()}) > 1  # escalated
+
+        label_colors = _legend_color_dict(
+            self.V2O5_defect_thermo.plot(limit="O-rich", color_grouping="type")
+        )
+        assert len({round(_hue(color), 4) for color in label_colors.values()}) == 1  # one group (v_O)
+        assert len(set(label_colors.values())) == len(label_colors)  # differentiated by shades
+
+    def test_single_color_group_escalation(self):
+        """
+        Test that when the chosen ``color_grouping`` would give only a single
+        colour group for the whole system, the granularity is automatically
+        escalated (element -> type -> site -> per-line) so a range of colours
+        is used rather than shades of a single colour.
+        """
+        # V2O5 fixture: only one defect type (v_O) -> escalates to "site" (distinct group colours):
+        assert plotting._resolve_color_grouping(self.V2O5_defect_thermo, "element") == "site"
+        label_colors = _legend_color_dict(self.V2O5_defect_thermo.plot(limit="O-rich"))
+        assert len({round(_hue(color), 4) for color in label_colors.values()}) == len(label_colors) > 1
+
+        # single defect group (dist_tol=inf amalgamation) with all_entries -> per-line colour range:
+        label_colors = _legend_color_dict(
+            self.V2O5_defect_thermo.plot(limit="O-rich", all_entries=True, dist_tol=np.inf)
+        )
+        assert len({round(_hue(color), 4) for color in label_colors.values()}) == len(label_colors) > 1
+
+        # multi-type systems are unaffected:
+        assert plotting._resolve_color_grouping(self.CdTe_LZ_thermo_wout_meta, "element") == "element"
+
+    def test_plot_ephemeral_dist_tol_and_amalgamation(self):
+        """
+        Test the ephemeral ``dist_tol`` override in ``plot()`` (leaving
+        ``self`` untouched), including ``dist_tol=np.inf`` which amalgamates
+        all defects of each defect type into a single line (named by the plain
+        defect type name, keeping the type's base colour).
+        """
+        thermo = self.CdTe_LZ_thermo_wout_meta
+        orig_groups = list(thermo.transition_level_map)
+        assert len(orig_groups) == 8  # two Cd_i and two Te_i groups at default dist_tol = 1.5
+        palette = plotting.get_defect_type_palette(thermo)
+
+        label_colors = _legend_color_dict(thermo.plot(limit="Te-rich", dist_tol=np.inf))
+        assert len(label_colors) == 6  # one line per defect type
+        assert set(label_colors.values()) == {tuple(c) for c in palette.values()}  # type base colours
+        assert thermo.dist_tol == 1.5  # ephemeral override; ``self`` unchanged:
+        assert list(thermo.transition_level_map) == orig_groups
+
+        # finite ephemeral override:
+        assert len(_legend_color_dict(thermo.plot(limit="Te-rich", dist_tol=4))) == 6
+        assert thermo.dist_tol == 1.5
+
+        # ``unstable_entries=True`` path (where ``prune_to_stable_entries`` returns ``self``) is also not
+        # mutated by the override:
+        fig = thermo.plot(limit="Te-rich", unstable_entries=True, dist_tol=np.inf)
+        assert len(_legend_color_dict(fig)) == 6
+        assert thermo.dist_tol == 1.5
+        assert list(thermo.transition_level_map) == orig_groups
+
+        # directly setting ``dist_tol = np.inf`` uses the type-amalgamation fast path, with groups
+        # keyed/named by the plain defect type names:
+        thermo.dist_tol = np.inf
+        assert list(thermo.transition_level_map) == ["v_Cd", "v_Te", "Cd_Te", "Te_Cd", "Cd_i", "Te_i"]
+        assert all(
+            len(clusters) == 1 for clusters in thermo.clustered_defect_entries_by_type.values()
+        )  # one amalgamated cluster per defect type
+        thermo.dist_tol = 1.5  # and roundtrips back:
+        assert list(thermo.transition_level_map) == orig_groups
+
     @custom_mpl_image_compare(filename="CdTe_LZ_all_default_Te_rich.png")
     def test_CdTe_LZ_site_info_plot(self):
         """
@@ -979,11 +1349,13 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         """
         return self.Bi_Se_thermo.plot(limit="Se-rich", all_entries=True)
 
-    @custom_mpl_image_compare(filename="Bi_Se_BiSeI_Se_rich.png")
+    @custom_mpl_image_compare(filename="Bi_Se_BiSeI_Se_rich_manual_colormap.png")
     def test_Bi_Se_all_entries_manual_colormap_plot(self):
+        # explicit ``Colormap`` objects retain positional (line-order) colour assignment, rather than
+        # the default defect-type-keyed colours (so this differs from ``Bi_Se_BiSeI_Se_rich.png``):
         from doped.utils.plotting import ListedColormap, get_colormap
 
-        cmap = get_colormap("tab10")
+        cmap = get_colormap("plasma")
         cmap = ListedColormap([(*color, 0.75) for color in cmap.colors])
         return self.Bi_Se_thermo.plot(limit="Se-rich", all_entries=True, colormap=cmap)
 
