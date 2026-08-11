@@ -1281,6 +1281,29 @@ class DefectEntry(thermo.DefectEntry):
                 "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s).",
             )
 
+    @staticmethod
+    def _dilute_per_site_concentration(
+        formation_energy: float | np.ndarray,
+        temperature: float,
+        degeneracy_factor: float | np.ndarray = 1.0,
+    ) -> float | np.ndarray:
+        """
+        Dilute-limit per-site concentration(s) ``g * exp(-E_f/kT)``, floored at
+        a minimum of 1e-150 for numerical stability.
+
+        Operates on scalars or arrays (natively vectorised). The 1e-150 floor
+        roughly corresponds to one 1e-100 defects per Earth volume (~10^27
+        cm^3; ~10^23 sites per cm^3 ~> 10^50 sites per Earth); setting it to
+        1e-50 can cause some oddities with the site competition routine (though
+        only affecting low-concentration defects).
+        """
+        # Note: Could in future operate in logspace (logsumexp), as in py-sc-fermi, but so far unnecessary
+        with np.errstate(over="ignore"):
+            exp_factor = np.exp(
+                -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
+            )
+            return np.maximum(exp_factor * degeneracy_factor, 1e-150)
+
     def equilibrium_concentration(
         self,
         temperature: float = 300,
@@ -1446,18 +1469,12 @@ class DefectEntry(thermo.DefectEntry):
             )
 
         with np.errstate(over="ignore"):
-            exp_factor = np.exp(
-                -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
-            )
-
             degeneracy_factor = (
-                np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
+                float(np.prod(list(self.degeneracy_factors.values()))) if self.degeneracy_factors else 1.0
             )
-            # set minimum per-site concentration for numerical stability; 1e-150 roughly corresponds to one
-            # 1e-100 defects per Earth volume (~10^27 cm^3); ~10^23 sites per cm^3 ~> 10^50 sites per Earth
-            # setting to 1e-50 can cause some oddities with the site competition routine (doesn't affect
-            # main results as it only affects low concentration defects though)
-            per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-150)
+            per_site_concentration = self._dilute_per_site_concentration(
+                formation_energy, temperature, degeneracy_factor
+            )
             if site_competition:  # use 1 - 1/(1+x) instead of x/(1+x); equivalent but more stable
                 per_site_concentration = 1.0 - 1.0 / (1.0 + per_site_concentration)
             elif site_competition is not None:  # cap max at 100% site concentration (obvs unphysical at
@@ -1468,7 +1485,7 @@ class DefectEntry(thermo.DefectEntry):
                 per_site_concentration = np.minimum(per_site_concentration, 1)
 
             if per_site:
-                return per_site_concentration
+                return float(per_site_concentration)
 
             return self.bulk_site_concentration * per_site_concentration
 
