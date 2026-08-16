@@ -2697,7 +2697,30 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             assert np.isclose(np.mean(grid_df["μ_Si (eV)"]), -0.94969, atol=1e-3 if cart else 2e-1)
             assert np.isclose(np.mean(grid_df["μ_Se (eV)"]), -0.39294, atol=1e-3 if cart else 7e-2)
 
-            assert len(grid_df) == (3792 if cart else 3744)
+            assert len(grid_df) == (3792 if cart else 3751)  # incl. the 7 exact (unrounded) vertices
+
+    def test_vertices_included_exactly(self):
+        ternary_chempots = {  # check exact (unrounded) vertex inclusion for a 2D grid
+            "A": {"Cu": 0.0, "Si": -0.7212345678901234, "Se": -0.5999876543210987},
+            "B": {"Cu": -1.1234567890123456, "Si": 0.0, "Se": -0.3210987654321098},
+            "C": {"Cu": -0.4321098765432109, "Si": -0.8765432109876543, "Se": 0.0},
+        }  # same behaviour tested for 1D grids in ``TestChemicalPotentialGrid1D``
+        grid = chemical_potentials.ChemicalPotentialGrid(ternary_chempots)
+        grid_df = grid.get_grid(n_points=50)
+        vertices = grid.vertices.to_numpy()
+        grid_points = grid_df.to_numpy()
+        for vertex in vertices:
+            assert any(np.array_equal(row, vertex) for row in grid_points)
+
+    def test_identical_vertices_raise(self):
+        with pytest.raises(ValueError, match="identical"):
+            chemical_potentials.ChemicalPotentialGrid(
+                {"A": {"Cd": -1.0, "Te": -0.25}, "B": {"Cd": -1.0, "Te": -0.25}}
+            ).get_grid()
+
+    def test_elemental_system_raises(self):
+        with pytest.raises(ValueError, match="at least one independent variable"):
+            chemical_potentials.ChemicalPotentialGrid({"X-rich": {"Cd": 0.0}}).get_grid()
 
     def test_chempot_heatmap_3D_w_fixed_elements_error(self):
         with pytest.raises(ValueError) as exc:
@@ -3473,3 +3496,125 @@ class TestSb2Si2Te6Chempots(unittest.TestCase):
         assert result == "SbTe2-SiSbTe3-Si"
         assert len(w) == 1
         assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
+
+
+class TestChemicalPotentialGrid1D(unittest.TestCase):
+    """
+    Tests for 1D (binary system) |ChemicalPotentialGrid| support: the stable
+    chemical potential range is a line segment, gridded by uniform (linear)
+    interpolation between the two limits.
+
+    Uses synthetic vertices (no API/fixture requirements). Higher-dimensional
+    grid behaviour is tested in ``TestChemicalPotentialGrid`` (and
+    ``test_optimise_search.py`` / ``test_fermisolver.py``).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.chempots = {  # CdTe-style binary limits, with >6 d.p. precision values:
+            "Cd-rich": {"Cd": 0.0, "Te": -1.2513173828125002},
+            "Cd-poor": {"Cd": -1.2513173828125002, "Te": 0.0},
+        }
+        cls.grid = chemical_potentials.ChemicalPotentialGrid(cls.chempots)
+
+    def test_1d_grid_generation(self):
+        grid_df = self.grid.get_grid(n_points=30)
+        assert list(grid_df.columns) == ["μ_Cd (eV)", "μ_Te (eV)"]
+        assert len(grid_df) >= 30
+        # all points on the stability line (μ_X + μ_Y = ΔHf):
+        assert np.allclose(grid_df.sum(axis=1), -1.2513173828125002, atol=1e-4)
+        # uniformly spaced along the line (rounding collapses exact-vertex/rounded-copy near-dupes):
+        interior = np.unique(np.round(grid_df["μ_Cd (eV)"].to_numpy(), 4))
+        assert np.ptp(np.diff(interior)) <= 1.01e-4  # uniform spacing (diff range; ``ptp``) <= rounding
+        for limit_dict in self.chempots.values():  # limits themselves included exactly (unrounded):
+            assert any(
+                (row["μ_Cd (eV)"] == limit_dict["Cd"]) and (row["μ_Te (eV)"] == limit_dict["Te"])
+                for _idx, row in grid_df.iterrows()
+            )
+        # cartesian equivalent to barycentric for a line:
+        assert grid_df.equals(self.grid.get_grid(n_points=30, cartesian=True))
+
+    def test_1d_grid_resolution_and_max_points(self):
+        grid_df = self.grid.get_grid(resolution=0.1)
+        interior = np.unique(np.round(grid_df["μ_Cd (eV)"].to_numpy(), 4))  # collapse vertex near-dupes
+        mu_spacings = np.diff(interior)  # ``resolution`` sets the grid spacing in the independent
+        # (gridded) chempot axes -- at most the requested resolution (to the 4-d.p. rounding), no more than
+        # 2x finer (``n = ceil(length / resolution)`` -> ``spacing > resolution / 2``), and uniform:
+        assert mu_spacings.max() <= 0.1 + 1.5e-4
+        assert mu_spacings.min() > 0.05
+        assert np.ptp(mu_spacings) <= 1.01e-4  # uniform spacing, to within rounding quantum
+
+        with warnings.catch_warnings(record=True) as w:
+            clamped = self.grid.get_grid(resolution=1e-6, max_points=100)
+        assert len(clamped) <= 105  # max_points cap (+ exact vertices)
+        assert any("max_points" in str(warning.message) for warning in w)
+
+    def test_1d_grid_unordered_collinear_vertices(self):
+        """
+        >2 collinear vertices supplied out of order, as arises for
+        ``fixed_elements`` sub-polytopes (e.g. Cu2SiSe3 with ``{"Si": -0.3}``
+        giving 6 collinear sub-vertices); the segment endpoints must be found
+        by value, not input order.
+        """
+        mu_A = [-0.0868, -0.0553, -0.0253, -0.1150, -0.1400]  # true endpoints at positions 2 and 4
+        vertices = pd.DataFrame({"μ_Cu (eV)": mu_A, "μ_Se (eV)": [-1.0 - x for x in mu_A]})
+        grid_df = chemical_potentials.ChemicalPotentialGrid.from_dataframe(vertices).get_grid(
+            n_points=20, decimal_places=6
+        )
+        assert np.isclose(grid_df["μ_Cu (eV)"].min(), -0.1400, atol=1e-8)
+        assert np.isclose(grid_df["μ_Cu (eV)"].max(), -0.0253, atol=1e-8)
+        assert np.allclose(grid_df["μ_Cu (eV)"] + grid_df["μ_Se (eV)"], -1.0, atol=1e-5)
+        assert len(grid_df["μ_Cu (eV)"].round(4).unique()) >= 20  # full segment gridded, not a sub-span
+
+    def test_constrained_1d_grid(self):
+        """
+        ``fixed_elements`` on a ternary system gives a 1D constrained sub-
+        space; check the generated line grid against hand-computed segment
+        endpoints (the ``μ_Si = -0.3`` plane cuts the triangle below along the.
+
+        segment from ``μ_Cu = -0.7`` to ``μ_Cu = 0``, with
+        ``μ_Se = -0.7 - 0.5 μ_Cu``).
+        """
+        chempots = {
+            "A": {"Cu": 0.0, "Si": 0.0, "Se": -1.0},
+            "B": {"Cu": -1.0, "Si": 0.0, "Se": -0.5},
+            "C": {"Cu": 0.0, "Si": -1.0, "Se": 0.0},
+        }
+        grid_df = chemical_potentials.ChemicalPotentialGrid(chempots).get_grid(
+            n_points=30, fixed_elements={"Si": -0.3}, decimal_places=6
+        )
+        assert np.allclose(grid_df["μ_Si (eV)"], -0.3, atol=1e-8)
+        assert np.isclose(grid_df["μ_Cu (eV)"].min(), -0.7, atol=1e-6)
+        assert np.isclose(grid_df["μ_Cu (eV)"].max(), 0.0, atol=1e-6)
+        assert np.allclose(grid_df["μ_Se (eV)"], -0.7 - 0.5 * grid_df["μ_Cu (eV)"], atol=1e-5)
+        assert len(grid_df["μ_Cu (eV)"].round(4).unique()) >= 30
+
+    def test_multinary_two_limit_line(self):
+        """
+        Two chemical potential limits of a multinary system (a collinear vertex
+        pair varying in `all` columns) are detected as a 1D space via the
+        affine rank of the vertex set, and gridded as a line segment.
+        """
+        chempots = {
+            "A": {"Cu": -0.1234567890123456, "Si": -0.7, "Se": -0.25},
+            "B": {"Cu": -0.5, "Si": -0.1, "Se": -0.9876543210987654},
+        }
+        grid = chemical_potentials.ChemicalPotentialGrid(chempots)
+        grid_df = grid.get_grid(n_points=20, decimal_places=6)
+        assert list(grid_df.columns) == ["μ_Cu (eV)", "μ_Si (eV)", "μ_Se (eV)"]
+        assert len(grid_df) >= 20
+        vertices = grid.vertices.to_numpy()
+        grid_points = grid_df.to_numpy()
+        for vertex in vertices:  # limits themselves included exactly (unrounded)
+            assert any(np.array_equal(row, vertex) for row in grid_points)
+
+        # all points on the segment between the two limits (uniformly spaced):
+        direction = vertices[1] - vertices[0]
+        t = (grid_points - vertices[0]) @ direction / (direction @ direction)
+        assert np.abs(grid_points - (vertices[0] + np.outer(t, direction))).max() < 1e-5
+        assert t.min() >= -1e-8
+        assert t.max() <= 1 + 1e-8
+        interior = np.unique(np.round(t, 4))
+        assert np.diff(interior).max() < 2 * np.diff(interior).min()
+        # cartesian equivalent to barycentric for a line:
+        assert grid_df.equals(grid.get_grid(n_points=20, cartesian=True, decimal_places=6))

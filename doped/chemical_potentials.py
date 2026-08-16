@@ -7,8 +7,10 @@ system.
 import contextlib
 import copy
 import itertools
+import math
 import os
 import warnings
+from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from copy import deepcopy
@@ -2683,6 +2685,8 @@ class ChemicalPotentialGrid(MSONable):
         n_points: int = 1000,
         fixed_elements: dict[str, float] | None = None,
         cartesian: bool = False,
+        resolution: float | None = None,
+        max_points: int | None = None,
         decimal_places: int = 4,
         drop_duplicates: bool = True,
         include_vertices: bool = True,
@@ -2700,6 +2704,11 @@ class ChemicalPotentialGrid(MSONable):
         coordinates, and not necessarily in Cartesian coordinates. If
         ``cartesian`` is set to ``True``, then a regular grid in Cartesian
         coordinates is generated (however this can be much slower).
+
+        1D chemical potential spaces -- i.e. any `collinear` set of vertices,
+        such as a binary system or two chemical potential limits of a
+        multinary system -- are handled as line segments, with points uniformly
+        spaced between the two endpoints.
 
         Args:
             n_points (int | None):
@@ -2721,7 +2730,22 @@ class ChemicalPotentialGrid(MSONable):
                 ``False`` (default), the grid is generated in barycentric
                 coordinates, which is far more efficient, but means that the
                 grid is evenly spaced in barycentric ('relative') coordinates,
-                and not necessarily in Cartesian coordinates.
+                and not necessarily in Cartesian coordinates. Irrelevant if it
+                is a 1D chemical potential space.
+            resolution (float | None):
+                If set (and finite), used as the target grid spacing in eV,
+                overriding ``n_points``. With barycentric generation, the
+                number of subdivisions along each simplex dimension is set to
+                ``ceil(max_vertex_separation / resolution)`` (so the spacing
+                along the longest hull edge is at most ``resolution``); with
+                ``cartesian=True``, the Cartesian grid step is set to
+                ``resolution`` directly. Default is ``None`` (use
+                ``n_points``).
+            max_points (int | None):
+                If set (with ``resolution``), hard cap on the number of
+                generated grid points. A warning stating the achieved vs
+                requested resolution is thrown if this cap is hit. Default is
+                ``None`` (no cap).
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
                 Note that the tolerance for grid-point matching is
@@ -2744,7 +2768,14 @@ class ChemicalPotentialGrid(MSONable):
         """
         if fixed_elements:
             return self.get_constrained_grid(
-                fixed_elements, n_points, cartesian, decimal_places, drop_duplicates, include_vertices
+                fixed_elements,
+                n_points,
+                cartesian,
+                resolution,
+                max_points,
+                decimal_places,
+                drop_duplicates,
+                include_vertices,
             )
 
         dependent_variable = self.vertices.columns[-1]
@@ -2752,29 +2783,58 @@ class ChemicalPotentialGrid(MSONable):
         independent_vars = self.vertices.drop(columns=dependent_variable)
 
         n_dims = independent_vars.shape[1]  # number of independent variables (dimensions)
-        if n_dims < 2:
+        if n_dims < 1:
             raise ValueError(
-                "Chemical potential grid generation is only possible for systems with "
-                "two or more independent variables (chemical potentials), i.e. ternary or "
-                "higher-dimensional systems. Stable chemical potential ranges are just a line for binary "
-                "systems, for which ``FermiSolver.interpolate_chempots()`` can be used."
+                "Chemical potential grid generation requires at least one independent variable (chemical "
+                "potential), i.e. a binary or higher-dimensional system!"
             )
 
-        hull = ConvexHull(independent_vars.to_numpy())  # convex hull of the vertices
+        ind_vars = independent_vars.to_numpy()
+        spans = np.ptp(
+            ind_vars, axis=0
+        )  # affine rank of the vertex set; 1 for any collinear set of limits
+        rank = np.linalg.matrix_rank(
+            ind_vars - ind_vars.mean(axis=0), tol=1e-4 * float(spans.max() or 1.0)
+        )
+        if rank == 0:
+            raise ValueError(
+                "All supplied chemical potential limits (vertices) are identical, so no grid can be "
+                "generated between them!"
+            )
+
+        if rank == 1:  # 1D space (e.g. a binary system, or two limits of a multinary system); stable
+            # chemical potential range is just a line segment, for which barycentric and Cartesian grids
+            cartesian = False  # are identical -> "hull" = the segment endpoints,
+            order = np.argsort(
+                ind_vars[:, int(np.argmax(spans))]
+            )  # sorted along the largest-span μ coordinate
+            hull_idx = np.array([order[0], order[-1]])
+        else:
+            hull = ConvexHull(ind_vars)  # convex hull of the vertices
+            hull_idx = hull.vertices  # indices of the hull points
+
         # ensure vertices and dependent values are aligned:
-        hull_idx = hull.vertices  # indices of the hull points
-        coords_hull = independent_vars.to_numpy()[hull_idx]
+        coords_hull = ind_vars[hull_idx]
         values_hull = dependent_var[hull_idx]
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
-            # hull volume (in N-D) times grid density = num points:
-            req_grid_density = n_points / hull.volume  # points per N-D volume
-            req_density_per_dim = req_grid_density ** (1 / n_dims)  # points per dim, inverse system units
+            if resolution is not None and np.isfinite(resolution):
+                step = resolution  # direct grid spacing (eV) requested
+                implied_total = np.prod(np.maximum(spans / step, 1))  # product of steps per dim
+                if max_points is not None and implied_total > max_points:
+                    # coarsen `before` materialising the grid, to avoid memory blow-ups:
+                    step *= float(implied_total / max_points) ** (1 / n_dims)
+                    _warn_resolution_clamped(resolution, max_points, step)
+            else:  # hull volume (in N-D) times grid density = num points:
+                req_grid_density = n_points / hull.volume  # points per N-D volume
+                # points per dim, inverse system units; step size = 1/points-per-dimension:
+                step = 1 / req_grid_density ** (1 / n_dims)
+
             grid_ranges = [
                 np.arange(
                     independent_vars.iloc[:, i].min(),
                     independent_vars.iloc[:, i].max(),
-                    1 / req_density_per_dim,  # step size in system units = 1/points-per-dimension
+                    step,  # step size in system units = 1/points-per-dimension
                 )
                 for i in range(n_dims)
             ]
@@ -2787,15 +2847,19 @@ class ChemicalPotentialGrid(MSONable):
             )
 
         else:  # efficiently generate a grid of points inside the convex hull, using barycentric coords:
-            grid_with_values = _lattice_in_hull(coords_hull, values_hull, n_points=n_points)
-
-        if include_vertices:  # Ensure vertices are in the grid
-            grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
+            grid_with_values = _lattice_in_hull(
+                coords_hull, values_hull, n_points=n_points, resolution=resolution, max_points=max_points
+            )  # resolution handling in ``_lattice_in_hull``
 
         grid_df = pd.DataFrame(
             grid_with_values,
             columns=[*list(independent_vars.columns), dependent_variable],
         ).round(decimal_places)
+
+        if include_vertices:  # prepend the exact (unrounded) vertices, ensuring the chemical potential
+            # limits are in the grid `exactly` (with any rounded copies then dropped as duplicates below):
+            vertices_df = pd.DataFrame(self.vertices.to_numpy(), columns=grid_df.columns)
+            grid_df = pd.concat([vertices_df, grid_df], ignore_index=True)
 
         return grid_df if not drop_duplicates else grid_df.drop_duplicates()
 
@@ -2804,6 +2868,8 @@ class ChemicalPotentialGrid(MSONable):
         fixed_elements: dict[str, float],
         n_points: int = 1000,
         cartesian: bool = False,
+        resolution: float | None = None,
+        max_points: int | None = None,
         decimal_places: int = 4,
         drop_duplicates: bool = True,
         include_vertices: bool = True,
@@ -2840,7 +2906,17 @@ class ChemicalPotentialGrid(MSONable):
                 ``False`` (default), the grid is generated in barycentric
                 coordinates, which is far more efficient, but means that the
                 grid is evenly spaced in barycentric ('relative') coordinates,
-                and not necessarily in Cartesian coordinates.
+                and not necessarily in Cartesian coordinates. Irrelevant if it
+                is a 1D chemical potential space.
+            resolution (float | None):
+                If set (and finite), used as the target grid spacing in eV
+                within the constrained subspace, overriding ``n_points`` -- see
+                the ``get_grid`` docstring. Default is ``None`` (use
+                ``n_points``).
+            max_points (int | None):
+                If set (with ``resolution``), used as a hard cap on the number
+                of generated grid points -- see the ``get_grid`` docstring.
+                Default is ``None`` (no cap).
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
                 Default is 4.
@@ -2903,6 +2979,8 @@ class ChemicalPotentialGrid(MSONable):
         grid_df = constrained_grid.get_grid(
             n_points=n_points,
             cartesian=cartesian,
+            resolution=resolution,
+            max_points=max_points,
             decimal_places=decimal_places,
             drop_duplicates=drop_duplicates,
             include_vertices=include_vertices,
@@ -2912,6 +2990,19 @@ class ChemicalPotentialGrid(MSONable):
             grid_df[element_col_name] = [value] * len(grid_df)
 
         return grid_df
+
+
+def _warn_resolution_clamped(resolution: float, max_points: int, achieved_resolution: float) -> None:
+    """
+    Warn that the requested grid ``resolution`` was coarsened to satisfy the
+    ``max_points`` cap.
+    """
+    warnings.warn(
+        f"The requested grid resolution ({resolution:.3g} eV) would generate more than `max_points` "
+        f"({max_points}) grid points; which now clamps to an achieved resolution of "
+        f"~{achieved_resolution:.3g} eV. Consider a coarser `resolution`, a larger points cap, or "
+        f"reducing the grid dimensionality (e.g. via `fixed_elements`); if necessary."
+    )
 
 
 def _intersect_hull_with_plane(
@@ -2966,6 +3057,8 @@ def _lattice_in_hull(
     Y: np.ndarray | None = None,
     n_points: int = 1000,
     qhull_options: str = "QJ Qbb Qc",
+    resolution: float | None = None,
+    max_points: int | None = None,
 ) -> np.ndarray:
     """
     Generate a grid of points inside the convex hull of the given vertices,
@@ -2997,6 +3090,19 @@ def _lattice_in_hull(
             Default is "QJ Qbb Qc", where "QJ" means joggled input to avoid
             precision problems, "Qbb" scales coordinates for better
             conditioning, and "Qc" keeps coplanar points.
+        resolution (float | None):
+            If set (and finite), used as the target grid spacing (in the units
+            of ``vertices``, i.e. eV for chemical potentials), overriding
+            ``n_points``: the number of barycentric subdivisions along each
+            simplex dimension is set directly to
+            ``ceil(max_vertex_separation / resolution)``, so the grid spacing
+            along the longest hull edge is at most ``resolution`` (and smaller
+            for shorter edges). Default is ``None`` (use ``n_points``).
+        max_points (int | None):
+            If set (with ``resolution``), used as a hard cap on the number of
+            generated grid points. A warning stating the achieved vs requested
+            resolution is thrown if this cap is hit. Default is ``None`` (no
+            cap).
 
     Returns:
         np.ndarray:
@@ -3007,15 +3113,16 @@ def _lattice_in_hull(
     if vertices.ndim != 2:
         raise ValueError("`vertices` must be a 2-D array (N_points, N_dimensions)")
 
-    k = vertices.shape[-1]  # dimensionality (k ≥ 2)
+    k = vertices.shape[-1]  # ambient dimensionality (of the space the points live in)
     # vertices defines the polytope (k-D polyhedron) of the convex hull; shape (N, k)
     # we then tessellate the hull with Delaunay triangulation, which breaks the polytope into a set of
     # k-D simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
     # which each have k+1 vertices (e.g. 3 vertices for triangles, 4 vertices for tetrahedra, etc)
-    if vertices.shape[0] == k + 1:  # Input is already a single simplex; no triangulation needed
-        simplices = np.array([np.arange(k + 1)])
+    if vertices.shape[0] in (2, k + 1):  # single simplex; either a line segment or single full k-simplex
+        simplices = np.array([np.arange(vertices.shape[0])])  # no triangulation needed
     else:  # setup Delaunay triangulation
         simplices = Delaunay(vertices, qhull_options=qhull_options).simplices
+    k_s = simplices.shape[1] - 1  # intrinsic simplex dimensionality (= k, except for line segments)
 
     # generate a grid of barycentric coordinates (i.e. weighted averages of the vertices) which are inside
     # the convex hull; for this the total weight should sum to 1, so generate tuples (n0,..,nk) with
@@ -3035,21 +3142,23 @@ def _lattice_in_hull(
                 prev = c
             yield tuple(parts)  # (L, k+1); where L depends on binomial(n_points_per_dim + k, k)
 
-    # Note: In theory one could skip this loop and directly predict the required number of points along
-    # each simplex dimension, with some fitting of scaling, but the individual computation is very fast for
-    # reasonable to large ``n_points``, so shouldn't be an issue in practice.
-    n_points_per_dim = 0
-    unscaled_bary_coords: list[tuple[int, ...]] = []
-    while len(unscaled_bary_coords) * len(simplices) < n_points:
-        n_points_per_dim += 1
-        unscaled_bary_coords = list(_compositions(n_points_per_dim, k))
-        if n_points_per_dim > max(n_points, 1):  # should never happen
-            raise RuntimeError(
-                "Barycentric coordinate generation failed! Please check your inputs, and report this "
-                "issue to the developers if they are reasonable."
-            )
+    def _n_bary_points(n: int) -> int:  # exact total grid points generated for n subdivisions per simplex
+        return len(simplices) * math.comb(n + k_s, k_s)
 
-    bary_coords = np.array(unscaled_bary_coords) / n_points_per_dim  # (L, k+1); L >= n_points
+    if resolution is not None and np.isfinite(resolution):  # direct spacing-based entry point:
+        max_edge = np.linalg.norm(vertices[:, None] - vertices[None], axis=-1).max()
+        n_points_per_dim = requested_n_per_dim = max(int(np.ceil(max_edge / resolution)), 1)
+        if max_points is not None:  # clamp `before` materialising the grid, to the largest n (floored
+            # at 1) within budget; ``_n_bary_points`` increases monotonically with n, so bisect:
+            n_points_per_dim = max(
+                bisect_right(range(n_points_per_dim + 1), max_points, key=_n_bary_points) - 1, 1
+            )
+            if n_points_per_dim < requested_n_per_dim:
+                _warn_resolution_clamped(resolution, max_points, max_edge / n_points_per_dim)
+    else:  # smallest n reaching ``n_points``; ``_n_bary_points(n) >= n+1``, so terminates by n = n_points:
+        n_points_per_dim = next(n for n in itertools.count(1) if _n_bary_points(n) >= n_points)
+
+    bary_coords = np.array(list(_compositions(n_points_per_dim, k_s))) / n_points_per_dim  # (L, k_s+1)
 
     # Note: If one really wanted a regular(ish) grid spacing in Cartesian (i.e. energy) coordinates,
     # the barycentric coordinate grid spacing could be scaled by the Euclidean distance between the simplex
@@ -3057,15 +3166,15 @@ def _lattice_in_hull(
     # more precision is needed in output predictions, can just scale ``n_points`` as needed). Can always
     # be implemented if needed
 
-    verts_per_simplex = vertices[simplices]  # shape (S, k+1, k); where S is the number of simplices
+    verts_per_simplex = vertices[simplices]  # shape (S, k_s+1, k); where S is the number of simplices
 
     # Vectorised Cartesian coordinates (and interpolated values if dependent_var is provided):
     # points_inside: (S, L, k) -> reshape -> (S*L, k)
-    points_inside = np.einsum("LK,SKk->SLk", bary_coords, verts_per_simplex).reshape(-1, k)  # K = k+1
+    points_inside = np.einsum("LK,SKk->SLk", bary_coords, verts_per_simplex).reshape(-1, k)  # K = k_s+1
     if Y is None:
         return points_inside
 
-    vals_per_simplex = Y[simplices]  # (S, k+1)
+    vals_per_simplex = Y[simplices]  # (S, k_s+1)
     # values_inside: (S, L) -> reshape -> (S*L,)
     Y_inside = np.einsum("LK,SK->SL", bary_coords, vals_per_simplex).ravel()
     return np.hstack((points_inside, Y_inside.reshape(-1, 1)))
