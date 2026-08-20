@@ -77,6 +77,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - N.-R. Skogemyr **_First-Principles Defect Thermodynamics of MgSnN<sub>2</sub>: Origin and Suppression of Unintentional n-Type Conductivity_** [_MSc Thesis, Linköping University_](https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510) 2026
+- J. Zhou et al. **_Antimony sulfide photovoltaics with high open-circuit voltage not limited by self-trapped excitons_** [_Nature Communications_](https://doi.org/10.1038/s41467-026-76845-1) 2026
 - D. Sutarma and P. Kratzer **_Facet-Dependent Electronic Properties and Interfacial Point Defect Interactions in WS<sub>2</sub>/ZnO Heterostructures_** [_arXiv_](https://doi.org/10.48550/arXiv.2607.25999) 2026
 - A. S. Hauck, M. Jin and B. R. Tuttle **_Nonradiative carrier capture by point defects in irradiated GaN_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0325688) 2026
 - X. Lei et al. **_Enhanced antibonding coupling enables optical transparency in p-type semiconductors by orbital engineering_** [_Applied Physics Letters_](https://doi.org/10.1063/5.0342323) 2026
@@ -114,7 +115,6 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - S. R. Kavanagh **_Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics_** [_JPhys Energy_](https://doi.org/10.1088/2515-7655/ade916) 2025
 - R. Claes, A. G. Squires and D. O. Scanlon **_Establishing Doping Limits for ZnGa<sub>2</sub>O<sub>4</sub> for Ultra Wide Bandgap Semiconductor Applications_** [_ACS Applied Materials & Interfaces_](https://doi.org/10.1021/acsami.5c19146) 2025
 - T. Oikawa et al. **_Semi-automated estimation of hydrogenic initial states for localized Wannier functions_** [_arXiv_](https://arxiv.org/abs/2512.19900) 2025
-- J. Zhou et al. **_Breaking the 800 mV open-circuit voltage barrier in antimony sulfide photovoltaics_** [_arXiv_](https://doi.org/10.48550/arXiv.2512.18100) 2025
 - K. Talit et al. **_Structural and electronic properties of Ti- and Ca-doped hexagonal TbInO<sub>3</sub>_** [_Physical Review Materials_](https://doi.org/10.1103/hww6-snlj) 2025
 - I. Mosquera-Lois and A. Walsh **_Dynamic Vacancy Levels in CsPbCl<sub>3</sub> Obey Equilibrium Defect Thermodynamics_** [_PRX Energy_](https://doi.org/10.1103/dxmb-8s96) 2025
 - B. I. J. Johnston et al. **_Enhanced cycling stability of LiNiO<sub>2</sub> cathodes through a Mg/W dual-cation modification strategy_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D5TA05316A) 2025

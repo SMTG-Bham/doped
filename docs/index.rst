@@ -105,6 +105,7 @@ Studies using ``doped``, so far
 ===============================
 
 - N\.-R. Skogemyr **First-Principles Defect Thermodynamics of MgSnN₂: Origin and Suppression of Unintentional n-Type Conductivity** `MSc Thesis, Linköping University <https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510>`__ 2026
+- J\. Zhou et al. **Antimony sulfide photovoltaics with high open-circuit voltage not limited by self-trapped excitons** `Nature Communications <https://doi.org/10.1038/s41467-026-76845-1>`__ 2026
 - D\. Sutarma and P. Kratzer **Facet-Dependent Electronic Properties and Interfacial Point Defect Interactions in WS₂/ZnO Heterostructures** `arXiv <https://doi.org/10.48550/arXiv.2607.25999>`__ 2026
 - A\. S. Hauck, M. Jin and B. R. Tuttle **Nonradiative carrier capture by point defects in irradiated GaN** `Journal of Applied Physics <https://doi.org/10.1063/5.0325688>`__ 2026
 - X\. Lei et al. **Enhanced antibonding coupling enables optical transparency in p-type semiconductors by orbital engineering** `Applied Physics Letters <https://doi.org/10.1063/5.0342323>`__ 2026
@@ -142,7 +143,6 @@ Studies using ``doped``, so far
 - S\. R. Kavanagh **Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics** `JPhys Energy <https://doi.org/10.1088/2515-7655/ade916>`__ 2025
 - R\. Claes, A. G. Squires and D. O. Scanlon **Establishing Doping Limits for ZnGa₂O₄ for Ultra Wide Bandgap Semiconductor Applications** `ACS Applied Materials & Interfaces <https://doi.org/10.1021/acsami.5c19146>`__ 2025
 - T\. Oikawa et al. **Semi-automated estimation of hydrogenic initial states for localized Wannier functions** `arXiv <https://arxiv.org/abs/2512.19900>`__ 2025
-- J\. Zhou et al. **Breaking the 800 mV open-circuit voltage barrier in antimony sulfide photovoltaics** `arXiv <https://doi.org/10.48550/arXiv.2512.18100>`__ 2025
 - K\. Talit et al. **Structural and electronic properties of Ti- and Ca-doped hexagonal TbInO₃** `Physical Review Materials <https://doi.org/10.1103/hww6-snlj>`__ 2025
 - I\. Mosquera-Lois and A. Walsh **Dynamic Vacancy Levels in CsPbCl₃ Obey Equilibrium Defect Thermodynamics** `PRX Energy <https://doi.org/10.1103/dxmb-8s96>`__ 2025
 - B\. I. J. Johnston et al. **Enhanced cycling stability of LiNiO₂ cathodes through a Mg/W dual-cation modification strategy** `Journal of Materials Chemistry A <https://doi.org/10.1039/D5TA05316A>`__ 2025
