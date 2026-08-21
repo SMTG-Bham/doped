@@ -325,7 +325,7 @@ def get_colors(colormap: str | Colormap | None, num_colors: int) -> np.ndarray:
             https://matplotlib.org/stable/gallery/style_sheets/petroff10 and
             https://arxiv.org/abs/2107.02270 -- extended to 40
             maximally-distinct colours; cycled if more than 40 colours
-            requested). ``tab10`` was the default in ``doped``<4; use
+            requested). ``tab10`` was the default in ``doped<4``; use
             ``colormap="tab10_alpha_0.75"`` to match older plots.
         num_colors (int):
             Number of colours to output.
@@ -1830,7 +1830,7 @@ def formation_energy_plot(
             https://arxiv.org/abs/2107.02270 -- extended to 40
             maximally-distinct colours with the ``glasbey`` algorithm; cycled
             if more than 40 colour groups). Use ``colormap="tab10_alpha_0.75"``
-            to match old ``doped``<4 plots.
+            to match old ``doped<4`` plots.
 
             Unless an explicit ``Colormap`` object is given (in which case
             colours are assigned by line position, in order of appearance in
