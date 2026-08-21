@@ -2699,6 +2699,11 @@ class Defect(core.Defect):
         """
         Refactored version of ``pymatgen-analysis-defects``'s
         ``get_charge_states`` to not break when ``oxi_state`` is not set.
+
+        Note that this method is only retained for compatibility with the
+        ``pymatgen-analysis-defects`` API, and is not used for ``doped`` charge
+        state guessing (in |DefectsGenerator|), which instead uses the
+        probability-based :func:`~doped.generation.guess_defect_charge_states`.
         """
         if self.user_charges:
             return self.user_charges
