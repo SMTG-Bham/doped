@@ -979,8 +979,14 @@ def guess_defect_charge_states(
     ``probability_threshold``.
 
     Disfavours large (absolute) charge states, low probability oxidation states
-    and greater charge/oxidation state magnitudes than that of the host. Note
-    that neutral charge states are always included.
+    and greater charge/oxidation state magnitudes than that of the host. The
+    neutral charge state is always included, as well as the fully-ionised
+    charge state (a.k.a. the natural charge state / 'defect oxidation state',
+    i.e. the simple oxidation state difference) for intrinsic defects. If no
+    charge states have probabilities above ``probability_threshold``, the most
+    probable charge state is included, and if the resulting charge state range
+    is only {0} (e.g. for elemental systems) or the defect is a homovalent
+    substitution then (-1, 0, +1) at minimum is included.
 
     For substitutions and interstitials, the oxidation state probabilities are
     those of the corresponding defect element (as given by their prevalence in
@@ -1013,9 +1019,11 @@ def guess_defect_charge_states(
             Probability threshold for including defect charge states. Default
             is 0.0075.
         return_log (bool):
-            If true, returns a tuple of the defect charge states and a list of
-            dictionaries of input & computed values used to determine charge
-            state probability. Default is ``False``.
+            If ``True``, returns a tuple of the defect charge states and a list
+            of dictionaries of input & computed values used to determine charge
+            state probabilities, including near-miss charge states (with
+            probabilities above 10% of ``probability_threshold``). Default is
+            ``False``.
 
     Returns:
         List of defect charge states (int) or a tuple of the defect charge
@@ -1030,32 +1038,30 @@ def guess_defect_charge_states(
     possible_oxi_states = _get_possible_oxi_states(defect)
     possible_charge_states = _get_charge_states(
         possible_oxi_states, orig_oxi, max_host_oxi_magnitude, return_log=True
-    )
+    )  # compute charge state probabilities based on doped heuristic scoring functions
     possible_charge_states = {  # prune negligible entries (e.g. vacancy oxi state tails), for a tidy log
         k: v for k, v in possible_charge_states.items() if v["probability"] > 0.1 * probability_threshold
     }
-    if charge_state_list := [
-        k for k, v in possible_charge_states.items() if v["probability"] > probability_threshold
-    ]:
-        charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
-    else:
-        charge_state_range = (0, 0)
 
-    # check if defect element (interstitial/substitution) is present in structure (i.e. intrinsic),
-    # and ensure the fully-ionised charge state (simple oxi_state diff) is included:
+    # checks; ensure fully-ionised included, and...
+    ensure_pm1 = False  # ...ensure at least (-1, 0, +1)? (homovalent substitutions, {0} charge ranges)
     if defect.defect_type in (core.DefectType.Substitution, core.DefectType.Interstitial):
-        defect_el_sites_in_struct = [
-            site for site in defect.structure if site.specie.symbol == defect.site.specie.symbol
+        # if defect element is present in host structure (i.e. intrinsic), ensure fully-ionised included:
+        defect_el_oxi_states = [
+            site.specie.oxi_state
+            for site in defect.structure
+            if site.specie.symbol == defect.site.specie.symbol
         ]
-        defect_el_oxi_in_struct = (
-            round(np.mean([site.specie.oxi_state for site in defect_el_sites_in_struct]))
-            if defect_el_sites_in_struct
-            else None
-        )
-
-        if defect_el_oxi_in_struct is not None:
-            defect_oxi_state = defect_el_oxi_in_struct - orig_oxi
-            if defect_oxi_state not in range(charge_state_range[0], charge_state_range[1] + 1):
+        if defect_el_oxi_states:
+            defect_el_oxi_in_struct = round(float(np.mean(defect_el_oxi_states)))
+            defect_oxi_state = defect_el_oxi_in_struct - orig_oxi  # fully-ionised / natural charge state
+            charge_state_list = [
+                k for k, v in possible_charge_states.items() if v["probability"] > probability_threshold
+            ]
+            lower, upper = (
+                (min(charge_state_list), max(charge_state_list)) if charge_state_list else (0, 0)
+            )
+            if not lower <= defect_oxi_state <= upper:
                 possible_charge_states[defect_oxi_state] = charge_state_probability(
                     defect_oxi_state,
                     defect_el_oxi_in_struct,
@@ -1063,50 +1069,43 @@ def guess_defect_charge_states(
                     max_host_oxi_magnitude,
                     return_log=True,
                 )
-            if (  # if defect == antisite of two equal oxi state elements, ensure (-1, 0, +1) is included
+            ensure_pm1 = (  # antisite of two equal oxi state elements, with one-sided charge range?
                 defect.defect_type == core.DefectType.Substitution
                 and defect_oxi_state == 0
-                and (charge_state_range[0] >= 0 or charge_state_range[1] <= 0)
-            ):
-                charge_state_range = (min(charge_state_range[0], -1), max(charge_state_range[1], 1))
-                for charge_state, probability_dict in possible_charge_states.items():
-                    if charge_state in (-1, 0, 1):
-                        probability_dict["probability"] = 1
+                and (lower >= 0 or upper <= 0)
+            )
 
-    sorted_charge_state_dict = dict(
-        sorted(possible_charge_states.items(), key=lambda x: x[1]["probability"], reverse=True)
-    )
-
+    # determine charge state range from probability dict and chosen threshold:
     if charge_state_list := [
-        k for k, v in sorted_charge_state_dict.items() if v["probability"] > probability_threshold
+        k for k, v in possible_charge_states.items() if v["probability"] > probability_threshold
     ]:
-        charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
-    else:  # if no charge states are included, take most probable (if probability > 0.1*threshold):
-        charge_state_list = [
-            k
-            for k, v in sorted_charge_state_dict.items()
-            if v["probability"] > 0.1 * probability_threshold
-        ]
-        most_likely_charge_state = charge_state_list[0] if charge_state_list else 0
+        charge_state_range = (min(charge_state_list), max(charge_state_list))
+    else:  # no charge states over threshold; take most probable with probability > 0.1*threshold, or 0
+        over_log_threshold = [
+            k for k, v in possible_charge_states.items() if v["probability"] > 0.1 * probability_threshold
+        ]  # (only the injected fully-ionised entry can be below this, having skipped the earlier pruning)
+        most_likely_charge_state = max(
+            over_log_threshold, key=lambda k: possible_charge_states[k]["probability"], default=0
+        )
         charge_state_range = (most_likely_charge_state, most_likely_charge_state)
 
-    # if the charge state range is 0, ensure at least (-1, 0, +1) included:
-    if charge_state_range[0] == 0 and charge_state_range[1] == 0:
+    if ensure_pm1 or charge_state_range == (0, 0):  # ensure at least (-1, 0, +1) included for these cases:
         charge_state_range = (min(charge_state_range[0], -1), max(charge_state_range[1], 1))
-        for charge_state, probability_dict in sorted_charge_state_dict.items():
-            if charge_state in (-1, 0, 1):
+        for charge_state in (-1, 0, 1):
+            if probability_dict := possible_charge_states.get(charge_state):
                 probability_dict["probability"] = 1
 
     # set charge_state_range to min/max of range, ensuring range is extended to 0:
     charge_state_range = (min(charge_state_range[0], 0), max(charge_state_range[1], 0))
     guessed_charge_states = list(range(charge_state_range[0], charge_state_range[1] + 1))
 
-    for probability_dict in sorted_charge_state_dict.values():
+    for probability_dict in possible_charge_states.values():
         probability_dict["probability_threshold"] = probability_threshold
 
-    if return_log:
-        return guessed_charge_states, list(sorted_charge_state_dict.values())
-
+    if return_log:  # sorted by (final) probability, so forced-inclusion (probability = 1) entries at top:
+        return guessed_charge_states, sorted(
+            possible_charge_states.values(), key=lambda d: d["probability"], reverse=True
+        )
     return guessed_charge_states
 
 

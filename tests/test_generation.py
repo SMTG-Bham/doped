@@ -1584,39 +1584,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 },
                 "probability_threshold": 0.0075,
             },
-            {
-                "input_parameters": {
-                    "charge_state": 8,
-                    "max_host_oxi_magnitude": 2,
-                    "oxi_probability": 0.024,
-                    "oxi_state": 6,
-                },
-                "probability": 0.00028617856063833296,
-                "probability_factors": {
-                    "charge_state_magnitude": 0.25,
-                    "charge_state_vs_max_host_charge": 0.19078570709222198,
-                    "oxi_probability": 0.024,
-                    "oxi_state_vs_max_host_charge": 0.25,
-                },
-                "probability_threshold": 0.0075,
-            },
-            {
-                "input_parameters": {
-                    "charge_state": 5,
-                    "max_host_oxi_magnitude": 2,
-                    "oxi_probability": 0.003,
-                    "oxi_state": 3,
-                },
-                "probability": 0.0001957433820584432,
-                "probability_factors": {
-                    "charge_state_magnitude": 0.34199518933533946,
-                    "charge_state_vs_max_host_charge": 0.3028534321386899,
-                    "oxi_probability": 0.003,
-                    "oxi_state_vs_max_host_charge": 0.6299605249474366,
-                },
-                "probability_threshold": 0.0075,
-            },
-        ]
+        ]  # entries with probability ≤ 10% of threshold (charges +8, +5 here) are pruned from the log
 
         # test extrinsic with a dict, with a list as value:
         extrinsic_input = {"Te": ["Se", "S"]}
@@ -2059,33 +2027,101 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         # explicitly test defect entry charge state log:
         assert CdTe_defect_gen.defect_entries["v_Cd_-1"].charge_state_guessing_log == [
-            {
-                "input_parameters": {"charge_state": -2},
-                "probability_factors": {"oxi_probability": 1},
-                "probability": 1,
+            {  # sorted by probability; vacant-site effective 'oxidation states' probability scheme
+                "input_parameters": {
+                    "charge_state": -1,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 1.0,
+                    "oxi_state": 1,
+                },
+                "probability": 1.0,
+                "probability_factors": {
+                    "charge_state_magnitude": 1.0,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 1.0,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
                 "probability_threshold": 0.0075,
-                "padding": 1,
             },
             {
-                "input_parameters": {"charge_state": -1},
-                "probability_factors": {"oxi_probability": 1},
+                "input_parameters": {
+                    "charge_state": 0,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 1.0,
+                    "oxi_state": 2,
+                },
                 "probability": 1,
+                "probability_factors": {
+                    "charge_state_magnitude": 1,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 1.0,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
                 "probability_threshold": 0.0075,
-                "padding": 1,
             },
             {
-                "input_parameters": {"charge_state": 0},
-                "probability_factors": {"oxi_probability": 1},
-                "probability": 1,
+                "input_parameters": {
+                    "charge_state": -2,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 1.0,
+                    "oxi_state": 0,
+                },
+                "probability": 0.6299605249474366,
+                "probability_factors": {
+                    "charge_state_magnitude": 0.6299605249474366,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 1.0,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
                 "probability_threshold": 0.0075,
-                "padding": 1,
             },
             {
-                "input_parameters": {"charge_state": 1},
-                "probability_factors": {"oxi_probability": 1},
-                "probability": 1,
+                "input_parameters": {
+                    "charge_state": 1,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.25,
+                    "oxi_state": 3,
+                },
+                "probability": 0.15749013123685915,
+                "probability_factors": {
+                    "charge_state_magnitude": 1.0,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 0.25,
+                    "oxi_state_vs_max_host_charge": 0.6299605249474366,
+                },
                 "probability_threshold": 0.0075,
-                "padding": 1,
+            },
+            {  # near-miss entries (probability > 10% of threshold) retained in the log:
+                "input_parameters": {
+                    "charge_state": -3,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.00390625,
+                    "oxi_state": -1,
+                },
+                "probability": 0.0011830212192917575,
+                "probability_factors": {
+                    "charge_state_magnitude": 0.4807498567691361,
+                    "charge_state_vs_max_host_charge": 0.6299605249474366,
+                    "oxi_probability": 0.00390625,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
+                "probability_threshold": 0.0075,
+            },
+            {
+                "input_parameters": {
+                    "charge_state": 2,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.00390625,
+                    "oxi_state": 4,
+                },
+                "probability": 0.0009765625,
+                "probability_factors": {
+                    "charge_state_magnitude": 0.6299605249474366,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 0.00390625,
+                    "oxi_state_vs_max_host_charge": 0.3968502629920499,
+                },
+                "probability_threshold": 0.0075,
             },
         ]
         assert CdTe_defect_gen.defect_entries["Cd_Te_0"].charge_state_guessing_log == [
@@ -3338,8 +3374,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         zns_defect_gen, output = self._generate_and_test_no_warnings(
             self.non_diagonal_ZnS, charge_state_gen_kwargs={"probability_threshold": 0.1}
         )
-        assert zns_defect_gen.charge_state_gen_kwargs == {"probability_threshold": 0.1}  # check
-        # attribute set
+        assert zns_defect_gen.charge_state_gen_kwargs == {"probability_threshold": 0.1}  # check attr
 
         assert self.zns_defect_gen_info not in output
         for prev_string, new_string in [
@@ -3365,34 +3400,22 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         self.zns_defect_gen_check(zns_defect_gen, check_info=False)
 
-        # test adjusting padding with Sb2S2Te6:
-        sb2si2te6_defect_gen, output = self._generate_and_test_no_warnings(
-            self.sb2si2te6, charge_state_gen_kwargs={"padding": 2}
+        # test deprecated `padding` kwarg with Sb2Si2Te6; now ignored with a deprecation warning:
+        sb2si2te6_defect_gen, output, w = self._generate_and_test_no_warnings(
+            self.sb2si2te6, charge_state_gen_kwargs={"padding": 2}, return_warnings=True
         )
+        assert len(w) == 1
+        assert issubclass(w[-1].category, DeprecationWarning)
+        assert "The `padding` option (for vacancy charge state guessing) was removed in doped v4.0" in str(
+            w[-1].message
+        )  # TODO: Remove (all this) in v4.1
         self._general_defect_gen_check(sb2si2te6_defect_gen)
         assert sb2si2te6_defect_gen.structure == self.sb2si2te6
-        assert self.sb2si2te6_defect_gen_info not in output  # changed
-
-        post_vacancy_info_output = self.sb2si2te6_defect_gen_info.split("Substitutions")[1]
-        # after vacancies, the same:
-        assert (
-            post_vacancy_info_output in output
-            or post_vacancy_info_output.replace("0.347", "0.348") in output
+        assert (  # output unchanged from default, as `padding` is ignored:
+            self.sb2si2te6_defect_gen_info in output
+            or self.sb2si2te6_defect_gen_info.replace("0.347", "0.348") in output
         )
-
-        assert (  # different charge states than when max_sites = -1 is used:
-            (
-                """Vacancies    Guessed Charges     Conv. Cell Coords    Wyckoff
------------  ------------------  -------------------  ---------
-v_Si         [+2,+1,0,-1,-2,-3]  [0.000,0.000,0.445]  6c
-v_Sb         [+2,+1,0,-1,-2,-3]  [0.000,0.000,0.166]  6c
-v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
-\n"""
-            )
-            in output
-        )
-
-        assert sb2si2te6_defect_gen.charge_state_gen_kwargs == {"padding": 2}  # check attribute set
+        assert sb2si2te6_defect_gen.charge_state_gen_kwargs == {}  # `padding` popped from kwargs
 
     def test_unknown_oxi_states(self):
         """
