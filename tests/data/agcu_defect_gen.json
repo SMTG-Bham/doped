@@ -1,7 +1,7 @@
 {
     "@class": "DefectsGenerator",
     "@module": "doped.generation",
-    "@version": "3.2.0",
+    "@version": "3.2.1",
     "_BilbaoCS_conv_cell_vector_mapping": [
         0,
         1,
@@ -18,7 +18,7 @@
             "b": 4.4213289854811935,
             "beta": 33.55730976471391,
             "c": 4.421328985606362,
-            "gamma": 33.55730976268596,
+            "gamma": 33.55730976268597,
             "matrix": [
                 [
                     4.233100223,
@@ -102,7 +102,7 @@
         "charge": 0.0,
         "lattice": {
             "a": 10.210621919985508,
-            "alpha": 120.00000000030575,
+            "alpha": 120.00000000030573,
             "b": 10.210621920047185,
             "beta": 60.0000000047138,
             "c": 10.210621920047185,
@@ -1555,7 +1555,7 @@
             "b": 2.552655480182246,
             "beta": 90.0,
             "c": 12.50540683,
-            "gamma": 120.00000000472343,
+            "gamma": 120.00000000472345,
             "matrix": [
                 [
                     1.27632774,
@@ -1708,7 +1708,7 @@
         "Ag_Cu_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -1723,7 +1723,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -3169,22 +3169,6 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": 0,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 1,
-                        "oxi_state": 0
-                    },
-                    "probability": 1,
-                    "probability_factors": {
-                        "charge_state_magnitude": 1,
-                        "charge_state_vs_max_host_charge": 1.0,
-                        "oxi_probability": 1,
-                        "oxi_state_vs_max_host_charge": 1.0
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
                         "charge_state": 1,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.952,
@@ -3201,6 +3185,22 @@
                 },
                 {
                     "input_parameters": {
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1,
+                        "oxi_state": 0
+                    },
+                    "probability": 1,
+                    "probability_factors": {
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1,
+                        "oxi_state_vs_max_host_charge": 1.0
+                    },
+                    "probability_threshold": 0.0075
+                },
+                {
+                    "input_parameters": {
                         "charge_state": 2,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.032,
@@ -3212,22 +3212,6 @@
                         "charge_state_vs_max_host_charge": 0.3968502629920499,
                         "oxi_probability": 0.032,
                         "oxi_state_vs_max_host_charge": 0.3968502629920499
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
-                        "charge_state": 3,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 0.017,
-                        "oxi_state": 3
-                    },
-                    "probability": 0.0007496060523183163,
-                    "probability_factors": {
-                        "charge_state_magnitude": 0.4807498567691361,
-                        "charge_state_vs_max_host_charge": 0.3028534321386899,
-                        "oxi_probability": 0.017,
-                        "oxi_state_vs_max_host_charge": 0.3028534321386899
                     },
                     "probability_threshold": 0.0075
                 }
@@ -3252,7 +3236,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -3434,7 +3418,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -3651,9 +3635,9 @@
                         "@class": "array",
                         "@module": "numpy",
                         "data": [
-                            0.6666,
+                            0.6667,
                             0.3333,
-                            0.3334
+                            0.3333
                         ],
                         "dtype": "float64"
                     },
@@ -3662,7 +3646,7 @@
                         "@module": "numpy",
                         "data": [
                             0.3333,
-                            0.6666,
+                            0.6667,
                             0.6667
                         ],
                         "dtype": "float64"
@@ -3775,7 +3759,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -3858,7 +3842,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -5231,9 +5215,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.6666,
+                        0.6667,
                         0.3333,
-                        0.3334
+                        0.3333
                     ],
                     "dtype": "float64"
                 },
@@ -5242,7 +5226,7 @@
                     "@module": "numpy",
                     "data": [
                         0.3333,
-                        0.6666,
+                        0.6667,
                         0.6667
                     ],
                     "dtype": "float64"
@@ -6651,7 +6635,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -7970,7 +7954,7 @@
         "Ag_Cu_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -7985,7 +7969,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -9431,22 +9415,6 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": 0,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 1,
-                        "oxi_state": 0
-                    },
-                    "probability": 1,
-                    "probability_factors": {
-                        "charge_state_magnitude": 1,
-                        "charge_state_vs_max_host_charge": 1.0,
-                        "oxi_probability": 1,
-                        "oxi_state_vs_max_host_charge": 1.0
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
                         "charge_state": 1,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.952,
@@ -9463,6 +9431,22 @@
                 },
                 {
                     "input_parameters": {
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1,
+                        "oxi_state": 0
+                    },
+                    "probability": 1,
+                    "probability_factors": {
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1,
+                        "oxi_state_vs_max_host_charge": 1.0
+                    },
+                    "probability_threshold": 0.0075
+                },
+                {
+                    "input_parameters": {
                         "charge_state": 2,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.032,
@@ -9474,22 +9458,6 @@
                         "charge_state_vs_max_host_charge": 0.3968502629920499,
                         "oxi_probability": 0.032,
                         "oxi_state_vs_max_host_charge": 0.3968502629920499
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
-                        "charge_state": 3,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 0.017,
-                        "oxi_state": 3
-                    },
-                    "probability": 0.0007496060523183163,
-                    "probability_factors": {
-                        "charge_state_magnitude": 0.4807498567691361,
-                        "charge_state_vs_max_host_charge": 0.3028534321386899,
-                        "oxi_probability": 0.017,
-                        "oxi_state_vs_max_host_charge": 0.3028534321386899
                     },
                     "probability_threshold": 0.0075
                 }
@@ -9514,7 +9482,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -9696,7 +9664,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -9913,9 +9881,9 @@
                         "@class": "array",
                         "@module": "numpy",
                         "data": [
-                            0.6666,
+                            0.6667,
                             0.3333,
-                            0.3334
+                            0.3333
                         ],
                         "dtype": "float64"
                     },
@@ -9924,7 +9892,7 @@
                         "@module": "numpy",
                         "data": [
                             0.3333,
-                            0.6666,
+                            0.6667,
                             0.6667
                         ],
                         "dtype": "float64"
@@ -10037,7 +10005,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -10120,7 +10088,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -11493,9 +11461,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.6666,
+                        0.6667,
                         0.3333,
-                        0.3334
+                        0.3333
                     ],
                     "dtype": "float64"
                 },
@@ -11504,7 +11472,7 @@
                     "@module": "numpy",
                     "data": [
                         0.3333,
-                        0.6666,
+                        0.6667,
                         0.6667
                     ],
                     "dtype": "float64"
@@ -12913,7 +12881,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -14232,7 +14200,7 @@
         "Ag_Cu_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -14247,7 +14215,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -15714,22 +15682,6 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": 0,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 1,
-                        "oxi_state": 0
-                    },
-                    "probability": 1,
-                    "probability_factors": {
-                        "charge_state_magnitude": 1,
-                        "charge_state_vs_max_host_charge": 1.0,
-                        "oxi_probability": 1,
-                        "oxi_state_vs_max_host_charge": 1.0
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
                         "charge_state": 1,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.952,
@@ -15746,6 +15698,22 @@
                 },
                 {
                     "input_parameters": {
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1,
+                        "oxi_state": 0
+                    },
+                    "probability": 1,
+                    "probability_factors": {
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1,
+                        "oxi_state_vs_max_host_charge": 1.0
+                    },
+                    "probability_threshold": 0.0075
+                },
+                {
+                    "input_parameters": {
                         "charge_state": 2,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.032,
@@ -15757,22 +15725,6 @@
                         "charge_state_vs_max_host_charge": 0.3968502629920499,
                         "oxi_probability": 0.032,
                         "oxi_state_vs_max_host_charge": 0.3968502629920499
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
-                        "charge_state": 3,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 0.017,
-                        "oxi_state": 3
-                    },
-                    "probability": 0.0007496060523183163,
-                    "probability_factors": {
-                        "charge_state_magnitude": 0.4807498567691361,
-                        "charge_state_vs_max_host_charge": 0.3028534321386899,
-                        "oxi_probability": 0.017,
-                        "oxi_state_vs_max_host_charge": 0.3028534321386899
                     },
                     "probability_threshold": 0.0075
                 }
@@ -15797,7 +15749,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -15979,7 +15931,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -16196,9 +16148,9 @@
                         "@class": "array",
                         "@module": "numpy",
                         "data": [
-                            0.6666,
+                            0.6667,
                             0.3333,
-                            0.3334
+                            0.3333
                         ],
                         "dtype": "float64"
                     },
@@ -16207,7 +16159,7 @@
                         "@module": "numpy",
                         "data": [
                             0.3333,
-                            0.6666,
+                            0.6667,
                             0.6667
                         ],
                         "dtype": "float64"
@@ -16320,7 +16272,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -16403,7 +16355,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -17776,9 +17728,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.6666,
+                        0.6667,
                         0.3333,
-                        0.3334
+                        0.3333
                     ],
                     "dtype": "float64"
                 },
@@ -17787,7 +17739,7 @@
                     "@module": "numpy",
                     "data": [
                         0.3333,
-                        0.6666,
+                        0.6667,
                         0.6667
                     ],
                     "dtype": "float64"
@@ -19196,7 +19148,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -20515,7 +20467,7 @@
         "Ag_i_C3v_Cu1.56Ag1.56Cu2.99a_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -20530,7 +20482,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -22021,22 +21973,6 @@
                         "oxi_state_vs_max_host_charge": 0.3968502629920499
                     },
                     "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
-                        "charge_state": 3,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 0.017,
-                        "oxi_state": 3
-                    },
-                    "probability": 0.0007496060523183163,
-                    "probability_factors": {
-                        "charge_state_magnitude": 0.4807498567691361,
-                        "charge_state_vs_max_host_charge": 0.3028534321386899,
-                        "oxi_probability": 0.017,
-                        "oxi_state_vs_max_host_charge": 0.3028534321386899
-                    },
-                    "probability_threshold": 0.0075
                 }
             ],
             "conv_cell_frac_coords": {
@@ -22059,7 +21995,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -22241,7 +22177,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -22605,7 +22541,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -22688,7 +22624,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -26907,7 +26843,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -28246,7 +28182,7 @@
         "Ag_i_C3v_Cu1.56Ag1.56Cu2.99a_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -28261,7 +28197,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -29773,22 +29709,6 @@
                         "oxi_state_vs_max_host_charge": 0.3968502629920499
                     },
                     "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
-                        "charge_state": 3,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 0.017,
-                        "oxi_state": 3
-                    },
-                    "probability": 0.0007496060523183163,
-                    "probability_factors": {
-                        "charge_state_magnitude": 0.4807498567691361,
-                        "charge_state_vs_max_host_charge": 0.3028534321386899,
-                        "oxi_probability": 0.017,
-                        "oxi_state_vs_max_host_charge": 0.3028534321386899
-                    },
-                    "probability_threshold": 0.0075
                 }
             ],
             "conv_cell_frac_coords": {
@@ -29811,7 +29731,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -29993,7 +29913,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -30357,7 +30277,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -30440,7 +30360,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -34659,7 +34579,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -35998,7 +35918,7 @@
         "Ag_i_C3v_Cu1.56Ag1.56Cu2.99b_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -36013,7 +35933,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -37504,22 +37424,6 @@
                         "oxi_state_vs_max_host_charge": 0.3968502629920499
                     },
                     "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
-                        "charge_state": 3,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 0.017,
-                        "oxi_state": 3
-                    },
-                    "probability": 0.0007496060523183163,
-                    "probability_factors": {
-                        "charge_state_magnitude": 0.4807498567691361,
-                        "charge_state_vs_max_host_charge": 0.3028534321386899,
-                        "oxi_probability": 0.017,
-                        "oxi_state_vs_max_host_charge": 0.3028534321386899
-                    },
-                    "probability_threshold": 0.0075
                 }
             ],
             "conv_cell_frac_coords": {
@@ -37542,7 +37446,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -37724,7 +37628,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -38088,7 +37992,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -38171,7 +38075,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -42390,7 +42294,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -43729,7 +43633,7 @@
         "Ag_i_C3v_Cu1.56Ag1.56Cu2.99b_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -43744,7 +43648,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -45256,22 +45160,6 @@
                         "oxi_state_vs_max_host_charge": 0.3968502629920499
                     },
                     "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
-                        "charge_state": 3,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 0.017,
-                        "oxi_state": 3
-                    },
-                    "probability": 0.0007496060523183163,
-                    "probability_factors": {
-                        "charge_state_magnitude": 0.4807498567691361,
-                        "charge_state_vs_max_host_charge": 0.3028534321386899,
-                        "oxi_probability": 0.017,
-                        "oxi_state_vs_max_host_charge": 0.3028534321386899
-                    },
-                    "probability_threshold": 0.0075
                 }
             ],
             "conv_cell_frac_coords": {
@@ -45294,7 +45182,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -45476,7 +45364,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -45840,7 +45728,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -45923,7 +45811,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -50142,7 +50030,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -51481,7 +51369,7 @@
         "Ag_i_C3v_Cu1.80_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -51496,7 +51384,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -52987,22 +52875,6 @@
                         "oxi_state_vs_max_host_charge": 0.3968502629920499
                     },
                     "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
-                        "charge_state": 3,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 0.017,
-                        "oxi_state": 3
-                    },
-                    "probability": 0.0007496060523183163,
-                    "probability_factors": {
-                        "charge_state_magnitude": 0.4807498567691361,
-                        "charge_state_vs_max_host_charge": 0.3028534321386899,
-                        "oxi_probability": 0.017,
-                        "oxi_state_vs_max_host_charge": 0.3028534321386899
-                    },
-                    "probability_threshold": 0.0075
                 }
             ],
             "conv_cell_frac_coords": {
@@ -53025,7 +52897,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -53207,7 +53079,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -53571,7 +53443,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -53654,7 +53526,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -57873,7 +57745,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -59212,7 +59084,7 @@
         "Ag_i_C3v_Cu1.80_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -59227,7 +59099,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -60739,22 +60611,6 @@
                         "oxi_state_vs_max_host_charge": 0.3968502629920499
                     },
                     "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
-                        "charge_state": 3,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 0.017,
-                        "oxi_state": 3
-                    },
-                    "probability": 0.0007496060523183163,
-                    "probability_factors": {
-                        "charge_state_magnitude": 0.4807498567691361,
-                        "charge_state_vs_max_host_charge": 0.3028534321386899,
-                        "oxi_probability": 0.017,
-                        "oxi_state_vs_max_host_charge": 0.3028534321386899
-                    },
-                    "probability_threshold": 0.0075
                 }
             ],
             "conv_cell_frac_coords": {
@@ -60777,7 +60633,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -60959,7 +60815,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -61323,7 +61179,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -61406,7 +61262,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -65625,7 +65481,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -66964,7 +66820,7 @@
         "Cu_Ag_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -66979,7 +66835,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -68425,22 +68281,6 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": 0,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 1,
-                        "oxi_state": 0
-                    },
-                    "probability": 1,
-                    "probability_factors": {
-                        "charge_state_magnitude": 1,
-                        "charge_state_vs_max_host_charge": 1.0,
-                        "oxi_probability": 1,
-                        "oxi_state_vs_max_host_charge": 1.0
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
                         "charge_state": 1,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.505,
@@ -68452,6 +68292,22 @@
                         "charge_state_vs_max_host_charge": 0.6299605249474366,
                         "oxi_probability": 0.505,
                         "oxi_state_vs_max_host_charge": 0.6299605249474366
+                    },
+                    "probability_threshold": 0.0075
+                },
+                {
+                    "input_parameters": {
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1,
+                        "oxi_state": 0
+                    },
+                    "probability": 1,
+                    "probability_factors": {
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
@@ -68508,7 +68364,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -68690,7 +68546,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -69031,7 +68887,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -69114,7 +68970,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -71907,7 +71763,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -73226,7 +73082,7 @@
         "Cu_Ag_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -73241,7 +73097,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -74687,22 +74543,6 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": 0,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 1,
-                        "oxi_state": 0
-                    },
-                    "probability": 1,
-                    "probability_factors": {
-                        "charge_state_magnitude": 1,
-                        "charge_state_vs_max_host_charge": 1.0,
-                        "oxi_probability": 1,
-                        "oxi_state_vs_max_host_charge": 1.0
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
                         "charge_state": 1,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.505,
@@ -74714,6 +74554,22 @@
                         "charge_state_vs_max_host_charge": 0.6299605249474366,
                         "oxi_probability": 0.505,
                         "oxi_state_vs_max_host_charge": 0.6299605249474366
+                    },
+                    "probability_threshold": 0.0075
+                },
+                {
+                    "input_parameters": {
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1,
+                        "oxi_state": 0
+                    },
+                    "probability": 1,
+                    "probability_factors": {
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
@@ -74770,7 +74626,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -74952,7 +74808,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -75293,7 +75149,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -75376,7 +75232,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -78169,7 +78025,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -79488,7 +79344,7 @@
         "Cu_Ag_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -79503,7 +79359,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -80949,22 +80805,6 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": 0,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 1,
-                        "oxi_state": 0
-                    },
-                    "probability": 1,
-                    "probability_factors": {
-                        "charge_state_magnitude": 1,
-                        "charge_state_vs_max_host_charge": 1.0,
-                        "oxi_probability": 1,
-                        "oxi_state_vs_max_host_charge": 1.0
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
                         "charge_state": 1,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.505,
@@ -80976,6 +80816,22 @@
                         "charge_state_vs_max_host_charge": 0.6299605249474366,
                         "oxi_probability": 0.505,
                         "oxi_state_vs_max_host_charge": 0.6299605249474366
+                    },
+                    "probability_threshold": 0.0075
+                },
+                {
+                    "input_parameters": {
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1,
+                        "oxi_state": 0
+                    },
+                    "probability": 1,
+                    "probability_factors": {
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
@@ -81032,7 +80888,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -81214,7 +81070,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -81555,7 +81411,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -81638,7 +81494,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -84431,7 +84287,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -85750,7 +85606,7 @@
         "Cu_Ag_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -85765,7 +85621,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -87232,22 +87088,6 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": 0,
-                        "max_host_oxi_magnitude": 0,
-                        "oxi_probability": 1,
-                        "oxi_state": 0
-                    },
-                    "probability": 1,
-                    "probability_factors": {
-                        "charge_state_magnitude": 1,
-                        "charge_state_vs_max_host_charge": 1.0,
-                        "oxi_probability": 1,
-                        "oxi_state_vs_max_host_charge": 1.0
-                    },
-                    "probability_threshold": 0.0075
-                },
-                {
-                    "input_parameters": {
                         "charge_state": 1,
                         "max_host_oxi_magnitude": 0,
                         "oxi_probability": 0.505,
@@ -87259,6 +87099,22 @@
                         "charge_state_vs_max_host_charge": 0.6299605249474366,
                         "oxi_probability": 0.505,
                         "oxi_state_vs_max_host_charge": 0.6299605249474366
+                    },
+                    "probability_threshold": 0.0075
+                },
+                {
+                    "input_parameters": {
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1,
+                        "oxi_state": 0
+                    },
+                    "probability": 1,
+                    "probability_factors": {
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
@@ -87315,7 +87171,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -87497,7 +87353,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -87838,7 +87694,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -87921,7 +87777,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -90714,7 +90570,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -92033,7 +91889,7 @@
         "Cu_i_C3v_Cu1.56Ag1.56Cu2.99a_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -92048,7 +91904,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -93577,7 +93433,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -93759,7 +93615,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -94123,7 +93979,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -94206,7 +94062,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -98425,7 +98281,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -99764,7 +99620,7 @@
         "Cu_i_C3v_Cu1.56Ag1.56Cu2.99a_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -99779,7 +99635,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -101308,7 +101164,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -101490,7 +101346,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -101854,7 +101710,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -101937,7 +101793,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -106156,7 +106012,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -107495,7 +107351,7 @@
         "Cu_i_C3v_Cu1.56Ag1.56Cu2.99a_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -107510,7 +107366,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -109060,7 +108916,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -109242,7 +109098,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -109606,7 +109462,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -109689,7 +109545,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -113908,7 +113764,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -115247,7 +115103,7 @@
         "Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -115262,7 +115118,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -116791,7 +116647,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -116973,7 +116829,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -117337,7 +117193,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -117420,7 +117276,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -121639,7 +121495,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -122978,7 +122834,7 @@
         "Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -122993,7 +122849,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -124522,7 +124378,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -124704,7 +124560,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -125068,7 +124924,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -125151,7 +125007,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -129370,7 +129226,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -130709,7 +130565,7 @@
         "Cu_i_C3v_Cu1.56Ag1.56Cu2.99b_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -130724,7 +130580,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -132274,7 +132130,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -132456,7 +132312,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -132820,7 +132676,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -132903,7 +132759,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -137122,7 +136978,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -138461,7 +138317,7 @@
         "Cu_i_C3v_Cu1.80_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -138476,7 +138332,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -140005,7 +139861,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -140187,7 +140043,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -140551,7 +140407,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -140634,7 +140490,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -144853,7 +144709,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -146192,7 +146048,7 @@
         "Cu_i_C3v_Cu1.80_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -146207,7 +146063,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -147736,7 +147592,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -147918,7 +147774,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -148282,7 +148138,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -148365,7 +148221,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -152584,7 +152440,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -153923,7 +153779,7 @@
         "Cu_i_C3v_Cu1.80_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -153938,7 +153794,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -155488,7 +155344,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -155670,7 +155526,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -156034,7 +155890,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -156117,7 +155973,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -160336,7 +160192,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -161675,7 +161531,7 @@
         "v_Ag_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -161690,7 +161546,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -163136,34 +162992,49 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": -1
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 0
                     },
-                    "padding": 1,
                     "probability": 1,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 0
+                        "charge_state": -1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": -1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 1
+                        "charge_state": 1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": 1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 }
@@ -163188,7 +163059,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -163370,7 +163241,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -163707,7 +163578,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -163790,7 +163661,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -166563,7 +166434,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -167862,7 +167733,7 @@
         "v_Ag_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -167877,7 +167748,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -169323,34 +169194,49 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": -1
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 0
                     },
-                    "padding": 1,
                     "probability": 1,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 0
+                        "charge_state": -1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": -1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 1
+                        "charge_state": 1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": 1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 }
@@ -169375,7 +169261,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -169557,7 +169443,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -169894,7 +169780,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -169977,7 +169863,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -172750,7 +172636,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -174049,7 +173935,7 @@
         "v_Ag_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -174064,7 +173950,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -175531,34 +175417,49 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": -1
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 0
                     },
-                    "padding": 1,
                     "probability": 1,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 0
+                        "charge_state": -1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": -1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 1
+                        "charge_state": 1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": 1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 }
@@ -175583,7 +175484,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -175765,7 +175666,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -176102,7 +176003,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -176185,7 +176086,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -178958,7 +178859,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -180257,7 +180158,7 @@
         "v_Cu_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -180272,7 +180173,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -181718,34 +181619,49 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": -1
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 0
                     },
-                    "padding": 1,
                     "probability": 1,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 0
+                        "charge_state": -1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": -1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 1
+                        "charge_state": 1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": 1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 }
@@ -181770,7 +181686,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -181952,7 +181868,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -182169,9 +182085,9 @@
                         "@class": "array",
                         "@module": "numpy",
                         "data": [
-                            0.6666,
+                            0.6667,
                             0.3333,
-                            0.3334
+                            0.3333
                         ],
                         "dtype": "float64"
                     },
@@ -182180,7 +182096,7 @@
                         "@module": "numpy",
                         "data": [
                             0.3333,
-                            0.6666,
+                            0.6667,
                             0.6667
                         ],
                         "dtype": "float64"
@@ -182289,7 +182205,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -182372,7 +182288,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -183725,9 +183641,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.6666,
+                        0.6667,
                         0.3333,
-                        0.3334
+                        0.3333
                     ],
                     "dtype": "float64"
                 },
@@ -183736,7 +183652,7 @@
                     "@module": "numpy",
                     "data": [
                         0.3333,
-                        0.6666,
+                        0.6667,
                         0.6667
                     ],
                     "dtype": "float64"
@@ -185145,7 +185061,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -186444,7 +186360,7 @@
         "v_Cu_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -186459,7 +186375,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -187905,34 +187821,49 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": -1
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 0
                     },
-                    "padding": 1,
                     "probability": 1,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 0
+                        "charge_state": -1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": -1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 1
+                        "charge_state": 1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": 1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 }
@@ -187957,7 +187888,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -188139,7 +188070,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -188356,9 +188287,9 @@
                         "@class": "array",
                         "@module": "numpy",
                         "data": [
-                            0.6666,
+                            0.6667,
                             0.3333,
-                            0.3334
+                            0.3333
                         ],
                         "dtype": "float64"
                     },
@@ -188367,7 +188298,7 @@
                         "@module": "numpy",
                         "data": [
                             0.3333,
-                            0.6666,
+                            0.6667,
                             0.6667
                         ],
                         "dtype": "float64"
@@ -188476,7 +188407,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -188559,7 +188490,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -189912,9 +189843,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.6666,
+                        0.6667,
                         0.3333,
-                        0.3334
+                        0.3333
                     ],
                     "dtype": "float64"
                 },
@@ -189923,7 +189854,7 @@
                     "@module": "numpy",
                     "data": [
                         0.3333,
-                        0.6666,
+                        0.6667,
                         0.6667
                     ],
                     "dtype": "float64"
@@ -191332,7 +191263,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -192631,7 +192562,7 @@
         "v_Cu_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -192646,7 +192577,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -194113,34 +194044,49 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": -1
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 0
                     },
-                    "padding": 1,
                     "probability": 1,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 0
+                        "charge_state": -1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": -1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 1
+                        "charge_state": 1,
+                        "max_host_oxi_magnitude": 0,
+                        "oxi_probability": 0.25,
+                        "oxi_state": 1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.09921256574801247,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 0.6299605249474366,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 }
@@ -194165,7 +194111,7 @@
                     "b": 2.552655480182246,
                     "beta": 90.0,
                     "c": 12.50540683,
-                    "gamma": 120.00000000472343,
+                    "gamma": 120.00000000472345,
                     "matrix": [
                         [
                             1.27632774,
@@ -194347,7 +194293,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -194564,9 +194510,9 @@
                         "@class": "array",
                         "@module": "numpy",
                         "data": [
-                            0.6666,
+                            0.6667,
                             0.3333,
-                            0.3334
+                            0.3333
                         ],
                         "dtype": "float64"
                     },
@@ -194575,7 +194521,7 @@
                         "@module": "numpy",
                         "data": [
                             0.3333,
-                            0.6666,
+                            0.6667,
                             0.6667
                         ],
                         "dtype": "float64"
@@ -194684,7 +194630,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -194767,7 +194713,7 @@
                 "charge": 0.0,
                 "lattice": {
                     "a": 10.210621919985508,
-                    "alpha": 120.00000000030575,
+                    "alpha": 120.00000000030573,
                     "b": 10.210621920047185,
                     "beta": 60.0000000047138,
                     "c": 10.210621920047185,
@@ -196120,9 +196066,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.6666,
+                        0.6667,
                         0.3333,
-                        0.3334
+                        0.3333
                     ],
                     "dtype": "float64"
                 },
@@ -196131,7 +196077,7 @@
                     "@module": "numpy",
                     "data": [
                         0.3333,
-                        0.6666,
+                        0.6667,
                         0.6667
                     ],
                     "dtype": "float64"
@@ -197540,7 +197486,7 @@
                     "charge": 0.0,
                     "lattice": {
                         "a": 10.210621919985508,
-                        "alpha": 120.00000000030575,
+                        "alpha": 120.00000000030573,
                         "b": 10.210621920047185,
                         "beta": 60.0000000047138,
                         "c": 10.210621920047185,
@@ -198842,7 +198788,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -198871,7 +198817,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -199235,7 +199181,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -199315,7 +199261,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -199344,7 +199290,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -199708,7 +199654,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -199788,7 +199734,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -199817,7 +199763,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -200181,7 +200127,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -200261,7 +200207,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -200290,7 +200236,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -200654,7 +200600,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -200734,7 +200680,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -200763,7 +200709,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -201127,7 +201073,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -201207,7 +201153,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -201236,7 +201182,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -201600,7 +201546,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -201682,7 +201628,7 @@
             {
                 "@class": "Substitution",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -201711,7 +201657,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -202052,7 +201998,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -202132,7 +202078,7 @@
             {
                 "@class": "Substitution",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -202161,7 +202107,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -202378,9 +202324,9 @@
                         "@class": "array",
                         "@module": "numpy",
                         "data": [
-                            0.6666,
+                            0.6667,
                             0.3333,
-                            0.3334
+                            0.3333
                         ],
                         "dtype": "float64"
                     },
@@ -202389,7 +202335,7 @@
                         "@module": "numpy",
                         "data": [
                             0.3333,
-                            0.6666,
+                            0.6667,
                             0.6667
                         ],
                         "dtype": "float64"
@@ -202502,7 +202448,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -202584,7 +202530,7 @@
             {
                 "@class": "Vacancy",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -202613,7 +202559,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -202830,9 +202776,9 @@
                         "@class": "array",
                         "@module": "numpy",
                         "data": [
-                            0.6666,
+                            0.6667,
                             0.3333,
-                            0.3334
+                            0.3333
                         ],
                         "dtype": "float64"
                     },
@@ -202841,7 +202787,7 @@
                         "@module": "numpy",
                         "data": [
                             0.3333,
-                            0.6666,
+                            0.6667,
                             0.6667
                         ],
                         "dtype": "float64"
@@ -202950,7 +202896,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -203030,7 +202976,7 @@
             {
                 "@class": "Vacancy",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -203059,7 +203005,7 @@
                         "b": 2.552655480182246,
                         "beta": 90.0,
                         "c": 12.50540683,
-                        "gamma": 120.00000000472343,
+                        "gamma": 120.00000000472345,
                         "matrix": [
                             [
                                 1.27632774,
@@ -203396,7 +203342,7 @@
                         "b": 4.4213289854811935,
                         "beta": 33.55730976471391,
                         "c": 4.421328985606362,
-                        "gamma": 33.55730976268596,
+                        "gamma": 33.55730976268597,
                         "matrix": [
                             [
                                 4.233100223,
@@ -203500,7 +203446,7 @@
             "b": 4.4213289854811935,
             "beta": 33.55730976471391,
             "c": 4.421328985606362,
-            "gamma": 33.55730976268596,
+            "gamma": 33.55730976268597,
             "matrix": [
                 [
                     4.233100223,

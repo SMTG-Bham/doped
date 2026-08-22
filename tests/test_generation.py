@@ -50,6 +50,7 @@ from doped.utils.symmetry import (
     get_BCS_conventional_structure,
     get_min_dist_between_equiv_sites,
     get_spglib_conv_structure,
+    group_order_from_schoenflies,
     summed_dist,
     swap_axes,
     translate_structure,
@@ -93,16 +94,32 @@ def _check_defect_entry(
     if defect_entry.charge_state == 0:
         # test defect name re-determination, with relaxed & unrelaxed symmetry determination (fine even in
         # periodicity-breaking supercells, via local isometry analyses in
-        # ``point_symmetry_from_defect_entry``), with no warnings;
+        # ``point_symmetry_from_defect_entry``); for defective host supercells, ``doped`` detects when the
+        # local analysis is unreliable, warning and falling back to the global configuration symmetry of
+        # the defect supercell (which can exceed the site symmetry) -- see its docstring:
         with warnings.catch_warnings(record=True) as w:
             relaxed_defect_name = get_defect_name_from_entry(defect_entry)
-            assert relaxed_defect_name == get_defect_name_from_defect(defect_entry.defect)
-            assert relaxed_defect_name == get_defect_name_from_entry(defect_entry, relaxed=False)
+            unrelaxed_defect_name = get_defect_name_from_entry(defect_entry, relaxed=False)
+            assert unrelaxed_defect_name == get_defect_name_from_defect(defect_entry.defect)
         _print_warning_info(w)
+        allowed_warning_substrings = ["cannot be determined from the local environment"]
+        host_symmetry_breaking = defect_entry.calculation_metadata.get(
+            "host symmetry breaking beyond local radius"
+        )
+        assert bool(host_symmetry_breaking) == any(
+            "beyond the local symmetry analysis radius" in str(warning.message) for warning in w
+        )  # flag & warning in tandem, only for defective host supercells
+        if host_symmetry_breaking:
+            allowed_warning_substrings.append("beyond the local symmetry analysis radius")
+        if relaxed_defect_name != unrelaxed_defect_name:  # only w/flagged defective-host entries where...
+            assert host_symmetry_breaking  # ...the configuration symmetry strictly exceeds site symmetry:
+            assert group_order_from_schoenflies(
+                relaxed_defect_name.split("_")[-2]
+            ) > group_order_from_schoenflies(unrelaxed_defect_name.split("_")[-2])
         assert not [
             warning
             for warning in w
-            if "cannot be determined from the local environment" not in str(warning.message)
+            if not any(substring in str(warning.message) for substring in allowed_warning_substrings)
         ]
 
         assert np.allclose(
@@ -3103,6 +3120,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
     def cd_i_CdTe_supercell_defect_gen_check(self, cd_i_defect_gen):
         self._general_defect_gen_check(cd_i_defect_gen)
+        assert any(  # host symmetry-breaking beyond the local analysis radius (pre-existing Cd_i) detected
+            entry.calculation_metadata.get("host symmetry breaking beyond local radius")
+            for entry in cd_i_defect_gen.defect_entries.values()
+        )
         assert self.cd_i_CdTe_supercell_defect_gen_info in cd_i_defect_gen._defect_generator_info()
         assert cd_i_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
@@ -3227,6 +3248,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert "_i_" not in output  # no interstitials generated
 
         self._general_defect_gen_check(N_diamond_defect_gen)
+        assert any(  # host symmetry-breaking beyond the local analysis radius (pre-existing N_C) detected
+            entry.calculation_metadata.get("host symmetry breaking beyond local radius")
+            for entry in N_diamond_defect_gen.defect_entries.values()
+        )
 
         # save reduced defect gen to json
         reduced_N_diamond_defect_gen = self._reduce_to_one_defect_each(N_diamond_defect_gen)

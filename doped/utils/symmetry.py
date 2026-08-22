@@ -662,7 +662,7 @@ def doped_cluster_frac_coords(
             unintentional daisy-chaining effects. Another reasonable choice is
             ``"complete"``, which ensures that no two sites in a given cluster
             are more than ``tol`` apart. See the docstrings and source code of
-            :func:`~doped.utils.symmetry.cluster_coords` for more details.
+            :func:`cluster_coords` for more details.
             ``"centroid"``/``"median"``/``"ward"`` should not be used for
             as they assume a flat Euclidean space, which is violated with PBC
             distances.
@@ -928,7 +928,7 @@ def _orbit_site_symmetry_consistent(
         host = structure if prim_and_matrix is None else prim_and_matrix[0]
         n_prim = round(len(structure) / len(host))
         host_pg_order = group_order_from_schoenflies(
-            schoenflies_from_hermann(get_sga(host, symprec=symprec).get_point_group_symbol())
+            schoenflies_from_spacegroup_number(get_sga(host, symprec=symprec).get_space_group_number())
         )
     except Exception:  # can't evaluate (unrecognised symbol, spglib failure...); don't block acceptance
         return True
@@ -1118,7 +1118,7 @@ def cluster_sites_by_dist_tol(
             clustering function in ``cluster_coords``. Default is ``"single"``,
             which is the ``scipy`` default and is typically recommended when
             ``dist_tol`` is small. See the docstrings and source code of
-            :func:`~doped.utils.symmetry.cluster_coords` for more details.
+            :func:`cluster_coords` for more details.
         criterion (str):
             Criterion to use for flattening hierarchical clusters from the
             linkage matrix, used with ``fcluster()``. Default: ``"distance"``.
@@ -2907,7 +2907,7 @@ def point_symmetry_from_defect(
         )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
         # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
         sga = get_sga(defect_diagonal_supercell, symprec=symprec)
-        return schoenflies_from_hermann(sga.get_point_group_symbol())
+        return schoenflies_from_spacegroup_number(sga.get_space_group_number())
 
 
 def _extract_defect_cluster(
@@ -3826,6 +3826,23 @@ def point_symmetry_from_defect_entry(
     ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']``
     and ``degeneracy_factors['orientational degeneracy']`` attributes.
 
+    If the host (bulk) supercell itself contains symmetry-breaking features
+    (e.g. other defects), the local analysis can miss their effects when they
+    lie beyond the local analysis radius (spuriously `raising` the determined
+    point symmetry), and cannot detect emergent symmetry `increasing` (e.g.
+    rare cases with same-species defect pairs; spuriously `lowering` it).
+    In such cases (identified by the host supercell not folding to a smaller
+    primitive cell), ``doped`` automatically compares the local result to the
+    global site symmetry and the global point symmetry of the full (relaxed)
+    defect supercell -- valid here, as such host supercells are their own
+    primitive cells, and so no periodicity-breaking is possible -- and on any
+    disagreement throws a warning, sets the
+    ``"host symmetry breaking beyond local radius"`` key in
+    ``defect_entry.calculation_metadata``, and returns the global symmetry (the
+    crystal class of the defect supercell). To instead obtain the local point
+    symmetry in such cases (e.g. for a constituent point defect within a
+    complex), set ``radius`` explicitly (which skips this comparison/fallback).
+
     Args:
         defect_entry (|DefectEntry|): |DefectEntry| object.
         symprec (float):
@@ -3904,9 +3921,51 @@ def point_symmetry_from_defect_entry(
         if info.get("degenerate_cluster"):  # too few local atoms to certify any symmetry (warned in
             # ``local_point_symmetry``); fall back to global ``spglib`` analysis:
             with contextlib.suppress(SymmetryUndeterminedError):
-                symbol = schoenflies_from_hermann(
-                    get_sga(defect_supercell, symprec=symprec).get_point_group_symbol()
+                symbol = schoenflies_from_spacegroup_number(
+                    get_sga(defect_supercell, symprec=symprec).get_space_group_number()
                 )
+            return symbol
+
+        # for hosts which don't fold to a smaller primitive cell (e.g. defective host supercells), the
+        # local analysis can miss host symmetry-breaking beyond the local analysis radius, or emergent
+        # configuration symmetry, spuriously `raising` or `lowering` the determined symmetry respectively.
+        # So here we compare with the global site symmetry and the global point symmetry of the full defect
+        # supercell (the crystal class of its space group), warning and returning the latter on any
+        # disagreement -- valid here, as such host supercells are their own primitive cells and so no
+        # periodicity-breaking is possible. Skipped when ``radius`` is explicitly provided (deliberate
+        # local-only analysis, e.g. for constituent defects of complexes):
+        bulk_supercell = _get_bulk_supercell(defect_entry)
+        if (
+            "radius" not in local_kwargs  # no explicit local radius
+            and bulk_supercell is not None  # bulk_supercell reference available
+            and len(get_primitive_structure(bulk_supercell)) == len(bulk_supercell)  # no primitive folding
+        ):
+            bulk_site_symbol = point_symmetry_from_defect_entry(
+                defect_entry,
+                symprec=local_kwargs.get("bulk_symprec"),  # ``None`` -> 0.01 Å default
+                relaxed=False,
+                verbose=verbose,
+                **kwargs,
+            )
+            try:
+                global_symbol = schoenflies_from_spacegroup_number(
+                    get_sga(defect_supercell, symprec=symprec).get_space_group_number()
+                )
+            except SymmetryUndeterminedError:  # ``spglib`` failure; use (unrelaxed) global site...
+                global_symbol = bulk_site_symbol  # ...symmetry as the appropriate fallback
+            if not symbol == bulk_site_symbol == global_symbol:
+                defect_entry.calculation_metadata["host symmetry breaking beyond local radius"] = True
+                local_symmetry_radius = min(get_min_image_distance(defect_supercell) / 2, 12)
+                warnings.warn(
+                    f"For this defect entry, the locally-determined relaxed point symmetry is {symbol}, "
+                    f"while the global site symmetry of the defect position in the host supercell is "
+                    f"{bulk_site_symbol}, and the global point symmetry of the full defect supercell is "
+                    f"{global_symbol} -- indicating host symmetry-breaking features (e.g. other defects) "
+                    f"beyond the local symmetry analysis radius ({local_symmetry_radius:.2f} Å), and/or "
+                    f"emergent symmetry-increasing (e.g. same-species defect pairs). The global "
+                    f"configuration symmetry ({global_symbol}) is thus returned, as the most valid value."
+                )
+                return global_symbol
         return symbol
 
     if defect_entry.defect.defect_type != DefectType.Interstitial:  # take from symmetry dataset of bulk:
@@ -4013,9 +4072,10 @@ def point_symmetry_from_structure(
     interstitial site when placed in the (unrelaxed) bulk structure.
 
     Note: this function determines the point symmetry of the local defect /
-    perturbation environment. For the global point group of a (perfect) crystal
-    structure, use e.g. :func:`~doped.utils.symmetry.get_sga` /
-    :meth:`~pymatgen.symmetry.analyzer.SpacegroupAnalyzer.get_point_group_symbol`.
+    perturbation environment. For the global point group (crystal class) of a
+    (perfect) crystal structure, use e.g.
+    :func:`schoenflies_from_spacegroup_number` with :func:`get_sga` --
+    ``schoenflies_from_spacegroup_number(get_sga(struct).get_space_group_number())``.
 
     Args:
         structure (|Structure|):
@@ -4115,8 +4175,8 @@ def point_symmetry_from_structure(
     # recentring re-run can recover), so the higher-symmetry result is taken:
     spglib_symbol = None
     with contextlib.suppress(SymmetryUndeterminedError):
-        spglib_symbol = schoenflies_from_hermann(
-            get_sga(structure, symprec=symprec).get_point_group_symbol()
+        spglib_symbol = schoenflies_from_spacegroup_number(
+            get_sga(structure, symprec=symprec).get_space_group_number()
         )
     if spglib_symbol is not None and group_order_from_schoenflies(
         spglib_symbol
@@ -4197,9 +4257,9 @@ def point_symmetry_from_site(
     return max(spglib_point_group_symbols, key=group_order_from_schoenflies)
 
 
-# Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
-_PTG_IDS = [
-    ("C1", "1", 1),
+# Schoenflies, Hermann-Mauguin, (first) space group number (spgid) dict: (From Abipy, with GNU GPL License)
+_PTG_IDS = [  # the space group number here is the first space group with that point group, with all...
+    ("C1", "1", 1),  # ...subsequent space groups having that point group, till the next entry in this list
     ("Ci", "-1", 2),
     ("C2", "2", 3),
     ("Cs", "m", 6),
@@ -4236,6 +4296,31 @@ _PTG_IDS = [
 _SCH_to_HERM = {t[0]: t[1] for t in _PTG_IDS}
 _HERM_to_SCH = {t[1]: t[0] for t in _PTG_IDS}
 sch_symbols = list(_SCH_to_HERM.keys())
+
+
+def schoenflies_from_spacegroup_number(sg_number: int) -> str:
+    """
+    Get the Schoenflies symbol of the point group (crystal class) of the given
+    space group number.
+
+    Space groups are ordered by crystal class, so the point group of space
+    group number ``n`` is that of the largest first-space-group-number entry
+    (in ``_PTG_IDS``) which is <= ``n``. `Basis-independent`, unlike
+    ``SpacegroupAnalyzer.get_point_group_symbol()`` -- which (currently)
+    derives from the symmetry operations expressible as integer matrices in the
+    input cell basis, and so can miss operations of the space group type for
+    supercells whose basis vectors are not aligned with the conventional cell
+    axes.
+
+    Args:
+        sg_number (int): The space group number (1-230).
+
+    Returns:
+        str: Schoenflies point group symbol.
+    """
+    # TODO: Possibly superseded by any changes as a result of
+    #  https://github.com/materialsproject/pymatgen-core/pull/132
+    return max((t for t in _PTG_IDS if t[2] <= sg_number), key=lambda t: t[2])[0]
 
 
 def schoenflies_from_hermann(herm_symbol):
