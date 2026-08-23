@@ -7,6 +7,10 @@ utilities), ``doped.core`` (``DefectEntry`` structure accessors) and
 ``doped.utils.symmetry`` (electron-count / spin degeneracy helpers). This
 shim forwards the old public names with deprecation warnings (private
 helpers are not aliased), and will be removed in a future release.
+
+Note that these names did `not` move to the (unrelated, top-level)
+``doped.parsing`` module, which is the renamed ``doped.analysis`` (defect
+calculation parsing).
 """
 
 import warnings

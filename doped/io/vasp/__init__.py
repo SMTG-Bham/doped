@@ -4,7 +4,7 @@ parsing (``doped.io.vasp.outputs``) for ``doped``.
 
 Submodule attributes can be accessed directly from this package (e.g.
 ``from doped.io.vasp import DefectsSet``); they are imported lazily to avoid
-unnecessary import costs and circular imports.
+unnecessary import costs.
 """
 
 from importlib import import_module

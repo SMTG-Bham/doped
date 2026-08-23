@@ -15,8 +15,8 @@ from pymatgen.core.structure import PeriodicSite
 from pymatgen.core.structure_matcher import ElementComparator
 from test_utils import EXAMPLE_DIR, STYLE, _print_warning_info, custom_mpl_image_compare
 
-from doped.analysis import DefectParser, defect_site_from_structures
 from doped.core import DefectEntry
+from doped.parsing import DefectParser, defect_site_from_structures
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils.configurations import apply_s2_to_s1_transformation
 from doped.utils.displacements import plot_site_displacements

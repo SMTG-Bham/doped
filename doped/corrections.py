@@ -58,7 +58,6 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.util.typing import PathLike
 
-from doped.analysis import _convert_dielectric_to_tensor
 from doped.core import _get_bulk_supercell, _get_defect_supercell, _get_defect_supercell_frac_coords
 from doped.io.outputs import CalculationOutputs
 from doped.io.vasp.outputs import (
@@ -69,6 +68,33 @@ from doped.io.vasp.outputs import (
 from doped.utils import vise_handling
 from doped.utils.mappings import get_site_mappings, get_wigner_seitz_radius
 from doped.utils.plotting import doped_plot_style, format_defect_name
+
+
+def _convert_dielectric_to_tensor(dielectric: float | np.ndarray | list) -> np.ndarray:
+    """
+    Convert a scalar, 3-vector or 3x3 matrix dielectric to a 3x3 tensor.
+    """
+    dielectric = np.asarray(dielectric, dtype=float)
+    if dielectric.shape == (3, 3):
+        return dielectric
+    if dielectric.shape in {(), (3,)}:
+        return np.diag(np.broadcast_to(dielectric, (3,)))
+
+    raise ValueError(
+        f"Dielectric constant must be a float/int, 3-vector or 3x3 matrix, but got shape "
+        f"{dielectric.shape}"
+    )
+
+
+def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
+    aniso_dielectric: np.ndarray | list,
+) -> float:
+    """
+    Convert an anisotropic dielectric tensor to the equivalent isotropic
+    dielectric constant using the harmonic mean (closest physically reasonable
+    choice for finite-size charge corrections).
+    """
+    return 3 / sum(1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric))
 
 
 def _monty_decode_nested_dicts(d):

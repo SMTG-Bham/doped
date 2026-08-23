@@ -33,6 +33,10 @@ from tqdm import tqdm
 
 from doped.chemical_potentials import ChemicalPotentialGrid, get_X_rich_poor_limit, plot_chempot_heatmap
 from doped.core import DefectEntry, _get_abs_chempots, _get_bulk_supercell, _no_chempots_warning
+from doped.corrections import (
+    _convert_anisotropic_dielectric_to_isotropic_harmonic_mean,
+    _convert_dielectric_to_tensor,
+)
 from doped.generation import sort_defect_entries
 from doped.io.vasp.outputs import (
     _compare_incar_tags,
@@ -614,7 +618,7 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[Defect
     Returns:
         dict: Dictionary of ``{defect name without charge: [DefectEntry]}``.
     """
-    from doped.analysis import check_and_set_defect_entry_name  # avoid circular import
+    from doped.parsing import check_and_set_defect_entry_name  # avoid circular import
 
     grouped_entries: dict[str, set[DefectEntry]] = {}  # dict for groups of entries with the same prefix
 
@@ -5185,6 +5189,49 @@ def scissor_dos(
     if isinstance(dos, FermiDos):
         return FermiDos.from_dict(scissored_dos_dict)
     return Dos.from_dict(scissored_dos_dict)
+
+
+def shallow_dopant_binding_energy(
+    eff_mass: float,
+    dielectric: float | np.ndarray | list,
+):
+    """
+    Estimate the binding energy of a shallow dopant /defect in a semiconductor,
+    using effective mass theory.
+
+    Discussion in the :ref:`Tips:Perturbed Host States (Shallow Defects)` tips
+    section.
+
+    For delocalised, shallow states (a.k.a. perturbed host states), the
+    hydrogenic effective mass model typically gives quite a good estimate of
+    the binding energy, at least for dispersive 3D semiconductors.
+
+    Note that this formula can also be used to estimate the binding energy of a
+    delocalised (Wannier-Mott) exciton, in which case the reduced effective
+    mass of the electron-hole pair should be used, as:
+
+    .. math::
+
+        μ_reduced = (m_e * m_h) / (m_e + m_h)
+
+    Args:
+        eff_mass (float):
+            Effective mass of the dopant.
+        dielectric (float or int or 3x1 matrix or 3x3 matrix):
+            Total dielectric constant (ionic + static contributions) of the
+            semiconductor host.
+
+    Returns:
+        float: Binding energy of the shallow dopant, in eV.
+    """
+    import scipy.constants as sc
+
+    rydberg_in_eV = sc.physical_constants["Rydberg constant times hc in eV"][0]
+
+    eff_dielectric = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
+        _convert_dielectric_to_tensor(dielectric)
+    )
+    return rydberg_in_eV * (eff_mass / eff_dielectric**2)  # in eV
 
 
 class FermiSolver(MSONable):

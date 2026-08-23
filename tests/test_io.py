@@ -11,9 +11,11 @@ import warnings
 
 import numpy as np
 import pytest
+from pymatgen.electronic_structure.core import Spin
 from test_utils import vasp_data_dir
 
 from doped.io import get_calculation_outputs
+from doped.io.outputs import nelect_from_eigenvalues
 
 
 class CalculationOutputsTestCase(unittest.TestCase):
@@ -82,14 +84,38 @@ class CalculationOutputsTestCase(unittest.TestCase):
             outputs.require("site_potentials", task="The eFNV (Kumagai) charge correction")
         outputs.require("energy", "structure")  # no error for populated attributes
 
+    def test_nelect_from_eigenvalues(self):
+        """
+        Test the ``nelect_from_eigenvalues`` fallback for determining the
+        electron count from the band occupancies (used when the electron count
+        is not directly available, e.g. ``NELECT`` with VASP), for the
+        different occupancy conventions.
+        """
+        outputs = get_calculation_outputs(self.defect_dir, parse_projected_eigen=False)
+        assert nelect_from_eigenvalues(outputs.eigenvalues, outputs.kpoint_weights) == outputs.nelect
+
+        # one spin channel with singly-normalised occupancies (as with VASP) is doubled, unless
+        # non-collinear (i.e. one electron per spinor band); 1 k-point, 3 bands:
+        eig_occs = {Spin.up: np.array([[[-1.0, 1.0], [0.0, 1.0], [1.0, 0.0]]])}
+        assert nelect_from_eigenvalues(eig_occs, [1.0]) == 4.0
+        assert nelect_from_eigenvalues(eig_occs, [1.0], noncollinear=True) == 2.0
+
+        # but doubly-occupied bands (as written by some calculators) are not doubled:
+        assert nelect_from_eigenvalues({Spin.up: np.array([[[-1.0, 2.0], [0.0, 2.0]]])}, [1.0]) == 4.0
+
+        # and neither are (collinear) spin-polarised calculations, which are summed over both channels:
+        assert (
+            nelect_from_eigenvalues(dict.fromkeys((Spin.up, Spin.down), eig_occs[Spin.up]), [1.0]) == 4.0
+        )
+
     def test_corrections_from_calculation_outputs(self):
         """
         Test that the FNV & eFNV corrections computed from
         ``CalculationOutputs`` objects match those from direct output-file
         parsing.
         """
-        from doped.analysis import DefectParser
         from doped.corrections import get_freysoldt_correction, get_kumagai_correction
+        from doped.parsing import DefectParser
 
         parser_kwargs = {"load_planar_averaged_potentials": True, "load_site_potentials": True}
         defect_outputs = get_calculation_outputs(
@@ -197,7 +223,7 @@ class SerializedBackendTestCase(unittest.TestCase):
         """
         import tempfile
 
-        from doped.analysis import DefectParser, DefectsParser
+        from doped.parsing import DefectParser, DefectsParser
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # multiple-files & SnB deprecation warnings not under test
@@ -247,6 +273,27 @@ class DeprecationShimsTestCase(unittest.TestCase):
 
         with pytest.raises(AttributeError):
             _ = doped.vasp.definitely_not_a_real_attribute
+
+    def test_doped_analysis_shim(self):
+        """
+        ``doped.analysis`` forwards to ``doped.parsing`` (and
+        ``doped.thermodynamics``) with a ``DeprecationWarning``.
+        """
+        import doped.analysis
+        import doped.parsing
+        import doped.thermodynamics
+
+        with pytest.warns(DeprecationWarning, match="doped.analysis has been renamed to doped.parsing"):
+            assert doped.analysis.DefectsParser is doped.parsing.DefectsParser
+
+        with pytest.warns(DeprecationWarning, match="import shallow_dopant_binding_energy from "):
+            assert (  # moved to doped.thermodynamics, but still forwarded
+                doped.analysis.shallow_dopant_binding_energy
+                is doped.thermodynamics.shallow_dopant_binding_energy
+            )
+
+        with pytest.raises(AttributeError):
+            _ = doped.analysis.definitely_not_a_real_attribute
 
     def test_parsing_shim(self):
         r"""

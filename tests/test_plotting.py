@@ -1,8 +1,8 @@
 """
 Tests for the `doped.utils.plotting` module, which also implicitly tests some
-of the `doped.utils.mappings` and `doped.analysis` modules.
+of the `doped.utils.mappings` and `doped.parsing` modules.
 
-Note that some of the integration tests in `test_analysis.py` also implicitly
+Note that some of the integration tests in `test_parsing.py` also implicitly
 tests much of the plotting functionality.
 
 The plotting tests are split into two ``TestCase`` classes:
@@ -34,8 +34,8 @@ from test_utils import (
     vasp_data_dir,
 )
 
-from doped.analysis import DefectParser
 from doped.core import Interstitial, Substitution
+from doped.parsing import DefectParser
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import plotting
 

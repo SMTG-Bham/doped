@@ -464,7 +464,7 @@ As discussed below, this is performed automatically in ``doped``.
     charge-carrier (electron/hole), :math:`\epsilon` is the total dielectric constant
     (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and ``Ry`` is the Rydberg constant
     (i.e. binding energy of an electron in a hydrogen atom; ~13.6 eV).
-    This formula is used in the :func:`~doped.analysis.shallow_dopant_binding_energy()` convenience
+    This formula is used in the :func:`~doped.thermodynamics.shallow_dopant_binding_energy()` convenience
     function, with example usage shown
     :ref:`here in the advanced analysis tutorial <advanced_analysis_tutorial:Estimate Dopant (Acceptor) Binding Energy>`.
     As shown in the tutorial example, this formula can also be used to estimate the Wannier-Mott exciton
@@ -756,7 +756,7 @@ Symmetry Precision (``symprec``)
 When computing the symmetries of structures, a threshold parameter has to be set in order to distinguish
 structural/positional noise from distinct site differences. In ``doped`` as in ``spglib`` (and 
 ``pymatgen``), this can be controlled with the ``symprec`` parameter (which can be set in
-|DefectsParser|, :class:`~doped.analysis.DefectParser`, all
+|DefectsParser|, :class:`~doped.parsing.DefectParser`, all
 |DefectThermodynamics| symmetry/concentration functions,
 :func:`~doped.utils.symmetry.get_orientational_degeneracy()`,
 :func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()` and others).
@@ -865,7 +865,7 @@ In the typical defect calculation workflow with ``doped`` (exemplified in the tu
   |DefectEntry| object is written to a ``{DefectEntry.name}.json`` file in the directory 
   so that all information on the generated defect structure, charge state etc. is preserved in the 
   calculation directory.
-- The parsed defect entries dict (:attr:`~doped.analysis.DefectsParser.defect_dict`) when defect
+- The parsed defect entries dict (:attr:`~doped.parsing.DefectsParser.defect_dict`) when defect
   calculations are parsed with |DefectsParser| -- written to ``output_path``. The 
   JSON filename can be set with e.g. ``DefectsParser(json_filename="custom_name.json")``, but the default 
   is ``{Host Chemical Formula}_defect_dict.json.gz``.

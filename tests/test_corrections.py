@@ -16,9 +16,9 @@ import numpy as np
 from pymatgen.core.structure import PeriodicSite, Structure
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
 
-from doped.analysis import DefectParser, DefectsParser
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
+from doped.parsing import DefectParser, DefectsParser
 
 try:
     from pymatgen.core.entries import ComputedStructureEntry

@@ -32,13 +32,13 @@ from test_utils import (
     _run_func_and_capture_stdout_warnings,
     api_key,
     custom_mpl_image_compare,
+    data_dir,
     if_present_rm,
     module_path,
     plot_chempot_heatmap_and_test_no_warnings,
     vasp_data_dir,
 )
 
-from doped.analysis import DefectsParser, guess_defect_position
 from doped.chemical_potentials import (
     CompetingPhases,
     CompetingPhasesAnalyzer,
@@ -47,6 +47,7 @@ from doped.chemical_potentials import (
 from doped.core import _get_defect_supercell_frac_coords
 from doped.generation import sort_defect_entries
 from doped.io.vasp.outputs import get_vasprun
+from doped.parsing import DefectsParser, guess_defect_position
 from doped.thermodynamics import (
     DefectThermodynamics,
     _add_effective_dopant_concentration,
@@ -54,6 +55,7 @@ from doped.thermodynamics import (
     get_fermi_dos,
     get_interpolated_chempots,
     scissor_dos,
+    shallow_dopant_binding_energy,
 )
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
@@ -185,15 +187,13 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.orig_MgO_defect_dict = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_defect_dict.json.gz"))
         cls.MgO_chempots = loadfn(os.path.join(EXAMPLE_DIR, "MgO/CompetingPhases/MgO_chempots.json"))
 
-        cls.Sb2O5_chempots = loadfn(os.path.join(vasp_data_dir, "Sb2O5/Sb2O5_chempots.json"))
-        cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(vasp_data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
+        cls.Sb2O5_chempots = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_chempots.json"))
+        cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
 
         cls.orig_ZnS_defect_thermo = loadfn(os.path.join(vasp_data_dir, "ZnS/ZnS_thermo.json"))
 
-        cls.orig_Se_ext_no_pnict_thermo = loadfn(
-            os.path.join(vasp_data_dir, "Se_Ext_No_Pnict_Thermo.json.gz")
-        )
-        cls.orig_Se_pnict_thermo = loadfn(os.path.join(vasp_data_dir, "Se_Pnict_Thermo.json.gz"))
+        cls.orig_Se_ext_no_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Ext_No_Pnict_Thermo.json.gz"))
+        cls.orig_Se_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Pnict_Thermo.json.gz"))
 
         # cls.CdTe_fermi_dos = get_fermi_dos(
         #     os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
@@ -1716,7 +1716,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
 
     def _check_YTOS_symmetries_degeneracies(self, YTOS_defect_thermo: DefectThermodynamics):
-        # this behaviour is also tested extensively in ``test_analysis.py``;
+        # this behaviour is also tested extensively in ``test_parsing.py``;
         # ``test_bulk_symprec_and_periodicity_breaking_checks``
         sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
             YTOS_defect_thermo.get_symmetries_and_degeneracies
@@ -3464,6 +3464,43 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         with pytest.raises(ValueError) as exc:
             self.YTOS_defect_thermo.plot_chempot_heatmap()
         assert "No chemical potentials in DefectThermodynamics.chempots to plot!" in str(exc.value)
+
+
+def test_shallow_dopant_binding_energy():
+    """
+    Test the shallow dopant binding energy convenience function in
+    ``doped.thermodynamics``.
+
+    Using examples from the advanced analysis tutorial.
+    """
+    cu2sise3_conductivity_eff_mass = 1 / np.mean([1 / 0.92, 1 / 1.87, 1 / 0.18])
+    # (If we knew the degeneracy of these different crystal directions we should account for that here)
+
+    cu2sise3_shallow_acceptor_binding_energy = shallow_dopant_binding_energy(
+        eff_mass=cu2sise3_conductivity_eff_mass,
+        dielectric=[[8.73, 0, -0.48], [0.0, 7.78, 0], [-0.48, 0, 10.11]],
+    )
+    assert np.isclose(cu2sise3_shallow_acceptor_binding_energy, 0.0739, atol=0.001)
+
+    # another quick example; Cs₂TiBr₆ using values from https://doi.org/10.1021/acs.jpclett.2c02436
+    assert np.isclose(shallow_dopant_binding_energy((2.7 * 0.9) / (2.7 + 0.9), 3.84), 0.62, atol=0.01)
+
+    cdte_m_h_eff = 1 / np.mean(
+        [1 / 0.88, 1 / 0.11]
+    )  # harmonic mean of light and heavy hole masses in CdTe
+    cdte_m_e_eff = 0.095
+    # taken from https://scholar.google.com/citations?view_op=view_citation&citation_for_view=P-7ICrQAAAAJ:O3NaXMp0MMsC
+
+    cdte_shallow_acceptor_binding_energy = shallow_dopant_binding_energy(
+        eff_mass=cdte_m_h_eff, dielectric=9.13
+    )
+    cdte_exciton_binding_energy = shallow_dopant_binding_energy(
+        eff_mass=(cdte_m_h_eff * cdte_m_e_eff)
+        / (cdte_m_h_eff + cdte_m_e_eff),  # reduced e-h mass for exciton binding
+        dielectric=9.13,
+    )
+    assert np.isclose(cdte_shallow_acceptor_binding_energy, 0.0319, atol=0.001)
+    assert np.isclose(cdte_exciton_binding_energy, 0.0104, atol=0.001)
 
 
 def belas_linear_fit(T):  #

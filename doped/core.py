@@ -1772,7 +1772,7 @@ def _update_defect_entry_structure_metadata(
             ``symprec``, ``dist_tol_factor``) in the
             ``defect_and_info_from_structures`` function.
     """
-    from doped.analysis import defect_and_info_from_structures
+    from doped.parsing import defect_and_info_from_structures
 
     bulk_supercell = _get_bulk_supercell(defect_entry)
     defect_supercell = _get_defect_supercell(defect_entry)
@@ -1837,7 +1837,7 @@ def template_defect_entry_from_structures(
             site information, but no ``bulk_entry`` and a zero-energy
             ``sc_entry``.
     """
-    from doped.analysis import defect_and_info_from_structures
+    from doped.parsing import defect_and_info_from_structures
 
     (
         defect,

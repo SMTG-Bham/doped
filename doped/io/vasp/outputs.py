@@ -411,7 +411,7 @@ def _find_calc_outputs(
     ``SUBFOLDER_PRIORITY``) when ``subfolder`` is ``None``; VASP-defaulted
     wrapper of :func:`doped.io.utils._find_calc_outputs`.
 
-    Shared discovery logic used by both :func:`~doped.analysis.DefectsParser`
+    Shared discovery logic used by both :func:`~doped.parsing.DefectsParser`
     and :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer`.
     """
     return _io_utils._find_calc_outputs(
@@ -617,7 +617,7 @@ def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str
     Convenience function to generate a formatted warning string listing
     mismatching INCAR tags and their values in a clean output.
 
-    Used in ``doped.analysis`` and ``doped.chemical_potentials`` when checking
+    Used in ``doped.parsing`` and ``doped.chemical_potentials`` when checking
     calculation compatibilities.
 
     Args:

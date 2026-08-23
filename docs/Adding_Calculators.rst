@@ -66,9 +66,14 @@ and ``energy`` (final total energy in eV) are required in
    * - ``run_metadata``
      - Bulk/defect calculation compatibility checks
 
+If your calculator does not report the total electron count directly, but does
+give the band eigenvalues & occupancies, then
+:func:`~doped.io.outputs.nelect_from_eigenvalues` can be used to determine
+``nelect`` from these (and the `k`-point weights).
+
 With this, ``doped.io.get_calculation_outputs(path, calculator="<calculator>")``
 dispatches to your parser, and -- more importantly --
-:class:`~doped.analysis.DefectsParser`\ /\ :class:`~doped.analysis.DefectParser`
+:class:`~doped.parsing.DefectsParser`\ /\ :class:`~doped.parsing.DefectParser`
 can parse full defect calculation sets with
 ``DefectsParser(..., calculator="<calculator>")``.
 

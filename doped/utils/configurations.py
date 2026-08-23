@@ -438,7 +438,7 @@ def orient_s2_like_s1(
             else struct2_really_like_struct1
         )
 
-        from doped.analysis import guess_defect_position  # avoid circular import
+        from doped.parsing import guess_defect_position  # avoid circular import
 
         if s1_for_check.composition == s2_for_check.composition and not check_atom_mapping_far_from_defect(
             defect_supercell=s2_for_check,

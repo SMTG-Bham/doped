@@ -9,12 +9,12 @@ Modules
 .. toctree::
    :maxdepth: 3
 
-   doped.analysis
    doped.chemical_potentials
    doped.core
    doped.corrections
    doped.generation
    doped.init
+   doped.parsing
    doped.thermodynamics
    doped.utils
    doped.io

@@ -5,6 +5,12 @@ Change Log
 
 Unreleased
 --------------
+- ``doped.analysis`` has been renamed to ``doped.parsing`` (matching its contents -- defect calculation
+  parsing & defect identification -- and the ``parsing_tutorial``), with a deprecated ``doped.analysis``
+  alias retained, which warns on use.
+
+  - ``shallow_dopant_binding_energy`` has moved to ``doped.thermodynamics``.
+
 - Major restructuring for multi-calculator support beyond VASP: calculator-specific code now lives in the new
   ``doped.io`` subpackage, with ``doped.io.<calculator>.inputs``/``outputs`` modules per calculator.
 

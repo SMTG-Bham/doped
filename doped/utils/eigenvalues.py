@@ -18,9 +18,9 @@ from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
-from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry, template_defect_entry_from_structures
 from doped.io.outputs import CalculationOutputs
+from doped.parsing import defect_site_from_structures
 from doped.utils import vise_handling
 from doped.utils.plotting import doped_plot_style
 

@@ -1,7 +1,6 @@
 """
-Tests for the ``doped.analysis`` module, which also implicitly tests most of
-the ``doped.utils.mappings`` module, and some ``doped.thermodynamics``
-functions.
+Tests for the ``doped.parsing`` module, which also implicitly tests most of the
+``doped.utils.mappings`` module, and some ``doped.thermodynamics`` functions.
 """
 
 import gzip
@@ -27,15 +26,6 @@ from test_utils import (
     vasp_data_dir,
 )
 
-from doped.analysis import (
-    DefectParser,
-    DefectsParser,
-    defect_from_structures,
-    defect_name_from_structures,
-    guess_defect_position,
-    parse_symmetry_and_degeneracy_metadata,
-    shallow_dopant_binding_energy,
-)
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
 from doped.io.outputs import CalculationOutputs
 from doped.io.vasp.outputs import (
@@ -44,6 +34,14 @@ from doped.io.vasp.outputs import (
     get_procar,
     get_vasprun,
     spin_degeneracy_from_vasprun,
+)
+from doped.parsing import (
+    DefectParser,
+    DefectsParser,
+    defect_from_structures,
+    defect_name_from_structures,
+    guess_defect_position,
+    parse_symmetry_and_degeneracy_metadata,
 )
 from doped.utils.efficiency import Structure
 from doped.utils.eigenvalues import get_eigenvalue_analysis
@@ -4162,43 +4160,6 @@ class ReorderedParsingTestCase(unittest.TestCase):
         assert np.isclose(
             sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt2.corrections.values())
         )
-
-
-def test_shallow_dopant_binding_energy():
-    """
-    Test the shallow dopant binding energy convenience function in
-    ``doped.analysis``.
-
-    Using examples from the advanced analysis tutorial.
-    """
-    cu2sise3_conductivity_eff_mass = 1 / np.mean([1 / 0.92, 1 / 1.87, 1 / 0.18])
-    # (If we knew the degeneracy of these different crystal directions we should account for that here)
-
-    cu2sise3_shallow_acceptor_binding_energy = shallow_dopant_binding_energy(
-        eff_mass=cu2sise3_conductivity_eff_mass,
-        dielectric=[[8.73, 0, -0.48], [0.0, 7.78, 0], [-0.48, 0, 10.11]],
-    )
-    assert np.isclose(cu2sise3_shallow_acceptor_binding_energy, 0.0739, atol=0.001)
-
-    # another quick example; Cs₂TiBr₆ using values from https://doi.org/10.1021/acs.jpclett.2c02436
-    assert np.isclose(shallow_dopant_binding_energy((2.7 * 0.9) / (2.7 + 0.9), 3.84), 0.62, atol=0.01)
-
-    cdte_m_h_eff = 1 / np.mean(
-        [1 / 0.88, 1 / 0.11]
-    )  # harmonic mean of light and heavy hole masses in CdTe
-    cdte_m_e_eff = 0.095
-    # taken from https://scholar.google.com/citations?view_op=view_citation&citation_for_view=P-7ICrQAAAAJ:O3NaXMp0MMsC
-
-    cdte_shallow_acceptor_binding_energy = shallow_dopant_binding_energy(
-        eff_mass=cdte_m_h_eff, dielectric=9.13
-    )
-    cdte_exciton_binding_energy = shallow_dopant_binding_energy(
-        eff_mass=(cdte_m_h_eff * cdte_m_e_eff)
-        / (cdte_m_h_eff + cdte_m_e_eff),  # reduced e-h mass for exciton binding
-        dielectric=9.13,
-    )
-    assert np.isclose(cdte_shallow_acceptor_binding_energy, 0.0319, atol=0.001)
-    assert np.isclose(cdte_exciton_binding_energy, 0.0104, atol=0.001)
 
 
 def test_guess_defect_position_with_bulk_supercell():

@@ -29,7 +29,14 @@ from scipy.spatial.distance import squareform
 from sympy import Eq, Expr, simplify, solve
 from tqdm import tqdm
 
-from doped.core import Defect, DefectEntry, template_defect_entry_from_structures
+from doped.core import (
+    Defect,
+    DefectEntry,
+    _get_bulk_supercell,
+    _get_defect_supercell,
+    _get_defect_supercell_frac_coords,
+    template_defect_entry_from_structures,
+)
 from doped.utils.configurations import orient_s2_like_s1
 from doped.utils.efficiency import Element, PeriodicSite, SpacegroupAnalyzer, Structure
 from doped.utils.mappings import _get_site_mapping_from_coords_and_indices, get_site_mappings
@@ -3426,7 +3433,7 @@ def _defect_coords_from_structures(defect_supercell: Structure, bulk_supercell: 
     """
     Cartesian defect-site coordinates from bulk vs defect structure comparison.
     """
-    from doped.analysis import defect_site_from_structures  # avoid circular import
+    from doped.parsing import defect_site_from_structures  # avoid circular import
 
     site = defect_site_from_structures(defect_supercell, bulk_supercell, _parameter_order_warn=False)
     assert isinstance(site, PeriodicSite)
@@ -3591,7 +3598,7 @@ def local_point_symmetry(
     elif bulk_supercell is not None:  # determine from bulk vs defect structure comparison
         centre_cart = _defect_coords_from_structures(defect_supercell, bulk_supercell)
     else:  # no bulk reference either; guess the defect position
-        from doped.analysis import guess_defect_position  # avoid circular import
+        from doped.parsing import guess_defect_position  # avoid circular import
 
         centre_cart = guess_defect_position(defect_supercell)
         if centre_error_range is None:
@@ -3889,12 +3896,6 @@ def point_symmetry_from_defect_entry(
     Returns:
         str: Defect point symmetry (Schoenflies symbol).
     """
-    from doped.core import (  # avoid circular import (doped.core imports doped.utils.symmetry)
-        _get_bulk_supercell,
-        _get_defect_supercell,
-        _get_defect_supercell_frac_coords,
-    )
-
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very

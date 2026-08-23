@@ -22,11 +22,6 @@ from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.util.typing import PathLike
 
-from doped.utils.symmetry import (
-    _num_electrons_from_charge_state,
-    _spin_degeneracy_from_num_electrons_and_magnetization,
-)
-
 
 @dataclass
 class CalculationOutputs(MSONable):
@@ -231,6 +226,11 @@ class CalculationOutputs(MSONable):
         Returns:
             int: Spin degeneracy of the system.
         """
+        from doped.utils.symmetry import (  # avoid circular import (symmetry -> core -> io.outputs)
+            _num_electrons_from_charge_state,
+            _spin_degeneracy_from_num_electrons_and_magnetization,
+        )
+
         if charge_state is not None:
             num_electrons = _num_electrons_from_charge_state(self.structure, charge_state)
         else:
