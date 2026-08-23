@@ -9,12 +9,15 @@ import os
 import warnings
 from functools import lru_cache
 from importlib import resources
+from typing import TYPE_CHECKING
 
 import numpy as np
 from monty.io import zopen
 from monty.json import MSONable
 from monty.serialization import loadfn
 from pymatgen.core import SETTINGS
+from pymatgen.core.entries import ComputedEntry
+from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar
 from pymatgen.io.vasp.sets import VaspInputSet
@@ -29,6 +32,9 @@ from doped.core import (
 from doped.generation import DefectsGenerator, _custom_formatwarning, get_defect_name_from_entry
 from doped.io.inputs import DefectsSetBase
 from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings
+
+if TYPE_CHECKING:
+    from doped.chemical_potentials import CompetingPhases
 
 _ignore_pmg_warnings()
 warnings.formatwarning = _custom_formatwarning
@@ -48,6 +54,9 @@ default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "VASP_sets/VASP_PotcarSet.
 default_relax_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/VASP_RelaxSet.yaml"))
 default_HSE_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/VASP_HSESet.yaml"))
 default_defect_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/VASP_DefectSet.yaml"))
+pbesol_convrg_set = loadfn(  # just INCAR settings; for competing phase k-point convergence testing
+    os.path.join(MODULE_DIR, "VASP_sets/VASP_PBEsol_ConvergenceSet.yaml")
+)
 default_defect_relax_set = copy.deepcopy(default_relax_set)
 default_defect_relax_set = deep_dict_update(
     default_defect_relax_set, default_defect_set
@@ -2626,3 +2635,865 @@ class DefectsSet(DefectsSetBase):
 #  to `.defect_sets` etc?
 # TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
 #  and the structures don't match (otherwise overwrite)
+
+
+# ---------------------------------------------------------------------------------------------------- #
+# Competing phase (bulk crystal) calculation inputs, for chemical potential analysis.
+# These functions are part of the ``doped.io`` input-generation backend protocol, and are dispatched to
+# by the corresponding :class:`~doped.chemical_potentials.CompetingPhases` methods.
+# ---------------------------------------------------------------------------------------------------- #
+
+
+def get_kpoint_convergence_sets(
+    competing_phases: "CompetingPhases",
+    kpoints_metals: tuple[float, float, float] = (40.0, 1000.0, 5.0),
+    kpoints_nonmetals: tuple[float, float, float] = (5.0, 120.0, 5.0),
+    user_incar_settings: dict | None = None,
+    user_potcar_functional: str = "PBE",
+    user_potcar_settings: dict | None = None,
+    extrinsic_only: bool = False,
+    output_path: PathLike = "CompetingPhases",
+) -> dict[str, DopedDictSet]:
+    r"""
+    Generates a dictionary of ``DopedDictSet``\s (subclasses of
+    :class:`~pymatgen.io.vasp.sets.VaspInputSet`) for k-point convergence
+    testing of competing phases, using PBEsol (GGA) DFT by default.
+
+    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic)
+    or 0 if not.
+
+    Args:
+        competing_phases (CompetingPhases):
+            The :class:`~doped.chemical_potentials.CompetingPhases` object
+            whose entries to generate calculation inputs for.
+        kpoints_metals (tuple[float, float, float]):
+            Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
+            for metallic entries (those with zero band gap), as a
+            ``(min, max, step)`` tuple. Note that only unique kpoint
+            combinations are generated, so small step sizes (as default)
+            just results in each k-points choice between ``min`` and
+            ``max`` being included.
+        kpoints_nonmetals (tuple[float, float, float]):
+            Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
+            for non-metallic entries (those with a non-zero band gap), as a
+            ``(min, max, step)`` tuple. Note that only unique kpoint
+            combinations are generated, so small step sizes (as default)
+            just results in each k-points choice between ``min`` and
+            ``max`` being included.
+        user_incar_settings (dict):
+            Override the default INCAR settings e.g.
+            ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
+            any non-numerical or non-``True``/``False`` flags need to be
+            input as strings with quotation marks. See
+            ``doped/io/vasp/VASP_sets/VASP_PBEsol_ConvergenceSet.yaml`` for
+            the default settings.
+        user_potcar_functional (str):
+            POTCAR functional to use. Default is "PBE" and if this fails,
+            tries "PBE_52", then "PBE_54".
+        user_potcar_settings (dict):
+            Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
+            ``POTCAR`` set.
+        extrinsic_only (bool):
+            If ``True``, only generate inputs for
+            ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
+            existing intrinsic competing-phases set). Default is ``False``
+            (generate inputs for all entries).
+        output_path (PathLike):
+            Top-level output directory name (used as a key prefix).
+            Default is ``"CompetingPhases"``.
+
+    Returns:
+        dict[str, DopedDictSet]:
+            Mapping of output folder paths to generated ``DopedDictSet``\s
+            (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+    """
+    base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
+    base_incar_settings.update(user_incar_settings or {})
+    kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
+    dict_sets: dict[str, DopedDictSet] = {}
+    extrinsic_entries = getattr(competing_phases, "extrinsic_entries", [])
+
+    for entry, category, structure, folder_name in competing_phases._iter_entries_with_categories():
+        if extrinsic_only and entry not in extrinsic_entries:
+            continue
+        if category == "molecules":
+            continue  # no molecular entries as they don't need convergence testing
+
+        min_k, max_k, step_k = kpoints_by_metallicity[category]
+        incar_settings = copy.deepcopy(base_incar_settings or {})
+        _set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
+        if category == "metals":
+            _set_default_metal_smearing(incar_settings, user_incar_settings or {})
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
+            dict_set = DopedDictSet(  # ``doped`` DopedDictSet for quicker IO functions
+                structure=structure,
+                user_incar_settings=incar_settings,
+                user_kpoints_settings={"reciprocal_density": min_k},
+                user_potcar_settings=user_potcar_settings or {},
+                user_potcar_functional=user_potcar_functional,
+                force_gamma=True,
+            )
+
+            _generated_kpoints_folders = []
+            for kpoint in np.arange(min_k, max_k, step_k):
+                dict_set = copy.deepcopy(dict_set)
+                dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
+                kname = (
+                    "k"
+                    + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
+                    + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
+                )
+                if kname in _generated_kpoints_folders:
+                    continue  # this set of kpoints already generated, bump reciprocal density more
+
+                fname = f"{output_path}/{folder_name}/kpoint_converge/{kname}"
+                dict_sets[fname] = dict_set
+                _generated_kpoints_folders.append(kname)
+
+    molecular_entries_to_report = (
+        [entry for entry in competing_phases.molecular_entries if entry in extrinsic_entries]
+        if extrinsic_only
+        else competing_phases.molecular_entries
+    )
+    if molecular_entries_to_report:
+        print(
+            f"Note that diatomic molecular phases, calculated as molecules-in-a-box "
+            f"({', '.join([e.name for e in molecular_entries_to_report])} in this case), "
+            f"do not require k-point convergence testing, as Γ-only sampling is sufficient."
+        )
+    return dict_sets
+
+
+def get_relaxation_sets(
+    competing_phases: "CompetingPhases",
+    kpoints_metals: float = 200.0,
+    kpoints_nonmetals: float = 64.0,  # MPRelaxSet default
+    user_incar_settings: dict | None = None,
+    user_potcar_functional: str = "PBE",
+    user_potcar_settings: dict | None = None,
+    extrinsic_only: bool = False,
+    output_path: PathLike = "CompetingPhases",
+    subfolder: PathLike = "Relax",
+) -> dict[str, DopedDictSet]:
+    r"""
+    Generates ``DopedDictSet``\s for relaxations of the competing phases, using
+    HSE06 (hybrid DFT) by default (consistent with the default input settings
+    for defect calculations in :mod:`doped.vasp`).
+
+    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+    if not. Note that any changes to the default ``INCAR``/``POTCAR``
+    settings should be consistent with those used for the defect supercell
+    calculations.
+
+    Note that this function uses a single kpoint density setting each for
+    metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
+    molecules (Gamma-only), while one will often want to specify custom
+    k-point settings for each material individually based on convergence
+    testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
+    cost.
+
+    Note that, because these relaxations usually involve volume relaxation,
+    one should successively repeat the relaxation from the previous relaxed
+    geometry until convergence (no more significant volume changes), or use
+    a higher plane-wave cutoff energy (``ENCUT`` in ``VASP``) for the
+    volume relaxations (but using an energy cutoff consistent with any
+    defect calculations for a final single-point energy calculation), to
+    avoid spurious Pulay stress effects.
+
+    See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
+    for tips on boosting the efficiency of competing phases calculations.
+
+    Args:
+        competing_phases (CompetingPhases):
+            The :class:`~doped.chemical_potentials.CompetingPhases` object
+            whose entries to generate calculation inputs for.
+        kpoints_metals (float):
+            Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
+            entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
+            Note that you may want to specify custom k-point settings for
+            each material individually based on convergence testing to
+            minimise cost.
+        kpoints_nonmetals (float):
+            Kpoint density per inverse volume (kpoints/Å⁻³) for
+            non-metallic entries (those with non-zero band gap). Default is
+            64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
+            you may want to specify custom k-point settings for each
+            material individually based on convergence testing to minimise
+            cost.
+        user_incar_settings (dict):
+            Override the default INCAR settings e.g.
+            ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
+            Note that any non-numerical or non-``True``/``False`` flags
+            need to be input as strings with quotation marks.
+            See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
+            ``VASP_HSESet.yaml`` for the default settings.
+        user_potcar_functional (str):
+            POTCAR functional to use. Default is "PBE" and if this fails,
+            tries "PBE_52", then "PBE_54".
+        user_potcar_settings (dict):
+            Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
+            ``POTCAR`` set.
+        extrinsic_only (bool):
+            If ``True``, only generate inputs for
+            ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
+            existing intrinsic competing-phases set). Default is ``False``
+            (generate inputs for all entries).
+        output_path (PathLike):
+            Top-level output directory name (used as a key prefix).
+            Default is ``"CompetingPhases"``.
+        subfolder (PathLike):
+            Output folder structure is
+            ``<output_path>/<competing_phase_dir>/<subfolder>``.
+            Default is ``"Relax"``. Set to ``"."`` to write input files
+            directly to ``<output_path>/<competing_phase_dir>``, with no
+            subfolders created.
+
+    Returns:
+        dict[str, DopedDictSet]:
+            Mapping of output folder paths to generated ``DopedDictSet``\s
+            (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+    """
+    base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
+    if "EDIFF" in (user_incar_settings or {}):  # remove default EDIFF PER ATOM setting if EDIFF set
+        base_incar_settings.pop("EDIFF_PER_ATOM", None)
+
+    lhfcalc = (user_incar_settings or {}).get("LHFCALC", True)
+    if isinstance(lhfcalc, str):
+        lhfcalc = lhfcalc.lower().startswith("t")
+    if lhfcalc:
+        base_incar_settings.update(default_HSE_set["INCAR"])
+
+    base_incar_settings.update(user_incar_settings or {})
+    dict_sets: dict[str, DopedDictSet] = {}
+    extrinsic_entries = getattr(competing_phases, "extrinsic_entries", [])
+
+    for entry, category, structure, folder_name in competing_phases._iter_entries_with_categories():
+        if extrinsic_only and entry not in extrinsic_entries:
+            continue
+        if category == "molecules":
+            user_kpoints_settings = Kpoints().from_dict(
+                {
+                    "comment": "Gamma-only kpoints for molecule-in-a-box",
+                    "generation_style": "Gamma",
+                }
+            )
+        elif category == "non-metals":
+            user_kpoints_settings = {"reciprocal_density": kpoints_nonmetals}
+        else:  # metals
+            user_kpoints_settings = {"reciprocal_density": kpoints_metals}
+
+        incar_settings = copy.deepcopy(base_incar_settings or {})
+        if category == "molecules":
+            incar_settings["ISIF"] = 2  # don't change the volume
+            incar_settings["KPAR"] = 1  # don't use k-point parallelization, gamma only
+        _set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
+        if category == "metals":
+            _set_default_metal_smearing(incar_settings, user_incar_settings or {})
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
+            dict_set = DopedDictSet(  # ``doped`` DopedDictSet for quicker IO functions
+                structure=structure,
+                user_incar_settings=incar_settings,
+                user_kpoints_settings=user_kpoints_settings,
+                user_potcar_settings=user_potcar_settings or {},
+                user_potcar_functional=user_potcar_functional,
+                force_gamma=True,
+            )
+
+            fname = f"{output_path}/{folder_name}/{subfolder}"
+            dict_sets[fname] = dict_set
+
+    return dict_sets
+
+
+def get_singlepoint_sets(
+    competing_phases: "CompetingPhases",
+    kpoints_metals: float = 200.0,
+    kpoints_nonmetals: float = 64.0,  # MPRelaxSet default
+    soc: bool | None = None,
+    user_incar_settings: dict | None = None,
+    user_potcar_functional: str = "PBE",
+    user_potcar_settings: dict | None = None,
+    extrinsic_only: bool = False,
+    output_path: PathLike = "CompetingPhases",
+    subfolder: PathLike | None = None,
+) -> dict[str, DopedDictSet]:
+    r"""
+    Generates ``DopedDictSet``\s for single-point (static) energy calculations
+    of the competing phases (i.e. ``NSW = 0``, ``IBRION = -1`` in ``VASP``),
+    using HSE06 (hybrid DFT) by default (consistent with the default input
+    settings for defect calculations in :mod:`doped.vasp`).
+
+    These are expected to be used as the final energy calculation after
+    geometry relaxation (from :meth:`write_relaxation_files`), to obtain
+    accurate total energies with tight convergence settings.
+
+    If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
+    ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
+    default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
+    explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
+    where the max atomic number across all species (host and extrinsic) is
+    Z >= 31 (heavier than Zn), matching the convention in
+    :mod:`doped.vasp`.
+
+    Inclusion of SOC is crucial for accurate formation energies and
+    chemical potentials in heavy-element systems, as discussed in
+    |Guidelines Perspective|. However, non-SOC energies can generally be
+    reliably used to determine `relative` energies of polymorphs, of the
+    same composition/oxidation states, to good accuracy, which can be
+    useful for pre-screening (e.g. then only performing more expensive SOC
+    calculations on the ground-state polymorph of each potential competing
+    phase). Moreover, one typically turns off symmetry for SOC calculations
+    (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
+    crystal symmetries due to spin-space coupling. However, one generally
+    finds that total energies from SOC calculations with (``VASP``)
+    symmetry routines turned on give energies consistent with no-symmetry
+    calculations, and can be much faster. Thus by default we do not turn
+    off symmetry for SOC calculations here -- note that the electronic band
+    structure from these calculations is thus unreliable.
+
+    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+    if not. Note that any changes to the default ``INCAR``/``POTCAR``
+    settings should be consistent with those used for the defect supercell
+    calculations.
+
+    For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
+    default here) is well-suited to the geometry relaxations, tetrahedron
+    smearing (``ISMEAR = -5``) typically gives more accurate total energies
+    for these final single-point calculations with modest k-point
+    densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
+    Often this requires a lower `k`-point density than Methfessel-Paxton
+    smearing, and so it can be worth re-running k-point convergence testing
+    (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
+    check for cheaper converged `k`-point densities for these final
+    single-point calculations -- particularly useful if e.g. performing
+    hybrid DFT SOC calculations. See the
+    :ref:`Tips:Competing Phases & Chemical Potentials` tips section
+    for further tips on boosting the efficiency of competing phases
+    calculations.
+
+    Note that this function uses a single kpoint density setting each for
+    metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
+    molecules (Gamma-only), while one will often want to specify custom
+    k-point settings for each material individually based on convergence
+    testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
+    cost.
+
+    Args:
+        competing_phases (CompetingPhases):
+            The :class:`~doped.chemical_potentials.CompetingPhases` object
+            whose entries to generate calculation inputs for.
+        kpoints_metals (float):
+            Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
+            entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
+            Note that you may want to specify custom k-point settings for
+            each material individually based on convergence testing to
+            minimise cost.
+        kpoints_nonmetals (float):
+            Kpoint density per inverse volume (kpoints/Å⁻³) for
+            non-metallic entries (those with non-zero band gap). Default is
+            64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
+            you may want to specify custom k-point settings for each
+            material individually based on convergence testing to minimise
+            cost.
+        soc (bool):
+            Whether to include spin-orbit coupling (SOC), by setting
+            ``LSORBIT = True`` in ``VASP`` ``INCAR`` files. If not set
+            (when ``soc = None``; default), SOC is enabled when the max
+            atomic number across all species (host and extrinsic) is Z >=
+            31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
+            calculations, and the default ``subfolder`` name is set to
+            ``"vasp_ncl"`` when ``soc`` is ``True``.
+        user_incar_settings (dict):
+            Override the default INCAR settings e.g.
+            ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
+            Note that any non-numerical or non-``True``/``False`` flags
+            need to be input as strings with quotation marks.
+            See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
+            ``VASP_HSESet.yaml`` for the default settings.
+        user_potcar_functional (str):
+            POTCAR functional to use. Default is "PBE" and if this fails,
+            tries "PBE_52", then "PBE_54".
+        user_potcar_settings (dict):
+            Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
+            ``POTCAR`` set.
+        extrinsic_only (bool):
+            If ``True``, only generate inputs for
+            ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
+            existing intrinsic competing-phases set). Default is ``False``
+            (generate inputs for all entries).
+        output_path (PathLike):
+            Top-level output directory name (used as a key prefix).
+            Default is ``"CompetingPhases"``.
+        subfolder (PathLike):
+            Output folder structure is
+            ``<output_path>/<competing_phase_dir>/<subfolder>`` where
+            ``subfolder`` = 'SinglePoint' by default if ``soc`` is
+            ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
+            to write input files directly to
+            ``<output_path>/<competing_phase_dir>``, with no subfolders
+            created.
+
+    Returns:
+        dict[str, DopedDictSet]:
+            Mapping of output folder paths to generated ``DopedDictSet``\s
+            (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+    """
+    if soc is None:
+        all_elements = competing_phases.intrinsic_elements + getattr(
+            competing_phases, "extrinsic_elements", []
+        )
+        max_Z = max(Element(el).Z for el in all_elements)
+        soc = max_Z >= 31
+
+        if soc:  # if SOC being automatically determined, print an info message
+            print(
+                "Spin-orbit coupling (SOC) is being used by default for competing phase single-point "
+                "calculations, as the heaviest element present (across intrinsic and extrinsic "
+                "species) has an atomic number Z >= 31 -- consistent with the convention in "
+                "`DefectsSet`. Set `soc` explicitly to control this behaviour (and suppress this "
+                "message). As always, consistent settings with the defect supercell calculations "
+                "should be used for the final single-point energy calculations.",
+            )
+
+    # build merged INCAR settings: singlepoint tags + SOC on top of user settings
+    sp_incar_settings = copy.deepcopy(singlepoint_incar_settings)
+    # TODO: Set ISMEAR to -5 for singlepoint calculations if sufficient KPOINT density? And for defect
+    # calcs? Tools for handling this in ``pymatgen``?
+    if soc:
+        sp_incar_settings["LSORBIT"] = True
+    sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
+
+    if subfolder is None:
+        subfolder = "vasp_ncl" if soc else "SinglePoint"
+
+    # reuse relaxation set generation with the singlepoint INCAR overrides
+    return get_relaxation_sets(
+        competing_phases,
+        kpoints_metals=kpoints_metals,
+        kpoints_nonmetals=kpoints_nonmetals,
+        user_incar_settings=sp_incar_settings,
+        user_potcar_functional=user_potcar_functional,
+        user_potcar_settings=user_potcar_settings,
+        extrinsic_only=extrinsic_only,
+        output_path=output_path,
+        subfolder=subfolder,
+    )
+
+
+def write_input_sets(
+    input_sets: dict[str, DopedDictSet], poscar: bool = True, **kwargs
+) -> dict[str, DopedDictSet]:
+    r"""
+    Write a dictionary of ``DopedDictSet``\s to their corresponding output
+    folders, warning if any already exist.
+
+    ``POSCAR`` writing is controlled by the ``poscar`` argument (default
+    ``True``). ``POSCAR``/``KPOINTS`` are always skipped for nominal
+    (placeholder) structures, regardless of ``poscar``.
+    """
+    for fname, input_set in input_sets.items():
+        write_kwargs = copy.deepcopy(kwargs)
+        write_kwargs["poscar"] = poscar
+        if input_set.structure.properties.get("_is_nominal_structure", False):
+            write_kwargs.update({"poscar": False, "kpoints": False})
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
+            if os.path.exists(fname):
+                warnings.warn(f"Output folder {fname} already exists. Overwriting files.")
+            input_set.write_input(fname, **write_kwargs)
+
+    return input_sets
+
+
+def _set_spin_polarisation(
+    incar_settings: dict,
+    user_incar_settings: dict,
+    entry: ComputedEntry,
+) -> None:
+    """
+    If the entry has a non-zero total magnetization (greater than the default
+    tolerance of 0.1), set ``ISPIN`` to 2 (allowing spin polarisation) and
+    ``NUPDOWN`` equal to the integer-rounded total magnetization.
+
+    Otherwise ``ISPIN`` is not set, so spin polarisation is not allowed (as
+    typically desired for non-magnetic phases, for efficiency).
+
+    See the :ref:`Tips:Magnetization` tips section.
+    """
+    magnetization = entry.data.get("summary", {}).get("total_magnetization")
+    if magnetization is not None and magnetization > 0.1:  # account for magnetic moment
+        incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
+        if "NUPDOWN" not in incar_settings and int(magnetization) > 0:
+            incar_settings["NUPDOWN"] = int(magnetization)
+
+    # otherwise ISPIN not set, so no spin polarisation
+
+
+def _set_default_metal_smearing(incar_settings: dict, user_incar_settings: dict) -> None:
+    """
+    Set the smearing parameters to the ``doped`` defaults for metallic phases
+    (i.e. ``ISMEAR`` = 2 (Methfessel-Paxton) and ``SIGMA`` = 0.2 eV).
+    """
+    incar_settings["ISMEAR"] = user_incar_settings.get("ISMEAR", 2)
+    incar_settings["SIGMA"] = user_incar_settings.get("SIGMA", 0.2)
+
+
+def write_kpoint_convergence_files(
+    competing_phases: "CompetingPhases",
+    kpoints_metals: tuple[float, float, float] = (40.0, 1000.0, 5.0),
+    kpoints_nonmetals: tuple[float, float, float] = (5.0, 120.0, 5.0),
+    user_incar_settings: dict | None = None,
+    user_potcar_functional: str = "PBE",
+    user_potcar_settings: dict | None = None,
+    extrinsic_only: bool = False,
+    output_path: PathLike = "CompetingPhases",
+    **kwargs,
+) -> dict[str, DopedDictSet]:
+    r"""
+    Generates and writes VASP input files for k-point convergence testing of
+    competing phases, using PBEsol (GGA) DFT by default.
+
+    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+    if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
+    Returns the corresponding dictionary of ``DopedDictSet`` objects
+    (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
+    contain the input file settings.
+
+    Args:
+        competing_phases (CompetingPhases):
+            The :class:`~doped.chemical_potentials.CompetingPhases` object
+            whose entries to generate calculation inputs for.
+        kpoints_metals (tuple[float, float, float]):
+            Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
+            for metallic entries (those with zero band gap), as a
+            ``(min, max, step)`` tuple. Note that only unique kpoint
+            combinations are generated, so small step sizes (as default)
+            just results in each k-points choice between ``min`` and
+            ``max`` being included.
+        kpoints_nonmetals (tuple[float, float, float]):
+            Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
+            for non-metallic entries (those with a non-zero band gap), as a
+            ``(min, max, step)`` tuple. Note that only unique kpoint
+            combinations are generated, so small step sizes (as default)
+            just results in each k-points choice between ``min`` and
+            ``max`` being included.
+        user_incar_settings (dict):
+            Override the default INCAR settings e.g.
+            ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
+            any non-numerical or non-``True``/``False`` flags need to be
+            input as strings with quotation marks. See
+            ``doped/io/vasp/VASP_sets/VASP_PBEsol_ConvergenceSet.yaml`` for
+            the default settings.
+        user_potcar_functional (str):
+            POTCAR functional to use. Default is "PBE" and if this fails,
+            tries "PBE_52", then "PBE_54".
+        user_potcar_settings (dict):
+            Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
+            ``POTCAR`` set.
+        extrinsic_only (bool):
+            If ``True``, only generate inputs for
+            ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
+            existing intrinsic competing-phases set). Default is ``False``
+            (generate inputs for all entries).
+        output_path (PathLike):
+            Top-level output directory name. Default is
+            ``"CompetingPhases"``.
+        **kwargs:
+            Additional kwargs to pass to ``DictSet.write_input()``
+
+    Returns:
+        dict[str, DopedDictSet]:
+            Mapping of output folder paths to generated ``DopedDictSet``\s
+            (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+    """
+    input_sets = get_kpoint_convergence_sets(
+        competing_phases,
+        kpoints_metals=kpoints_metals,
+        kpoints_nonmetals=kpoints_nonmetals,
+        user_potcar_functional=user_potcar_functional,
+        user_potcar_settings=user_potcar_settings,
+        user_incar_settings=user_incar_settings,
+        extrinsic_only=extrinsic_only,
+        output_path=output_path,
+    )
+    return write_input_sets(input_sets, **kwargs)
+
+
+def write_relaxation_files(
+    competing_phases: "CompetingPhases",
+    kpoints_metals: float = 200.0,
+    kpoints_nonmetals: float = 64.0,  # MPRelaxSet default
+    user_incar_settings: dict | None = None,
+    user_potcar_functional: str = "PBE",
+    user_potcar_settings: dict | None = None,
+    extrinsic_only: bool = False,
+    output_path: PathLike = "CompetingPhases",
+    subfolder: PathLike = "Relax",
+    **kwargs,
+) -> dict[str, DopedDictSet]:
+    r"""
+    Generates and writes VASP input files for relaxations of the competing
+    phases, using HSE06 (hybrid DFT) by default (consistent with the default
+    input settings for defect calculations in :mod:`doped.vasp`).
+
+    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+    if not. Note that any changes to the default ``INCAR``/``POTCAR``
+    settings should be consistent with those used for the defect supercell
+    calculations.
+
+    Note that this function uses a single kpoint density setting each for
+    metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
+    molecules (Gamma-only), while one will often want to specify custom
+    k-point settings for each material individually based on convergence
+    testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
+    cost.
+
+    Returns the corresponding dictionary of ``DopedDictSet`` objects
+    (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
+    contain the input file settings.
+
+    Note that, because these relaxations usually involve volume relaxation,
+    one should successively repeat the relaxation from the previous relaxed
+    geometry until convergence (no more significant volume changes), or use
+    a higher plane-wave cutoff energy (``ENCUT`` in ``VASP``) for the
+    volume relaxations (but using an energy cutoff consistent with any
+    defect calculations for a final single-point energy calculation), to
+    avoid spurious Pulay stress effects.
+
+    See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
+    for tips on boosting the efficiency of competing phases calculations.
+
+    Args:
+        competing_phases (CompetingPhases):
+            The :class:`~doped.chemical_potentials.CompetingPhases` object
+            whose entries to generate calculation inputs for.
+        kpoints_metals (float):
+            Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
+            entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
+            Note that you may want to specify custom k-point settings for
+            each material individually based on convergence testing to
+            minimise cost.
+        kpoints_nonmetals (float):
+            Kpoint density per inverse volume (kpoints/Å⁻³) for
+            non-metallic entries (those with non-zero band gap). Default is
+            64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
+            you may want to specify custom k-point settings for each
+            material individually based on convergence testing to minimise
+            cost.
+        user_incar_settings (dict):
+            Override the default INCAR settings e.g.
+            ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
+            Note that any non-numerical or non-``True``/``False`` flags
+            need to be input as strings with quotation marks.
+            See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
+            ``VASP_HSESet.yaml`` for the default settings.
+        user_potcar_functional (str):
+            POTCAR functional to use. Default is "PBE" and if this fails,
+            tries "PBE_52", then "PBE_54".
+        user_potcar_settings (dict):
+            Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
+            ``POTCAR`` set.
+        extrinsic_only (bool):
+            If ``True``, only generate inputs for
+            ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
+            existing intrinsic competing-phases set). Default is ``False``
+            (generate/write inputs for all entries).
+        output_path (PathLike):
+            Top-level output directory name. Default is
+            ``"CompetingPhases"``.
+        subfolder (PathLike):
+            Output folder structure is
+            ``<output_path>/<competing_phase_dir>/<subfolder>``.
+            Default is ``"Relax"``. Set to ``"."`` to write input files
+            directly to ``<output_path>/<competing_phase_dir>``, with no
+            subfolders created.
+        **kwargs:
+            Additional kwargs to pass to ``DictSet.write_input()``
+
+    Returns:
+        dict[str, DopedDictSet]:
+            Mapping of output folder paths to generated
+            ``DopedDictSet``\s (subclasses of
+            :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+    """
+    input_sets = get_relaxation_sets(
+        competing_phases,
+        kpoints_metals=kpoints_metals,
+        kpoints_nonmetals=kpoints_nonmetals,
+        user_potcar_functional=user_potcar_functional,
+        user_potcar_settings=user_potcar_settings,
+        user_incar_settings=user_incar_settings,
+        extrinsic_only=extrinsic_only,
+        output_path=output_path,
+        subfolder=subfolder,
+    )
+    return write_input_sets(input_sets, **kwargs)
+
+
+def write_singlepoint_files(
+    competing_phases: "CompetingPhases",
+    kpoints_metals: float = 200.0,
+    kpoints_nonmetals: float = 64.0,
+    soc: bool | None = None,
+    user_incar_settings: dict | None = None,
+    user_potcar_functional: str = "PBE",
+    user_potcar_settings: dict | None = None,
+    extrinsic_only: bool = False,
+    output_path: PathLike = "CompetingPhases",
+    subfolder: PathLike | None = None,
+    poscar: bool = False,
+    **kwargs,
+) -> dict[str, DopedDictSet]:
+    r"""
+    Generates and writes ``DopedDictSet``\s for single-point (static) energy
+    calculations of the competing phases (i.e. ``NSW = 0``, ``IBRION = -1`` in
+    ``VASP``), using HSE06 (hybrid DFT) by default (consistent with the default
+    input settings for defect calculations in :mod:`doped.vasp`).
+
+    These are expected to be used as the final energy calculation after
+    geometry relaxation (from :meth:`write_relaxation_files`), to obtain
+    accurate total energies with tight convergence settings.
+
+    If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
+    ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
+    default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
+    explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
+    where the max atomic number across all species (host and extrinsic) is
+    Z >= 31 (heavier than Zn), matching the convention in
+    :mod:`doped.vasp`.
+
+    Inclusion of SOC is crucial for accurate formation energies and
+    chemical potentials in heavy-element systems, as discussed in
+    |Guidelines Perspective|. However, non-SOC energies can generally be
+    reliably used to determine `relative` energies of polymorphs, of the
+    same composition/oxidation states, to good accuracy, which can be
+    useful for pre-screening (e.g. then only performing more expensive SOC
+    calculations on the ground-state polymorph of each potential competing
+    phase). Moreover, one typically turns off symmetry for SOC calculations
+    (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
+    crystal symmetries due to spin-space coupling. However, one generally
+    finds that total energies from SOC calculations with (``VASP``)
+    symmetry routines turned on give energies consistent with no-symmetry
+    calculations, and can be much faster. Thus by default we do not turn
+    off symmetry for SOC calculations here -- note that the electronic band
+    structure from these calculations is thus unreliable.
+
+    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+    if not. Note that any changes to the default ``INCAR``/``POTCAR``
+    settings should be consistent with those used for the defect supercell
+    calculations.
+
+    For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
+    default here) is well-suited to the geometry relaxations, tetrahedron
+    smearing (``ISMEAR = -5``) typically gives more accurate total energies
+    for these final single-point calculations with modest k-point
+    densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
+    Often this requires a lower `k`-point density than Methfessel-Paxton
+    smearing, and so it can be worth re-running k-point convergence testing
+    (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
+    check for cheaper converged `k`-point densities for these final
+    single-point calculations -- particularly useful if e.g. performing
+    hybrid DFT SOC calculations. See the
+    :ref:`Tips:Competing Phases & Chemical Potentials` tips section
+    for further tips on boosting the efficiency of competing phases
+    calculations.
+
+    Note that this function uses a single kpoint density setting each for
+    metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
+    molecules (Gamma-only), while one will often want to specify custom
+    k-point settings for each material individually based on convergence
+    testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
+    cost.
+
+    Args:
+        competing_phases (CompetingPhases):
+            The :class:`~doped.chemical_potentials.CompetingPhases` object
+            whose entries to generate calculation inputs for.
+        kpoints_metals (float):
+            Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
+            entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
+            Note that you may want to specify custom k-point settings for
+            each material individually based on convergence testing to
+            minimise cost.
+        kpoints_nonmetals (float):
+            Kpoint density per inverse volume (kpoints/Å⁻³) for
+            non-metallic entries (those with non-zero band gap). Default is
+            64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
+            you may want to specify custom k-point settings for each
+            material individually based on convergence testing to minimise
+            cost.
+        soc (bool):
+            Whether to include spin-orbit coupling (SOC), by setting
+            ``LSORBIT = True`` in ``VASP`` ``INCAR`` files. If not set
+            (when ``soc = None``; default), SOC is enabled when the max
+            atomic number across all species (host and extrinsic) is Z >=
+            31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
+            calculations, and the default ``subfolder`` name is set to
+            ``"vasp_ncl"`` when ``soc`` is ``True``.
+        user_incar_settings (dict):
+            Override the default INCAR settings e.g.
+            ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
+            Note that any non-numerical or non-``True``/``False`` flags
+            need to be input as strings with quotation marks.
+            See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
+            ``VASP_HSESet.yaml`` for the default settings.
+        user_potcar_functional (str):
+            POTCAR functional to use. Default is "PBE" and if this fails,
+            tries "PBE_52", then "PBE_54".
+        user_potcar_settings (dict):
+            Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
+            ``POTCAR`` set.
+        extrinsic_only (bool):
+            If ``True``, only generate inputs for
+            ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
+            existing intrinsic competing-phases set). Default is ``False``
+            (generate inputs for all entries).
+        output_path (PathLike):
+            Top-level output directory name (used as a key prefix).
+            Default is ``"CompetingPhases"``.
+        subfolder (PathLike):
+            Output folder structure is
+            ``<output_path>/<competing_phase_dir>/<subfolder>`` where
+            ``subfolder`` = 'SinglePoint' by default if ``soc`` is
+            ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
+            to write input files directly to
+            ``<output_path>/<competing_phase_dir>``, with no subfolders
+            created.
+        poscar (bool):
+            Whether to write ``POSCAR`` files. Defaults to ``False``, as
+            single-point (static) calculations are intended to be run on
+            `relaxed` structures (e.g. from relaxations with
+            :func:`write_relaxation_files`), so using the (unrelaxed)
+            Materials Project structure is typically undesirable.
+        **kwargs:
+            Additional kwargs to pass to ``DictSet.write_input()``
+
+    Returns:
+        dict[str, DopedDictSet]:
+            Mapping of output folder paths to generated ``DopedDictSet``\s
+            (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+    """
+    input_sets = get_singlepoint_sets(
+        competing_phases,
+        kpoints_metals=kpoints_metals,
+        kpoints_nonmetals=kpoints_nonmetals,
+        soc=soc,
+        user_potcar_functional=user_potcar_functional,
+        user_potcar_settings=user_potcar_settings,
+        user_incar_settings=user_incar_settings,
+        extrinsic_only=extrinsic_only,
+        output_path=output_path,
+        subfolder=subfolder,
+    )
+    return write_input_sets(input_sets, poscar=poscar, **kwargs)

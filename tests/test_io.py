@@ -133,24 +133,30 @@ class CalculationOutputsTestCase(unittest.TestCase):
 
             fnv_from_files = get_freysoldt_correction(
                 defect_entry,
-                defect_locpot=f"{self.defect_dir}/LOCPOT.gz",
-                bulk_locpot=f"{self.bulk_dir}/LOCPOT.gz",
+                defect_planar_averaged_potentials=f"{self.defect_dir}/LOCPOT.gz",
+                bulk_planar_averaged_potentials=f"{self.bulk_dir}/LOCPOT.gz",
                 verbose=False,
             )
             fnv_from_outputs = get_freysoldt_correction(
-                defect_entry, defect_locpot=defect_outputs, bulk_locpot=bulk_outputs, verbose=False
+                defect_entry,
+                defect_planar_averaged_potentials=defect_outputs,
+                bulk_planar_averaged_potentials=bulk_outputs,
+                verbose=False,
             )
             assert np.isclose(fnv_from_files.correction_energy, fnv_from_outputs.correction_energy)
             # TODO: Also hard-test the value here
 
             efnv_from_files = get_kumagai_correction(
                 defect_entry,
-                defect_outcar=f"{self.defect_dir}/OUTCAR.gz",
-                bulk_outcar=f"{self.bulk_dir}/OUTCAR.gz",
+                defect_site_potentials=f"{self.defect_dir}/OUTCAR.gz",
+                bulk_site_potentials=f"{self.bulk_dir}/OUTCAR.gz",
                 verbose=False,
             )
             efnv_from_outputs = get_kumagai_correction(
-                defect_entry, defect_outcar=defect_outputs, bulk_outcar=bulk_outputs, verbose=False
+                defect_entry,
+                defect_site_potentials=defect_outputs,
+                bulk_site_potentials=bulk_outputs,
+                verbose=False,
             )
             assert np.isclose(efnv_from_files.correction_energy, efnv_from_outputs.correction_energy)
             # TODO: Also hard-test the value here

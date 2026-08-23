@@ -22,7 +22,9 @@ import numpy as np
 import pandas as pd
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
+from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.electronic_structure.core import Spin
+from pymatgen.electronic_structure.dos import FermiDos
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.typing import PathLike
@@ -878,6 +880,199 @@ def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
     return auto_charge
 
 
+def _total_energies_for_potential_check(
+    entry_energy: float | None, run_metadata: dict | None, label: str = ""
+) -> list[float]:
+    """
+    Build the list of accepted total energies for cross-checking a supplied
+    ``OUTCAR`` against the parsed calculation (see
+    :func:`_check_outcar_energy`).
+
+    VASP reports both the free energy and energy(sigma->0), and the ``OUTCAR``
+    final energy may match either, so the latter is added (from the serialised
+    ``vasprun`` dict in ``run_metadata``) when available.
+
+    Note that an empty list is returned if ``entry_energy`` is ``None`` (i.e.
+    the entry energy could not be determined), skipping the cross-check
+    entirely -- this is deliberate, matching the previous behaviour where both
+    energies were fetched under a single ``contextlib.suppress``.
+
+    Args:
+        entry_energy (float):
+            The final energy of the corresponding parsed ``ComputedEntry``,
+            if available.
+        run_metadata (dict):
+            ``DefectEntry.calculation_metadata["run_metadata"]``, from which
+            the energy(sigma->0) value is taken if present.
+        label (str):
+            ``"defect"`` or ``"bulk"``, selecting the ``run_metadata`` entry.
+
+    Returns:
+        list[float]: The accepted total energies (in eV).
+    """
+    if entry_energy is None:
+        return []
+
+    energies = [entry_energy]
+    with contextlib.suppress(Exception):
+        energies.append(
+            (run_metadata or {})[f"{label}_vasprun_dict"]["output"]["ionic_steps"][-1]["electronic_steps"][
+                -1
+            ]["e_0_energy"]
+        )
+    return energies
+
+
+def get_potentials_from_input(
+    potentials_input: PathLike | Locpot | Outcar | dict | list,
+    potential_type: str = "planar",
+    dir_type: str = "",
+    entry_energy: float | None = None,
+    run_metadata: dict | None = None,
+):
+    """
+    Get planar-averaged (``potential_type="planar"``) or atomic-site
+    (``"site"``) electrostatic potentials from calculator-native inputs, for
+    finite-size charge corrections.
+
+    Accepts a path to a ``LOCPOT``/``OUTCAR`` file, an already-loaded
+    ``Locpot``/``Outcar`` object, or already-parsed potentials
+    (dict/list), which are returned as-is. When an ``OUTCAR`` is supplied, its
+    final energy is cross-checked against the parsed calculation energies (see
+    :func:`_total_energies_for_potential_check`) to catch mismatched
+    calculations.
+
+    Note that ``Locpot`` objects are deliberately `not` converted to
+    planar-averaged potential dictionaries here, as ``pymatgen``'s FNV
+    correction accepts either (and uses the ``Locpot`` lattice directly).
+
+    Part of the ``doped.io`` backend protocol.
+
+    Args:
+        potentials_input (PathLike | |Locpot| | |Outcar| | dict | list):
+            The calculator-native potentials input (see above).
+        potential_type (str):
+            ``"planar"`` for planar-averaged potentials (Freysoldt/FNV
+            correction, from ``LOCPOT``) or ``"site"`` for atomic-site
+            potentials (Kumagai/eFNV correction, from ``OUTCAR``). Default is
+            ``"planar"``.
+        dir_type (str):
+            The type of directory being parsed (e.g. ``"bulk"`` or
+            ``"defect"``), for informative warnings/errors.
+        entry_energy (float):
+            The final energy of the corresponding parsed ``ComputedEntry``,
+            for the ``OUTCAR`` energy cross-check.
+        run_metadata (dict):
+            ``DefectEntry.calculation_metadata["run_metadata"]``, for the
+            ``OUTCAR`` energy cross-check.
+
+    Returns:
+        The planar-averaged potentials (``Locpot`` object or dict) or
+        atomic-site potentials (list), depending on ``potential_type``.
+    """
+    total_energy = _total_energies_for_potential_check(entry_energy, run_metadata, dir_type)
+
+    if isinstance(potentials_input, PathLike):
+        if potential_type == "planar":
+            return get_locpot(potentials_input)
+        return get_core_potentials_from_outcar(  # otherwise OUTCAR
+            potentials_input, dir_type=dir_type, total_energy=total_energy
+        )
+
+    if isinstance(potentials_input, Outcar):
+        return _get_core_potentials_from_outcar_obj(
+            potentials_input, dir_type=dir_type, total_energy=total_energy
+        )
+
+    if not isinstance(potentials_input, Locpot | dict | list):
+        obj_type = "LOCPOT" if potential_type == "planar" else "OUTCAR"
+        raise TypeError(
+            f"`{obj_type.lower()}` input must be either a path to a {obj_type} file or a pymatgen "
+            f"{obj_type[0] + obj_type[1:].lower()} object, but got {type(potentials_input)} instead."
+        )
+
+    return potentials_input
+
+
+def get_fermi_dos(dos_path: PathLike | Vasprun) -> tuple[FermiDos, float, float]:
+    """
+    Create a ``pymatgen`` ``FermiDos`` object from the outputs of a bulk DOS
+    calculation (``vasprun.xml(.gz)`` file, parsed with ``parse_dos = True``,
+    with VASP), for calculating Fermi level positions and defect/carrier
+    concentrations.
+
+    Part of the ``doped.io`` backend protocol.
+
+    Args:
+        dos_path (PathLike | |Vasprun|):
+            Path to a ``vasprun.xml(.gz)`` file from a bulk DOS calculation,
+            or an already-parsed |Vasprun| object.
+
+    Returns:
+        tuple[FermiDos, float, float]:
+            The ``FermiDos`` object, along with the VBM eigenvalue and band
+            gap (in eV) from the DOS calculation -- used by ``doped`` to check
+            consistency with the bulk supercell calculation.
+    """
+    if not isinstance(dos_path, Vasprun):
+        dos_path = get_vasprun(dos_path, parse_dos=True)
+
+    band_gap, _cbm, vbm, _ = dos_path.eigenvalue_band_properties
+    return FermiDos(dos_path.complete_dos, nelecs=get_nelect_from_vasprun(dos_path)), vbm, band_gap
+
+
+def get_competing_phase_entry(path: PathLike, **kwargs) -> ComputedStructureEntry:
+    """
+    Parse the outputs of a competing phase (bulk crystal) calculation in
+    ``path`` to a ``pymatgen`` ``ComputedStructureEntry``, with the calculation
+    summary info & settings in ``entry.data`` -- for chemical potential
+    analysis with :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`.
+
+    Part of the ``doped.io`` backend protocol.
+
+    Args:
+        path (PathLike):
+            Path to the calculation directory, or directly to a
+            ``vasprun.xml(.gz)`` file.
+        **kwargs:
+            Additional keyword arguments to pass to :func:`get_vasprun`.
+
+    Returns:
+        ComputedStructureEntry:
+            The parsed entry, with ``entry.data`` containing the calculation
+            summary info (``"summary"``; band gap & total magnetization),
+            settings (``"incar"``, ``"kpoints"``, ``"potcar_symbols"``),
+            convergence (``"converged_electronic"``, ``"converged_ionic"``)
+            and the folder it was parsed from (``"folder"``).
+    """
+    vasprun = get_vasprun(path, **kwargs)
+    entry = vasprun.get_computed_entry()
+    unique_symbols = sorted(set(vasprun.atomic_symbols))
+    summary_dict = {}
+    with contextlib.suppress(Exception):  # non-essential properties, can fail with incomplete vasprun
+        summary_dict["band_gap"] = vasprun.eigenvalue_band_properties[0]
+        summary_dict["total_magnetization"] = get_magnetization_from_vasprun(vasprun)
+
+    entry.data.update(
+        {
+            "formula_pretty": entry.composition.reduced_formula,
+            "nsites": len(entry.structure),
+            "volume": entry.structure.volume,
+            "energy_per_atom": entry.energy_per_atom,
+            "elements": unique_symbols,
+            "nelements": len(unique_symbols),
+            "kpoints": vasprun.kpoints.kpts,
+            "incar": {k: v for k, v in vasprun.incar.as_dict().items() if "@" not in k},
+            "potcar_symbols": vasprun.potcar_spec,
+            "summary": summary_dict,
+            "converged_electronic": vasprun.converged_electronic,
+            "converged_ionic": vasprun.converged_ionic,
+            "folder": str(path).removesuffix(".gz").removesuffix("vasprun.xml"),
+        }
+    )
+    return entry
+
+
 def get_planar_averaged_potentials(
     path: PathLike, dir_type: str = "bulk", quiet: bool = False
 ) -> dict[str, np.ndarray]:
@@ -1336,8 +1531,10 @@ def load_eigenvalue_outputs(
     if vr is not None and not isinstance(vr, Vasprun):  # just try loading from vasprun first
         with contextlib.suppress(Exception):
             vr = get_vasprun(vr, parse_projected_eigen=True)
+        if not isinstance(vr, Vasprun):  # e.g. a directory path; fall back to searching ``path`` below
+            vr = None
 
-    if vr is None or (isinstance(vr, Vasprun) and vr.projected_eigenvalues is None):
+    if path is not None and (vr is None or vr.projected_eigenvalues is None):
         vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", path)  # try from path
         if multiple:
             _multiple_files_warning("vasprun.xml", path, vr_path, dir_type=label)
@@ -1401,6 +1598,129 @@ def _get_vr_dict_without_proj_eigenvalues(vr: Vasprun) -> dict:
         setattr(vr, attribute, orig_values[attribute])  # reset to original value
 
     return vr_dict_wout_proj
+
+
+def check_entry_compatibility(entries, template_candidates=None) -> None:
+    r"""
+    Check the compatibility of parsed competing phase entries, by comparing
+    their ``INCAR`` tags and ``POTCAR`` symbols against those of a reference
+    (template) entry, and warning about any mismatches (which can cause errors
+    in the parsed energies, and thus the chemical potential limits).
+
+    Mismatches are also recorded in ``entry.data`` under
+    ``"mismatching_INCAR_tags"`` / ``"mismatching_POTCAR_symbols"``, matching
+    the corresponding keys set by :func:`check_run_compatibility` for defect
+    & bulk supercell calculations. Entries without ``"incar"`` /
+    ``"potcar_symbols"`` data (e.g. ``ComputedEntry``\s supplied directly by
+    the user, rather than parsed from calculation outputs) are simply skipped
+    for the corresponding check.
+
+    Part of the ``doped.io`` backend protocol (optional; used by
+    :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` when
+    ``check_compatibility=True``).
+
+    Args:
+        entries (list[|ComputedEntry|]):
+            The competing phase entries to check.
+        template_candidates (list[|ComputedEntry|]):
+            Priority-ordered candidate entries from which to take the
+            reference (template) calculation settings; the first with the
+            relevant data is used. Default is ``None``, in which case
+            ``entries`` is used.
+    """
+    if template_candidates is None:
+        template_candidates = entries
+
+    sorted_entries_with_incar_data = [entry for entry in template_candidates if entry.data.get("incar")]
+    sorted_entries_with_potcar_data = [
+        entry for entry in template_candidates if entry.data.get("potcar_symbols")
+    ]
+    if sorted_entries_with_incar_data:
+        incar_template_entry = sorted_entries_with_incar_data[0]
+        for entry in entries:
+            if not entry.data.get("incar"):  # no settings data for this entry (e.g. a user-supplied
+                continue  # ``ComputedEntry``); skip rather than compare against nothing
+            incar_mismatches = _compare_incar_tags(
+                entry.data["incar"],
+                incar_template_entry.data["incar"],
+                ignore_tags={"NKRED"},  # no NKRED mismatch warnings for competing phases
+                warn=False,
+            )  # warned collectively below if any mismatches
+            # ignore ISIF warnings in cases of supercell calculations (i.e. either gas calculations
+            # or bulk supercell -- assumed to be the correct volume):
+            if not isinstance(incar_mismatches, bool):
+                incar_mismatches = [
+                    i
+                    for i in incar_mismatches
+                    if i[0] != "ISIF"
+                    or all(ent.structure.volume < 800 for ent in [incar_template_entry, entry])
+                ]
+            incar_mismatches = incar_mismatches if incar_mismatches else False
+            entry.data["mismatching_INCAR_tags"] = (
+                incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
+            )
+
+        mismatching_INCAR_warnings = sorted(
+            [
+                (entry.name, set(entry.data.get("mismatching_INCAR_tags")))
+                for entry in entries
+                if entry.data.get("mismatching_INCAR_tags")
+            ],
+            key=lambda x: (len(x[1]), x[0]),
+            reverse=True,
+        )  # sort by number of mismatches, reversed
+        if mismatching_INCAR_warnings:
+            warnings.warn(
+                f"There are mismatching INCAR tags for (some of) your competing phases "
+                f"calculations which are likely to cause errors in the parsed results (energies "
+                f"& thus chemical potential limits). Found the following differences:\n"
+                f"(in the format: 'Entries: (INCAR tag, value in entry calculation, "
+                f"value in reference calculation))':"
+                f"\n{_format_mismatching_incar_warning(mismatching_INCAR_warnings)}\n"
+                f"Where {incar_template_entry.name} was used as the reference entry calculation.\n"
+                f"In general, the same INCAR settings should be used in all final calculations "
+                f"for these tags which can affect energies!"
+            )
+
+    if sorted_entries_with_potcar_data:
+        potcar_template_entry = sorted_entries_with_potcar_data[0]
+        for entry in entries:
+            if not entry.data.get("potcar_symbols"):  # no settings data for this entry; skip
+                continue
+            potcar_mismatches = _compare_potcar_symbols(
+                entry.data["potcar_symbols"],
+                potcar_template_entry.data["potcar_symbols"],
+                warn=False,
+                only_matching_elements=True,
+            )  # warned collectively below if any mismatches
+            entry.data["mismatching_POTCAR_symbols"] = (
+                potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
+            )
+
+        mismatching_potcars_warnings = sorted(
+            [
+                (entry.name, entry.data.get("mismatching_POTCAR_symbols"))
+                for entry in entries
+                if entry.data.get("mismatching_POTCAR_symbols")
+            ],
+            key=lambda x: (len(x[1]), x[0]),
+            reverse=True,
+        )  # sort by number of mismatches, reversed
+        if mismatching_potcars_warnings:
+            joined_info_string = "\n".join(
+                [f"{name}: {mismatching}" for name, mismatching in mismatching_potcars_warnings]
+            )
+            warnings.warn(
+                f"There are mismatching POTCAR symbols for (some of) your competing phases "
+                f"calculations which are likely to cause errors in the parsed results (energies & "
+                f"thus chemical potential limits). Found the following differences:\n"
+                f"(in the format: (entry POTCARs, reference POTCARs)):"
+                f"\n{joined_info_string}\n"
+                f"Where {potcar_template_entry.name} was used as the reference entry "
+                f"calculation.\n"
+                f"In general, the same POTCAR settings should be used in all final calculations "
+                f"for these tags which can affect energies!"
+            )
 
 
 def check_run_compatibility(

@@ -5,6 +5,7 @@ Code to parse defect supercell calculations, and identify the defects therein.
 import contextlib
 import os
 import warnings
+from collections.abc import Iterable
 from copy import deepcopy
 from functools import partial
 from pathlib import Path
@@ -24,6 +25,7 @@ from tqdm import tqdm
 from doped.core import (
     Defect,
     DefectEntry,
+    _get_calculation_metadata,
     _get_defect_supercell_frac_coords,
     guess_and_set_oxi_states_with_timeout,
 )
@@ -993,9 +995,9 @@ class DefectsParser:
                 |point_symmetry_from_defect_entry|,
                 ``parse_symmetry_and_degeneracy_metadata`` or
                 ``defect_and_info_from_structures`` or ``get_dimer_bonds()``,
-                including ``bulk_locpot_dict``, ``bulk_site_potentials``,
-                ``use_MP``, ``mpid``, ``api_key``, ``oxi_state``,
-                ``multiplicity``, ``angle_tolerance``,
+                including ``bulk_planar_averaged_potentials``,
+                ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
+                ``oxi_state``, ``multiplicity``, ``angle_tolerance``,
                 ``user_charges``, ``rtol`` etc. (see their docstrings); or for
                 controlling shallow defect charge correction error warnings
                 (see ``error_tolerance`` description) with
@@ -1073,7 +1075,7 @@ class DefectsParser:
                 "quiet": True,
             }
             with contextlib.suppress(Exception):
-                self.bulk_corrections_data["bulk_locpot_dict"] = (
+                self.bulk_corrections_data["bulk_planar_averaged_potentials"] = (
                     {str(k): v for k, v in self.bulk_outputs.planar_averaged_potentials.items()}
                     if self.bulk_outputs.planar_averaged_potentials is not None
                     else self._backend.get_planar_averaged_potentials(**bulk_corr_kwargs)
@@ -2060,6 +2062,62 @@ def _handle_charge_correction_errors(
     # within the charge correction functions (with _check_if_multiple_finite_size_corrections())
 
 
+def _multiplet_spin_state_tested(
+    defect_entry: DefectEntry, matching_entries: Iterable[DefectEntry]
+) -> bool:
+    r"""
+    Whether a multiplet (S >= 1) spin state has been `explicitly tested` for
+    ``defect_entry``, given all parsed ``matching_entries`` (i.e. entries of
+    the same defect and charge state, including ``defect_entry`` itself).
+
+    A multiplet counts as having been explicitly tested if either:
+
+    - It was `imposed` in the calculation inputs (``NUPDOWN >= 2`` in the
+      ``INCAR``, with VASP). Note that ``NUPDOWN = -1`` is VASP's default
+      (i.e. `no` constraint on the total magnetization), so ``-1``, ``0`` and
+      ``1`` all mean "not tested". This clause is VASP-specific, and simply
+      never fires for other calculators (whose ``run_metadata`` has no
+      ``defect_incar`` key) -- to extend it as further calculators are
+      added, either check their equivalent input tag(s) here, or (better,
+      if more than one or two are needed) add an optional ``doped.io``
+      backend function returning the total magnetization imposed by the
+      calculation inputs, if any.
+    - Another parsed calculation of the same defect & charge state has a
+      multiplet spin state (spin degeneracy = 2S+1 > 2). A `separate`
+      calculation of the same defect & charge state is itself a deliberate
+      test, whatever the constraint mechanism used (``NUPDOWN``, ``MAGMOM``,
+      an initial magnetic moment guess...), so this clause is
+      calculator-agnostic. Note that ``defect_entry``\'s `own` spin state is
+      deliberately `not` used here: a single calculation which happened to
+      converge to a multiplet has not `tested` anything.
+
+    Args:
+        defect_entry (|DefectEntry|):
+            The defect entry being checked.
+        matching_entries (Iterable[|DefectEntry|]):
+            All parsed defect entries of the same defect and charge state
+            (including ``defect_entry``).
+
+    Returns:
+        bool: Whether a multiplet spin state has been explicitly tested.
+    """
+    for entry in matching_entries:
+        run_metadata = entry.calculation_metadata.get("run_metadata") or {}
+        # VASP-specific; extend with the equivalent input tags of other calculators as they are added
+        # (or via an optional backend function, if this grows -- see the docstring above):
+        nupdown = (run_metadata.get("defect_incar") or {}).get("NUPDOWN", -1)
+        if isinstance(nupdown, int | float) and nupdown >= 2:  # multiplet imposed in the inputs
+            return True
+
+        if (  # a separate calculation of this defect & charge state, with a multiplet spin state:
+            entry is not defect_entry
+            and ((getattr(entry, "degeneracy_factors", None) or {}).get("spin degeneracy") or 1) > 2
+        ):
+            return True
+
+    return False
+
+
 def _check_and_warn_dimer_bonds_spin_states(
     defect_dict: dict[str, DefectEntry], rtol: float = 1.05
 ) -> None:
@@ -2071,6 +2129,13 @@ def _check_and_warn_dimer_bonds_spin_states(
     any matching defect entry, then warn that the defect may adopt a
     multiplet spin state, and suggest setting NUPDOWN to 2/3 (or higher) for
     this defect.
+
+    "Already tested" means `explicitly` tested, as determined by
+    :func:`_multiplet_spin_state_tested`; i.e. a multiplet was imposed in the
+    calculation inputs (``NUPDOWN >= 2`` in the ``INCAR``, with VASP), or a
+    separate calculation of the same defect & charge state with a multiplet
+    spin state has been parsed. A single calculation which happened to
+    converge to a multiplet does `not` count, as nothing was tested.
 
     Args:
         defect_dict (dict[str, |DefectEntry|]):
@@ -2085,14 +2150,16 @@ def _check_and_warn_dimer_bonds_spin_states(
         if (
             num_dimer_bonds > 0
             and num_dimer_bonds < 4
-            and not any(  # check if NUPDOWN set to != [0, 1] in any matching defect & charge state
-                entry.calculation_metadata.get("run_metadata", {})
-                .get("defect_incar", {})
-                .get("NUPDOWN", 0)
-                not in [0, 1]
-                for entry in defect_dict.values()
-                if entry.defect.name == defect_entry.defect.name
-                and entry.charge_state == defect_entry.charge_state
+            # skip if a multiplet spin state has already been explicitly tested for this defect &
+            # charge state (see ``_multiplet_spin_state_tested``):
+            and not _multiplet_spin_state_tested(
+                defect_entry,
+                [
+                    entry
+                    for entry in defect_dict.values()
+                    if entry.defect.name == defect_entry.defect.name
+                    and entry.charge_state == defect_entry.charge_state
+                ],
             )
         ):
             defect_dimer_dict[name] = dimer_bonds_dict
@@ -2279,10 +2346,10 @@ class DefectParser:
                 |point_symmetry_from_defect_entry|,
                 ``parse_symmetry_and_degeneracy_metadata`` or
                 ``defect_and_info_from_structures``, including
-                ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
-                ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
-                ``angle_tolerance``, ``user_charges`` etc (see their
-                docstrings).
+                ``bulk_planar_averaged_potentials``, ``bulk_site_potentials``,
+                ``use_MP``, ``mpid``, ``api_key``, ``oxi_state``,
+                ``multiplicity``, ``angle_tolerance``, ``user_charges`` etc
+                (see their docstrings).
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
@@ -2420,10 +2487,10 @@ class DefectParser:
                 |point_symmetry_from_defect_entry|,
                 ``parse_symmetry_and_degeneracy_metadata`` or
                 ``defect_and_info_from_structures``, including
-                ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
-                ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
-                ``angle_tolerance``, ``user_charges`` etc (see their
-                docstrings).
+                ``bulk_planar_averaged_potentials``, ``bulk_site_potentials``,
+                ``use_MP``, ``mpid``, ``api_key``, ``oxi_state``,
+                ``multiplicity``, ``angle_tolerance``, ``user_charges`` etc
+                (see their docstrings).
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
@@ -2608,7 +2675,7 @@ class DefectParser:
 
         efnv_data_available = _data_available("site_potentials", site_pots_file, "bulk_site_potentials")
         fnv_data_available = _data_available(
-            "planar_averaged_potentials", planar_pots_file, "bulk_locpot_dict"
+            "planar_averaged_potentials", planar_pots_file, "bulk_planar_averaged_potentials"
         )
         site_pots_file = site_pots_file or "site potential"  # generic fallbacks for warning messages
         planar_pots_file = planar_pots_file or "planar-averaged potential"
@@ -2714,7 +2781,7 @@ class DefectParser:
 
         return skip_corrections
 
-    def load_FNV_data(self, bulk_locpot_dict: dict | None = None):
+    def load_FNV_data(self, bulk_planar_averaged_potentials: dict | None = None):
         """
         Load metadata required for performing Freysoldt correction (i.e.
         ``LOCPOT`` planar-averaged potential dictionary).
@@ -2722,23 +2789,26 @@ class DefectParser:
         Requires "bulk_path" and "defect_path" to be present in
         ``DefectEntry.calculation_metadata``, and VASP ``LOCPOT`` files to be
         present in these directories. Can read compressed "LOCPOT.gz" files.
-        The ``bulk_locpot_dict`` can be supplied if already parsed, for
+        The ``bulk_planar_averaged_potentials`` can be supplied if already parsed, for
         expedited parsing of multiple defects.
 
-        Saves the ``bulk_locpot_dict`` and ``defect_locpot_dict`` dictionaries
-        (containing the planar-averaged electrostatic potentials along each
+        Saves the ``bulk_planar_averaged_potentials`` and
+        ``defect_planar_averaged_potentials`` dictionaries (containing the
+        planar-averaged electrostatic potentials along each
         axis direction) to the ``DefectEntry.calculation_metadata`` dict, for
         use with ``DefectEntry.get_freysoldt_correction()``.
 
         Args:
-            bulk_locpot_dict (dict):
+            bulk_planar_averaged_potentials (dict):
                 Planar-averaged potential dictionary for bulk supercell, if
                 already parsed. If ``None`` (default), will try to load from
                 the ``LOCPOT(.gz)`` file in
                 ``defect_entry.calculation_metadata["bulk_path"]``.
 
         Returns:
-            ``bulk_locpot_dict`` for reuse in parsing other defect entries.
+            dict | None:
+                ``bulk_planar_averaged_potentials`` for reuse in parsing other
+                defect entries.
         """
         if not self.defect_entry.charge_state:
             # no charge correction if charge is zero
@@ -2749,15 +2819,15 @@ class DefectParser:
                 return {str(k): v for k, v in outputs.planar_averaged_potentials.items()}
             return None
 
-        bulk_locpot_dict = (
-            bulk_locpot_dict
-            or self.kwargs.get("bulk_locpot_dict", None)
+        bulk_planar_averaged_potentials = (
+            bulk_planar_averaged_potentials
+            or self.kwargs.get("bulk_planar_averaged_potentials", None)
             or _planar_pots_from_outputs(self.bulk_outputs)
             or self._backend.get_planar_averaged_potentials(
                 self.defect_entry.calculation_metadata["bulk_path"], dir_type="bulk"
             )
         )
-        defect_locpot_dict = _planar_pots_from_outputs(
+        defect_planar_averaged_potentials = _planar_pots_from_outputs(
             self.defect_outputs
         ) or self._backend.get_planar_averaged_potentials(
             self.defect_entry.calculation_metadata["defect_path"], dir_type="defect"
@@ -2765,12 +2835,12 @@ class DefectParser:
 
         self.defect_entry.calculation_metadata.update(
             {
-                "bulk_locpot_dict": bulk_locpot_dict,
-                "defect_locpot_dict": defect_locpot_dict,
+                "bulk_planar_averaged_potentials": bulk_planar_averaged_potentials,
+                "defect_planar_averaged_potentials": defect_planar_averaged_potentials,
             }
         )
 
-        return bulk_locpot_dict
+        return bulk_planar_averaged_potentials
 
     def load_eFNV_data(self, bulk_site_potentials: list | np.ndarray | None = None):
         """
@@ -3070,18 +3140,18 @@ class DefectParser:
         ):
             self.defect_entry.get_kumagai_correction(verbose=False, error_tolerance=self.error_tolerance)
 
-        elif self.defect_entry.calculation_metadata.get(
-            "bulk_locpot_dict"
-        ) and self.defect_entry.calculation_metadata.get("defect_locpot_dict"):
+        elif _get_calculation_metadata(
+            self.defect_entry, "bulk_planar_averaged_potentials"
+        ) and _get_calculation_metadata(self.defect_entry, "defect_planar_averaged_potentials"):
             self.defect_entry.get_freysoldt_correction(verbose=False, error_tolerance=self.error_tolerance)
 
         else:
             raise ValueError(
                 "No charge correction performed! Missing required metadata in "
                 "defect_entry.calculation_metadata ('bulk/defect_site_potentials' for Kumagai ("
-                "eFNV) correction, or 'bulk/defect_locpot_dict' for Freysoldt (FNV) correction) -- these "
-                "are loaded with either the load_eFNV_data() or load_FNV_data() methods for "
-                "DefectParser."
+                "eFNV) correction, or 'bulk/defect_planar_averaged_potentials' for Freysoldt (FNV) "
+                "correction) -- these are loaded with either the load_eFNV_data() or load_FNV_data() "
+                "methods for DefectParser."
             )
 
         if (

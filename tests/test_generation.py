@@ -21,6 +21,7 @@ from ase.build import bulk, make_supercell
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
+from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Species
 from pymatgen.core.surface import SlabGenerator
@@ -56,11 +57,6 @@ from doped.utils.symmetry import (
     swap_axes,
     translate_structure,
 )
-
-try:
-    from pymatgen.core.entries import ComputedStructureEntry
-except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
-    from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 default_supercell_gen_kwargs = {
     "min_image_distance": 10.0,  # same as current pymatgen-analysis-defects `min_length` ( = 10)

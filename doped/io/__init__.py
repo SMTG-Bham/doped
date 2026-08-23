@@ -22,30 +22,41 @@ from pymatgen.util.typing import PathLike
 from doped.io.outputs import CalculationOutputs
 
 
-def get_backend(calculator: str = "vasp") -> ModuleType:
+def get_backend(calculator: str = "vasp", module: str = "outputs") -> ModuleType:
     """
-    Get the output-parsing backend module (``doped.io.<calculator>.outputs``)
-    for the given calculator.
+    Get a calculator backend module (``doped.io.<calculator>.<module>``) for
+    the given calculator.
 
-    Backend modules provide a ``get_calculation_outputs()`` function
-    (returning a calculator-agnostic
+    Output-parsing backends (``module="outputs"``; default) provide a
+    ``get_calculation_outputs()`` function (returning a calculator-agnostic
     :class:`~doped.io.outputs.CalculationOutputs` object) and a
     ``CALC_OUTPUT_MASK`` constant (filename patterns identifying calculation
     output files, for calculation folder discovery), plus optional further
     constants/functions used by ``doped``'s calculator-agnostic parsing
     machinery (``SUBFOLDER_PRIORITY``, ``FILE_PARSING_ACTIONS``,
-    ``get_planar_averaged_potentials()``, ``get_site_potentials()`` etc.) --
-    see the "Adding Support for a New Calculator" docs page for details.
+    ``get_planar_averaged_potentials()``, ``get_site_potentials()`` etc.).
+
+    Input-generation backends (``module="inputs"``) provide the defect
+    supercell input-set classes (e.g. ``DefectsSet``) and the competing
+    phase input-set functions (``get_relaxation_sets()``,
+    ``get_singlepoint_sets()``, ``get_kpoint_convergence_sets()``,
+    ``write_input_sets()``) used by
+    :class:`~doped.chemical_potentials.CompetingPhases`.
+
+    See the "Adding Support for a New Calculator" docs page for details.
 
     Args:
         calculator (str):
             Name of the calculator (matching a ``doped.io.<calculator>``
             subpackage). Default: "vasp".
+        module (str):
+            Which backend module to get; ``"outputs"`` (default) or
+            ``"inputs"``.
 
     Returns:
-        ModuleType: The ``doped.io.<calculator>.outputs`` backend module.
+        ModuleType: The ``doped.io.<calculator>.<module>`` backend module.
     """
-    backend_name = f"doped.io.{calculator.lower()}.outputs"
+    backend_name = f"doped.io.{calculator.lower()}.{module}"
     try:
         return import_module(backend_name)
     except ModuleNotFoundError as exc:

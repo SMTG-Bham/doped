@@ -38,13 +38,7 @@ from doped.corrections import (
     _convert_dielectric_to_tensor,
 )
 from doped.generation import sort_defect_entries
-from doped.io.vasp.outputs import (
-    _compare_incar_tags,
-    _compare_kpoints,
-    _compare_potcar_symbols,
-    get_nelect_from_vasprun,
-    get_vasprun,
-)
+from doped.io import get_backend
 from doped.utils import _doped_obj_properties_methods
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
@@ -1454,59 +1448,6 @@ class DefectThermodynamics(MSONable):
                 f"You can suppress this warning by setting "
                 f"``DefectThermodynamics.check_compatibility = False``."
             )
-
-    def _check_bulk_defects_compatibility(self):
-        """
-        Helper function to quickly check if all entries have compatible
-        defect/bulk calculation settings.
-
-        Currently not used, as the bulk/defect compatibility is checked when
-        parsing, and the compatibility across bulk calculations is checked with
-        ``_check_bulk_compatibility()``.
-        """
-        # check each defect entry against its own bulk, and also check each bulk against each other
-        reference_defect_entry = next(iter(self.defect_entries.values()))
-        reference_run_metadata = reference_defect_entry.calculation_metadata["run_metadata"]
-        for defect_entry in self.defect_entries.values():
-            with warnings.catch_warnings(record=True) as captured_warnings:
-                run_metadata = defect_entry.calculation_metadata["run_metadata"]
-                # compare defect and bulk:
-                _compare_incar_tags(run_metadata["defect_incar"], run_metadata["bulk_incar"])
-                _compare_potcar_symbols(
-                    run_metadata["defect_potcar_symbols"], run_metadata["bulk_potcar_symbols"]
-                )
-                _compare_kpoints(
-                    run_metadata["defect_actual_kpoints"],
-                    run_metadata["bulk_actual_kpoints"],
-                    run_metadata["defect_kpoints"],
-                    run_metadata["bulk_kpoints"],
-                )
-
-                # compare bulk and reference bulk:
-                _compare_incar_tags(
-                    run_metadata["bulk_incar"],
-                    reference_run_metadata["bulk_incar"],
-                    defect_name=f"other bulk (for {reference_defect_entry.name})",
-                )
-                _compare_potcar_symbols(
-                    run_metadata["bulk_potcar_symbols"],
-                    reference_run_metadata["bulk_potcar_symbols"],
-                    defect_name=f"other bulk (for {reference_defect_entry.name})",
-                )
-                _compare_kpoints(
-                    run_metadata["defect_actual_kpoints"],
-                    reference_run_metadata["bulk_actual_kpoints"],
-                    run_metadata["defect_kpoints"],
-                    reference_run_metadata["bulk_kpoints"],
-                    defect_name=f"other bulk (for {reference_defect_entry.name})",
-                )
-
-            if captured_warnings:
-                concatenated_warnings = "\n".join(str(warning.message) for warning in captured_warnings)
-                warnings.warn(
-                    f"Incompatible defect/bulk calculation settings detected for defect "
-                    f"{defect_entry.name}: \n{concatenated_warnings}"
-                )
 
     def _get_bulk_comp_and_energy_per_atom_mode_values(self) -> tuple[Composition, float]:
         """
@@ -3794,12 +3735,13 @@ class DefectThermodynamics(MSONable):
         return conc_df
 
     def _parse_fermi_dos(
-        self, bulk_dos: PathLike | Vasprun | FermiDos | None = None, skip_dos_check: bool = False
+        self,
+        bulk_dos: PathLike | FermiDos | Any = None,
+        skip_dos_check: bool = False,
+        calculator: str = "vasp",
     ) -> FermiDos | None:
         if bulk_dos is None:
             return None
-
-        fdos = None
 
         if isinstance(bulk_dos, FermiDos):
             fdos = bulk_dos
@@ -3807,12 +3749,8 @@ class DefectThermodynamics(MSONable):
             fdos_vbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]  # tol 1e-4 is lowest possible, as VASP
             fdos_band_gap = fdos.get_gap(tol=1e-4, abs_tol=True)  # rounds the DOS outputs to 4 dp
 
-        if isinstance(bulk_dos, PathLike):
-            bulk_dos = get_vasprun(bulk_dos, parse_dos=True)  # converted to fdos in next block
-
-        if isinstance(bulk_dos, Vasprun):  # either supplied Vasprun or parsed from string there
-            fdos_band_gap, _cbm, fdos_vbm, _ = bulk_dos.eigenvalue_band_properties
-            fdos = get_fermi_dos(bulk_dos)
+        else:  # path to (or already-parsed) DOS calculation outputs; parse with calculator backend:
+            fdos, fdos_vbm, fdos_band_gap = get_backend(calculator).get_fermi_dos(bulk_dos)
 
         if (
             fdos
@@ -5042,23 +4980,30 @@ def _get_doping_scan_points(
     return points
 
 
-def get_fermi_dos(dos_vr: PathLike | Vasprun):
+def get_fermi_dos(dos: PathLike | FermiDos | Any, calculator: str = "vasp") -> FermiDos:
     """
-    Create a ``FermiDos`` object from the provided ``dos_vr``, which can be
-    either a path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` |Vasprun|
-    object (parsed with ``parse_dos = True``).
+    Create a ``pymatgen`` ``FermiDos`` object from the outputs of a bulk DOS
+    calculation, using the parser for the given ``calculator``.
 
     Args:
-        dos_vr (PathLike | |Vasprun|):
-            Path to a ``vasprun.xml(.gz)`` file, or a |Vasprun| object.
+        dos (PathLike | FermiDos | Any):
+            Path to the outputs of a bulk DOS calculation (a
+            ``vasprun.xml(.gz)`` file with the default ``vasp`` calculator),
+            or an already-parsed calculator-native object (e.g. a |Vasprun|
+            object parsed with ``parse_dos = True``). A ``FermiDos`` object
+            is returned as-is, allowing calculators without a ``doped.io``
+            backend to be used by constructing the ``FermiDos`` directly.
+        calculator (str):
+            Name of the calculator used for the DOS calculation (matching a
+            ``doped.io.<calculator>`` parsing backend). Default: "vasp".
 
     Returns:
         FermiDos: The ``FermiDos`` object.
     """
-    if not isinstance(dos_vr, Vasprun):
-        dos_vr = get_vasprun(dos_vr, parse_dos=True)
+    if isinstance(dos, FermiDos):
+        return dos
 
-    return FermiDos(dos_vr.complete_dos, nelecs=get_nelect_from_vasprun(dos_vr))
+    return get_backend(calculator).get_fermi_dos(dos)[0]  # (FermiDos, VBM, band gap)
 
 
 def scissor_dos(

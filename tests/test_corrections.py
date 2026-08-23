@@ -13,17 +13,13 @@ from unittest.mock import patch
 
 import matplotlib as mpl
 import numpy as np
+from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.structure import PeriodicSite, Structure
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
 
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
 from doped.parsing import DefectParser, DefectsParser
-
-try:
-    from pymatgen.core.entries import ComputedStructureEntry
-except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
-    from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -51,8 +47,8 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
         }
         # load necessary parameters for defect_entry to make use of Freysoldt and Kumagai corrections
         metadata = {
-            "bulk_locpot_dict": bldata,
-            "defect_locpot_dict": dldata,
+            "bulk_planar_averaged_potentials": bldata,
+            "defect_planar_averaged_potentials": dldata,
             "defect_frac_sc_coords": struct.sites[0].frac_coords,
         }
         bulk_atomic_site_averages, defect_atomic_site_averages = [], []

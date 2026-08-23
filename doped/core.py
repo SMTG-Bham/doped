@@ -335,8 +335,8 @@ class DefectEntry(thermo.DefectEntry):
     def get_freysoldt_correction(
         self,
         dielectric: float | np.ndarray | list | None = None,
-        defect_locpot: PathLike | Locpot | dict | None = None,
-        bulk_locpot: PathLike | Locpot | dict | None = None,
+        defect_planar_averaged_potentials: PathLike | Locpot | dict | None = None,
+        bulk_planar_averaged_potentials: PathLike | Locpot | dict | None = None,
         plot: bool = False,
         filename: PathLike | None = None,
         axis=None,
@@ -382,7 +382,7 @@ class DefectEntry(thermo.DefectEntry):
                 See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
                 tutorial section for information on calculating and converging
                 the dielectric constant.
-            defect_locpot:
+            defect_planar_averaged_potentials:
                 The planar-averaged electrostatic potential from the defect
                 supercell calculation, as a dictionary in the form:
                 ``{i: 1D array of potential along axis i, for i in [0,1,2]}``
@@ -390,15 +390,15 @@ class DefectEntry(thermo.DefectEntry):
                 :class:`~doped.io.outputs.CalculationOutputs` object with
                 ``planar_averaged_potentials``, a path to the output VASP
                 ``LOCPOT`` file, or the corresponding ``pymatgen`` ``Locpot``
-                object. If ``None``, will try to use ``defect_locpot_dict``
-                from the ``defect_entry`` ``calculation_metadata`` if
-                available.
-            bulk_locpot:
+                object. If ``None``, will try to use
+                ``defect_planar_averaged_potentials`` from the ``defect_entry``
+                ``calculation_metadata`` if available.
+            bulk_planar_averaged_potentials:
                 The planar-averaged electrostatic potential from the bulk
                 supercell calculation, in any of the formats accepted for
-                ``defect_locpot`` above. If ``None``, will try to use
-                ``bulk_locpot_dict`` from the ``defect_entry``
-                ``calculation_metadata`` if available.
+                ``defect_planar_averaged_potentials`` above. If ``None``,
+                will try to use ``bulk_planar_averaged_potentials`` from the
+                ``defect_entry`` ``calculation_metadata`` if available.
             plot (bool):
                 Whether to plot the FNV electrostatic potential plots (for
                 manually checking the behaviour of the charge correction here).
@@ -449,8 +449,8 @@ class DefectEntry(thermo.DefectEntry):
         fnv_correction_output = get_freysoldt_correction(
             defect_entry=self,
             dielectric=dielectric,
-            defect_locpot=defect_locpot,
-            bulk_locpot=bulk_locpot,
+            defect_planar_averaged_potentials=defect_planar_averaged_potentials,
+            bulk_planar_averaged_potentials=bulk_planar_averaged_potentials,
             plot=plot,
             filename=filename,
             axis=axis,
@@ -486,8 +486,8 @@ class DefectEntry(thermo.DefectEntry):
         dielectric: float | np.ndarray | list | None = None,
         defect_region_radius: float | None = None,
         excluded_indices: list[int] | None = None,
-        defect_outcar: PathLike | Outcar | None = None,
-        bulk_outcar: PathLike | Outcar | None = None,
+        defect_site_potentials: PathLike | Outcar | None = None,
+        bulk_site_potentials: PathLike | Outcar | None = None,
         plot: bool = False,
         filename: PathLike | None = None,
         return_correction_error: bool = False,
@@ -559,7 +559,7 @@ class DefectEntry(thermo.DefectEntry):
                 List of site indices (in the defect supercell) to exclude from
                 the site potential sampling in the correction calculation/plot.
                 If None (default), no sites are excluded.
-            defect_outcar (PathLike, |Outcar| or CalculationOutputs):
+            defect_site_potentials (PathLike, |Outcar| or CalculationOutputs):
                 The atomic-site electrostatic potentials from the defect
                 supercell calculation, as a
                 :class:`~doped.io.outputs.CalculationOutputs` object with
@@ -567,12 +567,11 @@ class DefectEntry(thermo.DefectEntry):
                 file, or the corresponding ``pymatgen`` |Outcar| object. If
                 ``None``, will try to use the ``defect_site_potentials`` from
                 the ``defect_entry`` ``calculation_metadata`` if available.
-                # TODO: Rename defect/bulk_{outcar} and {locpot} accordingly
-            bulk_outcar (PathLike, |Outcar| or CalculationOutputs):
+            bulk_site_potentials (PathLike, |Outcar| or CalculationOutputs):
                 The atomic-site electrostatic potentials from the bulk
                 supercell calculation, in any of the formats accepted for
-                ``defect_outcar`` above. If ``None``, will try to use the
-                ``bulk_site_potentials`` from the ``defect_entry``
+                ``defect_site_potentials`` above. If ``None``, will try to
+                use the ``bulk_site_potentials`` from the ``defect_entry``
                 ``calculation_metadata`` if available.
             plot (bool):
                 Whether to plot the Kumagai site potential plots (for
@@ -620,8 +619,8 @@ class DefectEntry(thermo.DefectEntry):
             dielectric=dielectric,
             defect_region_radius=defect_region_radius,
             excluded_indices=excluded_indices,
-            defect_outcar=defect_outcar,
-            bulk_outcar=bulk_outcar,
+            defect_site_potentials=defect_site_potentials,
+            bulk_site_potentials=bulk_site_potentials,
             plot=plot,
             filename=filename,
             style_file=style_file,
@@ -652,9 +651,9 @@ class DefectEntry(thermo.DefectEntry):
     def _load_and_parse_eigenvalue_data(
         self,
         defect_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
-        defect_procar: PathLike | Procar | None = None,
+        defect_projections: PathLike | Procar | None = None,
         bulk_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
-        bulk_procar: PathLike | Procar | None = None,
+        bulk_projections: PathLike | Procar | None = None,
         force_reparse: bool = False,
         clear_attributes: bool = True,
     ):
@@ -678,7 +677,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (PathLike, |Procar|):
+            defect_projections (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
                 ``defect_outputs`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
@@ -697,7 +696,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (PathLike, |Procar|):
+            bulk_projections (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
                 ``bulk_outputs`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
@@ -723,9 +722,9 @@ class DefectEntry(thermo.DefectEntry):
 
         backend = get_backend(self.calculation_metadata.get("calculator", "vasp"))
         outputs_dict: dict[str, CalculationOutputs] = {}
-        for supplied_outputs, procar, label in [
-            (bulk_outputs, bulk_procar, "bulk"),
-            (defect_outputs, defect_procar, "defect"),
+        for supplied_outputs, projections, label in [
+            (bulk_outputs, bulk_projections, "bulk"),
+            (defect_outputs, defect_projections, "defect"),
         ]:
             path = self.calculation_metadata.get(f"{label}_path")
             if (
@@ -741,7 +740,7 @@ class DefectEntry(thermo.DefectEntry):
                     outputs=(
                         None if isinstance(supplied_outputs, CalculationOutputs) else supplied_outputs
                     ),
-                    projections=procar,
+                    projections=projections,
                     label=label,
                     run_metadata=self.calculation_metadata.get("run_metadata") or {},
                 )
@@ -785,9 +784,9 @@ class DefectEntry(thermo.DefectEntry):
         plot: bool = True,
         filename: PathLike | None = None,
         defect_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
-        defect_procar: PathLike | Procar | None = None,
+        defect_projections: PathLike | Procar | None = None,
         bulk_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
-        bulk_procar: PathLike | Procar | None = None,
+        bulk_projections: PathLike | Procar | None = None,
         force_reparse: bool = False,
         clear_attributes: bool = True,
         _parameter_order_warn: bool = True,
@@ -840,7 +839,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (PathLike, |Procar|):
+            defect_projections (PathLike, |Procar|):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
@@ -858,7 +857,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (PathLike, |Procar|):
+            bulk_projections (PathLike, |Procar|):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
@@ -892,9 +891,9 @@ class DefectEntry(thermo.DefectEntry):
 
         self._load_and_parse_eigenvalue_data(
             bulk_outputs=bulk_outputs,
-            bulk_procar=bulk_procar,
+            bulk_projections=bulk_projections,
             defect_outputs=defect_outputs,
-            defect_procar=defect_procar,
+            defect_projections=defect_projections,
             force_reparse=force_reparse,
             clear_attributes=clear_attributes,
         )
@@ -1665,6 +1664,36 @@ class DefectEntry(thermo.DefectEntry):
             fig=fig,
             style_file=style_file,
         )
+
+
+_RENAMED_CALCULATION_METADATA_KEYS = {  # pre-v4.0 (VASP-specific) names, for previously-saved
+    "defect_planar_averaged_potentials": "defect_locpot_dict",  # ``DefectEntry``\\s
+    "bulk_planar_averaged_potentials": "bulk_locpot_dict",
+}  # TODO: remove old-key handling in a future release
+
+
+def _get_calculation_metadata(defect_entry, key: str, default=None):
+    """
+    Get ``key`` from ``defect_entry.calculation_metadata``, falling back to the
+    pre-v4.0 (calculator-specific) key name if present -- so that previously-
+    parsed and saved |DefectEntry| objects continue to work.
+
+    Args:
+        defect_entry (|DefectEntry|):
+            The defect entry whose ``calculation_metadata`` to query.
+        key (str):
+            The (current, calculator-agnostic) metadata key.
+        default:
+            Value to return if neither the current nor the old key is
+            present. Default is ``None``.
+
+    Returns:
+        The metadata value, or ``default``.
+    """
+    calculation_metadata = getattr(defect_entry, "calculation_metadata", None) or {}
+    if key in calculation_metadata:
+        return calculation_metadata[key]
+    return calculation_metadata.get(_RENAMED_CALCULATION_METADATA_KEYS.get(key, key), default)
 
 
 def _get_bulk_supercell(defect_entry: "DefectEntry"):

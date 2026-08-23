@@ -18,11 +18,24 @@ subpackage, with each supported calculator having a
         └── outputs.py    # output parsing (vasprun.xml, OUTCAR, LOCPOT...)
 
 The rest of the ``doped`` codebase (defect generation, structure/site
-analysis, charge corrections, parsing, eigenvalue analysis,
-thermodynamics...) is calculator-agnostic, communicating with
+analysis, charge corrections, parsing, eigenvalue analysis, thermodynamics,
+chemical potentials...) is calculator-agnostic, communicating with
 calculator-specific parsing code via the
-:class:`~doped.io.outputs.CalculationOutputs` container and the backend
-protocol described below.
+:class:`~doped.io.outputs.CalculationOutputs` container (and, for competing
+phases, ``pymatgen`` ``ComputedStructureEntry``\ s) and the backend protocol
+described below. Calculation `input` generation is likewise dispatched to the
+calculator backend (``doped.io.<calculator>.inputs``), from
+:class:`~doped.generation.DefectsGenerator` (defect supercells) and
+:class:`~doped.chemical_potentials.CompetingPhases` (competing phases).
+
+Note that several calculator-agnostic functions/methods also accept
+calculator-native objects directly (e.g. ``Vasprun``, ``Procar``, ``Locpot``
+and ``Outcar`` objects in :class:`~doped.core.DefectEntry` and
+``doped.corrections``, or a ``Vasprun`` for the bulk DOS in
+``doped.thermodynamics``). These type unions are deliberate
+backwards-compatibility conveniences for VASP users, and are always
+alternatives to the calculator-agnostic inputs (paths parsed via the
+backend, ``CalculationOutputs``, ``FermiDos``...) -- not requirements.
 
 Step 1: Output Parsing
 --------------------------
@@ -34,6 +47,13 @@ Create ``doped/io/<calculator>/outputs.py`` implementing:
     def get_calculation_outputs(path: PathLike, **kwargs) -> CalculationOutputs: ...
 
     CALC_OUTPUT_MASK = ("<output filename pattern(s)>",)  # e.g. ("vasprun.xml", "vasprun.xml.gz")
+
+..
+
+   ``CALC_OUTPUT_MASK[0]`` is used as the canonical output filename in file
+   discovery and warning messages, so it should be a substring of the actual
+   output filenames (as with ``"vasprun.xml"`` matching both
+   ``vasprun.xml`` and ``vasprun.xml.gz``).
 
 which parses the outputs of a supercell calculation in ``path`` to a
 :class:`~doped.io.outputs.CalculationOutputs` object, and declares the
@@ -94,12 +114,35 @@ reference backend):
   ``MISMATCH_WARNING_SPECS``): defect/bulk calculation settings
   compatibility checks, populating ``"run_metadata"`` (and any
   ``"mismatching_..."`` entries) in ``DefectEntry.calculation_metadata``.
+- ``check_entry_compatibility(entries, template_candidates)``: the same
+  check for competing phase entries, comparing each against a reference
+  (template) entry and warning about mismatched calculation settings, for
+  :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` (with
+  ``check_compatibility=True``, the default). Entries lacking the relevant
+  settings data are skipped.
 - ``load_eigenvalue_outputs(path, outputs, projections, label, run_metadata)``:
   loading of outputs `with orbital projections` for eigenvalue / band-edge
   analysis (``DefectEntry.get_eigenvalue_analysis()``), when not parsed
   up-front. ``outputs``/``projections`` are optional already-loaded
   calculator-native objects or file paths (e.g. ``Vasprun``/``Procar``
   objects with VASP).
+- ``get_fermi_dos(path) -> (FermiDos, vbm, band_gap)``: parsing of a bulk
+  DOS calculation to a ``pymatgen`` ``FermiDos`` (plus the VBM eigenvalue &
+  band gap from that calculation, for consistency checking against the bulk
+  supercell), for Fermi level / carrier concentration analysis with
+  :class:`~doped.thermodynamics.DefectThermodynamics`. Without this,
+  ``FermiDos`` objects can still be constructed directly by the user and
+  passed as ``bulk_dos``.
+- ``get_competing_phase_entry(path) -> ComputedStructureEntry``: parsing of
+  a competing phase (bulk crystal) calculation to a ``pymatgen``
+  ``ComputedStructureEntry``, for chemical potential analysis with
+  :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
+  (``CompetingPhasesAnalyzer(..., calculator="<calculator>")``). Calculation
+  summary info & settings should be added to ``entry.data``, including
+  ``"converged_electronic"``/``"converged_ionic"`` (convergence warnings) and
+  ``"folder"`` (the parsed calculation folder). Without this,
+  ``CompetingPhasesAnalyzer`` can still be initialised directly from a list
+  of ``ComputedEntry``/``ComputedStructureEntry`` objects.
 
 The generic calculation-file discovery helpers in ``doped.io.utils``
 (e.g. ``_find_calc_outputs``, ``_determine_subfolder``) are parameterised by
@@ -131,6 +174,30 @@ available for the calculator (e.g. ``VaspInputSet``, on which
 ``doped.io.vasp.inputs.DopedDictSet`` is based). Default calculation
 parameters should live in data files alongside the module (as with
 ``doped/io/vasp/VASP_sets``), so users can inspect and override them.
+
+Competing phase calculation inputs (for chemical potential limits) are
+generated by the same module, via these functions:
+
+.. code-block:: python
+
+    def get_kpoint_convergence_sets(competing_phases, **kwargs) -> dict[str, Any]: ...
+    def get_relaxation_sets(competing_phases, **kwargs) -> dict[str, Any]: ...
+    def get_singlepoint_sets(competing_phases, **kwargs) -> dict[str, Any]: ...
+    def write_input_sets(input_sets, **kwargs) -> dict[str, Any]: ...
+    def write_kpoint_convergence_files(competing_phases, **kwargs) -> dict[str, Any]: ...
+    def write_relaxation_files(competing_phases, **kwargs) -> dict[str, Any]: ...
+    def write_singlepoint_files(competing_phases, **kwargs) -> dict[str, Any]: ...
+
+each returning a ``{output folder path: input set}`` dictionary. The
+corresponding :class:`~doped.chemical_potentials.CompetingPhases` methods are
+thin dispatchers to these (``CompetingPhases(..., calculator="<calculator>")``),
+forwarding all keyword arguments -- so the calculator-specific options (e.g.
+``user_incar_settings`` / ``user_potcar_settings`` with ``VASP``) and their
+documentation live in the backend. ``CompetingPhases`` provides the
+calculator-agnostic parts: which phases to calculate, their categorisation
+(``"metals"`` / ``"non-metals"`` / ``"molecules"``, which set the smearing
+and `k`-point sampling choices), structures, and output folder names, all
+yielded by ``CompetingPhases._iter_entries_with_categories()``.
 
 Step 3: Tests
 -----------------

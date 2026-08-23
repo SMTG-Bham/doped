@@ -12,9 +12,10 @@ import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from copy import deepcopy
-from functools import cache
+from functools import cache, partial
 from pathlib import Path
 from re import sub
+from types import ModuleType
 from typing import Any, overload
 
 import matplotlib.pyplot as plt
@@ -37,31 +38,15 @@ from pymatgen.core.entries import (
     ConstantEnergyAdjustment,
     ManualEnergyAdjustment,
 )
-from pymatgen.io.vasp.inputs import Kpoints
-from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
+from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
 from pymatgen.util.string import latexify, latexify_spacegroup
 from pymatgen.util.typing import PathLike
 from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
 from doped.generation import _element_sort_func
-from doped.io.vasp.inputs import (
-    MODULE_DIR,
-    DopedDictSet,
-    default_HSE_set,
-    default_relax_set,
-    singlepoint_incar_settings,
-)
-from doped.io.vasp.outputs import (
-    _compare_incar_tags,
-    _compare_potcar_symbols,
-    _find_calc_outputs,
-    _format_mismatching_incar_warning,
-    _get_output_files_and_check_if_multiple,
-    _multiple_files_warning,
-    get_magnetization_from_vasprun,
-    get_vasprun,
-)
+from doped.io import get_backend
+from doped.io import utils as _io_utils
 from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
 from doped.utils.efficiency import StructureMatcher_scan_stol
 from doped.utils.plotting import doped_plot_style, get_colormap
@@ -69,10 +54,6 @@ from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_str
 
 # globally ignore:
 _ignore_pmg_warnings()
-
-pbesol_convrg_set = loadfn(
-    os.path.join(MODULE_DIR, "VASP_sets/VASP_PBEsol_ConvergenceSet.yaml")
-)  # just INCAR
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
 
@@ -178,7 +159,8 @@ def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntr
     ``entry.data["summary"]["total_magnetization"]``) is set to 0 for all X2
     except O2, which has a triplet ground state (S = 1) -- this is then used to
     set spin polarisation input settings (``ISPIN`` and ``NUPDOWN`` in
-    ``VASP``) appropriately, with ``_set_spin_polarisation()``.
+    ``VASP``) appropriately, with
+    ``doped.io.vasp.inputs._set_spin_polarisation()``.
 
     Args:
         computed_entry (|ComputedEntry|):
@@ -923,13 +905,14 @@ class CompetingPhases(MSONable):
         expected_polymorphs: bool = False,
         MP_doc_dicts: bool = False,
         api_key: str | None = None,
+        calculator: str = "vasp",
         **kwargs: Any,
     ):
         """
-        Class to generate VASP input files for competing phases on the phase
-        diagram for the host material (and any extrinsic (dopant/impurity)
-        elements), which determine the chemical potential limits for elements
-        in that compound.
+        Class to generate calculation input files for competing phases on the
+        phase diagram for the host material (and any extrinsic
+        (dopant/impurity) elements), which determine the chemical potential
+        limits for elements in that compound.
 
         For this, the Materials Project (MP) database is queried using the
         ``MPRester`` API, and any calculated compounds which `could` border the
@@ -1038,6 +1021,10 @@ class CompetingPhases(MSONable):
                 ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from
                 the ``MP_API_KEY`` environment variable -- see the ``doped``
                 :ref:`Installation docs <setup_potcars_mp_api>`.
+            calculator (str):
+                Name of the calculator to generate input files for (matching
+                a ``doped.io.<calculator>`` subpackage with an ``inputs``
+                module). Default: "vasp".
             **kwargs:
                 Additional keyword arguments to pass to the Materials Project
                 API ``get_entries_in_chemsys()`` / ``get_entries()`` queries
@@ -1112,6 +1099,7 @@ class CompetingPhases(MSONable):
         self.expected_polymorphs = expected_polymorphs
         _check_MP_API_key(api_key)
         self.api_key = api_key
+        self.calculator = calculator
         self._get_entries_kwargs = kwargs
 
         if isinstance(composition, Structure):
@@ -1449,11 +1437,12 @@ class CompetingPhases(MSONable):
         """
         return [entry for entry in self.entries if entry.data.get("molecule")]
 
-    def _iter_entries_with_categories(self) -> Iterator[tuple[ComputedEntry, str, Structure]]:
+    def _iter_entries_with_categories(self) -> Iterator[tuple[ComputedEntry, str, Structure, str]]:
         """
-        Yield ``(entry, category, structure)`` tuples for all entries in
-        ``self.entries``, where ``category`` is one of ``"non-metals"``,
-        ``"metals"`` or ``"molecules"``.
+        Yield ``(entry, category, structure, folder_name)`` tuples for all
+        entries in ``self.entries``, where ``category`` is one of ``"non-
+        metals"``, ``"metals"`` or ``"molecules"``, and ``folder_name`` is the
+        ``doped`` output folder name for the entry.
 
         When no structure exists in the entry (e.g. MP-missing bulk represented
         by a hull-energy |ComputedEntry|), emits a ``UserWarning`` and supplies
@@ -1473,213 +1462,74 @@ class CompetingPhases(MSONable):
                     warnings.warn(
                         f"No structure is available for '{entry.name}'. This is likely because the phase "
                         f"is a placeholder (e.g. a hull-energy estimate for a composition with no "
-                        f"Materials Project crystal structure). INCAR and POTCAR files will be written "
-                        f"assuming a non-metallic, non-magnetic material (when determining smearing / "
-                        f"magnetic moment input settings), and POTCAR ordering according to the printed "
+                        f"Materials Project crystal structure). Structure-independent calculation inputs "
+                        f"(e.g. INCAR and POTCAR files with VASP) will be written assuming a "
+                        f"non-metallic, non-magnetic material (when determining smearing / magnetic "
+                        f"moment input settings), and element ordering according to the printed "
                         f"composition. One should of course check that these choices are appropriate!"
                     )
                     structure = _nominal_structure_for_input_writing(entry.composition)
-                yield entry, category, structure
+                yield entry, category, structure, _get_competing_phase_folder_name(entry)
 
-    def get_kpoint_convergence_sets(
-        self,
-        kpoints_metals: tuple[float, float, float] = (40.0, 1000.0, 5.0),
-        kpoints_nonmetals: tuple[float, float, float] = (5.0, 120.0, 5.0),
-        user_incar_settings: dict | None = None,
-        user_potcar_functional: str = "PBE",
-        user_potcar_settings: dict | None = None,
-        extrinsic_only: bool = False,
-        output_path: PathLike = "CompetingPhases",
-    ) -> dict[str, DopedDictSet]:
-        r"""
-        Generates a dictionary of ``DopedDictSet``\s (subclasses of
-        :class:`~pymatgen.io.vasp.sets.VaspInputSet`) for k-point convergence
-        testing of competing phases, using PBEsol (GGA) DFT by default.
-
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic)
-        or 0 if not.
-
-        Args:
-            kpoints_metals (tuple[float, float, float]):
-                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
-                for metallic entries (those with zero band gap), as a
-                ``(min, max, step)`` tuple. Note that only unique kpoint
-                combinations are generated, so small step sizes (as default)
-                just results in each k-points choice between ``min`` and
-                ``max`` being included.
-            kpoints_nonmetals (tuple[float, float, float]):
-                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
-                for non-metallic entries (those with a non-zero band gap), as a
-                ``(min, max, step)`` tuple. Note that only unique kpoint
-                combinations are generated, so small step sizes (as default)
-                just results in each k-points choice between ``min`` and
-                ``max`` being included.
-            user_incar_settings (dict):
-                Override the default INCAR settings e.g.
-                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
-                any non-numerical or non-``True``/``False`` flags need to be
-                input as strings with quotation marks. See
-                ``doped/io/vasp/VASP_sets/VASP_PBEsol_ConvergenceSet.yaml`` for
-                the default settings.
-            user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
-            user_potcar_settings (dict):
-                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
-            extrinsic_only (bool):
-                If ``True``, only generate inputs for
-                ``self.extrinsic_entries`` (useful when adding dopants to an
-                existing intrinsic competing-phases set). Default is ``False``
-                (generate inputs for all entries).
-            output_path (PathLike):
-                Top-level output directory name (used as a key prefix).
-                Default is ``"CompetingPhases"``.
-
-        Returns:
-            dict[str, DopedDictSet]:
-                Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+    @property
+    def _input_backend(self) -> ModuleType:
         """
-        base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
-        base_incar_settings.update(user_incar_settings or {})
-        kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
-        dict_sets: dict[str, DopedDictSet] = {}
-        extrinsic_entries = getattr(self, "extrinsic_entries", [])
+        The ``doped.io`` input-generation backend module
+        (``doped.io.<calculator>.inputs``) for the calculator being used.
+        """
+        return get_backend(getattr(self, "calculator", "vasp"), module="inputs")
 
-        for entry, category, structure in self._iter_entries_with_categories():
-            if extrinsic_only and entry not in extrinsic_entries:
-                continue
-            if category == "molecules":
-                continue  # no molecular entries as they don't need convergence testing
-
-            min_k, max_k, step_k = kpoints_by_metallicity[category]
-            incar_settings = copy.deepcopy(base_incar_settings or {})
-            self._set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
-            if category == "metals":
-                self._set_default_metal_smearing(incar_settings, user_incar_settings or {})
-
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
-                dict_set = DopedDictSet(  # ``doped`` DopedDictSet for quicker IO functions
-                    structure=structure,
-                    user_incar_settings=incar_settings,
-                    user_kpoints_settings={"reciprocal_density": min_k},
-                    user_potcar_settings=user_potcar_settings or {},
-                    user_potcar_functional=user_potcar_functional,
-                    force_gamma=True,
-                )
-
-                _generated_kpoints_folders = []
-                for kpoint in np.arange(min_k, max_k, step_k):
-                    dict_set = deepcopy(dict_set)
-                    dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
-                    kname = (
-                        "k"
-                        + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
-                        + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
-                    )
-                    if kname in _generated_kpoints_folders:
-                        continue  # this set of kpoints already generated, bump reciprocal density more
-
-                    fname = (
-                        f"{output_path}/{_get_competing_phase_folder_name(entry)}/kpoint_converge/{kname}"
-                    )
-                    dict_sets[fname] = dict_set
-                    _generated_kpoints_folders.append(kname)
-
-        molecular_entries_to_report = (
-            [entry for entry in self.molecular_entries if entry in extrinsic_entries]
-            if extrinsic_only
-            else self.molecular_entries
-        )
-        if molecular_entries_to_report:
-            print(
-                f"Note that diatomic molecular phases, calculated as molecules-in-a-box "
-                f"({', '.join([e.name for e in molecular_entries_to_report])} in this case), "
-                f"do not require k-point convergence testing, as Γ-only sampling is sufficient."
-            )
-        return dict_sets
-
-    def write_kpoint_convergence_files(
-        self,
-        kpoints_metals: tuple[float, float, float] = (40.0, 1000.0, 5.0),
-        kpoints_nonmetals: tuple[float, float, float] = (5.0, 120.0, 5.0),
-        user_incar_settings: dict | None = None,
-        user_potcar_functional: str = "PBE",
-        user_potcar_settings: dict | None = None,
-        extrinsic_only: bool = False,
-        output_path: PathLike = "CompetingPhases",
-        **kwargs,
-    ) -> dict[str, DopedDictSet]:
+    def get_kpoint_convergence_sets(self, **kwargs) -> dict[str, Any]:
         r"""
-        Generates and writes VASP input files for k-point convergence testing
-        of competing phases, using PBEsol (GGA) DFT by default.
+        Generate calculation input sets for `k`-point convergence testing of
+        the competing phases, using PBEsol (GGA) DFT by default.
 
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
-        Returns the corresponding dictionary of ``DopedDictSet`` objects
-        (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
-        contain the input file settings.
+        Dispatches to the ``get_kpoint_convergence_sets()`` function of the
+        ``doped.io`` input-generation backend for ``self.calculator`` -- see
+        :func:`doped.io.vasp.inputs.get_kpoint_convergence_sets` for the
+        default (VASP) behaviour and full list of options.
 
         Args:
-            kpoints_metals (tuple[float, float, float]):
-                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
-                for metallic entries (those with zero band gap), as a
-                ``(min, max, step)`` tuple. Note that only unique kpoint
-                combinations are generated, so small step sizes (as default)
-                just results in each k-points choice between ``min`` and
-                ``max`` being included.
-            kpoints_nonmetals (tuple[float, float, float]):
-                Kpoint density per inverse volume (kpoints/Å⁻³) to be tested
-                for non-metallic entries (those with a non-zero band gap), as a
-                ``(min, max, step)`` tuple. Note that only unique kpoint
-                combinations are generated, so small step sizes (as default)
-                just results in each k-points choice between ``min`` and
-                ``max`` being included.
-            user_incar_settings (dict):
-                Override the default INCAR settings e.g.
-                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
-                any non-numerical or non-``True``/``False`` flags need to be
-                input as strings with quotation marks. See
-                ``doped/io/vasp/VASP_sets/VASP_PBEsol_ConvergenceSet.yaml`` for
-                the default settings.
-            user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
-            user_potcar_settings (dict):
-                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
-            extrinsic_only (bool):
-                If ``True``, only generate inputs for
-                ``self.extrinsic_entries`` (useful when adding dopants to an
-                existing intrinsic competing-phases set). Default is ``False``
-                (generate inputs for all entries).
-            output_path (PathLike):
-                Top-level output directory name. Default is
-                ``"CompetingPhases"``.
             **kwargs:
-                Additional kwargs to pass to ``DictSet.write_input()``
+                Keyword arguments for the calculator backend\'s
+                ``get_kpoint_convergence_sets()`` function; e.g.
+                ``kpoints_metals``, ``kpoints_nonmetals``, ``extrinsic_only``
+                and ``output_path``, plus calculator-specific settings such
+                as ``user_incar_settings`` / ``user_potcar_settings`` with
+                VASP.
 
         Returns:
-            dict[str, DopedDictSet]:
-                Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+            dict[str, Any]:
+                Mapping of output folder paths to generated calculation
+                input sets.
         """
-        dict_sets = self.get_kpoint_convergence_sets(
-            kpoints_metals=kpoints_metals,
-            kpoints_nonmetals=kpoints_nonmetals,
-            user_potcar_functional=user_potcar_functional,
-            user_potcar_settings=user_potcar_settings,
-            user_incar_settings=user_incar_settings,
-            extrinsic_only=extrinsic_only,
-            output_path=output_path,
-        )
-        return self._write_competing_phase_dict_sets(dict_sets, **kwargs)
+        return self._input_backend.get_kpoint_convergence_sets(self, **kwargs)
 
-    def convergence_setup(self, **kwargs) -> dict[str, DopedDictSet]:
+    def write_kpoint_convergence_files(self, **kwargs) -> dict[str, Any]:
+        r"""
+        Generate and write calculation input files for `k`-point convergence
+        testing of the competing phases.
+
+        Dispatches to the ``write_kpoint_convergence_files()`` function of
+        the ``doped.io`` input-generation backend for ``self.calculator`` --
+        see :func:`doped.io.vasp.inputs.write_kpoint_convergence_files` for
+        the default (VASP) behaviour and full list of options.
+
+        Args:
+            **kwargs:
+                Keyword arguments for the calculator backend\'s
+                ``write_kpoint_convergence_files()`` function (see
+                :meth:`get_kpoint_convergence_sets`, plus any file-writing
+                options such as ``poscar`` / ``potcar_spec`` with VASP).
+
+        Returns:
+            dict[str, Any]:
+                Mapping of output folder paths to written calculation input
+                sets.
+        """
+        return self._input_backend.write_kpoint_convergence_files(self, **kwargs)
+
+    def convergence_setup(self, **kwargs) -> dict[str, Any]:
         r"""
         Deprecated alias for :meth:`write_kpoint_convergence_files`.
 
@@ -1695,254 +1545,56 @@ class CompetingPhases(MSONable):
         )
         return self.write_kpoint_convergence_files(**kwargs)
 
-    def get_relaxation_sets(
-        self,
-        kpoints_metals: float = 200.0,
-        kpoints_nonmetals: float = 64.0,  # MPRelaxSet default
-        user_incar_settings: dict | None = None,
-        user_potcar_functional: str = "PBE",
-        user_potcar_settings: dict | None = None,
-        extrinsic_only: bool = False,
-        output_path: PathLike = "CompetingPhases",
-        subfolder: PathLike = "Relax",
-    ) -> dict[str, DopedDictSet]:
+    def get_relaxation_sets(self, **kwargs) -> dict[str, Any]:
         r"""
-        Generates ``DopedDictSet``\s for relaxations of the competing phases,
-        using HSE06 (hybrid DFT) by default (consistent with the default input
-        settings for defect calculations in :mod:`doped.vasp`).
+        Generate calculation input sets for geometry relaxations of the
+        competing phases, using HSE06 by default.
 
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Note that any changes to the default ``INCAR``/``POTCAR``
-        settings should be consistent with those used for the defect supercell
-        calculations.
-
-        Note that this function uses a single kpoint density setting each for
-        metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
-        molecules (Gamma-only), while one will often want to specify custom
-        k-point settings for each material individually based on convergence
-        testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
-        cost.
-
-        Note that, because these relaxations usually involve volume relaxation,
-        one should successively repeat the relaxation from the previous relaxed
-        geometry until convergence (no more significant volume changes), or use
-        a higher plane-wave cutoff energy (``ENCUT`` in ``VASP``) for the
-        volume relaxations (but using an energy cutoff consistent with any
-        defect calculations for a final single-point energy calculation), to
-        avoid spurious Pulay stress effects.
-
-        See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-        for tips on boosting the efficiency of competing phases calculations.
+        Dispatches to the ``get_relaxation_sets()`` function of the
+        ``doped.io`` input-generation backend for ``self.calculator`` -- see
+        :func:`doped.io.vasp.inputs.get_relaxation_sets` for the default
+        (VASP) behaviour and full list of options.
 
         Args:
-            kpoints_metals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
-                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
-                Note that you may want to specify custom k-point settings for
-                each material individually based on convergence testing to
-                minimise cost.
-            kpoints_nonmetals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for
-                non-metallic entries (those with non-zero band gap). Default is
-                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
-                you may want to specify custom k-point settings for each
-                material individually based on convergence testing to minimise
-                cost.
-            user_incar_settings (dict):
-                Override the default INCAR settings e.g.
-                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
-                Note that any non-numerical or non-``True``/``False`` flags
-                need to be input as strings with quotation marks.
-                See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
-                ``VASP_HSESet.yaml`` for the default settings.
-            user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
-            user_potcar_settings (dict):
-                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
-            extrinsic_only (bool):
-                If ``True``, only generate inputs for
-                ``self.extrinsic_entries`` (useful when adding dopants to an
-                existing intrinsic competing-phases set). Default is ``False``
-                (generate inputs for all entries).
-            output_path (PathLike):
-                Top-level output directory name (used as a key prefix).
-                Default is ``"CompetingPhases"``.
-            subfolder (PathLike):
-                Output folder structure is
-                ``<output_path>/<competing_phase_dir>/<subfolder>``.
-                Default is ``"Relax"``. Set to ``"."`` to write input files
-                directly to ``<output_path>/<competing_phase_dir>``, with no
-                subfolders created.
-
-        Returns:
-            dict[str, DopedDictSet]:
-                Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
-        """
-        base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
-        if "EDIFF" in (user_incar_settings or {}):  # remove default EDIFF PER ATOM setting if EDIFF set
-            base_incar_settings.pop("EDIFF_PER_ATOM", None)
-
-        lhfcalc = (user_incar_settings or {}).get("LHFCALC", True)
-        if isinstance(lhfcalc, str):
-            lhfcalc = lhfcalc.lower().startswith("t")
-        if lhfcalc:
-            base_incar_settings.update(default_HSE_set["INCAR"])
-
-        base_incar_settings.update(user_incar_settings or {})
-        dict_sets: dict[str, DopedDictSet] = {}
-        extrinsic_entries = getattr(self, "extrinsic_entries", [])
-
-        for entry, category, structure in self._iter_entries_with_categories():
-            if extrinsic_only and entry not in extrinsic_entries:
-                continue
-            if category == "molecules":
-                user_kpoints_settings = Kpoints().from_dict(
-                    {
-                        "comment": "Gamma-only kpoints for molecule-in-a-box",
-                        "generation_style": "Gamma",
-                    }
-                )
-            elif category == "non-metals":
-                user_kpoints_settings = {"reciprocal_density": kpoints_nonmetals}
-            else:  # metals
-                user_kpoints_settings = {"reciprocal_density": kpoints_metals}
-
-            incar_settings = copy.deepcopy(base_incar_settings or {})
-            if category == "molecules":
-                incar_settings["ISIF"] = 2  # don't change the volume
-                incar_settings["KPAR"] = 1  # don't use k-point parallelization, gamma only
-            self._set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
-            if category == "metals":
-                self._set_default_metal_smearing(incar_settings, user_incar_settings or {})
-
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
-                dict_set = DopedDictSet(  # ``doped`` DopedDictSet for quicker IO functions
-                    structure=structure,
-                    user_incar_settings=incar_settings,
-                    user_kpoints_settings=user_kpoints_settings,
-                    user_potcar_settings=user_potcar_settings or {},
-                    user_potcar_functional=user_potcar_functional,
-                    force_gamma=True,
-                )
-
-                fname = f"{output_path}/{_get_competing_phase_folder_name(entry)}/{subfolder}"
-                dict_sets[fname] = dict_set
-
-        return dict_sets
-
-    def write_relaxation_files(
-        self,
-        kpoints_metals: float = 200.0,
-        kpoints_nonmetals: float = 64.0,  # MPRelaxSet default
-        user_incar_settings: dict | None = None,
-        user_potcar_functional: str = "PBE",
-        user_potcar_settings: dict | None = None,
-        extrinsic_only: bool = False,
-        output_path: PathLike = "CompetingPhases",
-        subfolder: PathLike = "Relax",
-        **kwargs,
-    ) -> dict[str, DopedDictSet]:
-        r"""
-        Generates and writes VASP input files for relaxations of the competing
-        phases, using HSE06 (hybrid DFT) by default (consistent with the
-        default input settings for defect calculations in :mod:`doped.vasp`).
-
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Note that any changes to the default ``INCAR``/``POTCAR``
-        settings should be consistent with those used for the defect supercell
-        calculations.
-
-        Note that this function uses a single kpoint density setting each for
-        metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
-        molecules (Gamma-only), while one will often want to specify custom
-        k-point settings for each material individually based on convergence
-        testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
-        cost.
-
-        Returns the corresponding dictionary of ``DopedDictSet`` objects
-        (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
-        contain the input file settings.
-
-        Note that, because these relaxations usually involve volume relaxation,
-        one should successively repeat the relaxation from the previous relaxed
-        geometry until convergence (no more significant volume changes), or use
-        a higher plane-wave cutoff energy (``ENCUT`` in ``VASP``) for the
-        volume relaxations (but using an energy cutoff consistent with any
-        defect calculations for a final single-point energy calculation), to
-        avoid spurious Pulay stress effects.
-
-        See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-        for tips on boosting the efficiency of competing phases calculations.
-
-        Args:
-            kpoints_metals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
-                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
-                Note that you may want to specify custom k-point settings for
-                each material individually based on convergence testing to
-                minimise cost.
-            kpoints_nonmetals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for
-                non-metallic entries (those with non-zero band gap). Default is
-                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
-                you may want to specify custom k-point settings for each
-                material individually based on convergence testing to minimise
-                cost.
-            user_incar_settings (dict):
-                Override the default INCAR settings e.g.
-                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
-                Note that any non-numerical or non-``True``/``False`` flags
-                need to be input as strings with quotation marks.
-                See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
-                ``VASP_HSESet.yaml`` for the default settings.
-            user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
-            user_potcar_settings (dict):
-                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
-            extrinsic_only (bool):
-                If ``True``, only generate inputs for
-                ``self.extrinsic_entries`` (useful when adding dopants to an
-                existing intrinsic competing-phases set). Default is ``False``
-                (generate/write inputs for all entries).
-            output_path (PathLike):
-                Top-level output directory name. Default is
-                ``"CompetingPhases"``.
-            subfolder (PathLike):
-                Output folder structure is
-                ``<output_path>/<competing_phase_dir>/<subfolder>``.
-                Default is ``"Relax"``. Set to ``"."`` to write input files
-                directly to ``<output_path>/<competing_phase_dir>``, with no
-                subfolders created.
             **kwargs:
-                Additional kwargs to pass to ``DictSet.write_input()``
+                Keyword arguments for the calculator backend\'s
+                ``get_relaxation_sets()`` function; e.g. ``kpoints_metals``,
+                ``kpoints_nonmetals``, ``extrinsic_only``, ``output_path``
+                and ``subfolder``, plus calculator-specific settings such as
+                ``user_incar_settings`` / ``user_potcar_settings`` with VASP.
 
         Returns:
-            dict[str, DopedDictSet]:
-                Mapping of output folder paths to generated
-                ``DopedDictSet``\s (subclasses of
-                :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+            dict[str, Any]:
+                Mapping of output folder paths to generated calculation
+                input sets.
         """
-        dict_sets = self.get_relaxation_sets(
-            kpoints_metals=kpoints_metals,
-            kpoints_nonmetals=kpoints_nonmetals,
-            user_potcar_functional=user_potcar_functional,
-            user_potcar_settings=user_potcar_settings,
-            user_incar_settings=user_incar_settings,
-            extrinsic_only=extrinsic_only,
-            output_path=output_path,
-            subfolder=subfolder,
-        )
-        return self._write_competing_phase_dict_sets(dict_sets, **kwargs)
+        return self._input_backend.get_relaxation_sets(self, **kwargs)
 
-    def vasp_std_setup(self, **kwargs) -> dict[str, DopedDictSet]:
+    def write_relaxation_files(self, **kwargs) -> dict[str, Any]:
+        r"""
+        Generate and write calculation input files for geometry relaxations of
+        the competing phases.
+
+        Dispatches to the ``write_relaxation_files()`` function of the
+        ``doped.io`` input-generation backend for ``self.calculator`` -- see
+        :func:`doped.io.vasp.inputs.write_relaxation_files` for the default
+        (VASP) behaviour and full list of options.
+
+        Args:
+            **kwargs:
+                Keyword arguments for the calculator backend\'s
+                ``write_relaxation_files()`` function (see
+                :meth:`get_relaxation_sets`, plus any file-writing options
+                such as ``poscar`` / ``potcar_spec`` with VASP).
+
+        Returns:
+            dict[str, Any]:
+                Mapping of output folder paths to written calculation input
+                sets.
+        """
+        return self._input_backend.write_relaxation_files(self, **kwargs)
+
+    def vasp_std_setup(self, **kwargs) -> dict[str, Any]:
         r"""
         Deprecated alias for :meth:`write_relaxation_files`.
 
@@ -1958,388 +1610,55 @@ class CompetingPhases(MSONable):
         )
         return self.write_relaxation_files(**kwargs)
 
-    def get_singlepoint_sets(
-        self,
-        kpoints_metals: float = 200.0,
-        kpoints_nonmetals: float = 64.0,  # MPRelaxSet default
-        soc: bool | None = None,
-        user_incar_settings: dict | None = None,
-        user_potcar_functional: str = "PBE",
-        user_potcar_settings: dict | None = None,
-        extrinsic_only: bool = False,
-        output_path: PathLike = "CompetingPhases",
-        subfolder: PathLike | None = None,
-    ) -> dict[str, DopedDictSet]:
+    def get_singlepoint_sets(self, **kwargs) -> dict[str, Any]:
         r"""
-        Generates ``DopedDictSet``\s for single-point (static) energy
-        calculations of the competing phases (i.e. ``NSW = 0``, ``IBRION = -1``
-        in ``VASP``), using HSE06 (hybrid DFT) by default (consistent with the
-        default input settings for defect calculations in :mod:`doped.vasp`).
+        Generate calculation input sets for final single-point (static) energy
+        calculations of the competing phases.
 
-        These are expected to be used as the final energy calculation after
-        geometry relaxation (from :meth:`write_relaxation_files`), to obtain
-        accurate total energies with tight convergence settings.
-
-        If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
-        ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
-        default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
-        explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
-        where the max atomic number across all species (host and extrinsic) is
-        Z >= 31 (heavier than Zn), matching the convention in
-        :mod:`doped.vasp`.
-
-        Inclusion of SOC is crucial for accurate formation energies and
-        chemical potentials in heavy-element systems, as discussed in
-        |Guidelines Perspective|. However, non-SOC energies can generally be
-        reliably used to determine `relative` energies of polymorphs, of the
-        same composition/oxidation states, to good accuracy, which can be
-        useful for pre-screening (e.g. then only performing more expensive SOC
-        calculations on the ground-state polymorph of each potential competing
-        phase). Moreover, one typically turns off symmetry for SOC calculations
-        (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
-        crystal symmetries due to spin-space coupling. However, one generally
-        finds that total energies from SOC calculations with (``VASP``)
-        symmetry routines turned on give energies consistent with no-symmetry
-        calculations, and can be much faster. Thus by default we do not turn
-        off symmetry for SOC calculations here -- note that the electronic band
-        structure from these calculations is thus unreliable.
-
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Note that any changes to the default ``INCAR``/``POTCAR``
-        settings should be consistent with those used for the defect supercell
-        calculations.
-
-        For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
-        default here) is well-suited to the geometry relaxations, tetrahedron
-        smearing (``ISMEAR = -5``) typically gives more accurate total energies
-        for these final single-point calculations with modest k-point
-        densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
-        Often this requires a lower `k`-point density than Methfessel-Paxton
-        smearing, and so it can be worth re-running k-point convergence testing
-        (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
-        check for cheaper converged `k`-point densities for these final
-        single-point calculations -- particularly useful if e.g. performing
-        hybrid DFT SOC calculations. See the
-        :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-        for further tips on boosting the efficiency of competing phases
-        calculations.
-
-        Note that this function uses a single kpoint density setting each for
-        metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
-        molecules (Gamma-only), while one will often want to specify custom
-        k-point settings for each material individually based on convergence
-        testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
-        cost.
+        Dispatches to the ``get_singlepoint_sets()`` function of the
+        ``doped.io`` input-generation backend for ``self.calculator`` -- see
+        :func:`doped.io.vasp.inputs.get_singlepoint_sets` for the default
+        (VASP) behaviour and full list of options.
 
         Args:
-            kpoints_metals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
-                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
-                Note that you may want to specify custom k-point settings for
-                each material individually based on convergence testing to
-                minimise cost.
-            kpoints_nonmetals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for
-                non-metallic entries (those with non-zero band gap). Default is
-                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
-                you may want to specify custom k-point settings for each
-                material individually based on convergence testing to minimise
-                cost.
-            soc (bool):
-                Whether to include spin-orbit coupling (SOC), by setting
-                ``LSORBIT = True`` in ``VASP`` ``INCAR`` files. If not set
-                (when ``soc = None``; default), SOC is enabled when the max
-                atomic number across all species (host and extrinsic) is Z >=
-                31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
-                calculations, and the default ``subfolder`` name is set to
-                ``"vasp_ncl"`` when ``soc`` is ``True``.
-            user_incar_settings (dict):
-                Override the default INCAR settings e.g.
-                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
-                Note that any non-numerical or non-``True``/``False`` flags
-                need to be input as strings with quotation marks.
-                See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
-                ``VASP_HSESet.yaml`` for the default settings.
-            user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
-            user_potcar_settings (dict):
-                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
-            extrinsic_only (bool):
-                If ``True``, only generate inputs for
-                ``self.extrinsic_entries`` (useful when adding dopants to an
-                existing intrinsic competing-phases set). Default is ``False``
-                (generate inputs for all entries).
-            output_path (PathLike):
-                Top-level output directory name (used as a key prefix).
-                Default is ``"CompetingPhases"``.
-            subfolder (PathLike):
-                Output folder structure is
-                ``<output_path>/<competing_phase_dir>/<subfolder>`` where
-                ``subfolder`` = 'SinglePoint' by default if ``soc`` is
-                ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
-                to write input files directly to
-                ``<output_path>/<competing_phase_dir>``, with no subfolders
-                created.
-
-        Returns:
-            dict[str, DopedDictSet]:
-                Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
-        """
-        if soc is None:
-            all_elements = self.intrinsic_elements + getattr(self, "extrinsic_elements", [])
-            max_Z = max(Element(el).Z for el in all_elements)
-            soc = max_Z >= 31
-
-            if soc:  # if SOC being automatically determined, print an info message
-                print(
-                    "Spin-orbit coupling (SOC) is being used by default for competing phase single-point "
-                    "calculations, as the heaviest element present (across intrinsic and extrinsic "
-                    "species) has an atomic number Z >= 31 -- consistent with the convention in "
-                    "`DefectsSet`. Set `soc` explicitly to control this behaviour (and suppress this "
-                    "message). As always, consistent settings with the defect supercell calculations "
-                    "should be used for the final single-point energy calculations.",
-                )
-
-        # build merged INCAR settings: singlepoint tags + SOC on top of user settings
-        sp_incar_settings = copy.deepcopy(singlepoint_incar_settings)
-        # TODO: Set ISMEAR to -5 for singlepoint calculations if sufficient KPOINT density? And for defect
-        # calcs? Tools for handling this in ``pymatgen``?
-        if soc:
-            sp_incar_settings["LSORBIT"] = True
-        sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
-
-        if subfolder is None:
-            subfolder = "vasp_ncl" if soc else "SinglePoint"
-
-        # reuse relaxation set generation with the singlepoint INCAR overrides
-        return self.get_relaxation_sets(
-            kpoints_metals=kpoints_metals,
-            kpoints_nonmetals=kpoints_nonmetals,
-            user_incar_settings=sp_incar_settings,
-            user_potcar_functional=user_potcar_functional,
-            user_potcar_settings=user_potcar_settings,
-            extrinsic_only=extrinsic_only,
-            output_path=output_path,
-            subfolder=subfolder,
-        )
-
-    def write_singlepoint_files(
-        self,
-        kpoints_metals: float = 200.0,
-        kpoints_nonmetals: float = 64.0,
-        soc: bool | None = None,
-        user_incar_settings: dict | None = None,
-        user_potcar_functional: str = "PBE",
-        user_potcar_settings: dict | None = None,
-        extrinsic_only: bool = False,
-        output_path: PathLike = "CompetingPhases",
-        subfolder: PathLike | None = None,
-        poscar: bool = False,
-        **kwargs,
-    ) -> dict[str, DopedDictSet]:
-        r"""
-        Generates and writes ``DopedDictSet``\s for single-point (static)
-        energy calculations of the competing phases (i.e. ``NSW = 0``, ``IBRION
-        = -1`` in ``VASP``), using HSE06 (hybrid DFT) by default (consistent
-        with the default input settings for defect calculations in
-        :mod:`doped.vasp`).
-
-        These are expected to be used as the final energy calculation after
-        geometry relaxation (from :meth:`write_relaxation_files`), to obtain
-        accurate total energies with tight convergence settings.
-
-        If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
-        ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
-        default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
-        explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
-        where the max atomic number across all species (host and extrinsic) is
-        Z >= 31 (heavier than Zn), matching the convention in
-        :mod:`doped.vasp`.
-
-        Inclusion of SOC is crucial for accurate formation energies and
-        chemical potentials in heavy-element systems, as discussed in
-        |Guidelines Perspective|. However, non-SOC energies can generally be
-        reliably used to determine `relative` energies of polymorphs, of the
-        same composition/oxidation states, to good accuracy, which can be
-        useful for pre-screening (e.g. then only performing more expensive SOC
-        calculations on the ground-state polymorph of each potential competing
-        phase). Moreover, one typically turns off symmetry for SOC calculations
-        (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
-        crystal symmetries due to spin-space coupling. However, one generally
-        finds that total energies from SOC calculations with (``VASP``)
-        symmetry routines turned on give energies consistent with no-symmetry
-        calculations, and can be much faster. Thus by default we do not turn
-        off symmetry for SOC calculations here -- note that the electronic band
-        structure from these calculations is thus unreliable.
-
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Note that any changes to the default ``INCAR``/``POTCAR``
-        settings should be consistent with those used for the defect supercell
-        calculations.
-
-        For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
-        default here) is well-suited to the geometry relaxations, tetrahedron
-        smearing (``ISMEAR = -5``) typically gives more accurate total energies
-        for these final single-point calculations with modest k-point
-        densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
-        Often this requires a lower `k`-point density than Methfessel-Paxton
-        smearing, and so it can be worth re-running k-point convergence testing
-        (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
-        check for cheaper converged `k`-point densities for these final
-        single-point calculations -- particularly useful if e.g. performing
-        hybrid DFT SOC calculations. See the
-        :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-        for further tips on boosting the efficiency of competing phases
-        calculations.
-
-        Note that this function uses a single kpoint density setting each for
-        metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
-        molecules (Gamma-only), while one will often want to specify custom
-        k-point settings for each material individually based on convergence
-        testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
-        cost.
-
-        Args:
-            kpoints_metals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
-                entries (those with zero band gap). Default is 200 kpoints/Å⁻³.
-                Note that you may want to specify custom k-point settings for
-                each material individually based on convergence testing to
-                minimise cost.
-            kpoints_nonmetals (float):
-                Kpoint density per inverse volume (kpoints/Å⁻³) for
-                non-metallic entries (those with non-zero band gap). Default is
-                64 kpoints/Å⁻³, matching the ``MPRelaxSet`` default). Note that
-                you may want to specify custom k-point settings for each
-                material individually based on convergence testing to minimise
-                cost.
-            soc (bool):
-                Whether to include spin-orbit coupling (SOC), by setting
-                ``LSORBIT = True`` in ``VASP`` ``INCAR`` files. If not set
-                (when ``soc = None``; default), SOC is enabled when the max
-                atomic number across all species (host and extrinsic) is Z >=
-                31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
-                calculations, and the default ``subfolder`` name is set to
-                ``"vasp_ncl"`` when ``soc`` is ``True``.
-            user_incar_settings (dict):
-                Override the default INCAR settings e.g.
-                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
-                Note that any non-numerical or non-``True``/``False`` flags
-                need to be input as strings with quotation marks.
-                See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
-                ``VASP_HSESet.yaml`` for the default settings.
-            user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
-            user_potcar_settings (dict):
-                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
-            extrinsic_only (bool):
-                If ``True``, only generate inputs for
-                ``self.extrinsic_entries`` (useful when adding dopants to an
-                existing intrinsic competing-phases set). Default is ``False``
-                (generate inputs for all entries).
-            output_path (PathLike):
-                Top-level output directory name (used as a key prefix).
-                Default is ``"CompetingPhases"``.
-            subfolder (PathLike):
-                Output folder structure is
-                ``<output_path>/<competing_phase_dir>/<subfolder>`` where
-                ``subfolder`` = 'SinglePoint' by default if ``soc`` is
-                ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
-                to write input files directly to
-                ``<output_path>/<competing_phase_dir>``, with no subfolders
-                created.
-            poscar (bool):
-                Whether to write ``POSCAR`` files. Defaults to ``False``, as
-                single-point (static) calculations are intended to be run on
-                `relaxed` structures (e.g. from relaxations with
-                :func:`write_relaxation_files`), so using the (unrelaxed)
-                Materials Project structure is typically undesirable.
             **kwargs:
-                Additional kwargs to pass to ``DictSet.write_input()``
+                Keyword arguments for the calculator backend\'s
+                ``get_singlepoint_sets()`` function; e.g. ``soc``,
+                ``kpoints_metals``, ``kpoints_nonmetals``,
+                ``extrinsic_only``, ``output_path`` and ``subfolder``, plus
+                calculator-specific settings such as ``user_incar_settings``
+                / ``user_potcar_settings`` with VASP.
 
         Returns:
-            dict[str, DopedDictSet]:
-                Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+            dict[str, Any]:
+                Mapping of output folder paths to generated calculation
+                input sets.
         """
-        dict_sets = self.get_singlepoint_sets(
-            kpoints_metals=kpoints_metals,
-            kpoints_nonmetals=kpoints_nonmetals,
-            soc=soc,
-            user_potcar_functional=user_potcar_functional,
-            user_potcar_settings=user_potcar_settings,
-            user_incar_settings=user_incar_settings,
-            extrinsic_only=extrinsic_only,
-            output_path=output_path,
-            subfolder=subfolder,
-        )
-        return self._write_competing_phase_dict_sets(dict_sets, poscar=poscar, **kwargs)
+        return self._input_backend.get_singlepoint_sets(self, **kwargs)
 
-    def _write_competing_phase_dict_sets(
-        self, dict_sets: dict[str, DopedDictSet], poscar: bool = True, **kwargs
-    ) -> dict[str, DopedDictSet]:
+    def write_singlepoint_files(self, **kwargs) -> dict[str, Any]:
         r"""
-        Write a dictionary of ``DopedDictSet``\s to their corresponding output
-        folders, warning if any already exist.
+        Generate and write calculation input files for final single-point
+        (static) energy calculations of the competing phases.
 
-        ``POSCAR`` writing is controlled by the ``poscar`` argument (default
-        ``True``). ``POSCAR``/``KPOINTS`` are always skipped for nominal
-        (placeholder) structures, regardless of ``poscar``.
+        Dispatches to the ``write_singlepoint_files()`` function of the
+        ``doped.io`` input-generation backend for ``self.calculator`` -- see
+        :func:`doped.io.vasp.inputs.write_singlepoint_files` for the default
+        (VASP) behaviour and full list of options.
+
+        Args:
+            **kwargs:
+                Keyword arguments for the calculator backend\'s
+                ``write_singlepoint_files()`` function (see
+                :meth:`get_singlepoint_sets`, plus any file-writing options
+                such as ``poscar`` / ``potcar_spec`` with VASP).
+
+        Returns:
+            dict[str, Any]:
+                Mapping of output folder paths to written calculation input
+                sets.
         """
-        for fname, dict_set in dict_sets.items():
-            write_kwargs = copy.deepcopy(kwargs)
-            write_kwargs["poscar"] = poscar
-            if dict_set.structure.properties.get("_is_nominal_structure", False):
-                write_kwargs.update({"poscar": False, "kpoints": False})
-
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
-                if os.path.exists(fname):
-                    warnings.warn(f"Output folder {fname} already exists. Overwriting files.")
-                dict_set.write_input(fname, **write_kwargs)
-
-        return dict_sets
-
-    def _set_spin_polarisation(
-        self,
-        incar_settings: dict,
-        user_incar_settings: dict,
-        entry: ComputedEntry,
-    ) -> None:
-        """
-        If the entry has a non-zero total magnetization (greater than the
-        default tolerance of 0.1), set ``ISPIN`` to 2 (allowing spin
-        polarisation) and ``NUPDOWN`` equal to the integer-rounded total
-        magnetization.
-
-        Otherwise ``ISPIN`` is not set, so spin polarisation is not allowed (as
-        typically desired for non-magnetic phases, for efficiency).
-
-        See the :ref:`Tips:Magnetization` tips section.
-        """
-        magnetization = entry.data.get("summary", {}).get("total_magnetization")
-        if magnetization is not None and magnetization > 0.1:  # account for magnetic moment
-            incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
-            if "NUPDOWN" not in incar_settings and int(magnetization) > 0:
-                incar_settings["NUPDOWN"] = int(magnetization)
-
-        # otherwise ISPIN not set, so no spin polarisation
-
-    def _set_default_metal_smearing(self, incar_settings: dict, user_incar_settings: dict) -> None:
-        """
-        Set the smearing parameters to the ``doped`` defaults for metallic
-        phases (i.e. ``ISMEAR`` = 2 (Methfessel-Paxton) and ``SIGMA`` = 0.2
-        eV).
-        """
-        incar_settings["ISMEAR"] = user_incar_settings.get("ISMEAR", 2)
-        incar_settings["SIGMA"] = user_incar_settings.get("SIGMA", 0.2)
+        return self._input_backend.write_singlepoint_files(self, **kwargs)
 
     def _generate_elemental_diatomic_phases(self, entries: list[ComputedEntry]) -> list[ComputedEntry]:
         r"""
@@ -3205,22 +2524,24 @@ class CompetingPhasesAnalyzer(MSONable):
         verbose: bool = True,
         processes: int | None = None,
         check_compatibility: bool = True,
+        calculator: str = "vasp",
     ):
         r"""
         Class for post-processing competing phases calculations, to determine
         the corresponding chemical potentials for the host ``composition``.
 
-        This class can be initialised from VASP outputs (``vasprun.xml``\s) by
+        This class can be initialised from calculation outputs
+        (``vasprun.xml``\s with the default ``vasp`` ``calculator``) by
         specifying the path to the directory containing the outputs (e.g.
         ``"CompetingPhases"``) or a list of directories, or from a list of of
         |ComputedEntry|\s / |ComputedStructureEntry|\s (e.g. for use with
         high-throughput computing architectures such as ``atomate2`` or
         ``AiiDA``).
 
-        Multiprocessing is used by default to speed up parsing of VASP outputs,
-        which can be controlled with ``processes``. If parsing hangs, this may
-        be due to memory issues, in which case you should reduce ``processes``
-        (e.g. 4 or less).
+        Multiprocessing is used by default to speed up parsing of calculation
+        outputs, which can be controlled with ``processes``. If parsing hangs,
+        this may be due to memory issues, in which case you should reduce
+        ``processes`` (e.g. 4 or less).
 
         If extrinsic (dopant/impurity) elements are present, their chemical
         potential limits will also be calculated, where every facet (limit)
@@ -3232,12 +2553,13 @@ class CompetingPhasesAnalyzer(MSONable):
                 ``Composition('LiFePO4')``, or
                 ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
             entries (PathLike, list[PathLike], list[|ComputedEntry|], list[|ComputedStructureEntry|]):
-                Either a path to the base folder containing the VASP outputs
-                (e.g. ``"CompetingPhases"``; default), which is searched
-                recursively for ``vasprun.xml(.gz)`` files, or a list of
-                paths to ``vasprun.xml(.gz)`` files / directories.
-                Alternatively, can be a list of |ComputedEntry|\s /
-                |ComputedStructureEntry|\s.
+                Either a path to the base folder containing the calculation
+                outputs (e.g. ``"CompetingPhases"``; default), which is
+                searched recursively for calculation output files
+                (``vasprun.xml(.gz)`` files with the default ``vasp``
+                ``calculator``), or a list of paths to calculation output
+                files / directories. Alternatively, can be a list of
+                |ComputedEntry|\s / |ComputedStructureEntry|\s.
             subfolder (PathLike):
                 Restrict parsing to ``vasprun.xml(.gz)`` files inside
                 directories with this name (e.g. ``"vasp_std"``; default) --
@@ -3287,6 +2609,11 @@ class CompetingPhasesAnalyzer(MSONable):
                 Whether to check the compatibility of the parsed entries,
                 by comparing their ``INCAR`` and ``POTCAR`` settings (if
                 available). Default is ``True``.
+            calculator (str):
+                Name of the calculator used for the competing phase
+                calculations (matching a ``doped.io.<calculator>`` parsing
+                backend), when parsing from calculation outputs. Default:
+                "vasp".
 
         Key attributes:
             composition (str):
@@ -3339,13 +2666,13 @@ class CompetingPhasesAnalyzer(MSONable):
             elemental_energies (dict):
                 Dictionary of the lowest energy elemental phases for each
                 element in the chemical system.
-            vasprun_paths (list[str]):
-                List of paths to the ``vasprun.xml(.gz)`` files that were
-                parsed (empty if initialised directly from entries).
+            calc_output_paths (list[str]):
+                List of paths to the calculation output files that were
+                parsed (``vasprun.xml(.gz)`` files with the default ``vasp``
+                calculator; empty if initialised directly from entries).
             parsed_folders (list):
-                List of folders from which VASP calculation outputs were
-                parsed, if ``entries`` was given as a path / paths to
-                directories.
+                List of folders from which calculation outputs were parsed,
+                if ``entries`` was given as a path / paths to directories.
             single_extrinsic_phase_limits (bool):
                 Stored input parameter (see ``Args`` above).
         """
@@ -3355,19 +2682,20 @@ class CompetingPhasesAnalyzer(MSONable):
         self.extrinsic_elements: list[str] = []
         self.single_extrinsic_phase_limits = single_extrinsic_phase_limits
 
-        # _from_vaspruns or _from_entries depending on input
+        # _from_calc_outputs or _from_entries depending on input
         if not isinstance(entries, str | PathLike | list):
             raise TypeError(
-                f"`entries` must be either a path to a directory containing VASP outputs, "
+                f"`entries` must be either a path to a directory containing calculation outputs, "
                 f"a list of paths, or a list of ComputedEntry/ComputedStructureEntry objects, "
                 f"got type {type(entries)} instead!"
             )
 
-        self.vasprun_paths: list[str] = []
+        self.calculator = calculator
+        self.calc_output_paths: list[str] = []
         self.parsed_folders: list[str] = []
 
         if isinstance(entries, str | PathLike) or isinstance(entries[0], str | PathLike):
-            self._from_vaspruns(
+            self._from_calc_outputs(
                 path=entries,
                 subfolder=subfolder,
                 verbose=verbose,
@@ -3472,102 +2800,16 @@ class CompetingPhasesAnalyzer(MSONable):
         self.bulk_entry = sorted(bulk_comp_entries, key=lambda x: x.energy_per_atom)[0]
         self.unstable_host = False
 
-        if check_compatibility:
-            # check entry compatibilities:
-            # take first of bulk entry, bulk comp entries, intrinsic, all entries which have INCAR/POTCAR
-            # data as template entries for compatibility checking:
-            sorted_entries_with_incar_data = [
-                entry
-                for entry in [self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries]
-                if entry.data.get("incar")
-            ]
-            sorted_entries_with_potcar_data = [
-                entry
-                for entry in [self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries]
-                if entry.data.get("potcar_symbols")
-            ]
-            if sorted_entries_with_incar_data:
-                incar_template_entry = sorted_entries_with_incar_data[0]
-                for entry in entries:
-                    incar_mismatches = _compare_incar_tags(
-                        entry.data["incar"],
-                        incar_template_entry.data["incar"],
-                        ignore_tags={"NKRED"},  # no NKRED mismatch warnings for competing phases
-                        warn=False,
-                    )  # warned collectively below if any mismatches
-                    # ignore ISIF warnings in cases of supercell calculations (i.e. either gas calculations
-                    # or bulk supercell -- assumed to be the correct volume):
-                    if not isinstance(incar_mismatches, bool):
-                        incar_mismatches = [
-                            i
-                            for i in incar_mismatches
-                            if i[0] != "ISIF"
-                            or all(ent.structure.volume < 800 for ent in [incar_template_entry, entry])
-                        ]
-                    incar_mismatches = incar_mismatches if incar_mismatches else False
-                    entry.data["mismatching_INCAR_tags"] = (
-                        incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
-                    )
-
-                mismatching_INCAR_warnings = sorted(
-                    [
-                        (entry.name, set(entry.data.get("mismatching_INCAR_tags")))
-                        for entry in entries
-                        if entry.data.get("mismatching_INCAR_tags")
-                    ],
-                    key=lambda x: (len(x[1]), x[0]),
-                    reverse=True,
-                )  # sort by number of mismatches, reversed
-                if mismatching_INCAR_warnings:
-                    warnings.warn(
-                        f"There are mismatching INCAR tags for (some of) your competing phases "
-                        f"calculations which are likely to cause errors in the parsed results (energies "
-                        f"& thus chemical potential limits). Found the following differences:\n"
-                        f"(in the format: 'Entries: (INCAR tag, value in entry calculation, "
-                        f"value in reference calculation))':"
-                        f"\n{_format_mismatching_incar_warning(mismatching_INCAR_warnings)}\n"
-                        f"Where {incar_template_entry.name} was used as the reference entry calculation.\n"
-                        f"In general, the same INCAR settings should be used in all final calculations "
-                        f"for these tags which can affect energies!"
-                    )
-
-            if sorted_entries_with_potcar_data:
-                potcar_template_entry = sorted_entries_with_potcar_data[0]
-                for entry in entries:
-                    potcar_mismatches = _compare_potcar_symbols(
-                        entry.data["potcar_symbols"],
-                        potcar_template_entry.data["potcar_symbols"],
-                        warn=False,
-                        only_matching_elements=True,
-                    )  # warned collectively below if any mismatches
-                    entry.data["mismatching_POTCAR_symbols"] = (
-                        potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
-                    )
-
-                mismatching_potcars_warnings = sorted(
-                    [
-                        (entry.name, entry.data.get("mismatching_POTCAR_symbols"))
-                        for entry in entries
-                        if entry.data.get("mismatching_POTCAR_symbols")
-                    ],
-                    key=lambda x: (len(x[1]), x[0]),
-                    reverse=True,
-                )  # sort by number of mismatches, reversed
-                if mismatching_potcars_warnings:
-                    joined_info_string = "\n".join(
-                        [f"{name}: {mismatching}" for name, mismatching in mismatching_potcars_warnings]
-                    )
-                    warnings.warn(
-                        f"There are mismatching POTCAR symbols for (some of) your competing phases "
-                        f"calculations which are likely to cause errors in the parsed results (energies & "
-                        f"thus chemical potential limits). Found the following differences:\n"
-                        f"(in the format: (entry POTCARs, reference POTCARs)):"
-                        f"\n{joined_info_string}\n"
-                        f"Where {potcar_template_entry.name} was used as the reference entry "
-                        f"calculation.\n"
-                        f"In general, the same POTCAR settings should be used in all final calculations "
-                        f"for these tags which can affect energies!"
-                    )
+        # check entry compatibilities (calculation settings), with the calculator backend (if it
+        # implements this check); taking the first of bulk entry, bulk comp entries, intrinsic, all
+        # entries `with` the relevant settings data as the reference (template) entry:
+        if check_compatibility and (
+            check_entry_compatibility := getattr(self._backend, "check_entry_compatibility", None)
+        ):
+            check_entry_compatibility(
+                entries,
+                template_candidates=[self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries],
+            )
 
         # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
         # and add to self.elements:
@@ -3650,7 +2892,7 @@ class CompetingPhasesAnalyzer(MSONable):
             verbose=False, single_extrinsic_phase_limits=self.single_extrinsic_phase_limits
         )
 
-    def _from_vaspruns(
+    def _from_calc_outputs(
         self,
         path: PathLike | list[PathLike] = "CompetingPhases",
         subfolder: PathLike | None = None,
@@ -3659,10 +2901,12 @@ class CompetingPhasesAnalyzer(MSONable):
         check_compatibility: bool = True,
     ) -> None:
         r"""
-        Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
-        generating |ComputedStructureEntry|\s and then continuing
-        initialisation with the ``CompetingPhasesAnalyzer._from_entries``
-        method.
+        Parses competing phase energies from calculation outputs
+        (``vasprun.xml(.gz)`` files with the default ``vasp`` calculator),
+        generating |ComputedStructureEntry|\s (with the
+        ``get_competing_phase_entry()`` function of the ``doped.io`` backend
+        for ``self.calculator``) and then continuing initialisation with the
+        ``CompetingPhasesAnalyzer._from_entries`` method.
 
         Recursively searches for ``vasprun.xml(.gz)`` files under ``path``.
         When ``subfolder`` is set, only vaspruns inside directories with that
@@ -3704,20 +2948,21 @@ class CompetingPhasesAnalyzer(MSONable):
                 by comparing their ``INCAR`` and ``POTCAR`` settings.
                 Default is ``True``.
         """
+        output_file = self._backend.CALC_OUTPUT_MASK[0]  # e.g. "vasprun.xml" with VASP
         if isinstance(path, list):
-            self._collect_vaspruns_from_list(path)
+            self._collect_calc_outputs_from_list(path)
         elif isinstance(path, PathLike):
-            self._collect_vaspruns_from_directory(path, subfolder, verbose)
+            self._collect_calc_outputs_from_directory(path, subfolder, verbose)
         else:
             raise ValueError(
-                "`path` should either be a path to a folder (with competing phase "
-                "calculations), or a list of paths to vasprun.xml(.gz) files."
+                f"`path` should either be a path to a folder (with competing phase "
+                f"calculations), or a list of paths to {output_file}(.gz) files."
             )
 
-        if not self.vasprun_paths:
+        if not self.calc_output_paths:
             raise FileNotFoundError(
-                f"No vasprun.xml(.gz) files found under '{path}'. Please check that the folder structure "
-                f"and input parameters are in the correct format (see docs/tutorials)."
+                f"No {output_file}(.gz) files found under '{path}'. Please check that the folder "
+                f"structure and input parameters are in the correct format (see docs/tutorials)."
             )
 
         # Ignore POTCAR warnings when loading vasprun.xml
@@ -3726,55 +2971,59 @@ class CompetingPhasesAnalyzer(MSONable):
 
         self.entries = []
         failed_parsing_dict: dict[str, list] = {}
+        parse_entry = partial(_parse_entry_and_catch_exception, calculator=self.calculator)
         if processes is None:  # multiprocessing?
             # from quick tests; Pool takes about 2.75s to initialise, with negligible additional cost per
             # process, and vasprun parsing with pymatgen v2025.1.9 takes ~0.025 s/MB (uncompressed file
             # size; with gzip compressing large vasprun.xml files by ~15-20x) -- (~1.5-3x faster after SK's
             # updates to vasprun parsing in pymatgen v2025.4.16).
-            # So for multiprocessing to be worth it, we need at least 2 vaspruns to parse, with a summed
-            # uncompressed vasprun file size, excluding the largest one, of around >100 Mb
-            def _estimate_uncompressed_vasprun_size(vasprun_path: PathLike) -> float:
-                return (os.path.getsize(vasprun_path) / 1e6) * (20 if vasprun_path.endswith(".gz") else 1)
+            # So for multiprocessing to be worth it, we need at least 2 outputs to parse, with a summed
+            # uncompressed output file size, excluding the largest one, of around >100 Mb
+            def _estimate_uncompressed_size(calc_output_path: PathLike) -> float:
+                return (os.path.getsize(calc_output_path) / 1e6) * (
+                    20 if calc_output_path.endswith(".gz") else 1
+                )
 
-            vasprun_sizes_MB = [
-                _estimate_uncompressed_vasprun_size(vasprun_path) for vasprun_path in self.vasprun_paths
+            calc_output_sizes_MB = [
+                _estimate_uncompressed_size(calc_output_path)
+                for calc_output_path in self.calc_output_paths
             ] or [0]
             mp_context = get_mp_context()
-            if sum(vasprun_sizes_MB) - max(vasprun_sizes_MB) > 100:
+            if sum(calc_output_sizes_MB) - max(calc_output_sizes_MB) > 100:
                 # only multiprocess as much as makes sense:
-                num_large_vaspruns = sum(1 for size in vasprun_sizes_MB if size > 20)
-                processes = min(max(1, mp_context.cpu_count() - 1), num_large_vaspruns - 1)
+                num_large_outputs = sum(1 for size in calc_output_sizes_MB if size > 20)
+                processes = min(max(1, mp_context.cpu_count() - 1), num_large_outputs - 1)
             else:
                 processes = 1
 
         parsing_results = []
+        desc = f"Parsing {output_file}s..."
         with warnings.catch_warnings():
+            # VASP-specific warning class; simply never raised with other calculator backends:
             warnings.filterwarnings("ignore", category=UnconvergedVASPWarning)  # checked and warned later
             if processes > 1:  # multiprocessing
-                with pool_manager(processes) as pool:  # result is parsed vasprun
+                with pool_manager(processes) as pool:  # result is parsed entry
                     for result in tqdm(
-                        pool.imap_unordered(
-                            _parse_entry_from_vasprun_and_catch_exception, self.vasprun_paths
-                        ),
-                        total=len(self.vasprun_paths),
-                        desc="Parsing vaspruns...",
+                        pool.imap_unordered(parse_entry, self.calc_output_paths),
+                        total=len(self.calc_output_paths),
+                        desc=desc,
                     ):
                         parsing_results.append(result)
             else:
-                for vasprun_path in tqdm(self.vasprun_paths, desc="Parsing vaspruns..."):
-                    parsing_results.append(_parse_entry_from_vasprun_and_catch_exception(vasprun_path))
+                for calc_output_path in tqdm(self.calc_output_paths, desc=desc):
+                    parsing_results.append(parse_entry(calc_output_path))
 
-        electronic_unconverged_vaspruns = []
-        ionic_unconverged_vaspruns = []
+        electronic_unconverged_paths = []
+        ionic_unconverged_paths = []
         for result in parsing_results:
             if isinstance(result[0], ComputedEntry | ComputedStructureEntry):
                 # successful parse; result is entry, parsed folder, converged electronic and ionic
                 self.entries.append(result[0])
                 self.parsed_folders.append(result[1])
                 if not result[2]:
-                    electronic_unconverged_vaspruns.append(result[1])
+                    electronic_unconverged_paths.append(result[1])
                 if not result[3]:
-                    ionic_unconverged_vaspruns.append(result[1])
+                    ionic_unconverged_paths.append(result[1])
             else:  # failed parse; result is error message and path
                 if str(result[0]) in failed_parsing_dict:
                     failed_parsing_dict[str(result[0])] += [result[1]]
@@ -3783,62 +3032,79 @@ class CompetingPhasesAnalyzer(MSONable):
 
         if failed_parsing_dict:
             warning_string = (
-                "Failed to parse the following `vasprun.xml` files:\n(files: error)\n"
+                f"Failed to parse the following `{output_file}` files:\n(files: error)\n"
                 + "\n".join([f"{paths}: {error}" for error, paths in failed_parsing_dict.items()])
             )
             warnings.warn(warning_string)
 
-        # check if any vaspruns are unconverged, and warn together:
-        for unconverged_vaspruns, unconverged_type in zip(
-            [electronic_unconverged_vaspruns, ionic_unconverged_vaspruns],
+        # check if any calculations are unconverged, and warn together:
+        for unconverged_paths, unconverged_type in zip(
+            [electronic_unconverged_paths, ionic_unconverged_paths],
             ["Electronic", "Ionic"],
             strict=False,
         ):
-            if unconverged_vaspruns:
+            if unconverged_paths:
                 warnings.warn(
-                    f"{unconverged_type} convergence was not reached for vaspruns in:\n"
-                    + "\n".join(unconverged_vaspruns)
+                    f"{unconverged_type} convergence was not reached for {output_file}s in:\n"
+                    + "\n".join(unconverged_paths)
                 )
 
         if not self.entries:
             raise FileNotFoundError(
-                "No vasprun files have been parsed, suggesting issues with parsing! Please check that "
-                "folders and input parameters are in the correct format (see docstrings/tutorials)."
+                f"No {output_file} files have been parsed, suggesting issues with parsing! Please check "
+                f"that folders and input parameters are in the correct format (see docstrings/tutorials)."
             )
 
         return self._from_entries(self.entries, check_compatibility=check_compatibility)
 
-    def _collect_vaspruns_from_list(self, path_list: list[PathLike]) -> None:
+    @property
+    def _backend(self):
         """
-        Populate ``self.vasprun_paths`` from a list of paths, where each entry
-        can be a direct ``vasprun.xml(.gz)`` path or a directory containing
-        one.
+        The ``doped.io`` output-parsing backend module for ``self.calculator``.
         """
+        return get_backend(getattr(self, "calculator", "vasp"))
+
+    def _collect_calc_outputs_from_list(self, path_list: list[PathLike]) -> None:
+        """
+        Populate ``self.calc_output_paths`` from a list of paths, where each
+        entry can be a direct calculation output file path
+        (``vasprun.xml(.gz)`` with ``VASP``) or a directory containing one.
+        """
+        output_file = self._backend.CALC_OUTPUT_MASK[0]
         for entry_path in path_list:
-            if "vasprun.xml" in str(entry_path) and not str(entry_path).startswith("."):
-                self.vasprun_paths.append(str(entry_path))
+            if str(output_file) in str(entry_path) and not str(entry_path).startswith("."):
+                self.calc_output_paths.append(str(entry_path))
                 continue
 
-            vasprun_path = self._find_vasprun_in_directory(entry_path)
-            if vasprun_path is not None:
-                self.vasprun_paths.append(str(vasprun_path))
+            calc_output_path = self._find_calc_output_in_directory(entry_path)
+            if calc_output_path is not None:
+                self.calc_output_paths.append(str(calc_output_path))
 
-    def _collect_vaspruns_from_directory(
+    def _collect_calc_outputs_from_directory(
         self,
         path: PathLike,
         subfolder: PathLike | None = None,
         verbose: bool = True,
     ) -> None:
         """
-        Recursively search ``path`` for ``vasprun.xml(.gz)`` files, using the
-        :func:`~doped.io.vasp.outputs._find_calc_outputs` helper for file
-        discovery and subfolder auto-detection.
+        Recursively search ``path`` for calculation output files
+        (``vasprun.xml(.gz)`` with VASP), using the
+        :func:`~doped.io.utils._find_calc_outputs` helper for file discovery
+        and subfolder auto-detection (parameterised by the calculator backend's
+        ``CALC_OUTPUT_MASK`` / ``SUBFOLDER_PRIORITY``).
         """
         root = Path(path)
         if not root.is_dir():
             raise FileNotFoundError(f"No such file or directory: '{path}'")
 
-        calc_files_df, _folders, resolved_subfolder = _find_calc_outputs(root, subfolder)
+        backend = self._backend
+        output_file = backend.CALC_OUTPUT_MASK[0]
+        calc_files_df, _folders, resolved_subfolder = _io_utils._find_calc_outputs(
+            root,
+            subfolder,
+            calc_output_mask=backend.CALC_OUTPUT_MASK,
+            subfolder_priority=getattr(backend, "SUBFOLDER_PRIORITY", []),
+        )
         if calc_files_df.empty:
             return
 
@@ -3850,34 +3116,50 @@ class CompetingPhasesAnalyzer(MSONable):
                 calc_files_df = filtered
             elif verbose:
                 warnings.warn(
-                    f"No vasprun.xml files found in '{resolved_subfolder}' subfolders under {path}. "
-                    f"Using all {len(calc_files_df)} vasprun.xml files found."
+                    f"No {output_file} files found in '{resolved_subfolder}' subfolders under {path}. "
+                    f"Using all {len(calc_files_df)} {output_file} files found."
                 )
 
         for directory in sorted(calc_files_df["folder_path"].unique()):
-            vasprun_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", str(directory))
-            if vasprun_path and os.path.exists(vasprun_path):
+            calc_output_path, multiple = _io_utils._get_output_files_and_check_if_multiple(
+                output_file, str(directory)
+            )
+            if calc_output_path and os.path.exists(calc_output_path):
                 if multiple:
-                    _multiple_files_warning(
-                        "vasprun.xml", directory, vasprun_path, dir_type="competing phase"
-                    )
-                self.vasprun_paths.append(vasprun_path)
+                    self._multiple_files_warning(output_file, directory, calc_output_path)
+                self.calc_output_paths.append(calc_output_path)
 
-    @staticmethod
-    def _find_vasprun_in_directory(directory: PathLike) -> str | None:
+    def _find_calc_output_in_directory(self, directory: PathLike) -> str | None:
         """
-        Find a single ``vasprun.xml(.gz)`` in ``directory``.
+        Find a single calculation output file (``vasprun.xml(.gz)`` with VASP)
+        in ``directory``.
 
         Returns the path as a string, or ``None`` if not found.
         """
-        vasprun_path, multiple = None, False
+        output_file = self._backend.CALC_OUTPUT_MASK[0]
+        calc_output_path, multiple = None, False
         with contextlib.suppress(FileNotFoundError):
-            vasprun_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", str(directory))
-        if vasprun_path and os.path.exists(vasprun_path):
+            calc_output_path, multiple = _io_utils._get_output_files_and_check_if_multiple(
+                output_file, str(directory)
+            )
+        if calc_output_path and os.path.exists(calc_output_path):
             if multiple:
-                _multiple_files_warning("vasprun.xml", directory, vasprun_path, dir_type="competing phase")
-            return str(vasprun_path)
+                self._multiple_files_warning(output_file, directory, calc_output_path)
+            return str(calc_output_path)
         return None
+
+    def _multiple_files_warning(self, output_file, directory, chosen_filepath) -> None:
+        """
+        Warn that multiple calculation output files were found in
+        ``directory``, using the backend's ``FILE_PARSING_ACTIONS`` for the
+        (informative) description of what the file is parsed for.
+        """
+        action = getattr(self._backend, "FILE_PARSING_ACTIONS", {}).get(
+            output_file, "parse the calculation energy and metadata."
+        )
+        _io_utils._multiple_files_warning(
+            output_file, directory, chosen_filepath, action, dir_type="competing phase"
+        )
 
     def get_formation_energy_df(
         self,
@@ -4524,7 +3806,8 @@ class CompetingPhasesAnalyzer(MSONable):
             "unstable_host": self.unstable_host,
             "bulk_entry": self.bulk_entry,
             "parsed_folders": self.parsed_folders,
-            "vasprun_paths": self.vasprun_paths,
+            "calc_output_paths": self.calc_output_paths,
+            "calculator": self.calculator,
         }
 
     @classmethod
@@ -4556,7 +3839,8 @@ class CompetingPhasesAnalyzer(MSONable):
         cpa.unstable_host = d.get("unstable_host", cpa.unstable_host)
         cpa.bulk_entry = get_entry(d.get("bulk_entry", cpa.bulk_entry))
         cpa.parsed_folders = d.get("parsed_folders", cpa.parsed_folders)
-        cpa.vasprun_paths = d.get("vasprun_paths", cpa.vasprun_paths)
+        cpa.calc_output_paths = d.get("calc_output_paths", cpa.calc_output_paths)
+        cpa.calculator = d.get("calculator", cpa.calculator)
         return cpa
 
     @property
@@ -5087,43 +4371,29 @@ def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None) -> None:
         text.set_position(new_position)
 
 
-def _parse_entry_from_vasprun_and_catch_exception(
-    vasprun_path: PathLike,
-) -> tuple[str | Vasprun, PathLike, bool, bool]:
-    """
-    Parse a VASP ``vasprun.xml`` file into a |ComputedStructureEntry|, catching
-    any exceptions and returning the error message and the path to the
-    ``vasprun.xml`` file if an exception is raised.
+def _parse_entry_and_catch_exception(
+    calc_output_path: PathLike, calculator: str = "vasp"
+) -> tuple[str | ComputedStructureEntry, PathLike, bool, bool]:
+    r"""
+    Parse a competing phase calculation output into a
+    |ComputedStructureEntry|\s (using the ``get_competing_phase_entry()``
+    function of the ``doped.io`` backend for ``calculator``), catching any
+    exceptions and returning the error message and the calculation output path
+    if an exception is raised.
+
+    Returns the entry, the folder it was parsed from, and whether electronic
+    and ionic convergence were reached.
     """
     try:
-        vasprun = get_vasprun(vasprun_path)
-        entry = vasprun.get_computed_entry()
-        unique_symbols = sorted(set(vasprun.atomic_symbols))
-        summary_dict = {}
-        with contextlib.suppress(Exception):  # non-essential properties, can fail with incomplete vasprun
-            summary_dict["band_gap"] = vasprun.eigenvalue_band_properties[0]
-            summary_dict["total_magnetization"] = get_magnetization_from_vasprun(vasprun)
-
-        entry.data.update(
-            {
-                "formula_pretty": entry.composition.reduced_formula,
-                "nsites": len(entry.structure),
-                "volume": entry.structure.volume,
-                "energy_per_atom": entry.energy_per_atom,
-                "elements": unique_symbols,
-                "nelements": len(unique_symbols),
-                "kpoints": vasprun.kpoints.kpts,
-                "incar": {k: v for k, v in vasprun.incar.as_dict().items() if "@" not in k},
-                "potcar_symbols": vasprun.potcar_spec,
-                "summary": summary_dict,
-            }
+        entry = get_backend(calculator).get_competing_phase_entry(calc_output_path)
+        return (
+            entry,
+            entry.data.get("folder", str(calc_output_path)),
+            entry.data.get("converged_electronic", True),  # default True (i.e. no warning) if the
+            entry.data.get("converged_ionic", True),  # backend does not report convergence info
         )
-        electronic_converged = vasprun.converged_electronic
-        ionic_converged = vasprun.converged_ionic
-        folder = str(vasprun_path).removesuffix(".gz").removesuffix("vasprun.xml")
-        return entry, folder, electronic_converged, ionic_converged
     except Exception as e:
-        return str(e), vasprun_path, False, False
+        return str(e), calc_output_path, False, False
 
 
 def _possible_label_positions_from_bbox_intersections(

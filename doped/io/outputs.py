@@ -17,9 +17,9 @@ from typing import Any
 
 import numpy as np
 from monty.json import MontyDecoder, MSONable
+from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.core import Spin
-from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.util.typing import PathLike
 
 
@@ -253,7 +253,8 @@ class CalculationOutputs(MSONable):
         """
         self.eigenvalues = None
         self.projected_eigenvalues = None
-        if (raw_vr := self.raw.get("vasprun")) is not None:
+        if (raw_vr := self.raw.get("vasprun")) is not None:  # VASP-specific by design; a no-op
+            # for other backends (and for outputs parsed without keeping the raw objects):
             raw_vr.eigenvalues = None
             raw_vr.projected_eigenvalues = None
             raw_vr.projected_magnetization = None

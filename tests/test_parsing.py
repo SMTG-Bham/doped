@@ -3682,8 +3682,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             defect_outputs=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
-            bulk_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR.gz"),
-            defect_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/PROCAR.gz"),
+            bulk_projections=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR.gz"),
+            defect_projections=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/PROCAR.gz"),
         )
         _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
 

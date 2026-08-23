@@ -838,6 +838,8 @@ def write_path_structures(
     displacements2: np.ndarray | list[float] | None = None,
     reorient: bool | None = None,
     verbose: bool = False,
+    filename: str = "POSCAR",
+    fmt: str = "poscar",
     **sm_kwargs,
 ) -> dict[str, Structure] | tuple[dict[str, Structure], dict[str, Structure]]:
     """
@@ -932,6 +934,13 @@ def write_path_structures(
             prints information about the mass-weighted displacement (ΔQ in
             amu^(1/2)Å) between ``struct1`` and ``struct2`` (pre and post
             re-orientation). Default: ``False``
+        filename (str):
+            Filename to write each interpolated structure to, within its
+            folder. Default: ``"POSCAR"`` (i.e. VASP input files)
+        fmt (str):
+            Structure file format to write, as accepted by
+            ``Structure.to()`` (e.g. ``"poscar"``, ``"cif"``, ``"xsf"``).
+            Default: ``"poscar"``
         **sm_kwargs:
             Additional keyword arguments to forward to ``orient_s2_like_s1()``
             (and hence |StructureMatcher| / |StructureMatcher_scan_stol|),
@@ -961,6 +970,6 @@ def write_path_structures(
             PES_dir = f"PES_{i + 1}" if len(path_struct_dicts) > 1 else ""
             path_to_folder = f"{output_dir}/{PES_dir}/{folder}"
             os.makedirs(path_to_folder, exist_ok=True)
-            struct.to(filename=f"{path_to_folder}/POSCAR", fmt="poscar")
+            struct.to(filename=f"{path_to_folder}/{filename}", fmt=fmt)
 
     return path_structs

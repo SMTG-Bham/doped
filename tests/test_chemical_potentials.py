@@ -38,6 +38,7 @@ from test_utils import (
 )
 
 from doped import chemical_potentials
+from doped.io.vasp.inputs import DopedDictSet
 from doped.io.vasp.outputs import _find_calc_outputs, _get_calc_files_df
 from doped.utils.symmetry import get_primitive_structure
 
@@ -490,7 +491,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         dict_sets = cp.write_kpoint_convergence_files(potcar_spec=True)
         assert dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert len(cp.metallic_entries) == 6
         assert cp.metallic_entries[0].data["summary"]["band_gap"] == 0
         assert not cp.nonmetallic_entries[0].data["molecule"]
@@ -556,7 +557,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         dict_sets = cp.write_relaxation_files(potcar_spec=True)
         assert len(dict_sets) == len(cp)  # one per entry
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert len(cp.nonmetallic_entries) == 6
         assert len(cp.metallic_entries) == 6
         assert len(cp.molecular_entries) == 1
@@ -684,7 +685,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         dict_sets = cp.get_kpoint_convergence_sets()
         assert dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert not os.path.exists("CompetingPhases")
 
     def test_get_relaxation_sets(self):
@@ -692,7 +693,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets = cp.get_relaxation_sets()
         assert dict_sets
         assert len(dict_sets) == len(cp)
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert not os.path.exists("CompetingPhases")
 
     def test_get_singlepoint_sets(self):
@@ -705,7 +706,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets = cp.get_singlepoint_sets()
         assert dict_sets
         assert len(dict_sets) == len(cp)
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert not os.path.exists("CompetingPhases")
 
         # check SOC defaults on for ZrO2 (Zr Z=40 >= 31) -> vasp_ncl subfolder
@@ -745,7 +746,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         # ZrO2 defaults to SOC (Zr Z=40), so subfolder is vasp_ncl
         dict_sets = cp.write_singlepoint_files(potcar_spec=True)
         assert len(dict_sets) == len(cp)
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
 
         ZrO2_ncl_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl/"
         assert os.path.exists(ZrO2_ncl_folder)
@@ -1185,7 +1186,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             extrinsic_only=True,
         )
         assert conv_dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in conv_dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in conv_dict_sets.values())
         assert all(
             any(f"/{name}/" in f"/{key}/" for name in extrinsic_folder_names) for key in conv_dict_sets
         )
@@ -1203,7 +1204,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             extrinsic_only=True,
         )
         assert std_dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in std_dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in std_dict_sets.values())
         assert all(
             any(f"/{name}/" in f"/{key}/" for name in extrinsic_folder_names) for key in std_dict_sets
         )
@@ -1222,7 +1223,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             extrinsic_only=True,
         )
         assert sp_dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in sp_dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in sp_dict_sets.values())
         assert all(
             any(f"/{name}/" in f"/{key}/" for name in extrinsic_folder_names) for key in sp_dict_sets
         )
@@ -2041,7 +2042,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )
         lst_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries=all_paths)
         assert len(lst_cpa.elements) == 2
-        assert len(lst_cpa.vasprun_paths) == 8
+        assert len(lst_cpa.calc_output_paths) == 8
         self._compare_cpas(lst_cpa, cpa)
         self._general_cpa_check(lst_cpa)
 
@@ -2128,8 +2129,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder="vasp_ncl")
-            assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
-            assert len(cpa.vasprun_paths) == 3
+            assert set(map(os.path.realpath, cpa.calc_output_paths)) == ncl_paths
+            assert len(cpa.calc_output_paths) == 3
 
     def test_subfolder_auto_detect_picks_highest_priority(self):
         """
@@ -2139,14 +2140,14 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir)  # subfolder=None by default
-            assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
-            assert len(cpa.vasprun_paths) == 3
+            assert set(map(os.path.realpath, cpa.calc_output_paths)) == ncl_paths
+            assert len(cpa.calc_output_paths) == 3
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder=None)
-            assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
-            assert len(cpa.vasprun_paths) == 3
+            assert set(map(os.path.realpath, cpa.calc_output_paths)) == ncl_paths
+            assert len(cpa.calc_output_paths) == 3
 
     def test_subfolder_not_found_warning_and_fallback(self):
         """
@@ -2167,7 +2168,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder="vasp_ncl")
             _print_warning_info(w)
             assert any("No vasprun.xml files found in 'vasp_ncl'" in str(wn.message) for wn in w)
-            assert len(cpa.vasprun_paths) == 3
+            assert len(cpa.calc_output_paths) == 3
 
     def test_no_subfolder_flat_layout(self):
         """
@@ -2185,7 +2186,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )
 
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir)
-            assert len(cpa.vasprun_paths) == 3
+            assert len(cpa.calc_output_paths) == 3
 
     def test_find_calc_outputs_shared_helper(self):
         """
@@ -2331,7 +2332,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "chempots",
             "extrinsic_elements",
             "elements",
-            "vasprun_paths",
+            "calc_output_paths",
             "parsed_folders",
             "unstable_host",
             "bulk_entry",
@@ -2348,7 +2349,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )
             elif attr == "entries":
                 assert cleanse_entries(cpa_a.entries) == cleanse_entries(cpa_b.entries)
-            elif attr in ("vasprun_paths", "parsed_folders"):
+            elif attr in ("calc_output_paths", "parsed_folders"):
                 assert sorted(getattr(cpa_a, attr)) == sorted(getattr(cpa_b, attr))
             else:
                 assert getattr(cpa_a, attr) == getattr(cpa_b, attr)
