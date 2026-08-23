@@ -62,23 +62,40 @@ def _as_calculation_outputs(
     return outputs
 
 
-def _nelect_from_outputs(outputs: CalculationOutputs) -> float:
+def _weighted_occ_sum(outputs: CalculationOutputs, spin: Spin = Spin.up) -> float:
     """
-    Determine the number of electrons from the calculation eigenvalues &
-    occupancies (and `k`-point weights).
+    Get the `k`-point-weighted sum of the band occupancies for the given spin
+    channel -- i.e. the number of electrons in that spin channel.
+    """
+    assert outputs.eigenvalues is not None  # checked by callers (with ``require()``)
+    band_occs = outputs.eigenvalues[spin][:, :, 1].sum(axis=1)  # summed over bands, for each k-point
+    return float(np.sum(band_occs * np.asarray(outputs.kpoint_weights)))
+
+
+def _is_noncollinear(outputs: CalculationOutputs) -> bool:
+    """
+    Determine whether the ``outputs`` calculation is a non-collinear (NCL) spin
+    calculation (i.e. with spin-orbit coupling (SOC) and/or non-collinear
+    magnetism), from the eigenvalues, occupancies, `k`-point weights and
+    electron count.
+
+    Non-collinear calculations have a single set of (spinor) bands, each
+    holding one electron, while non-spin-polarised calculations have a single
+    set of doubly-occupied bands (and collinear-spin-polarised calculations
+    have have two sets of singly-occupied bands) -- so the `k`-point-weighted
+    sum of band occupancies matches ``nelect`` for NCL calculations, but
+    ``nelect/2`` for non-spin-polarised (and ``nelect`` again, over both spin
+    channels, for collinear spin-polarised calculations).
     """
     eigenvalues_and_occs = outputs.eigenvalues
     assert eigenvalues_and_occs is not None  # checked by callers (with ``require()``)
-    kweights = np.asarray(outputs.kpoint_weights)
-
-    # product of the sum of occupations over all bands, times the k-point weights:
-    nelect = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
+    assert outputs.nelect is not None  # checked by callers (with ``require()``)
     if len(eigenvalues_and_occs) > 1:
-        nelect += np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
-    elif not outputs.noncollinear:
-        nelect *= 2  # non-spin-polarised calculation
+        return False  # spin-polarised (collinear) calculation; two spin channels
 
-    return round(nelect, 2)
+    summed_occs = _weighted_occ_sum(outputs)
+    # matches nelect for NCL (1 electron per spinor band), or nelect/2 for non-spin-polarised:
+    return abs(summed_occs - outputs.nelect) < abs(2 * summed_occs - outputs.nelect)
 
 
 def band_edge_properties_from_outputs(
@@ -91,7 +108,8 @@ def band_edge_properties_from_outputs(
     Args:
         outputs (CalculationOutputs or |Vasprun|):
             ``CalculationOutputs`` (or |Vasprun|) object for the calculation,
-            with ``eigenvalues``, ``kpoint_coords`` and ``kpoint_weights``.
+            with ``eigenvalues``, ``kpoint_coords``, ``kpoint_weights`` and
+            ``nelect``.
         integer_criterion (float):
             Threshold criterion for determining if a band is unoccupied
             (< ``integer_criterion``), partially occupied (between
@@ -103,31 +121,29 @@ def band_edge_properties_from_outputs(
     """
     outputs = _as_calculation_outputs(outputs)
     outputs.require(
-        "eigenvalues", "kpoint_coords", "kpoint_weights", task="Band edge properties determination"
+        "eigenvalues",
+        "kpoint_coords",
+        "kpoint_weights",
+        "nelect",
+        task="Band edge properties determination",
     )
-    assert outputs.eigenvalues is not None  # typing (require() ensures this)
-    is_ncl = bool(outputs.noncollinear)
 
-    magnetization: int | float | np.ndarray
-    if is_ncl:
-        magnetization = 0  # only needed for ISPIN = 2
-    elif outputs.magnetization is not None:
-        magnetization = outputs.magnetization
-    elif len(outputs.eigenvalues) > 1:  # determine from spin-channel occupancies:
-        kweights = np.asarray(outputs.kpoint_weights)
-        magnetization = np.sum(outputs.eigenvalues[Spin.up][:, :, 1].sum(axis=1) * kweights) - np.sum(
-            outputs.eigenvalues[Spin.down][:, :, 1].sum(axis=1) * kweights
+    collinear_magnetization: float | np.ndarray = 0
+    assert outputs.eigenvalues is not None  # typing (require() ensures this)
+    if len(outputs.eigenvalues) > 1:  # collinear spin-polarised calculation
+        collinear_magnetization = (
+            outputs.magnetization
+            if outputs.magnetization is not None
+            else _weighted_occ_sum(outputs, Spin.up) - _weighted_occ_sum(outputs, Spin.down)
         )
-    else:
-        magnetization = 0
 
     band_edge_prop = BandEdgeProperties(
         eigenvalues={spin: e[:, :, 0] for spin, e in outputs.eigenvalues.items()},
-        nelect=_nelect_from_outputs(outputs),
-        magnetization=magnetization,
+        nelect=outputs.nelect,
+        magnetization=collinear_magnetization,  # used by ``pydefect``/``vise`` w/collinear spin-polarised
         kpoint_coords=outputs.kpoint_coords,
         integer_criterion=integer_criterion,
-        is_non_collinear=is_ncl,
+        is_non_collinear=_is_noncollinear(outputs),
     )
     band_edge_prop.structure = outputs.structure
     return band_edge_prop

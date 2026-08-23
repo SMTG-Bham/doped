@@ -22,6 +22,11 @@ from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.util.typing import PathLike
 
+from doped.utils.symmetry import (
+    _num_electrons_from_charge_state,
+    _spin_degeneracy_from_num_electrons_and_magnetization,
+)
+
 
 @dataclass
 class CalculationOutputs(MSONable):
@@ -64,9 +69,6 @@ class CalculationOutputs(MSONable):
             Orbital projections of the band eigenvalues as ``{spin: array}``
             with array shape (nkpoints, nbands, nions, norbitals). Needed for
             eigenvalue / shallow defect analyses.
-        projected_magnetisation (np.ndarray):
-            Projected magnetisation with shape (nkpoints, nbands, nions,
-            norbitals, 3), for non-collinear calculations.
         kpoint_coords (np.ndarray):
             Fractional coordinates of the calculation k-points, shape
             (nkpoints, 3). Needed for eigenvalue analyses.
@@ -86,9 +88,6 @@ class CalculationOutputs(MSONable):
         magnetization (float | np.ndarray):
             Total magnetization of the cell. Needed for spin degeneracy
             determination.
-        noncollinear (bool):
-            Whether the calculation was non-collinear (e.g. with spin-orbit
-            coupling). Needed for band-edge / degeneracy analyses.
         vbm (float):
             Valence band maximum eigenvalue in eV (typically from the bulk
             supercell or a separate bulk band-structure calculation). Needed
@@ -127,13 +126,11 @@ class CalculationOutputs(MSONable):
     efermi: float | None = None
     eigenvalues: dict[Spin, np.ndarray] | None = None
     projected_eigenvalues: dict[Spin, np.ndarray] | None = None
-    projected_magnetisation: np.ndarray | None = None
     kpoint_coords: np.ndarray | None = None
     kpoint_weights: np.ndarray | None = None
     nelect: float | None = None
     charge: float | None = None
     magnetization: float | np.ndarray | None = None
-    noncollinear: bool | None = None
     vbm: float | None = None
     cbm: float | None = None
     band_gap: float | None = None
@@ -180,7 +177,7 @@ class CalculationOutputs(MSONable):
             decoded["planar_averaged_potentials"] = {
                 int(k): np.asarray(v) for k, v in decoded["planar_averaged_potentials"].items()
             }
-        for key in ("projected_magnetisation", "kpoint_coords", "kpoint_weights"):
+        for key in ("kpoint_coords", "kpoint_weights"):
             if decoded.get(key) is not None:
                 decoded[key] = np.asarray(decoded[key])
         return cls(**decoded)
@@ -202,13 +199,28 @@ class CalculationOutputs(MSONable):
         """
         Get the spin degeneracy (multiplicity) of this calculation.
 
+        Spin degeneracy is determined from the total magnetization
+        (``self.magnetization``) and thus electron spin (S = N_μB/2 -- where
+        N_μB is the magnetization in Bohr magnetons (i.e. electronic units, as
+        used in ``VASP``), and using the spin multiplicity equation:
+        ``g_spin = 2S + 1``. If ``self.magnetization`` (magnetization parsing /
+        determination not supported or failed), then simple spin behaviour is
+        assumed with singlet (S = 0) behaviour for even-electron systems and
+        doublet behaviour (S = 1/2) for odd-electron systems.
+
+        For non-collinear (NCL) magnetization (e.g. spin-orbit coupling (SOC)
+        calculations), the magnetization ``N_μB`` becomes a vector (spinor), in
+        which case we take the vector norm as the total magnetization. This can
+        be non-integer in these cases (e.g. due to SOC mixing of spin states,
+        as **_S_** is no longer a good quantum number). As an approximation for
+        these cases, we round ``N_μB`` to the nearest integer which would be
+        allowed under collinear magnetism (i.e. even numbers for even-electron
+        systems, odd numbers for odd-electron systems). See
+        :func:`~doped.utils.symmetry._spin_degeneracy_from_num_electrons_and_magnetization`.
+
         The electron count is determined from ``charge_state`` (with
         ``structure``) if provided, else from ``nelect``, and combined with
-        ``magnetization`` to give the spin multiplicity (``2S + 1``). If
-        ``magnetization`` is ``None`` (e.g. not supported by the calculator
-        used), simple singlet (even-electron) / doublet (odd-electron)
-        behaviour is assumed -- see
-        :func:`~doped.utils.symmetry._spin_degeneracy_from_num_electrons_and_magnetization`.
+        ``magnetization`` to give the spin multiplicity (``2S + 1``).
 
         Args:
             charge_state (int):
@@ -219,11 +231,6 @@ class CalculationOutputs(MSONable):
         Returns:
             int: Spin degeneracy of the system.
         """
-        from doped.utils.symmetry import (  # avoid circular imports (symmetry imports doped.core)
-            _num_electrons_from_charge_state,
-            _spin_degeneracy_from_num_electrons_and_magnetization,
-        )
-
         if charge_state is not None:
             num_electrons = _num_electrons_from_charge_state(self.structure, charge_state)
         else:
@@ -231,6 +238,25 @@ class CalculationOutputs(MSONable):
             assert self.nelect is not None  # typing (require() ensures this)
             num_electrons = int(self.nelect)
         return _spin_degeneracy_from_num_electrons_and_magnetization(num_electrons, self.magnetization)
+
+    def clear_eigenvalue_data(self) -> None:
+        """
+        Set the (large) eigenvalue data arrays to ``None``, to reduce memory
+        demand once eigenvalue parsing (for
+        ``DefectEntry.calculation_metadata["eigenvalue_data"]`` and
+        ``DefectEntry.degeneracy_factors["spin degeneracy"]``) have been
+        performed (not required in later stages of eigenvalue analyses).
+
+        Also clears the corresponding (aliased) arrays from the calculator
+        objects in ``raw`` (e.g. the VASP |Vasprun|), which otherwise keep them
+        alive.
+        """
+        self.eigenvalues = None
+        self.projected_eigenvalues = None
+        if (raw_vr := self.raw.get("vasprun")) is not None:
+            raw_vr.eigenvalues = None
+            raw_vr.projected_eigenvalues = None
+            raw_vr.projected_magnetization = None
 
     def require(self, *attrs: str, task: str = "this analysis") -> None:
         """
@@ -249,3 +275,55 @@ class CalculationOutputs(MSONable):
                 f"(or are not supported by) this{calc} calculation"
                 + (f" (in {self.directory})." if self.directory else ".")
             )
+
+
+def nelect_from_eigenvalues(
+    eigenvalues_and_occs: dict[Spin, np.ndarray],
+    kpoint_weights: np.ndarray | list[float],
+    noncollinear: bool = False,
+) -> float:
+    """
+    Determine the total number of electrons from the calculation band
+    occupancies (and `k`-point weights).
+
+    Fallback for when the electron count is not directly available from the
+    calculation outputs (e.g. ``NELECT`` with VASP), for use by
+    ``doped.io.<calculator>`` backends when setting
+    :attr:`CalculationOutputs.nelect`.
+
+    The `k`-point-weighted sum of band occupancies is doubled for
+    non-spin-polarised calculations with singly-normalised occupancies (i.e.
+    one spin channel with a maximum band occupancy of one, as written by e.g.
+    VASP), where the spin degeneracy of each band is implicit. It is `not`
+    doubled for spin-polarised (two spin channels), non-collinear
+    (``noncollinear = True``; one electron per spinor band) or doubly-occupied
+    (maximum band occupancy of two, as written by some calculators)
+    calculations.
+
+    Args:
+        eigenvalues_and_occs (dict[Spin, np.ndarray]):
+            Band eigenvalues and occupancies as ``{spin: array}`` with array
+            shape ``(nkpoints, nbands, 2)``, where the last axis is
+            ``(energy in eV, occupation)`` -- i.e. matching
+            :attr:`CalculationOutputs.eigenvalues`.
+        kpoint_weights (np.ndarray):
+            Weights of the calculation `k`-points, shape ``(nkpoints,)`` --
+            i.e. matching :attr:`CalculationOutputs.kpoint_weights`.
+        noncollinear (bool):
+            Whether the calculation was non-collinear (e.g. with spin-orbit
+            coupling), in which case each (spinor) band holds one electron.
+            Default is ``False``.
+
+    Returns:
+        float: The total number of electrons in the calculation.
+    """
+    kweights = np.asarray(kpoint_weights)
+    nelect = sum(  # sum of occupations over all bands, times the k-point weights, per spin channel:
+        float(np.sum(eig_occs[:, :, 1].sum(axis=1) * kweights))
+        for eig_occs in eigenvalues_and_occs.values()
+    )
+    max_occ = max(float(eig_occs[:, :, 1].max()) for eig_occs in eigenvalues_and_occs.values())
+    if len(eigenvalues_and_occs) == 1 and not noncollinear and max_occ < 1.5:
+        nelect *= 2  # non-spin-polarised calculation; the spin degeneracy of each band is implicit
+
+    return round(nelect, 2)

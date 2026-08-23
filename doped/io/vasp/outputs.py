@@ -28,7 +28,7 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vas
 from pymatgen.util.typing import PathLike
 
 from doped.io import utils as _io_utils
-from doped.io.outputs import CalculationOutputs
+from doped.io.outputs import CalculationOutputs, nelect_from_eigenvalues
 from doped.io.utils import _dataframe_of_files, find_archived_fname  # noqa: F401 (re-exported)
 
 
@@ -742,22 +742,17 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     Returns:
         int or float: The number of electrons in the system.
     """
-    # can also obtain this (NELECT), charge and magnetization from Outcar objects, worth keeping in mind
-    # but not needed atm
-    # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
-    # spin-polarisation / account for NELECT changes from neutral apparently
+    # ``NELECT`` is written near the start of ``vasprun.xml`` (so is also available for truncated files
+    # from crashed/killed runs, unlike the eigenvalues & occupancies at the end); can also be obtained
+    # from ``OUTCAR`` files, along with the charge and magnetization, if ever needed
+    if (nelect := vasprun.parameters.get("NELECT")) is not None:
+        return nelect
 
-    eigenvalues_and_occs = vasprun.eigenvalues
-    kweights = vasprun.actual_kpoints_weights
-
-    # product of the sum of occupations over all bands, times the k-point weights:
-    nelect = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
-    if len(eigenvalues_and_occs) > 1:
-        nelect += np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
-    elif not vasprun.parameters.get("LNONCOLLINEAR", False):
-        nelect *= 2  # non-spin-polarised or SOC calc
-
-    return round(nelect, 2)
+    return nelect_from_eigenvalues(  # else reverse-engineer from the band occupancies:
+        vasprun.eigenvalues,
+        vasprun.actual_kpoints_weights,
+        noncollinear=bool(vasprun.parameters.get("LNONCOLLINEAR", False)),
+    )
 
 
 def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> int:
@@ -828,52 +823,26 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
     Get the spin degeneracy (multiplicity) of a system from a ``VASP`` vasprun
     output.
 
-    Spin degeneracy is determined by first getting the total magnetization and
-    thus electron spin (S = N_μB/2 -- where N_μB is the magnetization in Bohr
-    magnetons (i.e. electronic units, as used in VASP), and using the spin
-    multiplicity equation: ``g_spin = 2S + 1``. The total magnetization
-    ``N_μB`` is determined using ``get_magnetization_from_vasprun`` (see
-    docstring for details), and if this fails, then simple spin behaviour is
-    assumed with singlet (S = 0) behaviour for even-electron systems and
-    doublet behaviour (S = 1/2) for odd-electron systems.
-
-    For non-collinear (NCL) magnetization (e.g. spin-orbit coupling (SOC)
-    calculations), the magnetization ``N_μB`` becomes a vector (spinor), in
-    which case we take the vector norm as the total magnetization. This can be
-    non-integer in these cases (e.g. due to SOC mixing of spin states, as
-    **_S_** is no longer a good quantum number). As an approximation for these
-    cases, we round ``N_μB`` to the nearest integer which would be allowed
-    under collinear magnetism (i.e. even numbers for even-electron systems, odd
-    numbers for odd-electron systems).
+    Convenience (VASP) wrapper for
+    :meth:`~doped.io.outputs.CalculationOutputs.spin_degeneracy`, determining
+    the spin degeneracy from the electron count (``NELECT``, or
+    ``charge_state`` if provided) and the total magnetization -- see
+    :func:`get_magnetization_from_vasprun` and
+    :func:`~doped.utils.symmetry._spin_degeneracy_from_num_electrons_and_magnetization`
+    for details (including the handling of non-collinear (NCL) magnetization).
 
     Args:
         vasprun (|Vasprun|):
             ``pymatgen`` |Vasprun| for which to determine spin degeneracy.
         charge_state (int):
             The charge state of the system, which can be used to determine the
-            number of electrons. If ``None`` (default), automatically
-            determines the number of electrons using
-            ``get_nelect_from_vasprun(vasprun)``.
+            number of electrons. If ``None`` (default), the number of electrons
+            is taken from the calculation ``NELECT``.
 
     Returns:
         int: Spin degeneracy of the system.
     """
-    from doped.utils.symmetry import (  # avoid circular import (symmetry imports doped.core)
-        _num_electrons_from_charge_state,
-        _spin_degeneracy_from_num_electrons_and_magnetization,
-    )
-
-    if charge_state is None:
-        num_electrons = get_nelect_from_vasprun(vasprun)
-    else:
-        num_electrons = _num_electrons_from_charge_state(vasprun.final_structure, charge_state)
-
-    try:
-        magnetization: float | np.ndarray | None = get_magnetization_from_vasprun(vasprun)
-    except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetization:
-        magnetization = None  # guess from electron count
-
-    return _spin_degeneracy_from_num_electrons_and_magnetization(int(num_electrons), magnetization)
+    return calculation_outputs_from_vasprun(vasprun).spin_degeneracy(charge_state)
 
 
 def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
@@ -1297,13 +1266,11 @@ def calculation_outputs_from_vasprun(
         efermi=vasprun.efermi,
         eigenvalues=vasprun.eigenvalues,
         projected_eigenvalues=projected_eigenvalues,
-        projected_magnetisation=getattr(vasprun, "projected_magnetization", None),
         kpoint_coords=np.array(vasprun.actual_kpoints),
         kpoint_weights=np.array(vasprun.actual_kpoints_weights),
         nelect=vasprun.parameters.get("NELECT"),
         charge=charge,
         magnetization=magnetization,
-        noncollinear=vasprun.parameters.get("LNONCOLLINEAR"),
         vbm=vbm,
         cbm=cbm,
         band_gap=band_gap,

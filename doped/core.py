@@ -662,10 +662,9 @@ class DefectEntry(thermo.DefectEntry):
         Load and parse the eigenvalue data for the defect entry, if not already
         present in the ``calculation_metadata``.
 
-        Note that this function sets the ``eigenvalues``,
-        ``projected_eigenvalues`` and ``projected_magnetisation`` attributes
-        to ``None`` to reduce memory demand (as these properties are not
-        required in later stages of ``doped`` analysis workflows), if
+        Note that this function sets the ``eigenvalues`` and
+        ``projected_eigenvalues`` attributes to ``None`` to reduce memory
+        demand (not required in later stages of eigenvalue analyses), if
         ``clear_attributes`` is ``True`` (default).
 
         Args:
@@ -711,11 +710,10 @@ class DefectEntry(thermo.DefectEntry):
                 Whether to force re-parsing of the eigenvalue data, even if
                 already present in the ``calculation_metadata``.
             clear_attributes (bool):
-                If ``True`` (default), sets the ``eigenvalues``,
-                ``projected_eigenvalues`` and ``projected_magnetization``
-                attributes to ``None`` to reduce memory demand (as these
-                properties are not required in later stages of ``doped``
-                analysis workflows).
+                If ``True`` (default), sets the ``eigenvalues`` and
+                ``projected_eigenvalues`` attributes to ``None`` to reduce
+                memory demand (not required in later stages of eigenvalue
+                analyses).
         """
         if self.calculation_metadata.get("eigenvalue_data") is not None and not force_reparse:
             return
@@ -771,25 +769,16 @@ class DefectEntry(thermo.DefectEntry):
         }
         self.__dict__.pop("is_shallow", None)  # invalidate cached ``is_shallow`` (now (re)computable)
 
-        if clear_attributes:
-            # first check if spin degeneracy has been parsed (needs projected magnetization for SOC/NCL
-            # calculations), and try parse if not:
-            if "spin degeneracy" not in self.degeneracy_factors:
+        if clear_attributes:  # check if spin degeneracy has been parsed (needs projected magnetization...
+            if "spin degeneracy" not in self.degeneracy_factors:  # ...for NCL calculations); parse if not:
                 with contextlib.suppress(Exception):
                     self.degeneracy_factors["spin degeneracy"] = outputs_dict["defect"].spin_degeneracy(
                         charge_state=self.charge_state
                     ) / outputs_dict["bulk"].spin_degeneracy(charge_state=0)
 
-            # delete (large) eigenvalue data arrays from the defect outputs (and raw objects) to
-            # expedite garbage collection and thus reduce memory:
-            defect_outputs = outputs_dict["defect"]
-            defect_outputs.eigenvalues = None  # but keep for bulk, as this is likely being reused
-            defect_outputs.projected_eigenvalues = None
-            defect_outputs.projected_magnetisation = None
-            if (defect_raw_vr := defect_outputs.raw.get("vasprun")) is not None:
-                defect_raw_vr.projected_eigenvalues = None
-                defect_raw_vr.projected_magnetization = None
-                defect_raw_vr.eigenvalues = None
+            # delete (large) eigenvalue data arrays from the defect outputs (and raw objects) to reduce
+            # memory demand (but keep for bulk, as these are likely being reused):
+            outputs_dict["defect"].clear_eigenvalue_data()
 
     def get_eigenvalue_analysis(
         self,
@@ -827,10 +816,9 @@ class DefectEntry(thermo.DefectEntry):
         This function uses code from ``pydefect``, so please cite the
         ``pydefect`` paper: 10.1103/PhysRevMaterials.5.123803
 
-        Note that this function sets the ``eigenvalues``,
-        ``projected_eigenvalues`` and ``projected_magnetization`` attributes
-        to ``None`` to reduce memory demand (as these properties are not
-        required in later stages of ``doped`` analysis workflows), if
+        Note that this function sets the ``eigenvalues`` and
+        ``projected_eigenvalues`` attributes to ``None`` to reduce memory
+        demand (not required in later stages of eigenvalue analyses), if
         ``clear_attributes`` is ``True`` (default).
 
         Args:
@@ -885,11 +873,10 @@ class DefectEntry(thermo.DefectEntry):
                 Whether to force re-parsing of the eigenvalue data, even if
                 already present in the ``calculation_metadata``.
             clear_attributes (bool):
-                If ``True`` (default), sets the ``eigenvalues``,
-                ``projected_eigenvalues`` and ``projected_magnetization``
-                attributes to ``None`` to reduce memory demand (as these
-                properties are not required in later stages of ``doped``
-                analysis workflows).
+                If ``True`` (default), sets the ``eigenvalues`` and
+                ``projected_eigenvalues`` attributes to ``None`` to reduce
+                memory demand (not required in later stages of eigenvalue
+                analyses).
             **kwargs:
                 Additional kwargs to pass to
                 ``doped.utils.eigenvalues.get_eigenvalue_analysis``,
