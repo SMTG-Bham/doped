@@ -31,7 +31,12 @@ from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 from tqdm import tqdm
 
-from doped.chemical_potentials import ChemicalPotentialGrid, get_X_rich_poor_limit, plot_chempot_heatmap
+from doped.chemical_potentials import (
+    ChemicalPotentialGrid,
+    _get_bulk_comp_from_chempots,
+    get_X_rich_poor_limit,
+    plot_chempot_heatmap,
+)
 from doped.core import DefectEntry, _get_abs_chempots, _get_bulk_supercell, _no_chempots_warning
 from doped.corrections import (
     _convert_anisotropic_dielectric_to_isotropic_harmonic_mean,
@@ -46,8 +51,10 @@ from doped.utils.plotting import (
     TransitionLevel,
     _format_TL_charge_label,
     _rename_key_and_dicts,
+    _resolve_color_grouping,
     doped_plot_style,
     formation_energy_plot,
+    get_defect_type_palette,
     transition_level_diagram,
 )
 from doped.utils.symmetry import cluster_coords, get_all_equiv_sites, get_primitive_structure, get_sga
@@ -95,6 +102,47 @@ def _parse_limit(chempots: dict, limit: str | None = None):
             limit = get_X_rich_poor_limit(limit, chempots)
 
     return limit
+
+
+def _get_limits_to_plot(chempots: dict, composition: str | Composition | None = None) -> list[str]:
+    """
+    Get the default chemical potential limits for plotting: the most anion-rich
+    (i.e. most-electronegative-rich) and most cation-rich (i.e.
+    most-electropositive-rich) limits for the host ``composition``, in the
+    order they appear in ``chempots["limits"]`` and de-duplicated if they
+    correspond to the same limit (e.g. for elemental systems).
+
+    If ``composition`` is not provided, it is auto-determined from the limit
+    names in ``chempots`` (see
+    :func:`~doped.chemical_potentials._get_bulk_comp_from_chempots`).
+
+    Falls back to returning all limits if there are only <=2 limits, or if
+    anion/cation detection fails (e.g. undeterminable host composition, or
+    missing electronegativity data).
+    """
+    all_limits = list(chempots["limits"].keys())
+    if len(all_limits) <= 2:
+        return all_limits
+
+    try:
+        if composition is None:
+            composition = _get_bulk_comp_from_chempots(chempots)
+        if composition is None:
+            return all_limits
+        elements = Composition(composition).elements
+        cation = min(elements, key=lambda el: el.X)
+        anion = max(elements, key=lambda el: el.X)
+        if np.isnan(cation.X) or np.isnan(anion.X):
+            return all_limits
+        selected = {
+            get_X_rich_poor_limit(
+                el.symbol, chempots, warn_if_multiple=False, bulk_composition=composition
+            )
+            for el in (cation, anion)
+        }
+        return [limit for limit in all_limits if limit in selected]  # preserve chempots dict order
+    except Exception:  # electronegativity / limit detection failed, plot all limits
+        return all_limits
 
 
 def get_rich_poor_limit_dict(chempots: dict) -> dict:
@@ -1223,36 +1271,46 @@ class DefectThermodynamics(MSONable):
         transition_level_map: dict[str, dict[float, list[int]]] = {}
         all_entries: dict[str, list[DefectEntry]] = {}  # same format as stable_entries, but incl unstable
 
-        try:
-            self.clustered_defect_entries: dict[int, set[DefectEntry]] | dict[str, set[DefectEntry]] = (
-                group_defects_by_distance(
-                    list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
-                )
-            )  # {cluster index: {DefectEntry, ...}}; dict[int, set[DefectEntry]]
-            # inner key is a cluster index (int) here, but a defect name (str) in the fallback below:
-            self.clustered_defect_entries_by_type: dict[str, Any] = group_defects_by_type_and_distance(
-                list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
-            )  # {simple defect name: {cluster index: {DefectEntry, ...}}};
-            # dict[str, dict[int, set[DefectEntry]]]
-
-        except Exception as e:
-            self.clustered_defect_entries = group_defects_by_name(
-                list(self.defect_entries.values())
-            )  # {defect name without charge: [DefectEntry,...]}; dict[str, set[DefectEntry]]
+        self.clustered_defect_entries: dict[int, set[DefectEntry]] | dict[str, set[DefectEntry]]
+        self.clustered_defect_entries_by_type: dict[str, Any]
+        if np.isinf(self.dist_tol):  # fast path: skip clustering and amalgamate by type (``Defect.name``)
+            # `only`, for clustered_defect_entries_by_type, and amalgamate all for clustered_defect_entries
+            self.clustered_defect_entries = {0: set(self.defect_entries.values())}
+            type_clusters: dict[str, set[DefectEntry]] = defaultdict(set)
+            for entry in self.defect_entries.values():
+                type_clusters[entry.defect.name].add(entry)
             self.clustered_defect_entries_by_type = {
-                entry.defect.name: defaultdict(set) for entry in self.defect_entries.values()
-            }  # {simple defect name: {defect name without charge: {DefectEntry, ...}}};
-            # dict[str, dict[str, set[DefectEntry]]]
-            for defect_name_wout_charge, defect_entry_set in self.clustered_defect_entries.items():
-                self.clustered_defect_entries_by_type[next(iter(defect_entry_set)).defect.name][
-                    defect_name_wout_charge
-                ] = defect_entry_set
+                defect_type: {0: entry_set} for defect_type, entry_set in type_clusters.items()
+            }
+        else:  # site clustering:
+            try:
+                self.clustered_defect_entries = group_defects_by_distance(
+                    list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
+                )  # {cluster index: {DefectEntry, ...}}; dict[int, set[DefectEntry]]
+                # inner key is a cluster index (int) here, but a defect name (str) in the fallback below:
+                self.clustered_defect_entries_by_type = group_defects_by_type_and_distance(
+                    list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
+                )  # {simple defect name: {cluster index: {DefectEntry, ...}}};
+                # dict[str, dict[int, set[DefectEntry]]]
 
-            warnings.warn(
-                f"Grouping (inequivalent) defects by distance failed with error: {e!r}"
-                f"\nGrouping by defect names (`DefectEntry.name`) instead."
-            )  # possibly different bulks (though this should be caught/warned about earlier), or not
-            # parsed with recent doped versions etc
+            except Exception as e:
+                self.clustered_defect_entries = group_defects_by_name(
+                    list(self.defect_entries.values())
+                )  # {defect name without charge: [DefectEntry,...]}; dict[str, set[DefectEntry]]
+                self.clustered_defect_entries_by_type = {
+                    entry.defect.name: defaultdict(set) for entry in self.defect_entries.values()
+                }  # {simple defect name: {defect name without charge: {DefectEntry, ...}}};
+                # dict[str, dict[str, set[DefectEntry]]]
+                for defect_name_wout_charge, defect_entry_set in self.clustered_defect_entries.items():
+                    self.clustered_defect_entries_by_type[next(iter(defect_entry_set)).defect.name][
+                        defect_name_wout_charge
+                    ] = defect_entry_set
+
+                warnings.warn(
+                    f"Grouping (inequivalent) defects by distance failed with error: {e!r}"
+                    f"\nGrouping by defect names (`DefectEntry.name`) instead."
+                )  # possibly different bulks (though this should be caught/warned about earlier), or not
+                # parsed with recent doped versions etc
 
         grouped_entries_list: list[list[DefectEntry]] = list(
             chain(*map(methodcaller("values"), self.clustered_defect_entries_by_type.values()))
@@ -1306,7 +1364,11 @@ class DefectThermodynamics(MSONable):
                 ints_and_facets_filter, key=lambda int_and_facet: int_and_facet[0][0]
             )
 
-            defect_name_wout_charge = name_defect_cluster(sorted_defect_entries)
+            defect_name_wout_charge = (
+                sorted_defect_entries[0].defect.name
+                if np.isinf(self.dist_tol)  # plain type w/dist_tol=inf
+                else name_defect_cluster(sorted_defect_entries)
+            )
             defect_name_wout_charge, output_dicts = _rename_key_and_dicts(
                 defect_name_wout_charge,
                 [transition_level_map, all_entries, stable_entries, defect_charge_map],
@@ -1764,6 +1826,10 @@ class DefectThermodynamics(MSONable):
         distance. Each defect group is then named according to the most common
         name (without charge) for defects in that cluster, with shorter defect
         names (and lower energies) preferred if this is not a unique choice.
+        Can be set to ``np.inf`` to amalgamate defects based on defect type
+        (``Defect.name``; e.g. ``Te_i``) with no consideration of distances --
+        also available as an ephemeral per-plot override via the ``dist_tol``
+        argument of ``plot()``.
 
         This is used to group together different defect entries (different
         charge states, and/or ground and metastable states (different spin or
@@ -2608,35 +2674,26 @@ class DefectThermodynamics(MSONable):
         defect_thermo_dict.update(kwargs)
         return DefectThermodynamics.from_dict(defect_thermo_dict)
 
-    # TODO: Default to plot both the most (most-electronegative-)anion-rich and the
-    #   (most-electropositive-)cation-rich chempot limits? (Rather than all limits)
-    # TODO: Should have similar colours for similar defect types, an option to just show amalgamated
-    #  lowest energy charge states for each _defect type_) -- equivalent to setting the dist_tol to
-    #  infinity (but should be easier to just do here by taking the short defect name). NaP is an example
-    #  for this -- should have a test built for however we want to handle cases like this. See Ke's example
-    #  case too with different interstitial sites.
-    #   Related: Currently updating `dist_tol` to change the number of defects being plotted,
-    #   can also change the colours of the different defect lines (e.g. for CdTe_wout_meta increasing
-    #   `dist_tol` to 2 to merge all Te interstitials, results in the colours of other defect lines (
-    #   e.g. Cd_Te) changing at the same time -- ideally this wouldn't happen!
-
     def plot(
         self,
         chempots: dict | None = None,
         limit: str | None = None,
         el_refs: dict | None = None,
         all_entries: bool | str = False,
-        unstable_entries: bool | str = "not shallow",
+        dist_tol: float | None = None,
         defect_subset: list[str] | str | None = None,
-        chempot_table: bool | None = None,
-        style_file: PathLike | None = None,
+        unstable_entries: bool | str = "not shallow",
         xlim: tuple | None = None,
         ylim: tuple | None = None,
-        fermi_level: float | None = None,
         include_site_info: bool | None = None,
-        colormap: str | colors.Colormap | None = None,
+        variant_style: str = "fade",
+        color_grouping: str | None = None,
+        colormap: str | colors.Colormap | dict | None = None,
         linestyles: str | list[str] = "-",
+        chempot_table: bool | None = None,
         auto_labels: bool = False,
+        style_file: PathLike | None = None,
+        fermi_level: float | None = None,
         filename: PathLike | None = None,
         **kwargs,
     ) -> Figure | list[Figure]:
@@ -2653,9 +2710,11 @@ class DefectThermodynamics(MSONable):
         Note that different defect entries (different charge states, and/or
         ground and metastable states (different spin or geometries); e.g.
         interstitials at a given site) are grouped together in distinct defect
-        types according to ``self.dist_tol``, which is also used in transition
-        level analysis and defect concentrations. This can be adjusted as shown
-        in the :doc:`plotting customisation tutorial <plotting_customisation_tutorial>`.
+        types according to ``self.dist_tol`` (or the ``dist_tol`` argument
+        below, as an ephemeral per-plot override), which is also used in
+        transition level analysis and defect concentrations. This can be
+        adjusted as shown in the
+        :doc:`plotting customisation tutorial <plotting_customisation_tutorial>`.
         See the ``dist_tol`` attribute, ``group_defects_by_distance()`` and
         ``group_defects_by_type_and_distance()`` functions for more information
         on clustering strategies.
@@ -2688,8 +2747,11 @@ class DefectThermodynamics(MSONable):
                 The chemical potential limit for which to plot formation
                 energies. Can be either:
 
-                - ``None``, in which case plots are generated for all limits in
-                  ``chempots``.
+                - ``None``, in which case plots are generated for the most
+                  anion-rich (i.e. most-electronegative-rich) and most
+                  cation-rich (i.e. most-electropositive-rich) limits in
+                  ``chempots``, or for all limits if there are only <=2 limits
+                  or if anion/cation detection fails.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
                   (e.g. "Li-rich") -- see
@@ -2719,6 +2781,23 @@ class DefectThermodynamics(MSONable):
                 If instead set to ``"faded"``, will plot the equilibrium states
                 in bold, and all unstable states in faded grey
                 (default: ``False``)
+            dist_tol (float):
+                If set, temporarily overrides ``self.dist_tol`` (the distance
+                threshold (in Å) for clustering equivalent defect sites; see
+                the ``dist_tol`` property docstring) `for this plot only` --
+                ``self.dist_tol`` (and thus subsequent transition level /
+                concentration analyses) is unaffected. Can be set to ``np.inf``
+                or ``float("inf")`` to amalgamate defects based on defect type
+                (``Defect.name``; e.g. ``Te_i``) with no consideration of
+                distances, showing only the lowest-energy states of that defect
+                type at each Fermi level. (Default: ``None``; use
+                ``self.dist_tol``)
+            defect_subset (list[str], str):
+                If provided, only defects whose name contains at least one of
+                the given substrings are plotted (e.g. ``["v_", "Te_Cd"]``
+                would keep all vacancies plus ``Te_Cd``). A bare string is
+                treated as a single-element list. (Default: ``None`` -- all
+                defects)
             unstable_entries (bool, str):
                 Controls the plotting of unstable/shallow defect states;
                 allowed values are ``True``, ``False`` or ``"not shallow"``.
@@ -2739,21 +2818,6 @@ class DefectThermodynamics(MSONable):
                 If ``True``, defect entries are not pruned based on stability /
                 shallow classification.
                 See ``prune_to_stable_entries`` for more info.
-            defect_subset (list[str], str):
-                If provided, only defects whose name contains at least one of
-                the given substrings are plotted (e.g. ``["v_", "Te_Cd"]``
-                would keep all vacancies plus ``Te_Cd``). A bare string is
-                treated as a single-element list. (Default: ``None`` -- all
-                defects)
-            chempot_table (bool | None):
-                Whether to include a table of the chemical potentials above the
-                formation energy plot. If ``None`` (default), shown if multiple
-                plots are generated (i.e. multiple chemical potential limits)
-                else not shown.
-            style_file (PathLike):
-                Path to a ``mplstyle`` file to use for the plot. If ``None``
-                (default), uses the default doped style (from
-                ``doped/utils/doped.mplstyle``).
             xlim:
                 Tuple (min,max) giving the range of the x-axis (Fermi level).
                 May want to set manually when including transition level
@@ -2764,11 +2828,6 @@ class DefectThermodynamics(MSONable):
                 energy). May want to set manually when including transition
                 level labels, to avoid crossing the axes. Default is from 0 to
                 just above the maximum formation energy value in the band gap.
-            fermi_level (float):
-                If set, plots a dashed vertical line at this Fermi level value,
-                typically used to indicate the equilibrium Fermi level position
-                if known/calculated (e.g. with
-                ``get_fermi_level_and_concentrations``). (Default: None)
             include_site_info (bool, None):
                 Whether to include site info in defect names in the plot legend
                 (e.g. ``$Cd_{i_{C3v}}$`` rather than ``$Cd_{i}$``). If ``None``
@@ -2778,28 +2837,113 @@ class DefectThermodynamics(MSONable):
                 included. If ``True``, site info is shown for all defect names.
                 In all cases, if duplicate defect names remain, "-a", "-b",
                 "-c" etc. are appended to the names to differentiate them.
-            colormap (str, matplotlib.colors.Colormap):
+            variant_style (str):
+                How to differentiate multiple plotted defects of the same
+                colour group (e.g. inequivalent ``Te_i`` sites when
+                ``color_grouping`` = ``"type"``, extrinsic defects of the same
+                element when ``color_grouping`` = ``"element"``, or
+                per-charge-state lines with ``all_entries=True`` and any
+                ``color_grouping`` setting): ``"fade"`` (default; ordered
+                lightness variants of the group's base colour), ``"linestyle"``
+                (cycled linestyles: ``"-"``, ``"--"``, ``":"``, ``"-."``),
+                ``"both"`` or ``"none"``.
+                The base (full) colour/style is assigned to the group's most
+                thermodynamically-relevant line (that which is the lowest
+                energy line of the group over the largest fraction of the
+                in-gap Fermi level range, then 2nd-lowest etc -- or the lowest
+                energy at the Fermi level ('vbm') for metals), with
+                progressively lighter shades / cycled linestyles for higher
+                energy lines.
+                Ignored if an explicit ``Colormap`` object is given as
+                ``colormap`` (linestyle variation is also overridden by an
+                explicit list of ``linestyles``).
+            color_grouping (str):
+                Granularity of the colour grouping (defects sharing a colour
+                are differentiated according to ``variant_style``); one of:
+
+                - ``"type"``: one colour per defect type
+                  (``Defect.name``; e.g. ``v_Cd``, ``Te_i``, ``F_O``).
+                - ``"element"``: mostly the same as ``"type"``, except
+                  `extrinsic` defects of the same element are grouped under a
+                  single colour (e.g. ``F_O`` and ``F_i`` -> ``"F"``). Note
+                  that the thermodynamic-dominance ordering within such element
+                  groups (i.e. most opaque/solid line used for dominant
+                  lowest-energy defect in the group) can depend on the chemical
+                  potential conditions (unlike ``"type"`` / ``"site"`` groups).
+                - ``"site"``: one colour per defect `group` (i.e. per cluster
+                  of defect sites, keyed on the group names in
+                  ``DefectThermodynamics.all_entries``; e.g.
+                  ``Te_i_Td_Te2.83_a`` and ``Te_i_Td_Te2.83_b`` get separate
+                  colours). Note that group names (and thus colour assignments)
+                  then depend on ``dist_tol``, unlike the ``"element"`` /
+                  ``"type"`` groupings.
+
+                If not set (default: ``None``), ``"type"`` is used,
+                automatically escalated to finer granularity (-> ``"site"``,
+                then one colour per line) when it would give only a single
+                colour group for the whole system (e.g. only one defect type
+                present), so that a range of colours is used rather than
+                variants of one colour. An explicitly-set ``color_grouping`` is
+                always used as-is (with no automatic escalation).
+            colormap (str, matplotlib.colors.Colormap, dict):
                 Colormap to use for the formation energy lines, either as a
                 string (which can be a colormap name from
                 https://matplotlib.org/stable/users/explain/colors/colormaps or
                 from https://www.fabiocrameri.ch/colourmaps -- append 'S' if
-                using a sequential colormap from the latter) or a ``Colormap``
-                / ``ListedColormap`` object.
-                If ``None`` (default), uses ``tab10`` with ``alpha=0.75`` (if
-                10 or fewer lines to plot), ``tab20`` (if 20 or fewer lines) or
-                ``batlow`` (if more than 20 lines; citation:
-                https://zenodo.org/records/8409685).
+                using a sequential colormap from the latter), a ``Colormap`` /
+                ``ListedColormap`` object, or a dict of
+                ``{defect type, extrinsic element or group name: colour}``
+                user overrides (e.g. ``{"Te_i": "tab:pink"}`` or
+                ``{"F": "tab:green"}``; non-specified defects filled from the
+                default palette). If ``None`` (default), uses the ``doped``
+                default palette (``PETROFF10_EXTENDED_40``; ``petroff10``; see
+                https://matplotlib.org/stable/gallery/style_sheets/petroff10
+                and https://arxiv.org/abs/2107.02270 -- extended to 40
+                maximally-distinct colours with the ``glasbey`` algorithm;
+                cycled if more than 40 colour groups). Use
+                ``colormap="tab10_alpha_0.75"`` to match old ``doped``<4 plots.
+
+                Unless an explicit ``Colormap`` object is given (in which case
+                colours are assigned by line position, in order of appearance
+                in the plot legend), colours are keyed based on
+                ``color_grouping``; defect type (i.e. ``Defect.name``; e.g.
+                ``v_Cd``, ``Te_i`` -- see ``get_defect_type_palette``) for
+                ``"type"`` and intrinsic ``"element"`` colour groupings; while
+                extrinsic ``"element"`` groupings key on the element symbol and
+                ``"site"``-grouped colours (explicitly set, or auto-escalated
+                for single-defect-type systems) instead key on the plotted
+                group names -- see ``color_grouping``. Thus plots of the same
+                system should share base colours for the same defects,
+                regardless of ``dist_tol``, ``defect_subset`` or
+                ``unstable_entries`` choices (with intrinsic defect base
+                colours also unchanged upon later addition of extrinsic
+                defects, for listed/discrete colormaps).
             linestyles (list):
                 Linestyles to use for the formation energy lines, either as a
                 single linestyle (``str``) or list of linestyles
                 (``list[str]``) in the order of appearance of lines in the plot
-                legend. Default is ``"-"``; i.e. solid lines for all entries.
+                legend. Default is ``"-"``; i.e. solid lines for all entries
+                (unless ``variant_style`` includes linestyle variation).
+            chempot_table (bool | None):
+                Whether to include a table of the chemical potentials above the
+                formation energy plot. If ``None`` (default), shown if multiple
+                plots are generated (i.e. multiple chemical potential limits)
+                else not shown.
             auto_labels (bool):
                 Whether to automatically label the transition levels with their
                 charge states. If there are many transition levels, this can be
-                quite ugly. (default: ``False``)
-            filename (PathLike): Filename to save the plot to.
-            (Default: None (not saved))
+                quite ugly. Default: ``False``.
+            style_file (PathLike):
+                Path to a ``mplstyle`` file to use for the plot. If ``None``
+                (default), uses the default doped style (from
+                ``doped/utils/doped.mplstyle``).
+            fermi_level (float):
+                If set, plots a dashed vertical line at this Fermi level value,
+                typically used to indicate the equilibrium Fermi level position
+                if known/calculated (e.g. with
+                ``get_fermi_level_and_concentrations``). Default: None.
+            filename (PathLike): Filename to save the plot to. Default: None
+                (not saved).
             **kwargs:
                 Additional keyword arguments for advanced customisation, such
                 as ``shallow_charge_stability_tolerance`` or
@@ -2825,7 +2969,7 @@ class DefectThermodynamics(MSONable):
             }  # empty chempots dict to allow plotting, user will be warned
 
         limit = _parse_limit(chempots, limit)
-        limits = [limit] if limit is not None else list(chempots["limits"].keys())
+        limits = [limit] if limit is not None else _get_limits_to_plot(chempots, self.bulk_formula)
 
         if (
             chempots
@@ -2844,9 +2988,27 @@ class DefectThermodynamics(MSONable):
                 "of formation energies, but the transition level positions will be unaffected."
             )
 
-        thermo_to_plot = self.prune_to_stable_entries(  # unstable_entries pruning
-            unstable_entries=unstable_entries, **kwargs
+        thermo_to_plot = self
+        if dist_tol is not None and dist_tol != self.dist_tol:  # ephemeral dist_tol override; regroup
+            thermo_to_plot = DefectThermodynamics.from_dict(  # first, so that stability classification...
+                {**self.as_dict(), "dist_tol": dist_tol, "check_compatibility": False}  # ...in pruning...
+            )  # ...below uses the overridden grouping (stability windows depend on the defect grouping)
+        thermo_to_plot = thermo_to_plot.prune_to_stable_entries(  # unstable_entries pruning
+            unstable_entries=unstable_entries,
+            **kwargs,  # unstable entries kwargs
         )  # Note that this will need to be updated if we add other kwarg options to this function
+
+        resolved_color_grouping = color_grouping or "type"  # (only used for palette computation below,
+        # so the ``None`` -> ``"type"`` default here is inconsequential if user provides ``Colormap``)
+        if color_grouping is None and not isinstance(colormap, colors.Colormap):
+            # default; "type" grouping, with auto escalation to finer granularity if only one group
+            resolved_color_grouping = _resolve_color_grouping(self, colormap=colormap)
+        group_palette = (  # from full (un-pruned) entry set for base-colour stability across plot choices:
+            None  # ("site" grouping keys on group names, which can shift under pruning, so its palette
+            # is instead computed from the pruned thermo within ``formation_energy_plot``):
+            if isinstance(colormap, colors.Colormap) or resolved_color_grouping == "site"
+            else get_defect_type_palette(self, resolved_color_grouping, colormap)
+        )
 
         with doped_plot_style(style_file):
             figs = []
@@ -2865,17 +3027,20 @@ class DefectThermodynamics(MSONable):
                         thermo_to_plot,
                         abs_chempots=abs_chempots,
                         el_refs=el_refs,
-                        chempot_table=chempot_table if chempot_table is not None else len(limits) > 1,
                         all_entries=all_entries,
                         defect_subset=defect_subset,
                         xlim=xlim,
                         ylim=ylim,
-                        fermi_level=fermi_level,
                         include_site_info=include_site_info,
-                        title=plot_title,
+                        variant_style=variant_style,
+                        color_grouping=color_grouping,
                         colormap=colormap,
                         linestyles=linestyles,
+                        group_palette=group_palette,
+                        chempot_table=chempot_table if chempot_table is not None else len(limits) > 1,
                         auto_labels=auto_labels,
+                        fermi_level=fermi_level,
+                        title=plot_title,
                         filename=plot_filename,
                     )
                 figs.append(fig)

@@ -34,8 +34,9 @@ from doped.io.outputs import CalculationOutputs, nelect_from_eigenvalues
 from doped.io.utils import _dataframe_of_files, find_archived_fname  # noqa: F401 (re-exported)
 
 
-@lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
+@lru_cache(maxsize=1)  # cache POTCAR summary stats loading, to speed up parsing
 def _get_potcar_summary_stats() -> dict:
+    # the returned (large, nested) dict is a shared cached object: treat as read-only!
     return loadfn(POTCAR_STATS_PATH)
 
 

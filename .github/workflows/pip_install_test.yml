@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
 
       matrix:
-        os: [ ubuntu-latest, macos-14 ]
+        os: [ ubuntu-latest, macos-14, windows-latest ]
         python-version: [ '3.11', '3.14' ]  # lowest and highest supported Python versions; 3.10 should still be possible, but latest ``pymatgen`` (2026) only supports 3.11-3.14
 
         # if durations files present, pytest-split will use them to intelligently distribute tests
@@ -45,6 +45,7 @@ jobs:
           pip install doped[tests]  # install only from PyPI
 
       - name: Test
+        shell: bash
         run: |  # update durations file with ``export DOPED_SKIP_HEAVY_TESTS=False; pytest -vv -m "not mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_non_plotting``
           pytest -vv -m "not mpl_image_compare" \
             --splits 10 --group ${{ matrix.split }} \
@@ -52,6 +53,7 @@ jobs:
             --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
 
       - name: Plotting Tests
+        shell: bash
         if: always()  # run even if non-plotting tests fail
         id: plotting_tests  # Add an ID to this step for reference
         env:
@@ -63,6 +65,7 @@ jobs:
             --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
 
       - name: Generate GH Actions test plots
+        shell: bash
         if: failure() && steps.plotting_tests.outcome == 'failure'  # Run only if plotting tests fail
         env:
           MPLBACKEND: Agg  # non-interactive backend for matplotlib

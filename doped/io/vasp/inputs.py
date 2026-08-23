@@ -111,9 +111,14 @@ def _test_potcar_functional_choice(potcar_functional: str = "PBE", symbols: list
     return potcar_functional
 
 
-@lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
-def _get_potcar(potcar_symbols, potcar_functional) -> Potcar:
+@lru_cache(maxsize=1000)  # cache POTCAR generation to speed up POTCAR writing
+def _cached_potcar(potcar_symbols, potcar_functional) -> Potcar:
     return Potcar(list(potcar_symbols), functional=potcar_functional)
+
+
+def _get_potcar(potcar_symbols, potcar_functional) -> Potcar:
+    # shallow-copy on every call (incl. cache hits) so caller mutation can't corrupt the cached object:
+    return copy.copy(_cached_potcar(potcar_symbols, potcar_functional))
 
 
 class DopedKpoints(Kpoints):

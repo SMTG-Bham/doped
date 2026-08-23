@@ -4,6 +4,7 @@ functions/workflows/calculations in ``doped``.
 """
 
 import contextlib
+import copy
 import itertools
 import operator
 from collections import defaultdict
@@ -29,6 +30,7 @@ from pymatgen.core.structure_matcher import (
 )
 from pymatgen.io.vasp.sets import get_valid_magmom_struct
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer, SymmOp
+from pymatgen.util.misc import is_np_dict_equal
 from scipy.spatial import Voronoi
 
 if TYPE_CHECKING:
@@ -36,33 +38,88 @@ if TYPE_CHECKING:
 
     from doped.core import Vacancy
 
-# Note that any overrides of ``__eq__`` should also override ``__hash__``, and vice versa
+# Note: overrides of ``__eq__`` should also override ``__hash__`` (and vice versa), preserving the
+# invariant that ``a == b`` implies ``hash(a) == hash(b)`` -- hashes may be coarser than equality
+# (collisions are resolved by ``__eq__`` in ``dict``/``set``/``lru_cache`` lookups) but not finer.
+# A perfectly eq-consistent hash is impossible for tolerance-based equality (not transitive), so the
+# ``PeriodicSite``/``Structure`` hashes below are deliberately finer. Safe for caching (worst case a
+# spurious miss & recompute) and for sets of bitwise-identical copies, but ``set``/``dict`` dedup of
+# near-equal (eq-equal, not bitwise-identical) objects can silently fail -- dedup those with explicit
+# ``==`` loops instead. These patches also make some mutable objects hashable: don't mutate hashed fields
+# while keyed!
 
 _TRANSLATE_REMOVE_CHARGE = str.maketrans("", "", digits + "+-.")
 
 
-# Composition overrides:
-def _composition__hash__(self):
+def _freeze(obj):
     """
-    Custom ``__hash__`` method for |Composition| instances, to make composition
-    comparisons faster (used in structure matching etc.).
+    Recursively convert ``obj`` (e.g. nested ``properties`` values) into a
+    hashable canonical form, whose equality mirrors ``__eq__`` (e.g. order-
+    insensitive dict equality) -- required for the eq/hash invariant.
 
-    ``pymatgen`` composition has just hashes the chemical system (without
-    stoichiometry), which cannot then be used to distinguish different
-    compositions.
+    Container images are type-tagged (tuples excepted; already-hashable
+    composites) so eq-unequal values of different types (``[1, 2]`` vs
+    ``(1,2)``) don't collide into equal hashes (keeping hash equality a sound
+    proxy for equality in the ``_Structure__eq__`` hash-equal fast path).
     """
-    return hash(frozenset(self._data.items()))
+    if isinstance(obj, dict):  # frozenset of items; insertion-order independent (like dict eq)
+        return ("dict", frozenset((k, _freeze(v)) for k, v in obj.items()))
+    if isinstance(obj, list):
+        return ("list", tuple(_freeze(v) for v in obj))
+    if isinstance(obj, tuple):
+        return tuple(_freeze(v) for v in obj)
+    if isinstance(obj, set):
+        return ("set", frozenset(_freeze(v) for v in obj))
+    if isinstance(obj, np.ndarray):
+        return ("ndarray", obj.shape, obj.dtype.str, obj.tobytes())
+    # else assume it's already hashable (int, str, custom ...)
+    return obj
+
+
+def _frozen_properties(properties: dict):
+    """
+    Hashable image of a ``properties`` dict, for use in ``__hash__`` methods.
+    """
+    try:  # fast path: property values already hashable (floats/strings/tuples etc.)
+        return frozenset(properties.items())
+    except TypeError:  # unhashable values (arrays/lists/dicts etc.); canonicalise with ``_freeze``
+        pass
+    try:
+        return _freeze(properties)
+    except Exception:  # exotic unhashable values; repr fallback (worst case: benign cache misses)
+        return repr(sorted(properties.items(), key=repr))
+
+
+def _properties_equal(props_1: dict, props_2: dict) -> bool:
+    """
+    ``properties`` dict equality, tolerating ``np.ndarray`` values (plain dict
+    ``==`` raises ``ValueError`` on these, e.g. ``selective_dynamics``).
+    """
+    try:
+        return props_1 == props_2
+    except ValueError:  # array-aware (slower) comparison, only used when needed:
+        return is_np_dict_equal(props_1, props_2)
+
+
+# Composition overrides:
+# First, define operand slots for the cached equality functions below. Those ``lru_cache``\s are keyed on
+# the operands' exact int fingerprints -- they can't take the objects themselves, as ``lru_cache`` keys
+# args via their ``hash``/``==``, recursing into the very ``__eq__`` being implemented -- but hash
+# fingerprints aren't invertible, so on a cache miss the function body gets the actual operands from these
+# slots instead (set immediately before each cached call, read at function entry; cache hits never enter
+# the function body). Avoids unbounded hash->instance registry (memory leak) and associated per-call
+# insertion overhead.
+_composition_eq_pair: list = [None, None]
 
 
 @lru_cache(maxsize=int(1e5))  # maxsize on the order of 30 Mb
 def doped_Composition_eq_func(self_hash, other_hash):
     r"""
-    Update equality function for |Composition| instances, which breaks early
+    Updated equality function for |Composition| instances, which breaks early
     for mismatches and also uses caching, making it orders of magnitude faster
     than ``pymatgen``\s equality function.
     """
-    self_comp = Composition.__instances__[self_hash]
-    other_comp = Composition.__instances__[other_hash]
+    self_comp, other_comp = _composition_eq_pair  # read at entry; only runs on cache misses
 
     return fast_Composition_eq(self_comp, other_comp)
 
@@ -72,15 +129,18 @@ def fast_Composition_eq(self, other):
     Fast equality function for |Composition| instances, breaking early for
     mismatches.
     """
-    # skip matching object type check here, as already checked upstream in ``_Composition__eq__``
-    if len(self) != len(other):
+    if len(self) != len(other):  # skip type check here, already checked upstream in ``_Composition__eq__``
         return False
 
-    for el, amt in self.items():  # noqa: SIM110
-        if abs(amt - other[el]) > type(self).amount_tolerance:
-            return False
+    return all(abs(amt - other[el]) <= type(self).amount_tolerance for el, amt in self.items())
 
-    return True
+
+def _composition_fingerprint(composition):
+    """
+    Exact-stoichiometry fingerprint for |Composition| instances, used as a fast
+    equality key below (exact amounts distinguish e.g. Fe2O3 vs Fe3O2).
+    """
+    return hash(frozenset(composition._data.items()))
 
 
 def _Composition__eq__(self, other):
@@ -91,37 +151,21 @@ def _Composition__eq__(self, other):
     if not isinstance(other, type(self) | dict):
         return NotImplemented
 
-    # use object hash with instances to avoid recursion issues (for class method)
-    self_hash = _composition__hash__(self)
-    Composition.__instances__[self_hash] = self  # Ensure instances are stored for caching
+    if not isinstance(other, type(self)):  # plain dicts have no ``_data``/hash-cache support;
+        return fast_Composition_eq(self, other)  # compare directly
 
-    other_hash = _composition__hash__(other)
-    Composition.__instances__[other_hash] = other
-
-    return doped_Composition_eq_func(self_hash, other_hash)
+    _composition_eq_pair[:] = (self, other)  # slice-assign to mutate the module-level slots
+    return doped_Composition_eq_func(_composition_fingerprint(self), _composition_fingerprint(other))
 
 
 class Hashabledict(dict):
     def __hash__(self):
         """
         Make the dictionary hashable by recursively "freezing" into only
-        hashable built-ins, then hash that.
+        hashable built-ins (with ``_freeze``), then hash that.
 
-        Handles nested dicts, lists, sets, tuples, etc.
+        Handles nested dicts, lists, sets, tuples, arrays etc.
         """
-
-        def _freeze(obj):
-            if isinstance(obj, dict):  # convert to frozenset of tuples
-                return frozenset((k, _freeze(v)) for k, v in obj.items())
-            if isinstance(obj, list):  # lists -> tuples
-                return tuple(_freeze(v) for v in obj)
-            if isinstance(obj, set):  # sets -> frozensets
-                return frozenset(_freeze(v) for v in obj)
-            if isinstance(obj, tuple):  # tuples -> tuples of frozen values
-                return tuple(_freeze(v) for v in obj)
-            # else assume it's already hashable (int, str, custom ...)
-            return obj
-
         return hash(_freeze(self))
 
 
@@ -135,11 +179,11 @@ def _get_hashable_dict(d: dict) -> Hashabledict:
 
 def _fast_dict_deepcopy_max_two_levels(d: dict) -> dict:
     """
-    Fast deepcopy of a dict with at most two levels of nested dicts (i.e. d →
-    dict → dict → values).
+    Fast deepcopy of a dict with at most two levels of nested dicts (i.e. d ->
+    dict -> dict -> values).
 
     Implemented to allow fast deep-copying of nested chemical potential dicts,
-    avoiding the overhead of `deepcopy` when looping over many chemical
+    avoiding the overhead of ``deepcopy`` when looping over many chemical
     potential dicts.
     """
     return {
@@ -157,11 +201,12 @@ def _fast_dict_deepcopy_max_two_levels(d: dict) -> dict:
 
 @lru_cache(maxsize=int(1e5))
 def _cached_Composition_init(comp_input):
-    return Composition(comp_input).copy()  # copy to avoid mutability issues with cached objects
+    return Composition(comp_input)
 
 
 def _cache_ready_Composition_init(comp_input):
-    return _cached_Composition_init(_get_hashable_dict(comp_input))
+    # copy on every call (incl. cache hits) so caller mutation can't corrupt the cached object:
+    return _cached_Composition_init(_get_hashable_dict(comp_input)).copy()
 
 
 def _fast_get_composition_from_sites(sites: Sequence[Site], assume_full_occupancy: bool = False):
@@ -182,9 +227,7 @@ def _fast_get_composition_from_sites(sites: Sequence[Site], assume_full_occupanc
     return Composition(elem_map)
 
 
-Composition.__instances__ = {}
 Composition.__eq__ = _Composition__eq__
-Composition.__hash__ = _composition__hash__
 
 
 def _parse_site_species_str(site: Site, wout_charge: bool = False) -> str:
@@ -272,32 +315,71 @@ def _species__str__(self):
 Species.__str__ = _species__str__
 
 
+def _noise_rounded_bytes(arr) -> bytes:
+    """
+    Byte-image of a float array with noise below ``1e-10`` collapsed (rounded
+    to 10 dp; ``+ 0.0`` normalises ``-0.0``), so coordinates differing only by
+    float noise (e.g. from symmetry operations / Cartesian <-> fractional
+    round-trips) share a hash.
+
+    ``1e-10`` sits safely below the ``__eq__`` tolerances (``atol=1e-8``) for
+    ``Structure``/``PeriodicSite``, so hash-merged values are always still
+    eq-equal -- required for the ``_Structure__eq__`` hash-equality fast path
+    to stay sound.
+    """
+    return (arr.round(10) + 0.0).tobytes()
+
+
+def _species_info(species: dict) -> tuple:
+    # avoid ``str(el)`` (``Species.__str__``/format machinery); equal species give equal
+    # (symbol, oxi, amount) tuples, incl. amounts to distinguish partial occupancies:
+    return tuple((el.symbol, getattr(el, "_oxi_state", None), amt) for el, amt in species.items())
+
+
 # PeriodicSite overrides:
 def _periodic_site__hash__(self):
     """
-    Custom ``__hash__`` method for |PeriodicSite| instances.
-    """
-    property_dict = (  # Convert properties to a hashable form
-        {k: tuple(v) if isinstance(v, list | np.ndarray) else v for k, v in self.properties.items()}
-        if self.properties
-        else {}
-    )
+    Custom ``__hash__`` method for |PeriodicSite| instances; deliberately finer
+    than the tolerance-based ``__eq__`` (see module comment above), though
+    noise-rounded (``_noise_rounded_bytes``) so float-noise twins share a hash.
 
-    species_info = tuple(  # avoid ``str(el)`` (``Species.__str__``/format machinery); equal species give
-        (el.symbol, getattr(el, "_oxi_state", None))  # equal (symbol, oxi) tuples
-        for el in self._species
+    All fields ``__eq__`` compares exactly (incl. amounts & properties) are
+    hashed, which the ``doped`` |Structure| ``__eq__`` hash-equality fast path
+    relies on.
+    """
+    base_hash_tuple = (
+        _species_info(self._species),
+        _noise_rounded_bytes(self.lattice.matrix),
+        self.lattice.pbc,
+        _noise_rounded_bytes(self.frac_coords),
     )
-    base_hash_tuple = (species_info, self.lattice, self.frac_coords.tobytes())
-    try:
-        return hash((*base_hash_tuple, frozenset(property_dict.items())))
-    except Exception:  # unhashable property values; hash without the property dict
+    if not self.properties:
         return hash(base_hash_tuple)
+    return hash((*base_hash_tuple, _frozen_properties(self.properties)))
 
 
-def cache_ready_PeriodicSite__eq__(self, other):
+@lru_cache(maxsize=int(1e3))
+def _cached_lattice_eq(matrix_bytes_1: bytes, matrix_bytes_2: bytes, pbc_1: tuple, pbc_2: tuple) -> bool:
     """
-    Custom ``__eq__`` method for |PeriodicSite| instances, using a cached
-    equality function to speed up comparisons.
+    Cached lattice equality from raw matrix bytes and pbc; ``Lattice.__eq__``
+    (``np.allclose``) semantics but ~10x faster in hot containment loops, where
+    the same lattice pair repeats.
+    """
+    if pbc_1 != pbc_2:
+        return False
+    if matrix_bytes_1 == matrix_bytes_2:
+        return True
+    return bool(
+        np.allclose(
+            np.frombuffer(matrix_bytes_1).reshape(3, 3), np.frombuffer(matrix_bytes_2).reshape(3, 3)
+        )
+    )
+
+
+def cache_ready_Site__eq__(self, other):
+    """
+    Custom ``__eq__`` method for ``Site``  and |PeriodicSite| instances, using
+    a cached equality function to speed up comparisons.
     """
     if self is other:
         return True
@@ -307,15 +389,30 @@ def cache_ready_PeriodicSite__eq__(self, other):
     if not all(hasattr(other, attr) for attr in needed_attrs):
         return NotImplemented
 
-    return (
-        self._species == other._species  # should always work fine (and is faster) if Site initialised
-        # without ``skip_checks`` (default)
-        and (
+    if not (
+        self._species == other._species  # should always work fine (and is faster) if ``Site`` initialised
+        and (  # without ``skip_checks`` (default)
             self.coords is other.coords  # if coords are the same object
             or cached_allclose(tuple(self.coords), tuple(other.coords), atol=type(self).position_atol)
         )
-        and self.properties == other.properties
-    )
+    ):
+        return False
+
+    # lattice checked only for otherwise-matching sites (cheap checks above dominate hot containment loops)
+    other_lattice = getattr(other, "lattice", None)  # plain ``Site``s have no lattice -> skip:
+    if (
+        other_lattice is not None
+        and self.lattice is not other_lattice
+        and not _cached_lattice_eq(
+            self.lattice.matrix.tobytes(),
+            other_lattice.matrix.tobytes(),
+            self.lattice.pbc,
+            other_lattice.pbc,
+        )
+    ):
+        return False
+
+    return _properties_equal(self.properties, other.properties)
 
 
 @lru_cache(maxsize=int(2e3))  # maxsize on the order of 1 Mb
@@ -332,7 +429,8 @@ def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08
     return all(abs(x - y) <= atol + rtol * abs(y) for x, y in zip(a, b, strict=True))
 
 
-PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
+PeriodicSite.__eq__ = cache_ready_Site__eq__
+Site.__eq__ = cache_ready_Site__eq__
 PeriodicSite.__hash__ = _periodic_site__hash__
 
 
@@ -380,9 +478,28 @@ Lattice.get_all_distances = get_all_distances
 
 def _structure__hash__(self):
     """
-    Custom ``__hash__`` method for |Structure| instances.
+    Custom ``__hash__`` method for |Structure| instances; deliberately finer
+    than the tolerance-based, site-order-independent ``__eq__`` (see module
+    comment above), though noise-rounded (``_noise_rounded_bytes``) so float-
+    noise twins share a hash.
+
+    Includes the full lattice matrix (the coarser ``Lattice.__hash__`` can't
+    distinguish rotated/reflected settings) and properties, so every field
+    ``__eq__`` compares exactly contributes to the hash -- which the ``__eq__``
+    hash-equality fast path relies on.
     """
-    return hash((self.lattice, tuple(self.sites)))  # tuple rather than frozenset of sites; order-dependent
+    lattice_info = (_noise_rounded_bytes(self.lattice.matrix), self.lattice.pbc)
+    sites_info = tuple(
+        (
+            _species_info(site._species),
+            _frozen_properties(site.properties) if site.properties else None,
+        )
+        for site in self._sites
+    )
+    coords_info = _noise_rounded_bytes(self.frac_coords)  # vectorised coord rounding, rather than per-site
+    if not self.properties:
+        return hash((lattice_info, coords_info, sites_info))
+    return hash((lattice_info, coords_info, sites_info, _frozen_properties(self.properties)))
 
 
 @contextlib.contextmanager
@@ -392,8 +509,6 @@ def cache_species(structure_cls):
     significantly speeds up ``pydefect`` eigenvalue parsing in large structures
     (due to repeated use of ``Structure.indices_from_symbol``.
     """
-    Composition.__eq__ = _Composition__eq__
-    Composition.__hash__ = _composition__hash__  # use efficient hash for composition
     original_species = structure_cls.species
     try:
         cached = cached_property(original_species.fget)
@@ -416,7 +531,7 @@ def doped_Structure__eq__(self, other: IStructure) -> bool:
         return False
     if self.lattice != other.lattice:
         return False
-    if self.properties != other.properties:
+    if not _properties_equal(self.properties, other.properties):
         return False
     for site in self:  # noqa: SIM110
         if site not in other:
@@ -424,12 +539,18 @@ def doped_Structure__eq__(self, other: IStructure) -> bool:
     return True
 
 
+# operand slots for the cached structure equality function; see ``_composition_eq_pair`` comment above:
+_structure_eq_pair: list = [None, None]
+
+
 @lru_cache(maxsize=int(1e4))
 def cached_Structure_eq_func(self_hash, other_hash):
     """
     Cached equality function for |Structure| instances.
     """
-    return doped_Structure__eq__(IStructure.__instances__[self_hash], IStructure.__instances__[other_hash])
+    self_struct, other_struct = _structure_eq_pair  # read at entry; only runs on cache misses
+
+    return doped_Structure__eq__(self_struct, other_struct)
 
 
 def _Structure__eq__(self, other):
@@ -449,58 +570,53 @@ def _Structure__eq__(self, other):
     self_hash = _structure__hash__(self)
     other_hash = _structure__hash__(other)
 
-    IStructure.__instances__[self_hash] = self  # Ensure instances are stored for caching
-    IStructure.__instances__[other_hash] = other
+    if self_hash == other_hash:
+        return True
 
+    _structure_eq_pair[:] = (self, other)  # slice-assign to mutate the module-level slots
     return cached_Structure_eq_func(self_hash, other_hash)
+
+
+def _structure__deepcopy__(self, memo):
+    """
+    Fast ``__deepcopy__`` for ``Structure``: shallow ``.copy()``, then deep-
+    copy only the mutable ``properties`` dicts (structure- and site-level) so
+    the copy shares no state with the original.
+    """
+    new_structure = self.copy()
+    new_structure.properties = copy.deepcopy(self.properties, memo)
+    for new_site, site in zip(new_structure, self, strict=True):
+        new_site.properties = copy.deepcopy(site.properties, memo)
+    return new_structure
 
 
 IStructure.__eq__ = _Structure__eq__
 IStructure.__hash__ = _structure__hash__
-IStructure.__instances__ = {}
 Structure.__eq__ = _Structure__eq__
 Structure.__hash__ = _structure__hash__
-Structure.__deepcopy__ = lambda x, y: x.copy()  # make deepcopying faster, shallow copy fine for structures
+Structure.__deepcopy__ = _structure__deepcopy__
 
 
 # Molecule overrides:
 def _DopedMolecule__hash__(self):
     """
-    Hash ``pymatgen`` ``Molecule`` objects using the z-matrix (which reflects
-    the lengths, angles, and atom types of the molecule) and the site
-    coordinates.
-
-    Implemented to allow caching for efficient determination of symmetry
-    equivalent ``Molecule`` objects. The z-matrix functions as a unique
-    identifier for a molecule (with translation/rotation invariance -- which is
-    then removed by including the actual coordinates), while the ``__hash__``
-    method for the parent ``Molecule`` class is based solely on the composition
-    of the molecule and thus not unique.
+    ``__hash__`` for (mutable, unhashable-by-default) ``Molecule``, using only
+    fields compared _exactly_ by ``Molecule.__eq__`` (composition, charge,
+    spin) -- not tolerance-compared coordinates -- so eq-equal molecules always
+    share a hash (sets/dicts/caches dedup correctly) and collisions
+    (e.g. conformers) are resolved by ``__eq__``.
     """
-    z_list = self.get_zmatrix().split("\n")
-    rounded_z_list = tuple([round(float(i.split("=")[-1]), 2) if "=" in i else i for i in z_list])
-    return hash((rounded_z_list, tuple(tuple(np.round(site.coords, 3)) for site in self)))
+    return hash((self.composition, self.charge, self.spin_multiplicity))
 
 
-def _DopedMolecule__eq__(self, other):
-    """
-    Custom ``__eq__`` method for ``Molecule`` instances, using a cached
-    equality function to speed up comparisons.
-    """
-    if not isinstance(other, type(self)):
-        return NotImplemented
-    return _DopedMolecule__hash__(self) == _DopedMolecule__hash__(other)
-
-
-Molecule.__eq__ = _DopedMolecule__eq__
 Molecule.__hash__ = _DopedMolecule__hash__
 
 
 # SpacegroupAnalyzer overrides:
 def _sga__hash__(self):
     """
-    Custom ``__hash__`` method for ``SpacegroupAnalyzer`` instances, to make
-    them hashable for efficient caching of e.g. symmetry operation generation.
+    Custom ``__hash__`` for ``SpacegroupAnalyzer`` (e.g. for cache keys);
+    coarser than the (default, identity) ``__eq__``, so invariant-safe.
     """
     return hash((self._cell, self._symprec, self._angle_tol))
 
@@ -508,29 +624,40 @@ def _sga__hash__(self):
 _original_get_symmetry = SpacegroupAnalyzer._get_symmetry
 
 
-@lru_cache(maxsize=int(1e3))
 def _get_symmetry(self) -> tuple[NDArray, NDArray]:
     """
-    Get the symmetry operations associated with the structure.
+    Get the symmetry operations associated with the structure, memoised per-
+    instance and ``get_sga`` already caches SGA construction by structure.
 
-    Refactored from ``pymatgen`` to allow caching, to boost efficiency when
-    working with large defect supercells.
+    The cached arrays are frozen so caller mutation raises loudly rather than
+    silently corrupting the shared values.
     """
-    return _original_get_symmetry(self)  # call the original method, with the now cacheable class
+    try:
+        return self._doped_symmetry
+    except AttributeError:
+        rotations, translations = _original_get_symmetry(self)
+        rotations.flags.writeable = False  # freeze mutatable arrays
+        translations.flags.writeable = False
+        self._doped_symmetry = (rotations, translations)
+        return self._doped_symmetry
 
 
 _original_get_symmetry_operations = SpacegroupAnalyzer.get_symmetry_operations
 
 
-@lru_cache(maxsize=int(1e3))
 def _get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
     """
-    Get the symmetry operations associated with the structure.
+    Get the symmetry operations associated with the structure, memoised per-
+    instance (as with ``_get_symmetry``).
 
-    Refactored from ``pymatgen`` to allow caching, to boost efficiency.
+    A fresh ``list`` is returned on every call (incl. hits) so callers can
+    freely modify it; the shared ``SymmOp`` objects themselves should not be
+    mutated in-place.
     """
-    # ``.copy()`` so callers cannot mutate the cached list:
-    return _original_get_symmetry_operations(self, cartesian=cartesian).copy()
+    cache = self.__dict__.setdefault("_doped_symmetry_operations", {})
+    if cartesian not in cache:
+        cache[cartesian] = _original_get_symmetry_operations(self, cartesian=cartesian)
+    return list(cache[cartesian])
 
 
 SpacegroupAnalyzer.__hash__ = _sga__hash__
@@ -1015,11 +1142,8 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
         list[PeriodicSite]:
             List of |PeriodicSite| objects representing the Voronoi nodes.
     """
-    try:
-        return _hashable_get_voronoi_nodes(structure)
-    except TypeError:
-        structure.__hash__ = _structure__hash__  # make sure Structure is hashable
-        return _hashable_get_voronoi_nodes(structure)
+    # fresh ``list`` on every call (incl. cache hits), so caller mutation cannot corrupt the cache:
+    return list(_hashable_get_voronoi_nodes(structure))
 
 
 @lru_cache(maxsize=int(1e2))

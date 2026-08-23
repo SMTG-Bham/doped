@@ -481,24 +481,19 @@ def summed_dist(
         struct_a: ``pymatgen`` |Structure| object.
         struct_b: ``pymatgen`` |Structure| object.
         ignored_species:
-            List of species to ignore when calculating the RMS distance
+            List of species to ignore when calculating the summed distance
             (default: None).
 
     Returns:
         float:
-            The summed distance between the sites of the two structures, in Å.
+            The summed distance between the sites of the two structures, in Å,
+            or ``inf`` if any site could not be matched (i.e. the structures
+            have differing compositions).
     """
-    # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
-    # (though this assumes lattices are equal)
-    # set threshold to a large number to avoid possible site-matching warnings
-    return np.array(
-        get_site_mappings(
-            struct_a,
-            struct_b,
-            threshold=1e10,
-            ignored_species=ignored_species,
-        )
-    )[:, 0].sum()
+    # This is orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen (though this
+    # assumes lattices are equal). Threshold set to a large number to avoid possible site-matching warnings
+    site_mappings = get_site_mappings(struct_a, struct_b, threshold=1e10, ignored_species=ignored_species)
+    return float(sum(dist if dist is not None else float("inf") for dist, _i, _j in site_mappings))
 
 
 def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
@@ -530,9 +525,10 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
     This function requires the input fcoords to be given as tuples, to allow
     hashing and caching for efficiency.
     """
-    # copy() to help avoid mutability issues with cached outputs:
-    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords).copy())
-    return (dist_matrix + dist_matrix.T) / 2
+    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
+    dist_matrix = (dist_matrix + dist_matrix.T) / 2  # ensure ij symmetry
+    dist_matrix.flags.writeable = False  # cached array shared across callers; prevent mutation
+    return dist_matrix
 
 
 def cluster_coords(
@@ -841,7 +837,10 @@ def get_all_equiv_sites(
         hash(key)
     except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
         return _raw_get_all_equiv_sites(frac_coords, *args)
-    return _cache_ready_get_all_equiv_sites(*key)
+    output = _cache_ready_get_all_equiv_sites(*key)
+    if return_symprec_and_dist_tol_factor:
+        return (list(output[0]), *output[1:])
+    return list(output)  # fresh list (incl. cache hits) so caller mutation can't corrupt the cache
 
 
 @lru_cache(maxsize=int(1e3))
@@ -857,7 +856,7 @@ def _cache_ready_get_all_equiv_sites(
     verbose: bool = False,
     fold_to_primitive: bool = True,
 ) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
-    output = _raw_get_all_equiv_sites(
+    return _raw_get_all_equiv_sites(
         frac_coords,
         structure,
         symprec,
@@ -869,13 +868,6 @@ def _cache_ready_get_all_equiv_sites(
         verbose,
         fold_to_primitive,
     )
-    # copy() to help avoid mutability issues with cached outputs:
-    if not return_symprec_and_dist_tol_factor:
-        assert isinstance(output, list)
-        return output.copy()
-
-    assert isinstance(output, tuple)  # typing
-    return output[0].copy(), output[1], output[2]
 
 
 def _get_orientation_preserving_primitive(
@@ -1392,7 +1384,10 @@ def _get_symm_dataset_of_struct_with_all_equiv_sites(
         hash(key)
     except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
         return _raw_get_symm_dataset_of_struct_with_all_equiv_sites(frac_coords, *args)
-    return _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(*key)
+    output = _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(*key)
+    # fresh unique-sites list on every call (incl. cache hits) so caller mutation can't corrupt the
+    # cache; the symmetry dataset is shared and should be treated as read-only:
+    return (output[0], list(output[1]), *output[2:])
 
 
 def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
@@ -1440,70 +1435,6 @@ def _get_struct_with_all_X(struct, unique_sites):
     struct_with_all_X = struct.copy()
     struct_with_all_X.sites += unique_sites
     return struct_with_all_X
-
-
-@lru_cache(maxsize=int(1e3))
-def _get_supercell_to_prim_fold_map(
-    supercell: Structure, primitive: Structure, symprec: float = 0.01, dist_tol_factor: float = 1.0
-) -> tuple[np.ndarray, np.ndarray] | None:
-    """
-    Get the affine map ``f -> (f @ M + t) % 1`` taking fractional coordinates
-    in ``supercell`` to fractional coordinates in ``primitive``, as an ``(M,
-    t)`` tuple -- or ``None`` if no such map can be verified (e.g. for
-    distorted/noisy cells), in which case callers should fall back to explicit
-    structure-based folding.
-
-    ``M`` is the integer supercell matrix relating the two lattices (accounting
-    for any rigid rotation between their Cartesian frames, which leaves
-    fractional coordinates unchanged) and ``t`` aligns their origins. The map
-    is certified as a rigid isometry mapping every ``supercell`` atom onto a
-    ``primitive`` atom of the same element (within ``symprec*dist_tol_factor``
-    Å), so any two certified maps differ only by a symmetry operation of
-    ``primitive``, and downstream equivalent site generation is independent of
-    the choice made here. Cached, as the map depends only on the host
-    (supercell, primitive) pair and tolerances, not on individual sites.
-    """
-    dist_tol = symprec * dist_tol_factor
-    T = supercell.lattice.matrix @ np.linalg.inv(primitive.lattice.matrix)
-    if np.allclose(T, np.round(T), atol=1e-4):  # common case; Cartesian frames already aligned
-        M = np.round(T).astype(int)
-    else:  # frames differ by a rigid rotation; get the integer supercell matrix relating the lattices
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="No mapping")
-            _rotated_prim, M = _rotate_and_get_supercell_matrix(
-                primitive, supercell, ltol=symprec, atol=100 * symprec
-            )
-        if M is None or not np.allclose(M, np.round(M), atol=1e-4):
-            return None
-        M = np.round(M).astype(int)
-
-    if round(abs(np.linalg.det(M))) * len(primitive) != len(supercell):  # incorrect mapping
-        return None
-    W = np.linalg.inv(supercell.lattice.matrix) @ M @ primitive.lattice.matrix  # Cartesian linear part
-    if not np.allclose(W @ W.T, np.eye(3), atol=1e-4):  # must be a rigid isometry
-        return None
-
-    sc_elts = np.array([site.specie.symbol for site in supercell])
-    prim_elts = np.array([site.specie.symbol for site in primitive])
-    species_mismatch = sc_elts[:, None] != prim_elts[None, :]  # (N_supercell, N_primitive)
-    mapped_fracs = supercell.frac_coords @ M
-    # anchoring on the least-common element (fewest candidates), each primitive site of that element gives
-    # a candidate translation (mapping the first such supercell atom onto it); certify by checking all
-    # supercell atoms then map onto matching primitive atoms:
-    unique_elts, counts = np.unique(prim_elts, return_counts=True)
-    anchor_elt = unique_elts[np.argmin(counts)]
-    anchor_mapped_frac = mapped_fracs[np.argmax(sc_elts == anchor_elt)]  # first supercell atom of elt
-    for anchor_prim_frac in primitive.frac_coords[prim_elts == anchor_elt]:
-        translation = (anchor_prim_frac - anchor_mapped_frac) % 1
-        dists = primitive.lattice.get_all_distances(
-            (mapped_fracs + translation) % 1, primitive.frac_coords
-        )
-        dists[species_mismatch] = np.inf
-        if dists.min(axis=1).max() < dist_tol:
-            M.flags.writeable = translation.flags.writeable = False  # cached output; guard mutation
-            return M, translation
-
-    return None
 
 
 def get_equiv_frac_coords_in_primitive(
@@ -1588,11 +1519,31 @@ def get_equiv_frac_coords_in_primitive(
             ``True``, also returns the final ``symprec`` and
             ``dist_tol_factor`` used for the equivalent site generation.
     """
-    fold_map = _get_supercell_to_prim_fold_map(supercell, primitive, symprec, dist_tol_factor)
-    if fold_map is not None:
-        # verified affine map from supercell to primitive frac coords, so just generate the equivalent
-        # supercell sites and fold directly (much faster than the structure-based folding below):
-        M, translation = fold_map
+    from doped.utils.configurations import get_transformation_from_s2_to_s1  # avoid circular import
+
+    # get the affine map ``f -> (f @ M + t) % 1`` taking supercell frac coords to primitive frac coords,
+    # using strict ``StructureMatcher`` tolerances so that a successful match certifies a rigid isometry
+    # mapping every supercell atom onto a same-element primitive atom within ``symprec * dist_tol_factor``
+    # Å (``stol`` is this distance tolerance in SM's normalised units: ``dist * (n/V)^(1/3)``). Any two
+    # such maps differ only by a symmetry operation of ``primitive``, so the generated equivalent sites are
+    # independent of the choice made here. Cached (in ``get_transformation_from_s2_to_s1``), as the map
+    # depends only on the host pair and tolerances:
+    stol = symprec * dist_tol_factor * (len(supercell) / supercell.volume) ** (1 / 3)
+    transformation = get_transformation_from_s2_to_s1(
+        supercell,
+        primitive,
+        min_stol=stol,
+        max_stol=stol,  # min = max -> single strict trial, no upward stol scanning
+        ltol=1e-4,
+        angle_tol=0.01,
+        scale=False,  # don't rescale volumes; hydrostatic strain must fail the match
+        attempt_supercell=True,
+    )
+    if transformation is not None:
+        # affine fold map found, so just generate the equivalent supercell sites and fold directly
+        # (much faster than the structure-based folding below):
+        M, t, _mapping = transformation  # M: integer supercell matrix relating the lattices
+        translation = (-t @ M) % 1  # SM convention: prim_supercell_frac + t = supercell_frac
         equiv_sites_output = get_all_equiv_sites(
             frac_coords,
             supercell,
@@ -1623,7 +1574,7 @@ def get_equiv_frac_coords_in_primitive(
             if np.linalg.norm(shift @ primitive.lattice.matrix) > 1e-6:  # keep exact coords (and thus
                 prim_X_frac_coords[i] = frac_coords_i + shift  # cache keys) unchanged for clean inputs
 
-    else:  # no verified affine map (e.g. distorted/noisy cells); fold via X-decorated structures instead
+    else:  # no strict affine map match (e.g. distorted/noisy cells); fold via X-decorated structures
         trial_symprecs = _TRIAL_SYMPREC_DIST_TOL_FACTORS * symprec
         trial_dist_tol_factors = _TRIAL_SYMPREC_DIST_TOL_FACTORS * dist_tol_factor
         for trial_dist_tol_factor, trial_symprec in product(trial_dist_tol_factors, trial_symprecs):
@@ -2355,13 +2306,15 @@ def get_primitive_structure(
     cache_ready_ignored_species = tuple(ignored_species) if ignored_species is not None else None
     cache_ready_kwargs = tuple(kwargs.items()) if kwargs else None
 
-    return _cache_ready_get_primitive_structure(
+    output = _cache_ready_get_primitive_structure(
         structure,
         ignored_species=cache_ready_ignored_species,
         clean=clean,
         return_all=return_all,
         kwargs=cache_ready_kwargs,
     )
+    # copy on every call (incl. cache hits) so caller mutation can't corrupt the cached structure(s):
+    return [struct.copy() for struct in output] if return_all else output.copy()
 
 
 @lru_cache(maxsize=int(1e3))
@@ -2378,11 +2331,17 @@ def _cache_ready_get_primitive_structure(
     """
     # clean structure site_properties (if mismatching ``None`` values present, can mess with primitive
     # structure determination) -- this can happen if e.g. a slab structure is input with "bulk_wyckoff"
-    # etc site properties:
-    for key, val in list(structure.site_properties.items()):
-        if any(i is not None for i in val) and any(i is None for i in val):
-            structure.site_properties.pop(key, None)
-            for site in structure:
+    # etc site properties. Done on a copy, so that neither the caller's structure nor this function's
+    # (already-captured) ``lru_cache`` key is mutated:
+    mismatching_props = [
+        key
+        for key, val in structure.site_properties.items()
+        if any(i is not None for i in val) and any(i is None for i in val)
+    ]
+    if mismatching_props:
+        structure = structure.copy()
+        for site in structure:
+            for key in mismatching_props:
                 site.properties.pop(key, None)
 
     kwargs_dict = dict(kwargs) if kwargs is not None else {}
@@ -2409,8 +2368,7 @@ def _cache_ready_get_primitive_structure(
     if clean:
         prim_structs = [get_clean_structure(struct) for struct in prim_structs]
 
-    # copy() to help avoid mutability issues with cached outputs:
-    return prim_structs.copy() if return_all else _get_best_pos_det_structure(prim_structs[0]).copy()
+    return prim_structs if return_all else _get_best_pos_det_structure(prim_structs[0])
 
 
 def get_spglib_conv_structure(sga: SpacegroupAnalyzer) -> tuple[Structure, SpacegroupAnalyzer]:
@@ -3447,6 +3405,7 @@ def local_point_symmetry(
     symprec: float = 0.1,
     centre_error_range: float | None = None,
     bulk_symprec: float = 0.01,
+    radius: float | None = None,
     verbose: bool = False,
     _first_pass: bool = True,
 ) -> tuple[str, list[tuple[np.ndarray, np.ndarray]], dict]:
@@ -3550,6 +3509,14 @@ def local_point_symmetry(
             ``bulk_supercell`` is ``None``. Default is 0.01 Å (the ``pymatgen``
             / ``spglib`` default, appropriate for noise-free unrelaxed /
             idealised structures).
+        radius (float | None):
+            Radius (in Å) of the local atomic cluster extracted around the
+            defect centre for symmetry analysis. If ``None`` (default), uses
+            half the minimum periodic image distance of ``defect_supercell``
+            (capped at 12 Å) -- the maximum radius free of periodic-image
+            artefacts. Smaller values can be used to restrict the analysis to
+            a more local environment, e.g. to obtain the local point symmetry
+            of an individual point defect within a (separated) defect complex.
         verbose (bool):
             If ``True``, prints diagnostic information on the local symmetry
             analysis. Default is ``False``.
@@ -3587,7 +3554,8 @@ def local_point_symmetry(
               relaxed point symmetry (used automatically by
               |point_symmetry_from_defect_entry|).
     """
-    radius = min(get_min_image_distance(defect_supercell) / 2, 12)  # cap at 12 Å for very large supercells
+    if radius is None:
+        radius = min(get_min_image_distance(defect_supercell) / 2, 12)  # cap at 12 Å for large supercells
 
     # determine cluster centre:
     # only needs to be accurate to ~centre_error_range, as it is just used to place the local cluster
@@ -3803,6 +3771,7 @@ def local_point_symmetry(
                 symprec=symprec,
                 centre_error_range=centre_error_range,
                 bulk_symprec=bulk_symprec,
+                radius=radius,
                 verbose=verbose,
                 _first_pass=False,
             )
@@ -3903,7 +3872,9 @@ def point_symmetry_from_defect_entry(
 
     # split off ``local_point_symmetry`` (relaxed) kwargs from ``get_all_equiv_sites`` (unrelaxed)
     # kwargs, so a shared kwargs dict can be used for both (e.g. from ``get_orientational_degeneracy``):
-    local_kwargs = {k: kwargs.pop(k) for k in ("centre_error_range", "bulk_symprec") if k in kwargs}
+    local_kwargs = {
+        k: kwargs.pop(k) for k in ("centre_error_range", "bulk_symprec", "radius") if k in kwargs
+    }
 
     if relaxed:
         defect_supercell = _get_defect_supercell(defect_entry)
@@ -3992,7 +3963,6 @@ def point_symmetry_from_structure(
     symprec: float | None = None,
     relaxed: bool = True,
     verbose: bool | None = None,
-    skip_atom_mapping_check: bool = False,
     **kwargs,
 ) -> str:
     r"""
@@ -4087,13 +4057,6 @@ def point_symmetry_from_structure(
         verbose (bool):
             If ``True``, prints diagnostic information about the local symmetry
             analysis. Default is ``None`` (no diagnostic output).
-        skip_atom_mapping_check (bool):
-            If ``True``, skips the atom mapping check which ensures that the
-            bulk and defect supercell lattice definitions are matched
-            (important for accurate defect site determination and charge
-            corrections). Can be used to speed up parsing when you are sure
-            the cell definitions match (e.g. both supercells were generated
-            with ``doped``). Default is ``False``.
         **kwargs:
             Additional keyword arguments to pass to ``local_point_symmetry``
             when ``relaxed=True`` (``centre_error_range``, ``bulk_symprec``),
@@ -4113,7 +4076,6 @@ def point_symmetry_from_structure(
             bulk_structure,
             oxi_state="Undetermined",
             multiplicity=1,
-            skip_atom_mapping_check=skip_atom_mapping_check,
         )
 
         return point_symmetry_from_defect_entry(
@@ -4144,7 +4106,7 @@ def point_symmetry_from_structure(
         defect_frac_coords=defect_frac_coords,  # if still None, guessed in ``local_point_symmetry``
         symprec=symprec,
         verbose=bool(verbose),
-        **{k: kwargs[k] for k in ("centre_error_range",) if k in kwargs},  # no bulk -> no bulk_symprec
+        **{k: kwargs[k] for k in ("centre_error_range", "radius") if k in kwargs},  # no bulk_symprec
     )
 
     # cross-check against global space-group analysis of the defect supercell, whose point group matches

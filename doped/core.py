@@ -90,9 +90,7 @@ class DefectEntry(thermo.DefectEntry):
         equivalent_supercell_sites: list[PeriodicSite] | None = None,
         bulk_supercell: Structure | None = None,
         _bulk_entry_energy: float | None = None,
-        _bulk_entry_hash: int | None = None,
         _sc_entry_energy: float | None = None,
-        _sc_entry_hash: int | None = None,
     ):
         """
         Subclass of :class:`~pymatgen.analysis.defects.thermo.DefectEntry` with
@@ -210,9 +208,7 @@ class DefectEntry(thermo.DefectEntry):
         )
         self.bulk_supercell = bulk_supercell
         self._bulk_entry_energy = _bulk_entry_energy
-        self._bulk_entry_hash = _bulk_entry_hash
         self._sc_entry_energy = _sc_entry_energy
-        self._sc_entry_hash = _sc_entry_hash
         if name is None:
             # try get using doped functions:
             try:
@@ -263,20 +259,6 @@ class DefectEntry(thermo.DefectEntry):
         """
         return loadfn(filename)
 
-    def as_dict(self) -> dict:
-        """
-        Return a JSON-serializable dict representation of |DefectEntry|.
-
-        Slightly modified from the parent function to remove any hash values,
-        as these are only relevant to the current python session.
-        """
-        defect_entry_dict = super().as_dict()
-        for key in list(defect_entry_dict.keys()):
-            if "_hash" in key:
-                del defect_entry_dict[key]
-
-        return defect_entry_dict
-
     @classmethod
     def from_dict(cls, d: dict):
         """
@@ -291,6 +273,8 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             |DefectEntry| object
         """
+        # drop legacy keys from JSONs generated with older ``doped`` versions (<v4)
+        d = {k: v for k, v in d.items() if k not in ("_bulk_entry_hash", "_sc_entry_hash")}
         with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
             return super().from_dict(d)
 
@@ -1257,6 +1241,29 @@ class DefectEntry(thermo.DefectEntry):
                 "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s).",
             )
 
+    @staticmethod
+    def _dilute_per_site_concentration(
+        formation_energy: float | np.ndarray,
+        temperature: float,
+        degeneracy_factor: float | np.ndarray = 1.0,
+    ) -> float | np.ndarray:
+        """
+        Dilute-limit per-site concentration(s) ``g * exp(-E_f/kT)``, floored at
+        a minimum of 1e-150 for numerical stability.
+
+        Operates on scalars or arrays (natively vectorised). The 1e-150 floor
+        roughly corresponds to one 1e-100 defects per Earth volume (~10^27
+        cm^3; ~10^23 sites per cm^3 ~> 10^50 sites per Earth); setting it to
+        1e-50 can cause some oddities with the site competition routine (though
+        only affecting low-concentration defects).
+        """
+        # Note: Could in future operate in logspace (logsumexp), as in py-sc-fermi, but so far unnecessary
+        with np.errstate(over="ignore"):
+            exp_factor = np.exp(
+                -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
+            )
+            return np.maximum(exp_factor * degeneracy_factor, 1e-150)
+
     def equilibrium_concentration(
         self,
         temperature: float = 300,
@@ -1422,18 +1429,12 @@ class DefectEntry(thermo.DefectEntry):
             )
 
         with np.errstate(over="ignore"):
-            exp_factor = np.exp(
-                -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
-            )
-
             degeneracy_factor = (
-                np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
+                float(np.prod(list(self.degeneracy_factors.values()))) if self.degeneracy_factors else 1.0
             )
-            # set minimum per-site concentration for numerical stability; 1e-150 roughly corresponds to one
-            # 1e-100 defects per Earth volume (~10^27 cm^3); ~10^23 sites per cm^3 ~> 10^50 sites per Earth
-            # setting to 1e-50 can cause some oddities with the site competition routine (doesn't affect
-            # main results as it only affects low concentration defects though)
-            per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-150)
+            per_site_concentration = self._dilute_per_site_concentration(
+                formation_energy, temperature, degeneracy_factor
+            )
             if site_competition:  # use 1 - 1/(1+x) instead of x/(1+x); equivalent but more stable
                 per_site_concentration = 1.0 - 1.0 / (1.0 + per_site_concentration)
             elif site_competition is not None:  # cap max at 100% site concentration (obvs unphysical at
@@ -1444,7 +1445,7 @@ class DefectEntry(thermo.DefectEntry):
                 per_site_concentration = np.minimum(per_site_concentration, 1)
 
             if per_site:
-                return per_site_concentration
+                return float(per_site_concentration)
 
             return self.bulk_site_concentration * per_site_concentration
 
@@ -1493,7 +1494,11 @@ class DefectEntry(thermo.DefectEntry):
         version, using cheap early breaking and only reaching expensive defect
         (structure) comparison when absolutely necessary.
         """
-        return self is other or (
+        if self is other:
+            return True
+        if not isinstance(other, DefectEntry):
+            return NotImplemented
+        return (
             self.name == other.name
             and self.sc_entry_energy == other.sc_entry_energy
             and self.bulk_entry_energy == other.bulk_entry_energy
@@ -1504,15 +1509,17 @@ class DefectEntry(thermo.DefectEntry):
     def __hash__(self):
         """
         Hash the |DefectEntry| object by its name, supercell energy, bulk
-        energy, corrections and underlying |Defect|.
+        energy and corrections.
+
+        All fields hashed here are compared exactly by ``__eq__``, in addition
+        to ``self.defect`` (which accounts for symmetry equivalency).
         """
         return hash(
-            (
+            (  # these fields should not be mutated while the entry is in a ``set``/``dict``
                 self.name,
                 self.sc_entry_energy,
                 self.bulk_entry_energy,
                 tuple(sorted(self.corrections.items())),
-                hash(self.defect),
             )
         )
 
@@ -1529,10 +1536,10 @@ class DefectEntry(thermo.DefectEntry):
         if self.bulk_entry is None:
             return None
 
-        if hasattr(self, "_bulk_entry_energy") and self._bulk_entry_hash == hash(self.bulk_entry):
-            return self._bulk_entry_energy
+        if getattr(self, "_bulk_entry_ref", None) is self.bulk_entry:  # staleness guarded by object id
+            return self._bulk_entry_energy  # ~8x faster then ComputedEntry.energy (due to corrections)
 
-        self._bulk_entry_hash = hash(self.bulk_entry)
+        self._bulk_entry_ref = self.bulk_entry
         self._bulk_entry_energy = self.bulk_entry.energy
 
         return self._bulk_entry_energy
@@ -1550,10 +1557,10 @@ class DefectEntry(thermo.DefectEntry):
         if self.sc_entry is None:
             return None
 
-        if hasattr(self, "_sc_entry_energy") and self._sc_entry_hash == hash(self.sc_entry):
-            return self._sc_entry_energy
+        if getattr(self, "_sc_entry_ref", None) is self.sc_entry:  # staleness guarded by object id
+            return self._sc_entry_energy  # ~8x faster then ComputedEntry.energy (due to corrections)
 
-        self._sc_entry_hash = hash(self.sc_entry)
+        self._sc_entry_ref = self.sc_entry
         self._sc_entry_energy = self.sc_entry.energy
 
         return self._sc_entry_energy
@@ -1818,9 +1825,9 @@ def _update_defect_entry_structure_metadata(
     if not getattr(defect_entry, "calculation_metadata", None):
         defect_entry.calculation_metadata = {}
 
-    # update any missing calculation_metadata:
+    # update any missing calculation_metadata (``is None`` rather than falsiness, for e.g. "..._index" = 0)
     for k, v in defect_structure_metadata.items():
-        if not defect_entry.calculation_metadata.get(k) or overwrite:
+        if defect_entry.calculation_metadata.get(k) is None or overwrite:
             defect_entry.calculation_metadata[k] = v
 
     for attr_name, value in {
@@ -2791,6 +2798,11 @@ class Defect(core.Defect):
         """
         Refactored version of ``pymatgen-analysis-defects``'s
         ``get_charge_states`` to not break when ``oxi_state`` is not set.
+
+        Note that this method is only retained for compatibility with the
+        ``pymatgen-analysis-defects`` API, and is not used for ``doped`` charge
+        state guessing (in |DefectsGenerator|), which instead uses the
+        probability-based :func:`~doped.generation.guess_defect_charge_states`.
         """
         if self.user_charges:
             return self.user_charges
@@ -2934,22 +2946,28 @@ class Defect(core.Defect):
         differently-oriented/-defined host cells (e.g. primitive vs supercell
         definitions, or differently oxi-state-decorated hosts) are recognised
         as equal.
+
+        Uses the stricter (smaller) ``self.symprec`` of the two defects, so
+        equality is symmetric.
         """
         if not isinstance(other, type(self) | core.Defect):
-            raise TypeError("Can only compare `Defect`s with `Defect`s!")
+            return NotImplemented
 
         if self is other:
             return True
 
-        if self.defect_type != other.defect_type or self.name != other.name:
+        if self.name != other.name:
             return False
 
-        if hash(self) == hash(other):
-            return True  # Defect hash match sufficient for equality (-> same name, site and structure)
+        symprec = min(self.symprec, getattr(other, "symprec", self.symprec))
+
+        # cheap sufficient (but not necessary) check first: same host and (essentially) same site:
+        if self.structure == other.structure and self.site.distance(other.site) < symprec:
+            return True
 
         from doped.utils.symmetry import get_min_dist_between_equiv_sites
 
-        return get_min_dist_between_equiv_sites(self, other, symprec=self.symprec) < self.symprec
+        return get_min_dist_between_equiv_sites(self, other, symprec=symprec) < symprec
 
     @cached_property
     def defect_site(self) -> PeriodicSite:
@@ -3010,19 +3028,13 @@ class Defect(core.Defect):
 
     def __hash__(self):
         """
-        Hash the |Defect| object, based on the defect name, site and host
-        structure.
+        Hash the |Defect| object, based on the defect name.
 
-        Uses the ``doped`` |Structure| hash (from ``doped.utils.efficiency``)
-        for efficient hashing of the host structure.
+        Deliberately coarse: the name is the only attribute shared by *all*
+        equal defects (``__eq__`` matches symmetry-equivalent defects across
+        host cell settings).
         """
-        return hash(
-            (
-                self.name,
-                *tuple(np.round(self.site.frac_coords, 3)),
-                hash(self.structure),
-            )
-        )
+        return hash(self.name)
 
 
 def remove_site_oxi_state(site: PeriodicSite):
@@ -3096,7 +3108,8 @@ def defect_structure_from_sites(
 
     # check no sites are the same:
     frac_coords = [site.frac_coords for sites in defect_dict.values() for site in sites]
-    distance_matrix = get_distance_matrix(frac_coords, bulk_supercell.lattice)
+    # ``.copy()`` as the cached distance matrix is shared (read-only) and we mutate it (fill diag) below:
+    distance_matrix = get_distance_matrix(frac_coords, bulk_supercell.lattice).copy()
     np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
     if np.min(distance_matrix) < 0.1:
         warnings.warn(

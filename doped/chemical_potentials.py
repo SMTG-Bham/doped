@@ -7,8 +7,10 @@ system.
 import contextlib
 import copy
 import itertools
+import math
 import os
 import warnings
+from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from copy import deepcopy
@@ -638,7 +640,9 @@ def prune_entries_to_border_candidates(
             downshifted by ``energy_above_hull`` eV/atom.
     """
     if not phase_diagram:
-        phase_diagram = PhaseDiagram({bulk_computed_entry, *entries})
+        phase_diagram = PhaseDiagram(
+            [bulk_computed_entry, *[entry for entry in entries if entry != bulk_computed_entry]]
+        )
 
     # cull to only include any phases that would border the host material on the phase
     # diagram, if their relative energy was downshifted by ``energy_above_hull``:
@@ -2002,6 +2006,8 @@ class ChemicalPotentialGrid(MSONable):
         n_points: int = 1000,
         fixed_elements: dict[str, float] | None = None,
         cartesian: bool = False,
+        resolution: float | None = None,
+        max_points: int | None = None,
         decimal_places: int = 4,
         drop_duplicates: bool = True,
         include_vertices: bool = True,
@@ -2019,6 +2025,11 @@ class ChemicalPotentialGrid(MSONable):
         coordinates, and not necessarily in Cartesian coordinates. If
         ``cartesian`` is set to ``True``, then a regular grid in Cartesian
         coordinates is generated (however this can be much slower).
+
+        1D chemical potential spaces -- i.e. any `collinear` set of vertices,
+        such as a binary system or two chemical potential limits of a
+        multinary system -- are handled as line segments, with points uniformly
+        spaced between the two endpoints.
 
         Args:
             n_points (int | None):
@@ -2040,7 +2051,22 @@ class ChemicalPotentialGrid(MSONable):
                 ``False`` (default), the grid is generated in barycentric
                 coordinates, which is far more efficient, but means that the
                 grid is evenly spaced in barycentric ('relative') coordinates,
-                and not necessarily in Cartesian coordinates.
+                and not necessarily in Cartesian coordinates. Irrelevant if it
+                is a 1D chemical potential space.
+            resolution (float | None):
+                If set (and finite), used as the target grid spacing in eV,
+                overriding ``n_points``. With barycentric generation, the
+                number of subdivisions along each simplex dimension is set to
+                ``ceil(max_vertex_separation / resolution)`` (so the spacing
+                along the longest hull edge is at most ``resolution``); with
+                ``cartesian=True``, the Cartesian grid step is set to
+                ``resolution`` directly. Default is ``None`` (use
+                ``n_points``).
+            max_points (int | None):
+                If set (with ``resolution``), hard cap on the number of
+                generated grid points. A warning stating the achieved vs
+                requested resolution is thrown if this cap is hit. Default is
+                ``None`` (no cap).
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
                 Note that the tolerance for grid-point matching is
@@ -2063,7 +2089,14 @@ class ChemicalPotentialGrid(MSONable):
         """
         if fixed_elements:
             return self.get_constrained_grid(
-                fixed_elements, n_points, cartesian, decimal_places, drop_duplicates, include_vertices
+                fixed_elements,
+                n_points,
+                cartesian,
+                resolution,
+                max_points,
+                decimal_places,
+                drop_duplicates,
+                include_vertices,
             )
 
         dependent_variable = self.vertices.columns[-1]
@@ -2071,29 +2104,58 @@ class ChemicalPotentialGrid(MSONable):
         independent_vars = self.vertices.drop(columns=dependent_variable)
 
         n_dims = independent_vars.shape[1]  # number of independent variables (dimensions)
-        if n_dims < 2:
+        if n_dims < 1:
             raise ValueError(
-                "Chemical potential grid generation is only possible for systems with "
-                "two or more independent variables (chemical potentials), i.e. ternary or "
-                "higher-dimensional systems. Stable chemical potential ranges are just a line for binary "
-                "systems, for which ``FermiSolver.interpolate_chempots()`` can be used."
+                "Chemical potential grid generation requires at least one independent variable (chemical "
+                "potential), i.e. a binary or higher-dimensional system!"
             )
 
-        hull = ConvexHull(independent_vars.to_numpy())  # convex hull of the vertices
+        ind_vars = independent_vars.to_numpy()
+        spans = np.ptp(
+            ind_vars, axis=0
+        )  # affine rank of the vertex set; 1 for any collinear set of limits
+        rank = np.linalg.matrix_rank(
+            ind_vars - ind_vars.mean(axis=0), tol=1e-4 * float(spans.max() or 1.0)
+        )
+        if rank == 0:
+            raise ValueError(
+                "All supplied chemical potential limits (vertices) are identical, so no grid can be "
+                "generated between them!"
+            )
+
+        if rank == 1:  # 1D space (e.g. a binary system, or two limits of a multinary system); stable
+            # chemical potential range is just a line segment, for which barycentric and Cartesian grids
+            cartesian = False  # are identical -> "hull" = the segment endpoints,
+            order = np.argsort(
+                ind_vars[:, int(np.argmax(spans))]
+            )  # sorted along the largest-span μ coordinate
+            hull_idx = np.array([order[0], order[-1]])
+        else:
+            hull = ConvexHull(ind_vars)  # convex hull of the vertices
+            hull_idx = hull.vertices  # indices of the hull points
+
         # ensure vertices and dependent values are aligned:
-        hull_idx = hull.vertices  # indices of the hull points
-        coords_hull = independent_vars.to_numpy()[hull_idx]
+        coords_hull = ind_vars[hull_idx]
         values_hull = dependent_var[hull_idx]
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
-            # hull volume (in N-D) times grid density = num points:
-            req_grid_density = n_points / hull.volume  # points per N-D volume
-            req_density_per_dim = req_grid_density ** (1 / n_dims)  # points per dim, inverse system units
+            if resolution is not None and np.isfinite(resolution):
+                step = resolution  # direct grid spacing (eV) requested
+                implied_total = np.prod(np.maximum(spans / step, 1))  # product of steps per dim
+                if max_points is not None and implied_total > max_points:
+                    # coarsen `before` materialising the grid, to avoid memory blow-ups:
+                    step *= float(implied_total / max_points) ** (1 / n_dims)
+                    _warn_resolution_clamped(resolution, max_points, step)
+            else:  # hull volume (in N-D) times grid density = num points:
+                req_grid_density = n_points / hull.volume  # points per N-D volume
+                # points per dim, inverse system units; step size = 1/points-per-dimension:
+                step = 1 / req_grid_density ** (1 / n_dims)
+
             grid_ranges = [
                 np.arange(
                     independent_vars.iloc[:, i].min(),
                     independent_vars.iloc[:, i].max(),
-                    1 / req_density_per_dim,  # step size in system units = 1/points-per-dimension
+                    step,  # step size in system units = 1/points-per-dimension
                 )
                 for i in range(n_dims)
             ]
@@ -2106,15 +2168,19 @@ class ChemicalPotentialGrid(MSONable):
             )
 
         else:  # efficiently generate a grid of points inside the convex hull, using barycentric coords:
-            grid_with_values = _lattice_in_hull(coords_hull, values_hull, n_points=n_points)
-
-        if include_vertices:  # Ensure vertices are in the grid
-            grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
+            grid_with_values = _lattice_in_hull(
+                coords_hull, values_hull, n_points=n_points, resolution=resolution, max_points=max_points
+            )  # resolution handling in ``_lattice_in_hull``
 
         grid_df = pd.DataFrame(
             grid_with_values,
             columns=[*list(independent_vars.columns), dependent_variable],
         ).round(decimal_places)
+
+        if include_vertices:  # prepend the exact (unrounded) vertices, ensuring the chemical potential
+            # limits are in the grid `exactly` (with any rounded copies then dropped as duplicates below):
+            vertices_df = pd.DataFrame(self.vertices.to_numpy(), columns=grid_df.columns)
+            grid_df = pd.concat([vertices_df, grid_df], ignore_index=True)
 
         return grid_df if not drop_duplicates else grid_df.drop_duplicates()
 
@@ -2123,6 +2189,8 @@ class ChemicalPotentialGrid(MSONable):
         fixed_elements: dict[str, float],
         n_points: int = 1000,
         cartesian: bool = False,
+        resolution: float | None = None,
+        max_points: int | None = None,
         decimal_places: int = 4,
         drop_duplicates: bool = True,
         include_vertices: bool = True,
@@ -2159,7 +2227,17 @@ class ChemicalPotentialGrid(MSONable):
                 ``False`` (default), the grid is generated in barycentric
                 coordinates, which is far more efficient, but means that the
                 grid is evenly spaced in barycentric ('relative') coordinates,
-                and not necessarily in Cartesian coordinates.
+                and not necessarily in Cartesian coordinates. Irrelevant if it
+                is a 1D chemical potential space.
+            resolution (float | None):
+                If set (and finite), used as the target grid spacing in eV
+                within the constrained subspace, overriding ``n_points`` -- see
+                the ``get_grid`` docstring. Default is ``None`` (use
+                ``n_points``).
+            max_points (int | None):
+                If set (with ``resolution``), used as a hard cap on the number
+                of generated grid points -- see the ``get_grid`` docstring.
+                Default is ``None`` (no cap).
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
                 Default is 4.
@@ -2222,6 +2300,8 @@ class ChemicalPotentialGrid(MSONable):
         grid_df = constrained_grid.get_grid(
             n_points=n_points,
             cartesian=cartesian,
+            resolution=resolution,
+            max_points=max_points,
             decimal_places=decimal_places,
             drop_duplicates=drop_duplicates,
             include_vertices=include_vertices,
@@ -2231,6 +2311,19 @@ class ChemicalPotentialGrid(MSONable):
             grid_df[element_col_name] = [value] * len(grid_df)
 
         return grid_df
+
+
+def _warn_resolution_clamped(resolution: float, max_points: int, achieved_resolution: float) -> None:
+    """
+    Warn that the requested grid ``resolution`` was coarsened to satisfy the
+    ``max_points`` cap.
+    """
+    warnings.warn(
+        f"The requested grid resolution ({resolution:.3g} eV) would generate more than `max_points` "
+        f"({max_points}) grid points; which now clamps to an achieved resolution of "
+        f"~{achieved_resolution:.3g} eV. Consider a coarser `resolution`, a larger points cap, or "
+        f"reducing the grid dimensionality (e.g. via `fixed_elements`); if necessary."
+    )
 
 
 def _intersect_hull_with_plane(
@@ -2285,6 +2378,8 @@ def _lattice_in_hull(
     Y: np.ndarray | None = None,
     n_points: int = 1000,
     qhull_options: str = "QJ Qbb Qc",
+    resolution: float | None = None,
+    max_points: int | None = None,
 ) -> np.ndarray:
     """
     Generate a grid of points inside the convex hull of the given vertices,
@@ -2316,6 +2411,19 @@ def _lattice_in_hull(
             Default is "QJ Qbb Qc", where "QJ" means joggled input to avoid
             precision problems, "Qbb" scales coordinates for better
             conditioning, and "Qc" keeps coplanar points.
+        resolution (float | None):
+            If set (and finite), used as the target grid spacing (in the units
+            of ``vertices``, i.e. eV for chemical potentials), overriding
+            ``n_points``: the number of barycentric subdivisions along each
+            simplex dimension is set directly to
+            ``ceil(max_vertex_separation / resolution)``, so the grid spacing
+            along the longest hull edge is at most ``resolution`` (and smaller
+            for shorter edges). Default is ``None`` (use ``n_points``).
+        max_points (int | None):
+            If set (with ``resolution``), used as a hard cap on the number of
+            generated grid points. A warning stating the achieved vs requested
+            resolution is thrown if this cap is hit. Default is ``None`` (no
+            cap).
 
     Returns:
         np.ndarray:
@@ -2326,15 +2434,16 @@ def _lattice_in_hull(
     if vertices.ndim != 2:
         raise ValueError("`vertices` must be a 2-D array (N_points, N_dimensions)")
 
-    k = vertices.shape[-1]  # dimensionality (k ≥ 2)
+    k = vertices.shape[-1]  # ambient dimensionality (of the space the points live in)
     # vertices defines the polytope (k-D polyhedron) of the convex hull; shape (N, k)
     # we then tessellate the hull with Delaunay triangulation, which breaks the polytope into a set of
     # k-D simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
     # which each have k+1 vertices (e.g. 3 vertices for triangles, 4 vertices for tetrahedra, etc)
-    if vertices.shape[0] == k + 1:  # Input is already a single simplex; no triangulation needed
-        simplices = np.array([np.arange(k + 1)])
+    if vertices.shape[0] in (2, k + 1):  # single simplex; either a line segment or single full k-simplex
+        simplices = np.array([np.arange(vertices.shape[0])])  # no triangulation needed
     else:  # setup Delaunay triangulation
         simplices = Delaunay(vertices, qhull_options=qhull_options).simplices
+    k_s = simplices.shape[1] - 1  # intrinsic simplex dimensionality (= k, except for line segments)
 
     # generate a grid of barycentric coordinates (i.e. weighted averages of the vertices) which are inside
     # the convex hull; for this the total weight should sum to 1, so generate tuples (n0,..,nk) with
@@ -2354,21 +2463,23 @@ def _lattice_in_hull(
                 prev = c
             yield tuple(parts)  # (L, k+1); where L depends on binomial(n_points_per_dim + k, k)
 
-    # Note: In theory one could skip this loop and directly predict the required number of points along
-    # each simplex dimension, with some fitting of scaling, but the individual computation is very fast for
-    # reasonable to large ``n_points``, so shouldn't be an issue in practice.
-    n_points_per_dim = 0
-    unscaled_bary_coords: list[tuple[int, ...]] = []
-    while len(unscaled_bary_coords) * len(simplices) < n_points:
-        n_points_per_dim += 1
-        unscaled_bary_coords = list(_compositions(n_points_per_dim, k))
-        if n_points_per_dim > max(n_points, 1):  # should never happen
-            raise RuntimeError(
-                "Barycentric coordinate generation failed! Please check your inputs, and report this "
-                "issue to the developers if they are reasonable."
-            )
+    def _n_bary_points(n: int) -> int:  # exact total grid points generated for n subdivisions per simplex
+        return len(simplices) * math.comb(n + k_s, k_s)
 
-    bary_coords = np.array(unscaled_bary_coords) / n_points_per_dim  # (L, k+1); L >= n_points
+    if resolution is not None and np.isfinite(resolution):  # direct spacing-based entry point:
+        max_edge = np.linalg.norm(vertices[:, None] - vertices[None], axis=-1).max()
+        n_points_per_dim = requested_n_per_dim = max(int(np.ceil(max_edge / resolution)), 1)
+        if max_points is not None:  # clamp `before` materialising the grid, to the largest n (floored
+            # at 1) within budget; ``_n_bary_points`` increases monotonically with n, so bisect:
+            n_points_per_dim = max(
+                bisect_right(range(n_points_per_dim + 1), max_points, key=_n_bary_points) - 1, 1
+            )
+            if n_points_per_dim < requested_n_per_dim:
+                _warn_resolution_clamped(resolution, max_points, max_edge / n_points_per_dim)
+    else:  # smallest n reaching ``n_points``; ``_n_bary_points(n) >= n+1``, so terminates by n = n_points:
+        n_points_per_dim = next(n for n in itertools.count(1) if _n_bary_points(n) >= n_points)
+
+    bary_coords = np.array(list(_compositions(n_points_per_dim, k_s))) / n_points_per_dim  # (L, k_s+1)
 
     # Note: If one really wanted a regular(ish) grid spacing in Cartesian (i.e. energy) coordinates,
     # the barycentric coordinate grid spacing could be scaled by the Euclidean distance between the simplex
@@ -2376,15 +2487,15 @@ def _lattice_in_hull(
     # more precision is needed in output predictions, can just scale ``n_points`` as needed). Can always
     # be implemented if needed
 
-    verts_per_simplex = vertices[simplices]  # shape (S, k+1, k); where S is the number of simplices
+    verts_per_simplex = vertices[simplices]  # shape (S, k_s+1, k); where S is the number of simplices
 
     # Vectorised Cartesian coordinates (and interpolated values if dependent_var is provided):
     # points_inside: (S, L, k) -> reshape -> (S*L, k)
-    points_inside = np.einsum("LK,SKk->SLk", bary_coords, verts_per_simplex).reshape(-1, k)  # K = k+1
+    points_inside = np.einsum("LK,SKk->SLk", bary_coords, verts_per_simplex).reshape(-1, k)  # K = k_s+1
     if Y is None:
         return points_inside
 
-    vals_per_simplex = Y[simplices]  # (S, k+1)
+    vals_per_simplex = Y[simplices]  # (S, k_s+1)
     # values_inside: (S, L) -> reshape -> (S*L,)
     Y_inside = np.einsum("LK,SK->SL", bary_coords, vals_per_simplex).ravel()
     return np.hstack((points_inside, Y_inside.reshape(-1, 1)))
@@ -4511,6 +4622,40 @@ def _find_best_label_positions(
     return best_combo
 
 
+def _get_bulk_comp_from_chempots(chempots: dict) -> str | None:
+    """
+    Auto-determine the bulk/host composition from a ``doped`` chempots dict, as
+    the composition which is present in every limit name (limit names being
+    hyphen-separated composition strings; e.g. ``"CdTe-Te"``).
+
+    If multiple compositions are present in every limit name (e.g. extrinsic
+    chempots where an extrinsic competing phase borders the host stability
+    region at every limit, or single-limit systems where this is every listed
+    composition), the bulk composition is taken as that appearing earliest in
+    the limit names, then with the fewest elements, then alphabetically.
+
+    Returns ``None`` if the bulk composition cannot be determined (e.g. no
+    shared composition in the limit names, or non-composition limit names).
+    """
+    try:
+        limit_comps = [name.split("-") for name in chempots["limits"]]
+        common = set.intersection(*(set(comps) for comps in limit_comps))
+        bulk_comp = min(  # raises if ``common`` is empty or contains non-composition strings -> None
+            common,
+            key=lambda comp: (
+                min(comps.index(comp) for comps in limit_comps),  # earliest position in limit names
+                len(Composition(comp).elements),  # fewest elements
+                comp,  # alphabetically
+            ),
+        )
+        # ``Composition`` parses non-composition strings (e.g. "A") as dummy species, so check ``valid``:
+        return bulk_comp if Composition(bulk_comp).valid else None
+    except (KeyError, TypeError, ValueError):
+        # no "limits" key, empty limits dict (``TypeError`` from argument-less ``set.intersection()``),
+        # empty ``common`` (``ValueError`` from ``min()``) or invalid formula (from ``Composition``)
+        return None
+
+
 def get_X_rich_poor_limit(
     X: str,
     chempots: dict,
@@ -4539,7 +4684,7 @@ def get_X_rich_poor_limit(
 
     Then, for each element Y in the sorted list, the ``max`` / ``min`` (for
     rich / poor respectively) of the μ_Y values among the still-tied limits is
-    taken as μ_Y^*, and only limits with ``|μ_Y - μ_Y^*| < tol`` are kept. The
+    taken as μ_Y*, and only limits with ``|μ_Y - μ_Y*| < tol`` are kept. The
     process repeats until one limit remains, which is then returned. This is
     mostly equivalent to choosing the lexicographic ``max`` / ``min``
     (μ_Y, ...) tuple for X-rich/poor respectively, with a numerical tolerance
@@ -4571,7 +4716,7 @@ def get_X_rich_poor_limit(
             eV. Default is ``True``.
         tol (float):
             Energy tolerance in eV. Limits whose μ_X satisfies
-            ``|μ_X - μ_X^*| < tol``, with μ_X^* being the extremal value, are
+            ``|μ_X - μ_X*| < tol``, with μ_X* being the extremal value, are
             treated as tied. Default is 0.01 eV.
         bulk_composition (str | |Composition| | None):
             Host composition for intrinsic-vs-extrinsic ordering in ties. If
@@ -4601,55 +4746,44 @@ def get_X_rich_poor_limit(
     if not X_chempots:
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
 
-    ref = Element(X)
+    extremum_fn = max if rich else min
+    target = extremum_fn(X_chempot for _limit, X_chempot in X_chempots)
+    tied = [limit for limit, X_chempot in X_chempots if abs(X_chempot - target) < tol]
+    if len(tied) == 1:  # only one limit with the same extremal μ_X, return it
+        return tied[0]
 
-    def pauling_similar_first(sym: str) -> float:
-        a, b = Element(sym).X, ref.X  # electronegativities
-        if a is None or b is None:
+    if bulk_composition is None:  # auto-determine from limit names; ``None`` if undeterminable,
+        bulk_composition = _get_bulk_comp_from_chempots(chempots)
+
+    ref_EN = Element(X).X
+
+    def EN_diff(sym: str) -> float:
+        EN = Element(sym).X
+        try:
+            return abs(float(EN) - float(ref_EN))
+        except (TypeError, ValueError):
             return np.inf  # no electronegativity data available
-        af, bf = float(a), float(b)
-        return np.inf if np.isnan(af) or np.isnan(bf) else abs(af - bf)
 
-    target = (max if rich else min)(chempot for _limit, chempot in X_chempots)
-    tied = [limit for limit, chempot in X_chempots if abs(chempot - target) < tol]
-    if len(tied) == 1:
-        return next(iter(tied))  # only one limit with the same extremal μ_X, return it
-
+    bulk = {e.symbol for e in Composition(bulk_composition).elements} if bulk_composition else set()
     symbols = set().union(*(limits[limit] for limit in tied))
-    if bulk_composition is None and len(chempots["limits"]) > 1:  # auto-determine bulk composition
-        # (outside of the edge case of only one limit -- e.g. chemically unstable materials; can't
-        # auto-determine in those cases so we skip bulk composition filtering)
-        # bulk composition is the only one present in every limit (limits are "X-Y-Z" strings):
-        limit_comps = [set(limit.split("-")) for limit in chempots["limits"]]
-        bulk_composition = next(iter(set.intersection(*limit_comps)))
+    el_order = sorted(
+        (elt for elt in symbols if elt != X),
+        key=lambda elt: (elt not in bulk, EN_diff(elt), elt),
+    )  # sort by bulk presence (not extrinsic), then EN similarity, then alphabetically (for determinism)
 
-    # sort by pauling EN similarity first, then alphabetically (to aid determinism):
-    def _sort_key(sym: str) -> tuple[float, str]:
-        return pauling_similar_first(sym), sym
-
-    if bulk_composition is not None:
-        bulk = {element.symbol for element in Composition(bulk_composition).elements}
-        intr = sorted((element for element in symbols if element in bulk and element != X), key=_sort_key)
-        extr = sorted((element for element in symbols if element not in bulk), key=_sort_key)
-        el_order = intr + extr
-    else:
-        el_order = sorted((element for element in symbols if element != X), key=_sort_key)
-
-    orig_tied = tied.copy()
+    orig_tied = tied.copy()  # for later warning if necessary
     for element in el_order:
-        extremal = (max if rich else min)(limits[lim][element] for lim in tied)
-        tied = [lim for lim in tied if abs(limits[lim][element] - extremal) < tol]  # overwrites ``tied``
+        extremal = extremum_fn(limits[lim][element] for lim in tied)
+        tied = [lim for lim in tied if abs(limits[lim][element] - extremal) < tol]
         if len(tied) == 1:
             break
 
-    if len(tied) > 1:
-        # edge case handling; should very rarely get to this point (unless dealing w/tiny chempot ranges)
-        def mus_tuple(limit: str) -> tuple[float, ...]:
-            return tuple(limits[limit][element] for element in el_order)
-
-        return_limit = (max if rich else min)(sorted(tied), key=lambda lim: (mus_tuple(lim), lim))
-    else:
-        return_limit = next(iter(tied))
+    return_limit = (
+        tied[0]
+        if len(tied) == 1
+        # edge case handling; should very rarely get to this point (unless dealing w/tiny chempot ranges):
+        else extremum_fn(sorted(tied, key=lambda lim: (tuple(limits[lim][elt] for elt in el_order), lim)))
+    )
 
     if warn_if_multiple:
         tied_list = ", ".join(sorted(orig_tied))

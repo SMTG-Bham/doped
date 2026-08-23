@@ -44,6 +44,7 @@ _MOVED = {
             "get_wigner_seitz_radius",
             "check_atom_mapping_far_from_defect",
             "get_site_mappings",
+            "find_missing_idx",
             "reorder_s2_like_s1",
             "get_dimer_bonds",
         ),

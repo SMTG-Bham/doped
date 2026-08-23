@@ -42,13 +42,15 @@ def patch_vise_for_windows():
     Fixes an issue where this function gives an infinite recursive search on
     Windows, causing hanging.
     """
+    vise_user_settings = importlib.import_module("vise.user_settings")
+    orig = vise_user_settings.UserSettings._make_yaml_file_list
+    vise_user_settings.UserSettings._make_yaml_file_list = lambda *args, **kwargs: []
     try:
-        vd = importlib.import_module("vise.defaults")
-        orig = vd.UserSettings._make_yaml_file_list
-        vd.UserSettings._make_yaml_file_list = lambda *args, **kwargs: []
+        importlib.import_module("vise.defaults")
+        importlib.import_module("pydefect.defaults")
         yield
     finally:  # restore original
-        vd.UserSettings._make_yaml_file_list = orig
+        vise_user_settings.UserSettings._make_yaml_file_list = orig
 
 
 @contextlib.contextmanager
