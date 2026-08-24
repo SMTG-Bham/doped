@@ -106,6 +106,7 @@ Studies using ``doped``, so far
 
 - N\.-R. Skogemyr **First-Principles Defect Thermodynamics of MgSnN₂: Origin and Suppression of Unintentional n-Type Conductivity** `MSc Thesis, Linköping University <https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510>`__ 2026
 - J\. Zhou et al. **Antimony sulfide photovoltaics with high open-circuit voltage not limited by self-trapped excitons** `Nature Communications <https://doi.org/10.1038/s41467-026-76845-1>`__ 2026
+- X\. Pan et al. **Understanding the Origins of Self-Recoverable Mechanoluminescence for Rational Materials Design** `Journal of the American Chemical Society <https://doi.org/10.1021/jacs.6c07144>`__ 2026
 - D\. Sutarma and P. Kratzer **Facet-Dependent Electronic Properties and Interfacial Point Defect Interactions in WS₂/ZnO Heterostructures** `arXiv <https://doi.org/10.48550/arXiv.2607.25999>`__ 2026
 - A\. S. Hauck, M. Jin and B. R. Tuttle **Nonradiative carrier capture by point defects in irradiated GaN** `Journal of Applied Physics <https://doi.org/10.1063/5.0325688>`__ 2026
 - X\. Lei et al. **Enhanced antibonding coupling enables optical transparency in p-type semiconductors by orbital engineering** `Applied Physics Letters <https://doi.org/10.1063/5.0342323>`__ 2026
