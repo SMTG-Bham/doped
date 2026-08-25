@@ -103,7 +103,7 @@ class DefectEntry(thermo.DefectEntry):
         _sc_entry_energy: float | None = None,
     ):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.thermo.DefectEntry` with
+        Subclass of :class:`pymatgen.analysis.defects.thermo.DefectEntry` with
         additional attributes used by ``doped``.
 
         Core Attributes:
@@ -360,10 +360,9 @@ class DefectEntry(thermo.DefectEntry):
 
         As a general rule of thumb, the charge correction terms should follow
         relatively consistent trends in terms of magnitudes. A large outlier
-        (easily scanned with
-        :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-        often indicates something unusual/unexpected. See the FNV/eFNV and
-        other finite-size charge correction papers for further details.
+        (easily scanned with |get_formation_energies|) often indicates
+        something unusual/unexpected. See the FNV/eFNV and other finite-size
+        charge correction papers for further details.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -373,9 +372,8 @@ class DefectEntry(thermo.DefectEntry):
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If ``None``, then the dielectric constant is taken
                 from the |DefectEntry| ``calculation_metadata`` if available.
-                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-                tutorial section for information on calculating and converging
-                the dielectric constant.
+                See the |Dielectric Constant| tutorial section for information
+                on calculating and converging the dielectric constant.
             defect_locpot:
                 Path to the output VASP ``LOCPOT`` file from the defect
                 supercell calculation, or the corresponding ``pymatgen``
@@ -525,10 +523,9 @@ class DefectEntry(thermo.DefectEntry):
 
         As a general rule of thumb, the charge correction terms should follow
         relatively consistent trends in terms of magnitudes. A large outlier
-        (easily scanned with
-        :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-        often indicates something unusual/unexpected. See the FNV/eFNV and
-        other finite-size charge correction papers for further details.
+        (easily scanned with |get_formation_energies|) often indicates
+        something unusual/unexpected. See the FNV/eFNV and other finite-size
+        charge correction papers for further details.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -538,9 +535,8 @@ class DefectEntry(thermo.DefectEntry):
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If ``None``, then the dielectric constant is taken
                 from the |DefectEntry| ``calculation_metadata`` if available.
-                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-                tutorial section for information on calculating and converging
-                the dielectric constant.
+                See the |Dielectric Constant| tutorial section for information
+                on calculating and converging the dielectric constant.
             defect_region_radius (float):
                 Radius of the defect region (in Å). Sites outside the defect
                 region are used for sampling the electrostatic potential far
@@ -823,8 +819,7 @@ class DefectEntry(thermo.DefectEntry):
         their occupation (if ``plot=True``).
 
         Can be used to determine if a defect is adopting a perturbed host state
-        (PHS / shallow state), see the
-        :ref:`Tips:Perturbed Host States (Shallow Defects)` tips section.
+        (PHS / shallow state), see the |Shallow Defects| tips section.
 
         If eigenvalue data has not already been parsed for |DefectEntry|
         (default in ``doped`` is to parse this data with |DefectsParser|/
@@ -2263,7 +2258,7 @@ class Defect(core.Defect):
         **doped_kwargs,
     ):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.core.Defect` with
+        Subclass of :class:`pymatgen.analysis.defects.core.Defect` with
         additional attributes and methods used by ``doped``.
 
         Args:
@@ -2353,11 +2348,12 @@ class Defect(core.Defect):
         **doped_kwargs,
     ) -> "Defect":
         """
-        Create a ``doped`` |Defect| from a ``pymatgen`` ``Defect`` object.
+        Create a ``doped`` |Defect| from a
+        :class:`pymatgen.analysis.defects.core.Defect` object.
 
         Args:
             defect:
-                ``pymatgen`` ``Defect`` object.
+                :class:`pymatgen.analysis.defects.core.Defect` object.
             bulk_oxi_states:
                 Controls oxi-state guessing (later used for charge state
                 guessing). By default, oxidation states are taken from
@@ -2367,11 +2363,11 @@ class Defect(core.Defect):
                 ``{element: oxi_state}``), or otherwise guessed using the
                 ``doped`` methods.
                 If ``bulk_oxi_states`` is ``False``, then just uses the
-                already-set ``Defect`` ``oxi_state`` attribute (default = 0),
+                already-set |Defect| ``oxi_state`` attribute (default = 0),
                 with no more guessing.
                 If ``True``, re-guesses the oxidation state of the defect
-                (ignoring the ``pymatgen`` ``Defect``  ``oxi_state``
-                attribute).
+                (ignoring the :class:`pymatgen.analysis.defects.core.Defect`
+                ``oxi_state`` attribute).
 
                 If the structure is mixed-valence, then ``bulk_oxi_states``
                 should be either a structure input or ``True`` (to re-guess).
@@ -3045,11 +3041,12 @@ def doped_defect_from_pmg_defect(
 ):
     """
     Create the corresponding ``doped`` |Defect| (``Vacancy``, ``Interstitial``,
-    ``Substitution``) from an input ``pymatgen`` ``Defect`` object.
+    ``Substitution``) from an input
+    :class:`pymatgen.analysis.defects.core.Defect` object.
 
     Args:
         defect:
-            ``pymatgen`` ``Defect`` object.
+            :class:`pymatgen.analysis.defects.core.Defect` object.
         bulk_oxi_states:
             Controls oxi-state guessing (later used for charge state guessing).
             By default, oxidation states are taken from
@@ -3061,7 +3058,8 @@ def doped_defect_from_pmg_defect(
             If ``bulk_oxi_states`` is ``False``, then just uses the already-set
             |Defect| ``oxi_state`` attribute (default = 0), with no more
             guessing. If ``True``, re-guesses the oxidation state of the defect
-            (ignoring the ``pymatgen`` ``Defect``  ``oxi_state``  attribute).
+            (ignoring the :class:`pymatgen.analysis.defects.core.Defect`
+            ``oxi_state`` attribute).
 
             If the structure is mixed-valence, then ``bulk_oxi_states``
             should be either a structure input or ``True`` (to re-guess).
@@ -3095,7 +3093,7 @@ def doped_defect_from_pmg_defect(
 class Vacancy(Defect, core.Vacancy):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.core.Vacancy` with
+        Subclass of :class:`pymatgen.analysis.defects.core.Vacancy` with
         additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
@@ -3111,7 +3109,7 @@ class Vacancy(Defect, core.Vacancy):
 class Substitution(Defect, core.Substitution):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.core.Substitution` with
+        Subclass of :class:`pymatgen.analysis.defects.core.Substitution` with
         additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
@@ -3127,7 +3125,7 @@ class Substitution(Defect, core.Substitution):
 class Interstitial(Defect, core.Interstitial):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.core.Interstitial` with
+        Subclass of :class:`pymatgen.analysis.defects.core.Interstitial` with
         additional attributes and methods used by ``doped``.
 
         If ``multiplicity`` is not set in ``kwargs``, then it will be

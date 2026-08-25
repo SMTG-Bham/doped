@@ -591,13 +591,11 @@ for an example of setting up a bulk DOS calculation.
 
 
 If there is a significant mismatch between the VBM eigenvalue or band gap of the bulk DOS (``bulk_dos``)
-and bulk/defect supercell calculations (stored as the 
-:attr:`~doped.thermodynamics.DefectThermodynamics.vbm`/ 
-:attr:`~doped.thermodynamics.DefectThermodynamics.gap` attributes of 
-|DefectThermodynamics|), this can lead to inaccuracies in the
-thermodynamics & concentration analyses. If ``doped`` detects this to be the case, it will throw a warning
-like: ``The band gap / VBM eigenvalue of the bulk DOS calculation (... eV) differs by >0.05 eV from
-DefectThermodynamics.vbm/gap...``.
+and bulk/defect supercell calculations (stored as the :attr:`~doped.thermodynamics.DefectThermodynamics.vbm`/
+:attr:`~doped.thermodynamics.DefectThermodynamics.band_gap` attributes of |DefectThermodynamics|), this can lead to
+inaccuracies in the thermodynamics & concentration analyses. If ``doped`` detects this to be the case, it will throw a
+warning like:
+``The band gap / VBM eigenvalue of the bulk DOS calculation (... eV) differs by >0.05 eV from DefectThermodynamics.vbm/gap...``.
 
 This can arise for a number of reasons:
 
@@ -744,9 +742,8 @@ for multiple defects.
 
 When parsing defect calculations, ``doped`` will automatically extract the total magnetization from the
 ``VASP`` output files, in order to determine the spin multiplicity. This value is stored in
-the :attr:`~doped.core.DefectEntry.degeneracy_factors` |DefectEntry| attribute 
-(``DefectEntry.degeneracy_factors["spin degeneracy"]``, and printed in the 
-|DefectThermodynamics| 
+the :attr:`~doped.core.DefectEntry.degeneracy_factors` |DefectEntry| attribute
+(``DefectEntry.degeneracy_factors["spin degeneracy"]``, and printed in the |DefectThermodynamics|
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_symmetries_and_degeneracies()` method) and used in
 thermodynamic analyses. See the :func:`~doped.utils.parsing.spin_degeneracy_from_vasprun()` function for 
 details.
@@ -755,9 +752,8 @@ Symmetry Precision (``symprec``)
 --------------------------------
 When computing the symmetries of structures, a threshold parameter has to be set in order to distinguish
 structural/positional noise from distinct site differences. In ``doped`` as in ``spglib`` (and 
-``pymatgen``), this can be controlled with the ``symprec`` parameter (which can be set in
-|DefectsParser|, :class:`~doped.analysis.DefectParser`, all
-|DefectThermodynamics| symmetry/concentration functions,
+``pymatgen``), this can be controlled with the ``symprec`` parameter (which can be set in |DefectsParser|,
+:class:`~doped.analysis.DefectParser`, all |DefectThermodynamics| symmetry/concentration functions,
 :func:`~doped.utils.symmetry.get_orientational_degeneracy()`,
 :func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()` and others).
 
@@ -890,7 +886,7 @@ Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as th
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_dopability_limits()`,
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_doping_windows()` and
 |get_TLs| methods for |DefectThermodynamics| objects, and the
-:attr:`~doped.chemical_potentials.CompetingPhasesAnalyzer.formation_energy_df` attribute and
+:meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.get_formation_energy_df()` method and
 :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.calculate_chempots()` method for
 |CompetingPhasesAnalyzer|. As mentioned in the tutorials, these
 ``DataFrame`` objects can be output to ``csv`` (or ``json``, ``xlsx`` etc., see the ``pandas`` API docs
@@ -904,9 +900,10 @@ Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as th
 
 These ``csv`` files can easily be used as data tables when writing up results, by directly importing to
 Microsoft Word or converting to LaTeX format using `Tables Generator <https://www.tablesgenerator.com>`__.
-|CompetingPhasesAnalyzer| can also be reinitialised from a saved ``csv``
-formation energies file with the :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.from_csv()` 
-method.
+|CompetingPhasesAnalyzer| objects can also be saved to and reloaded from JSON with the ``save()`` and ``load()`` methods
+(inherited from ``monty``'s ``MSONable``), or with ``dumpfn()``/``loadfn()`` from ``monty.serialization``, or converted
+to/from dict with :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.as_dict()` /
+:meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.from_dict()`.
 
 .. note::
 

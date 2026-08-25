@@ -435,7 +435,7 @@ def get_defect_type_palette(
 ) -> dict[str, tuple[float, ...]]:
     """
     Get a ``{defect type, extrinsic element or defect group: colour}`` dict
-    palette for the defects in a ``DefectThermodynamics`` object.
+    palette for the defects in a |DefectThermodynamics| object.
 
     Colours are keyed on defect identity rather than position in the plot
     legend, so that plots of the same system share base colours for the same
@@ -471,7 +471,7 @@ def get_defect_type_palette(
 
     Args:
         defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing the defect entries.
+            |DefectThermodynamics| object containing the defect entries.
         color_grouping (str):
             Colour grouping granularity: ``"element"``, ``"type"`` (default) or
             ``"site"`` -- see above. Default is ``"type"``. Note that this
@@ -563,7 +563,7 @@ def _get_group_keyed_colors_and_linestyles(
 
     Args:
         defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing the defect entries.
+            |DefectThermodynamics| object containing the defect entries.
         line_groups (dict[str, str]):
             ``{line key: defect group name}`` for each line to plot, in plot
             order (group names matching ``DefectThermodynamics.all_entries``
@@ -591,7 +591,7 @@ def _get_group_keyed_colors_and_linestyles(
             Base linestyle for the lines. Default is ``"-"``.
         group_palette (dict):
             Pre-computed ``{colour group key: colour}`` palette (e.g. from
-            the parent ``DefectThermodynamics`` before any pruning/subsetting,
+            the parent |DefectThermodynamics| before any pruning/subsetting,
             for base-colour stability). If ``None`` (default), computed from
             ``defect_thermodynamics``.
         line_xy (dict):
@@ -768,7 +768,7 @@ def _plot_transition_level_markers(
         ax (plt.Axes):
             ``Axes`` object to plot the transition level markers on.
         defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing the transition level
+            |DefectThermodynamics| object containing the transition level
             data (in the ``transition_level_map`` attribute).
         defect_names (Iterable[str]):
             List of defect names to plot transition level markers for, matching
@@ -1418,7 +1418,7 @@ def format_defect_names(
         defect_names (list[str]):
             List of defect names to format (e.g. ``["Cd_i_C3v_0", "Cd_Te",
             "v_Cd_-1", ...]``), as taken from ``DefectEntry.name`` or the keys
-            of a ``DefectThermodynamics`` transition-level dictionary.
+            of a |DefectThermodynamics| transition-level dictionary.
         include_charge (bool):
             Whether to include the charge states in the formatted defect names.
             Defaults to ``False``.
@@ -1727,8 +1727,8 @@ def formation_energy_plot(
     energy / transition level diagram).
 
     This function is not intended to be directly called. The recommended usage
-    is :meth:`~doped.thermodynamics.DefectThermodynamics.plot()` -- see
-    docstring for details.
+    is :meth:`doped.thermodynamics.DefectThermodynamics.plot` -- see docstring
+    for details.
 
     Args:
         defect_thermodynamics (|DefectThermodynamics|):
@@ -1854,7 +1854,7 @@ def formation_energy_plot(
             includes linestyle variation).
         group_palette (dict):
             Pre-computed ``{colour group key: colour}`` palette to use (e.g.
-            from the parent ``DefectThermodynamics`` object before any pruning
+            from the parent |DefectThermodynamics| object before any pruning
             / subsetting, for base-colour stability -- as in
             ``DefectThermodynamics.plot()``). If ``None`` (default), computed
             from ``defect_thermodynamics``.
@@ -2078,8 +2078,8 @@ class TransitionLevelLabel(NamedTuple):
     A plot position for a charge transition level (TL) label.
 
     ``(x, y)`` is the label anchor position with alignments ``ha``/``va``;
-    ``label`` and ``label_w`` are the label text and width; ``TL_eV`` is the
-    TL position in eV from the VBM (same as for :class`TransitionLevel`);
+    ``label`` and ``label_w`` are the label text and width; ``TL_eV`` is the TL
+    position in eV from the VBM (same as for :class:`TransitionLevel`);
     ``conn_y`` and ``conn_x`` are the source TL line ``y``/column-edge ``x``
     for an off-column label that needs a connector (both ``None`` for an inline
     label with no connector).

@@ -1014,7 +1014,7 @@ def guess_defect_charge_states(
             oxidation states assigned (e.g. with
             ``add_oxidation_state_by_element()``) for charge state guessing;
             this is handled automatically when generating defects with
-            ``DefectsGenerator``.
+            |DefectsGenerator|.
         probability_threshold (float):
             Probability threshold for including defect charge states. Default
             is 0.0075.

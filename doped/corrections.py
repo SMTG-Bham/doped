@@ -150,10 +150,9 @@ def get_freysoldt_correction(
 
     As a general rule of thumb, the charge correction terms should follow
     relatively consistent trends in terms of magnitudes. A large outlier
-    (easily scanned with
-    :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-    often indicates something unusual/unexpected. See the FNV/eFNV and other
-    finite-size charge correction papers for further details.
+    (easily scanned with |get_formation_energies|) often indicates something
+    unusual/unexpected. See the FNV/eFNV and other finite-size charge
+    correction papers for further details.
 
     Args:
         defect_entry:
@@ -165,10 +164,9 @@ def get_freysoldt_correction(
             not necessarily the same as the raw output of a VASP dielectric
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
-            ``defect_entry`` ``calculation_metadata`` if available.
-            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-            tutorial section for information on calculating and converging the
-            dielectric constant.
+            ``defect_entry`` ``calculation_metadata`` if available. See the
+            |Dielectric Constant| tutorial section for information on
+            calculating and converging the dielectric constant.
         defect_locpot:
             Path to the output VASP LOCPOT file from the defect supercell
             calculation, or the corresponding ``pymatgen`` ``Locpot`` object,
@@ -380,10 +378,9 @@ def get_kumagai_correction(
 
     As a general rule of thumb, the charge correction terms should follow
     relatively consistent trends in terms of magnitudes. A large outlier
-    (easily scanned with
-    :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-    often indicates something unusual/unexpected. See the FNV/eFNV and other
-    finite-size charge correction papers for further details.
+    (easily scanned with |get_formation_energies|) often indicates something
+    unusual/unexpected. See the FNV/eFNV and other finite-size charge
+    correction papers for further details.
 
     Args:
         defect_entry (|DefectEntry|):
@@ -395,10 +392,9 @@ def get_kumagai_correction(
             not necessarily the same as the raw output of a VASP dielectric
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
-            ``defect_entry`` ``calculation_metadata`` if available.
-            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-            tutorial section for information on calculating and converging the
-            dielectric constant.
+            ``defect_entry`` ``calculation_metadata`` if available. See the
+            |Dielectric Constant| tutorial section for information on
+            calculating and converging the dielectric constant.
         defect_region_radius (float):
             Radius of the defect region (in Å). Sites outside the defect
             region are used for sampling the electrostatic potential far

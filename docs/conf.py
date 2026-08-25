@@ -117,6 +117,16 @@ intersphinx_mapping = {
 # -- Options for autodoc -----------------------------------------------------
 autoclass_content = "both"
 
+# ``doped`` groups attribute docs under bespoke headings; alias them to napoleon's
+# ``Attributes`` section so they generate real ``py:attribute`` targets (and hence
+# working ``:attr:`` cross-references) while keeping their descriptive headings:
+napoleon_custom_sections = [
+    ("Key Attributes", "Attributes"),
+    ("Core Attributes", "Attributes"),
+    ("Parsing Attributes", "Attributes"),
+    ("Generation Attributes", "Attributes"),
+]
+
 # -- Options for nb extension -----------------------------------------------
 nb_execution_mode = "off"
 # nb_render_image_options = {"height": "300",}  # Reduce plots size
@@ -139,14 +149,17 @@ rst_prolog = """
 .. |DefectsParser| replace:: :class:`~doped.analysis.DefectsParser`
 .. |DefectThermodynamics| replace:: :class:`~doped.thermodynamics.DefectThermodynamics`
 .. |get_TLs| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels`
+.. |get_formation_energies| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`
 .. |ChemicalPotentialGrid| replace:: :class:`~doped.chemical_potentials.ChemicalPotentialGrid`
 .. |CompetingPhases| replace:: :class:`~doped.chemical_potentials.CompetingPhases`
 .. |CompetingPhasesAnalyzer| replace:: :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
 .. |Defect| replace:: :class:`~doped.core.Defect`
 .. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
+.. |bulk_site_concentration| replace:: :attr:`DefectEntry.bulk_site_concentration <doped.core.DefectEntry.bulk_site_concentration>`
 .. |DefectsSet| replace:: :class:`~doped.vasp.DefectsSet`
 .. |get_orientational_degeneracy| replace:: :func:`~doped.utils.symmetry.get_orientational_degeneracy()`
 .. |point_symmetry_from_defect_entry| replace:: :func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()`
+.. |get_X_rich_poor_limit| replace:: :func:`~doped.chemical_potentials.get_X_rich_poor_limit`
 .. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
 .. |PeriodicSite| replace:: :class:`~pymatgen.core.structure.PeriodicSite`
 .. |Composition| replace:: :class:`~pymatgen.core.composition.Composition`
@@ -156,13 +169,20 @@ rst_prolog = """
 .. |Procar| replace:: :class:`~pymatgen.io.vasp.outputs.Procar`
 .. |Outcar| replace:: :class:`~pymatgen.io.vasp.outputs.Outcar`
 .. |StructureMatcher| replace:: :class:`~pymatgen.core.structure_matcher.StructureMatcher`
+.. |VaspInputSet| replace:: :class:`~pymatgen.io.vasp.sets.VaspInputSet`
 .. |StructureMatcher_scan_stol| replace:: :func:`~doped.utils.efficiency.StructureMatcher_scan_stol`
 .. |ComputedEntry| replace:: :class:`~pymatgen.core.entries.ComputedEntry`
 .. |ComputedStructureEntry| replace:: :class:`~pymatgen.core.entries.ComputedStructureEntry`
 .. |PhaseDiagram| replace:: :class:`~pymatgen.analysis.phase_diagram.PhaseDiagram`
 .. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
-.. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__
 .. |DeepWiki| replace:: `DeepWiki <https://deepwiki.com/SMTG-Bham/doped>`__
+.. |Dielectric Constant| replace:: :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+.. |DOS Calculations| replace:: :ref:`Tips:Density of States (DOS) Calculations`
+.. |Installation docs| replace:: :ref:`Installation docs <setup_potcars_mp_api>`
+.. |Shallow Defects| replace:: :ref:`Tips:Perturbed Host States (Shallow Defects)`
+.. |Competing Phases Tips| replace:: :ref:`Tips:Competing Phases & Chemical Potentials`
+.. |FermiSolver tutorial| replace:: :doc:`FermiSolver tutorial <fermisolver_tutorial>`
+.. |chempot limits tutorial| replace:: :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`
 .. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.1038/s41578-025-00879-y>`__
 """

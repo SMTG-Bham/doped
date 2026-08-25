@@ -346,12 +346,12 @@ def get_entries_in_chemsys(
             Chemical system to get entries for, in the format "A-B-C" or
             ["A", "B", "C"]. E.g. "Li-Fe-O" or ["Li", "Fe", "O"].
         api_key (str):
-            Materials Project (MP) API key, needed to access the MP database
-            to obtain the corresponding |ComputedStructureEntry|\s. If not
+            Materials Project (MP) API key, needed to access the MP database to
+            obtain the corresponding |ComputedStructureEntry|\s. If not
             supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            :ref:`Installation docs <setup_potcars_mp_api>`.
+            |Installation docs|.
         energy_above_hull (float):
             If supplied, only entries with energies above hull (according to
             the MP-computed phase diagram) less than this value (in eV/atom)
@@ -422,12 +422,12 @@ def get_entries(
             A formula (e.g., Fe2O3), chemical system (e.g., Li-Fe-O) or MPID
             (e.g., mp-1234) or full Mongo-style dict criteria.
         api_key (str):
-            Materials Project (MP) API key, needed to access the MP database
-            to obtain the corresponding |ComputedStructureEntry|\s. If not
+            Materials Project (MP) API key, needed to access the MP database to
+            obtain the corresponding |ComputedStructureEntry|\s. If not
             supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            :ref:`Installation docs <setup_potcars_mp_api>`.
+            |Installation docs|.
         bulk_composition (str/|Composition|):
             Optional input; formula of the bulk host material, to use for
             sorting the output entries (with all those matching the bulk
@@ -467,7 +467,7 @@ def _check_MP_API_key(api_key: str | None = None) -> str | None:
             not supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            :ref:`Installation docs <setup_potcars_mp_api>`.
+            |Installation docs|.
 
     Returns:
         str | None:
@@ -519,12 +519,12 @@ def get_MP_summary_dicts(
             ``["Li", "Fe", "O"]``. Either ``entries`` or ``chemsys`` must be
             provided!
         api_key (str):
-            Materials Project (MP) API key, needed to access the MP database
-            to obtain the corresponding summary dictionaries. If not
-            supplied, will attempt to read from ``~/.pmgrc.yaml`` or
+            Materials Project (MP) API key, needed to access the MP database to
+            obtain the corresponding summary dictionaries. If not supplied,
+            will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            :ref:`Installation docs <setup_potcars_mp_api>`.
+            |Installation docs|.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
             query, e.g. ``MPRester.materials.summary.search()``.
@@ -1035,11 +1035,11 @@ class CompetingPhases(MSONable):
                 ``CompetingPhases.MP_doc_dicts``. Default is ``False``.
             api_key (str):
                 Materials Project (MP) API key, needed to access the MP
-                database for competing phase generation. If not supplied,
-                will attempt to read from ``~/.pmgrc.yaml`` or
-                ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from
-                the ``MP_API_KEY`` environment variable -- see the ``doped``
-                :ref:`Installation docs <setup_potcars_mp_api>`.
+                database for competing phase generation. If not supplied, will
+                attempt to read from ``~/.pmgrc.yaml`` or
+                ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
+                ``MP_API_KEY`` environment variable -- see the ``doped``
+                |Installation docs|.
             **kwargs:
                 Additional keyword arguments to pass to the Materials Project
                 API ``get_entries_in_chemsys()`` / ``get_entries()`` queries
@@ -1070,8 +1070,8 @@ class CompetingPhases(MSONable):
             intrinsic_elements (list[str]):
                 Element symbols of the host composition.
             extrinsic_elements (list[str]):
-                Element symbols of the extrinsic species (only set when
-                ``extrinsic`` is not ``None``).
+                Element symbols of the extrinsic species (empty when
+                ``extrinsic`` is ``None``).
             MP_full_pd_entries (list[|ComputedStructureEntry|]):
                 All Materials Project entries in the (intrinsic + extrinsic)
                 chemical system with energy above hull <
@@ -1495,8 +1495,8 @@ class CompetingPhases(MSONable):
     ) -> dict[str, DopedDictSet]:
         r"""
         Generates a dictionary of ``DopedDictSet``\s (subclasses of
-        :class:`~pymatgen.io.vasp.sets.VaspInputSet`) for k-point convergence
-        testing of competing phases, using PBEsol (GGA) DFT by default.
+        |VaspInputSet|) for k-point convergence testing of competing phases,
+        using PBEsol (GGA) DFT by default.
 
         Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic)
         or 0 if not.
@@ -1542,7 +1542,7 @@ class CompetingPhases(MSONable):
         Returns:
             dict[str, DopedDictSet]:
                 Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+                (subclasses of |VaspInputSet|).
         """
         base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
         base_incar_settings.update(user_incar_settings or {})
@@ -1622,8 +1622,7 @@ class CompetingPhases(MSONable):
         Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
         if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
         Returns the corresponding dictionary of ``DopedDictSet`` objects
-        (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
-        contain the input file settings.
+        (subclasses of |VaspInputSet|) which contain the input file settings.
 
         Args:
             kpoints_metals (tuple[float, float, float]):
@@ -1668,7 +1667,7 @@ class CompetingPhases(MSONable):
         Returns:
             dict[str, DopedDictSet]:
                 Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+                (subclasses of |VaspInputSet|).
         """
         dict_sets = self.get_kpoint_convergence_sets(
             kpoints_metals=kpoints_metals,
@@ -1782,7 +1781,7 @@ class CompetingPhases(MSONable):
         Returns:
             dict[str, DopedDictSet]:
                 Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+                (subclasses of |VaspInputSet|).
         """
         base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
         if "EDIFF" in (user_incar_settings or {}):  # remove default EDIFF PER ATOM setting if EDIFF set
@@ -1867,8 +1866,7 @@ class CompetingPhases(MSONable):
         cost.
 
         Returns the corresponding dictionary of ``DopedDictSet`` objects
-        (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
-        contain the input file settings.
+        (subclasses of |VaspInputSet|) which contain the input file settings.
 
         Note that, because these relaxations usually involve volume relaxation,
         one should successively repeat the relaxation from the previous relaxed
@@ -1878,8 +1876,8 @@ class CompetingPhases(MSONable):
         defect calculations for a final single-point energy calculation), to
         avoid spurious Pulay stress effects.
 
-        See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-        for tips on boosting the efficiency of competing phases calculations.
+        See the |Competing Phases Tips| tips section for tips on boosting the
+        efficiency of competing phases calculations.
 
         Args:
             kpoints_metals (float):
@@ -1928,9 +1926,8 @@ class CompetingPhases(MSONable):
 
         Returns:
             dict[str, DopedDictSet]:
-                Mapping of output folder paths to generated
-                ``DopedDictSet``\s (subclasses of
-                :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+                Mapping of output folder paths to generated ``DopedDictSet``\s
+                (subclasses of |VaspInputSet|).
         """
         dict_sets = self.get_relaxation_sets(
             kpoints_metals=kpoints_metals,
@@ -2021,9 +2018,8 @@ class CompetingPhases(MSONable):
         (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
         check for cheaper converged `k`-point densities for these final
         single-point calculations -- particularly useful if e.g. performing
-        hybrid DFT SOC calculations. See the
-        :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-        for further tips on boosting the efficiency of competing phases
+        hybrid DFT SOC calculations. See the |Competing Phases Tips| tips
+        section for further tips on boosting the efficiency of competing phases
         calculations.
 
         Note that this function uses a single kpoint density setting each for
@@ -2089,7 +2085,7 @@ class CompetingPhases(MSONable):
         Returns:
             dict[str, DopedDictSet]:
                 Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+                (subclasses of |VaspInputSet|).
         """
         if soc is None:
             all_elements = self.intrinsic_elements + getattr(self, "extrinsic_elements", [])
@@ -2193,9 +2189,8 @@ class CompetingPhases(MSONable):
         (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
         check for cheaper converged `k`-point densities for these final
         single-point calculations -- particularly useful if e.g. performing
-        hybrid DFT SOC calculations. See the
-        :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-        for further tips on boosting the efficiency of competing phases
+        hybrid DFT SOC calculations. See the |Competing Phases Tips| tips
+        section for further tips on boosting the efficiency of competing phases
         calculations.
 
         Note that this function uses a single kpoint density setting each for
@@ -2269,7 +2264,7 @@ class CompetingPhases(MSONable):
         Returns:
             dict[str, DopedDictSet]:
                 Mapping of output folder paths to generated ``DopedDictSet``\s
-                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+                (subclasses of |VaspInputSet|).
         """
         dict_sets = self.get_singlepoint_sets(
             kpoints_metals=kpoints_metals,
@@ -4429,8 +4424,7 @@ class CompetingPhasesAnalyzer(MSONable):
         element), but for higher-dimensional systems a set of chemical
         potential constraints must be provided (as ``fixed_elements``) to
         project the chemical stability region to 3-D; see the competing phases
-        tutorial section on
-        :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`.
+        tutorial section on |chempot limits tutorial|.
 
         Extrinsic chemical potentials are also supported; added as additional
         dimensions to the chemical potential diagram and can be used as plot
@@ -4726,7 +4720,7 @@ def plot_chempot_heatmap(
     element), but for higher-dimensional systems a set of chemical potential
     constraints must be provided (as ``fixed_elements``) to project the
     chemical stability region to 3-D; see the competing phases tutorial section
-    on :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`.
+    on |chempot limits tutorial|.
 
     Extrinsic chemical potentials are also supported; added as additional
     dimensions to the chemical potential diagram and can be used as plot axes

@@ -829,7 +829,7 @@ def _conc_multiindex(names: tuple, charges: tuple) -> pd.MultiIndex:
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
-    Similar to a ``pymatgen`` ``PhaseDiagram`` object, allowing the analysis of
+    Similar to a ``pymatgen`` |PhaseDiagram| object, allowing the analysis of
     formation energies as functions of Fermi level and chemical potentials
     (i.e. defect formation energy / transition level diagrams), charge
     transition levels, defect/carrier concentrations as functions of
@@ -843,6 +843,10 @@ class DefectThermodynamics(MSONable):
         e) charge transition levels, including metastable states,
         f) doping analysis,
         g) ...
+
+    Key attributes: :attr:`defect_entries`, :attr:`chempots`, :attr:`el_refs`,
+    :attr:`vbm`, :attr:`band_gap`, :attr:`dist_tol`, :attr:`bulk_dos` and
+    :attr:`transition_level_map`.
 
     Note that |DefectThermodynamics| objects can be used to initialise the
     ``FermiSolver`` class in this module, which implements a number of
@@ -884,7 +888,7 @@ class DefectThermodynamics(MSONable):
         Usually initialised using
         ``DefectsParser.get_defect_thermodynamics()``, but can also be
         initialised with a list or dict of |DefectEntry| objects (e.g. from
-        ``DefectsParser.defect_dict``).
+        :attr:`doped.analysis.DefectsParser.defect_dict`).
 
         Note that the ``DefectEntry.name`` attributes are used to label the
         defects in plots.
@@ -954,14 +958,15 @@ class DefectThermodynamics(MSONable):
             dist_tol (float):
                 Distance threshold (in Å) to use for clustering (equivalent)
                 defect sites (for plotting, transition level analysis and
-                defect concentration calculations; see ``plot()`` and
-                ``get_fermi_level_and_concentrations()`` for more information).
-                See the ``dist_tol`` attribute, ``group_defects_by_distance()``
-                and ``group_defects_by_type_and_distance()`` functions for more
+                defect concentration calculations; see :meth:`plot` and
+                :meth:`get_fermi_level_and_concentrations` for more
+                information). See the :attr:`dist_tol` attribute,
+                :func:`group_defects_by_distance` and
+                :func:`group_defects_by_type_and_distance` functions for more
                 information on clustering strategies --
-                ``self.clustered_defect_entries`` and/or
-                ``self.clustered_defect_entries_by_type`` can also be
-                manually set with these functions for greater control.
+                :attr:`clustered_defect_entries` and/or
+                :attr:`clustered_defect_entries_by_type` can also be manually
+                set with these functions for greater control.
                 (Default: 1.5)
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each
@@ -986,8 +991,7 @@ class DefectThermodynamics(MSONable):
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
                 bulk DOS and defect supercell calculations. See the
-                :ref:`Tips:Density of States (DOS) Calculations` tips section.
-                (Default: None)
+                |DOS Calculations| tips section. (Default: None)
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
@@ -995,24 +999,10 @@ class DefectThermodynamics(MSONable):
                 ``False`` (don't skip check).
 
         Key Attributes:
-            defect_entries (dict[str, |DefectEntry|]):
-                Dict of |DefectEntry| objects included in the
-                |DefectThermodynamics| set, with their names as keys.
-            chempots (dict):
-                Dictionary of chemical potentials to use for calculating the
-                defect formation energies (and hence concentrations etc.), in
-                the ``doped`` format.
-            el_refs (dict):
-                Dictionary of elemental reference energies for the chemical
-                potentials.
             vbm (float):
                 VBM energy to use as Fermi level reference point for analysis.
             band_gap (float):
                 Band gap of the host, to use for analysis.
-            dist_tol (float):
-                Distance threshold (in Å) to use for clustering (equivalent)
-                defect sites (for plotting, transition level analysis and
-                defect concentration calculations).
             transition_levels (dict):
                 Dictionary of charge transition levels for each defect entry.
                 (e.g. ``{defect_name: {charge: transition_level}}``).
@@ -1022,10 +1012,6 @@ class DefectThermodynamics(MSONable):
                 same).
             bulk_formula (str):
                 The reduced formula of the bulk structure (e.g. "CdTe").
-            bulk_dos (FermiDos):
-                ``pymatgen`` ``FermiDos`` for the bulk electronic density of
-                states (DOS), used for calculating Fermi level positions and
-                defect/carrier concentrations.
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
@@ -1734,10 +1720,10 @@ class DefectThermodynamics(MSONable):
         Args:
             defect_entries ({str: |DefectEntry|} or [|DefectEntry|]):
                 A dict or list of |DefectEntry| objects, to add to the
-                ``DefectThermodynamics.defect_entries`` dict. If a
-                ``DefectEntry.name`` attribute is not defined or does not end
-                with the charge state (as ``..._{charge state}``), then the
-                entry will be renamed with the ``doped`` default name.
+                :attr:`defect_entries` dict. If a ``DefectEntry.name``
+                attribute is not defined or does not end with the charge state
+                (as ``..._{charge state}``), then the entry will be renamed
+                with the ``doped`` default name.
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each
                 defect entry (i.e. that all reference bulk energies are the
@@ -1757,8 +1743,8 @@ class DefectThermodynamics(MSONable):
     @property
     def defect_entries(self):
         """
-        Get the dict of parsed |DefectEntry| objects in the
-        |DefectThermodynamics| analysis object.
+        Dict of parsed |DefectEntry| objects in the |DefectThermodynamics| set,
+        with their names as keys.
         """
         return self._defect_entries
 
@@ -1785,8 +1771,9 @@ class DefectThermodynamics(MSONable):
     @property
     def chempots(self):
         r"""
-        Get the chemical potentials dictionary used for calculating the defect
-        formation energies.
+        Dictionary of chemical potentials to use for calculating the defect
+        formation energies (and hence concentrations etc.), in the ``doped``
+        format.
 
         ``chempots`` is a dictionary of chemical potentials to use for
         calculating the defect formation energies, in the form of:
@@ -1843,7 +1830,7 @@ class DefectThermodynamics(MSONable):
     @property
     def el_refs(self):
         """
-        Get the elemental reference energies for the chemical potentials.
+        Dictionary of elemental reference energies for the chemical potentials.
 
         This is in the form of a dictionary of elemental reference energies for
         the chemical potentials, as: ``{element symbol: reference energy}``.
@@ -1869,8 +1856,8 @@ class DefectThermodynamics(MSONable):
     @property
     def bulk_dos(self):
         """
-        Get the ``pymatgen``  ``FermiDos`` for the bulk electronic density of
-        states (DOS), for calculating Fermi level positions and defect/carrier
+        ``pymatgen``  ``FermiDos`` for the bulk electronic density of states
+        (DOS), used for calculating Fermi level positions and defect/carrier
         concentrations, if set.
 
         Otherwise, returns ``None``.
@@ -1897,8 +1884,7 @@ class DefectThermodynamics(MSONable):
         ``ISMEAR = -5`` (tetrahedron smearing) are recommended for best
         convergence (wrt `k`-point sampling) in VASP. Consistent functional
         settings should be used for the bulk DOS and defect supercell
-        calculations. See the
-        :ref:`Tips:Density of States (DOS) Calculations` section.
+        calculations. See the |DOS Calculations| section.
         """
         self._bulk_dos = self._parse_fermi_dos(input_bulk_dos, skip_dos_check=self.skip_dos_check)
 
@@ -1941,12 +1927,12 @@ class DefectThermodynamics(MSONable):
         r"""
         Distance threshold (in Å) to use for clustering (equivalent) defect
         sites (for plotting, transition level analysis and defect concentration
-        calculations; see ``plot()`` and
-        ``get_fermi_level_and_concentrations()`` for more information). See
-        ``group_defects_by_distance()`` and
-        ``group_defects_by_type_and_distance()`` for more information on
-        clustering strategies -- ``self.clustered_defect_entries`` and/or
-        ``self.clustered_defect_entries_by_type`` can also be manually set with
+        calculations; see :meth:`plot` and
+        :meth:`get_fermi_level_and_concentrations` for more information). See
+        :func:`group_defects_by_distance` and
+        :func:`group_defects_by_type_and_distance` for more information on
+        clustering strategies -- :attr:`clustered_defect_entries` and/or
+        :attr:`clustered_defect_entries_by_type` can also be manually set with
         these functions for greater control.
 
         With default settings, |DefectEntry|\s `of the same type` and with
@@ -2063,8 +2049,7 @@ class DefectThermodynamics(MSONable):
                   in ``chempots``.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -2235,10 +2220,10 @@ class DefectThermodynamics(MSONable):
         Args:
             defect_entry (str or |DefectEntry|):
                 Either a string of the defect entry name (in
-                ``DefectThermodynamics.defect_entries``), or a |DefectEntry|
-                object. If the defect name is given without the charge state,
-                then the formation energy of the lowest energy (stable) charge
-                state at the chosen Fermi level will be given.
+                :attr:`defect_entries`), or a |DefectEntry| object. If the
+                defect name is given without the charge state, then the
+                formation energy of the lowest energy (stable) charge state at
+                the chosen Fermi level will be given.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the
                 defect formation energy. If ``None`` (default), will use
@@ -2270,8 +2255,7 @@ class DefectThermodynamics(MSONable):
                   chemical potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -2481,8 +2465,7 @@ class DefectThermodynamics(MSONable):
                   ``chempots`` is a single chemical potential limit.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -2619,8 +2602,7 @@ class DefectThermodynamics(MSONable):
                   ``chempots`` is a single chemical potential limit.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -2699,10 +2681,10 @@ class DefectThermodynamics(MSONable):
         **kwargs,
     ) -> "DefectThermodynamics":
         """
-        This function takes the defect entries in
-        ``DefectThermodynamics.defect_entries``, prunes them to only those
-        which pass a given stability criterion, and regenerates a new
-        |DefectThermodynamics| object with these defect entries.
+        This function takes the defect entries in :attr:`defect_entries`,
+        prunes them to only those which pass a given stability criterion, and
+        regenerates a new |DefectThermodynamics| object with these defect
+        entries.
 
         This function can be used to prune out defect entries which are
         detected to be shallow (perturbed host, 'fake') states according to
@@ -2846,9 +2828,9 @@ class DefectThermodynamics(MSONable):
         transition level analysis and defect concentrations. This can be
         adjusted as shown in the
         :doc:`plotting customisation tutorial <plotting_customisation_tutorial>`.
-        See the ``dist_tol`` attribute, ``group_defects_by_distance()`` and
-        ``group_defects_by_type_and_distance()`` functions for more information
-        on clustering strategies.
+        See the :attr:`dist_tol` attribute, :func:`group_defects_by_distance`
+        and :func:`group_defects_by_type_and_distance` functions for more
+        information on clustering strategies.
 
         Args:
             chempots (dict):
@@ -2885,8 +2867,7 @@ class DefectThermodynamics(MSONable):
                   or if anion/cation detection fails.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -3242,16 +3223,16 @@ class DefectThermodynamics(MSONable):
                 defects)
             unstable_entries (bool, str):
                 Controls the inclusion of unstable/shallow defect states, as in
-                :meth:`~doped.thermodynamics.DefectThermodynamics.plot()`;
-                allowed values are ``True``, ``False`` or ``"not shallow"``. If
-                ``"not shallow"`` (default), defect entries which are predicted
-                to be shallow (perturbed host) states according to eigenvalue
-                analysis and only stable for Fermi levels within a small window
-                to a band edge (``shallow_stability_tol``) are omitted. If
-                ``False``, `all` defects which are not stable for any Fermi
-                level in the band gap are `also` omitted. If ``True``, defect
-                entries are not pruned based on stability / shallow
-                classification. See ``prune_to_stable_entries`` for more info.
+                :meth:`plot`; allowed values are ``True``, ``False`` or
+                ``"not shallow"``. If ``"not shallow"`` (default), defect
+                entries which are predicted to be shallow (perturbed host)
+                states according to eigenvalue analysis and only stable for
+                Fermi levels within a small window to a band edge
+                (``shallow_stability_tol``) are omitted. If ``False``, `all`
+                defects which are not stable for any Fermi level in the band
+                gap are `also` omitted. If ``True``, defect entries are not
+                pruned based on stability / shallow classification. See
+                ``prune_to_stable_entries`` for more info.
             include_site_info (bool, None):
                 Whether to include site info in defect names in the column
                 headers (e.g. ``$V_{Cd_{Td}}$`` rather than ``$V_{Cd}$``). If
@@ -3365,7 +3346,7 @@ class DefectThermodynamics(MSONable):
         """
         Return a ``DataFrame`` of the charge transition levels for the defects
         in the |DefectThermodynamics| object (stored in the
-        ``transition_level_map`` attribute).
+        :attr:`transition_level_map` attribute).
 
         Note that the transition level (and Fermi level) positions are given
         relative to ``self.vbm``, which is the VBM eigenvalue of the bulk
@@ -3512,8 +3493,8 @@ class DefectThermodynamics(MSONable):
     ):
         """
         Iteratively prints the charge transition levels for the defects in the
-        |DefectThermodynamics| object (stored in the ``transition_level_map``
-        attribute).
+        |DefectThermodynamics| object (stored in the
+        :attr:`transition_level_map` attribute).
 
         By default, only returns the thermodynamic ground-state transition
         levels (i.e. those visible on the defect formation energy diagram), not
@@ -3796,8 +3777,7 @@ class DefectThermodynamics(MSONable):
         or maximising a target property (e.g. defect/carrier concentration),
         and also allowing greater control over constraints and approximations
         in defect concentration calculations (i.e. fixed/variable defect(s) and
-        charge states), which may be useful. See the
-        :doc:`FermiSolver tutorial <fermisolver_tutorial>`.
+        charge states), which may be useful. See the |FermiSolver tutorial|.
 
         Args:
             temperature (float):
@@ -3835,8 +3815,7 @@ class DefectThermodynamics(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -3867,11 +3846,11 @@ class DefectThermodynamics(MSONable):
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). (default: ``False``)
+                |bulk_site_concentration|). Default is ``False``.
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and
                 concentrations as strings (and keep as ``int``\s and
-                ``float``\s instead). (default: ``False``)
+                ``float``\s instead). Default is ``False``.
             site_competition (bool | str):
                 If ``True`` (default), uses the updated Fermi-Dirac-like
                 formula for defect concentrations, which accounts for defect
@@ -4196,8 +4175,7 @@ class DefectThermodynamics(MSONable):
         maximising a target property (e.g. defect/carrier concentration), and
         also allowing greater control over constraints and approximations in
         defect concentration calculations (i.e. fixed/variable defect(s) and
-        charge states), which may be useful. See the
-        :doc:`FermiSolver tutorial <fermisolver_tutorial>`.
+        charge states), which may be useful. See the |FermiSolver tutorial|.
 
         Args:
             bulk_dos (FermiDos or |Vasprun| or PathLike):
@@ -4218,7 +4196,7 @@ class DefectThermodynamics(MSONable):
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
                 bulk DOS and defect supercell calculations. See the
-                :ref:`Tips:Density of States (DOS) Calculations` section.
+                |DOS Calculations| section.
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has
                 previously been provided and parsed, and thus is set as the
@@ -4259,8 +4237,7 @@ class DefectThermodynamics(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -4395,8 +4372,8 @@ class DefectThermodynamics(MSONable):
         is fixed to this value, but that the relative populations of defect
         charge states (and the Fermi level) can re-equilibrate at the lower
         (room) temperature. See https://doi.org/10.1038/s41578-025-00879-y
-        (brief discussion), https://doi.org/10.1016/j.cpc.2019.06.017 (detailed)
-        and ``doped`` tutorials for more information. In certain
+        (brief discussion), https://doi.org/10.1016/j.cpc.2019.06.017
+        (detailed) and ``doped`` tutorials for more information. In certain
         cases (such as Li-ion battery materials or extremely slow charge
         capture/emission), these approximations may have to be adjusted such
         that some defects/charge states are considered fixed and some are
@@ -4404,7 +4381,7 @@ class DefectThermodynamics(MSONable):
         interstitials). The ``FermiSolver`` class can be used in these cases
         for more fine-grained control over constraints and approximations in
         defect concentration calculations, as demonstrated in the
-        :doc:`FermiSolver tutorial <fermisolver_tutorial>`.
+        |FermiSolver tutorial|.
 
         Note that different defect entries (different charge states, and/or
         ground and metastable states (different spin or geometries); e.g.
@@ -4452,7 +4429,7 @@ class DefectThermodynamics(MSONable):
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
                 bulk DOS and defect supercell calculations. See the
-                :ref:`Tips:Density of States (DOS) Calculations` section.
+                |DOS Calculations| section.
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has
                 previously been provided and parsed, and thus is set as the
@@ -4503,8 +4480,7 @@ class DefectThermodynamics(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -4556,11 +4532,11 @@ class DefectThermodynamics(MSONable):
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). (default: ``False``)
+                |bulk_site_concentration|). Default is ``False``.
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and
                 concentrations as strings (and keep as ``int``\s and
-                ``float``\s instead). (default: ``False``)
+                ``float``\s instead). Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
                 concentrations and defect concentrations at the annealing
@@ -4870,9 +4846,8 @@ class DefectThermodynamics(MSONable):
         **kwargs,
     ) -> plt.Figure:
         """
-        Plot a heatmap of the chemical potentials (in
-        ``DefectThermodynamics.chempots``) for a multinary system, showing
-        bordering secondary phases.
+        Plot a heatmap of the chemical potentials (in :attr:`chempots`) for a
+        multinary system, showing bordering secondary phases.
 
         In this plot, the ``dependent_element`` chemical potential is plotted
         as a heatmap over the stability region of the host composition, as a
@@ -4880,11 +4855,10 @@ class DefectThermodynamics(MSONable):
         axes.
 
         3-D data is required to plot a 2-D heatmap, and so this function can be
-        applied as-is for ternary systems, but for higher-dimensional systems
-        a set of chemical potential constraints must be provided (as
+        applied as-is for ternary systems, but for higher-dimensional systems a
+        set of chemical potential constraints must be provided (as
         ``fixed_elements``) to project the chemical stability region to 3-D;
-        see the competing phases tutorial section
-        :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`.
+        see the competing phases tutorial section |chempot limits tutorial|.
 
         Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
         sometimes there can be odd holes in the whitespace around the chemical
@@ -5521,7 +5495,7 @@ class FermiSolver(MSONable):
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
                 bulk DOS and defect supercell calculations. See the
-                :ref:`Tips:Density of States (DOS) Calculations` section.
+                |DOS Calculations| section.
             chempots (dict | None):
                 Dictionary of chemical potentials to use for calculating the
                 defect formation energies (and thus concentrations and Fermi
@@ -5976,7 +5950,7 @@ class FermiSolver(MSONable):
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). Not supported for the
+                |bulk_site_concentration|). Not supported for the
                 ``py-sc-fermi`` backend. Default is ``False``.
             append_chempots (bool):
                 Whether to append the chemical potentials (and effective dopant
@@ -6181,13 +6155,12 @@ class FermiSolver(MSONable):
         https://doi.org/10.1038/s41578-025-00879-y (brief),
         https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and ``doped``
         tutorials. In certain cases (such as Li-ion battery materials or
-        extremely slow charge capture/emission), these approximations may
-        have to be adjusted such that some defects / charge states are
-        considered fixed and some are allowed to re-equilibrate (e.g.
-        highly mobile Li vacancies/interstitials). Modelling these specific
-        cases can be achieved using the ``free_defects`` and/or
-        ``fix_charge_states`` options, as demonstrated in the
-        :doc:`FermiSolver tutorial <fermisolver_tutorial>`.
+        extremely slow charge capture/emission), these approximations may have
+        to be adjusted such that some defects / charge states are considered
+        fixed and some are allowed to re-equilibrate (e.g. highly mobile Li
+        vacancies/interstitials). Modelling these specific cases can be
+        achieved using the ``free_defects`` and/or ``fix_charge_states``
+        options, as demonstrated in the |FermiSolver tutorial|.
 
         This function works by calculating the self-consistent Fermi level and
         total concentration of each defect at the annealing temperature, then
@@ -6289,7 +6262,7 @@ class FermiSolver(MSONable):
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). Not supported for the
+                |bulk_site_concentration|). Not supported for the
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
@@ -6686,8 +6659,7 @@ class FermiSolver(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in ``(self.defect_thermodynamics.)chempots["limits"]``.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -6750,7 +6722,7 @@ class FermiSolver(MSONable):
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). Not supported for the
+                |bulk_site_concentration|). Not supported for the
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
@@ -6959,8 +6931,7 @@ class FermiSolver(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich") -- see
-                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
+                  (e.g. "Li-rich") -- see |get_X_rich_poor_limit|.
                 - A key in ``(self.defect_thermodynamics.)chempots["limits"]``.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -7013,7 +6984,7 @@ class FermiSolver(MSONable):
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). Not supported for the
+                |bulk_site_concentration|). Not supported for the
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
@@ -7462,9 +7433,8 @@ class FermiSolver(MSONable):
                 The chemical potential limits to scan over, as a list of
                 strings, if ``chempots`` was provided / is present in the
                 ``doped`` format. Each string should be in the format
-                ``"X-rich"/"X-poor"`` (see
-                :func:`~doped.chemical_potentials.get_X_rich_poor_limit`),
-                where X is an element in the system, or a key in
+                ``"X-rich"/"X-poor"`` (see |get_X_rich_poor_limit|), where X is
+                an element in the system, or a key in
                 ``(self.defect_thermodynamics.)chempots["limits"]``.
 
                 If ``None`` (default) and ``chempots`` is in the ``doped``
@@ -7547,7 +7517,7 @@ class FermiSolver(MSONable):
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). Not supported for the
+                |bulk_site_concentration|). Not supported for the
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
@@ -7782,7 +7752,7 @@ class FermiSolver(MSONable):
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). Not supported for the
+                |bulk_site_concentration|). Not supported for the
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
@@ -8069,7 +8039,7 @@ class FermiSolver(MSONable):
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). Not supported for the
+                |bulk_site_concentration|). Not supported for the
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole

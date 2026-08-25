@@ -105,7 +105,7 @@ def apply_s2_to_s1_transformation(
     not include all sites in ``struct2`` (e.g. when using a subset of sites to
     do matching and determine the transformation matrix and translation vector,
     as in the stenciling workflow, without needing the ordering of sites in the
-    ``Structure`` objects to match).
+    |Structure| objects to match).
 
     Templated from the ``pymatgen`` |StructureMatcher| class, to allow direct
     usage without repeating the expensive ``get_transformation`` call (e.g.

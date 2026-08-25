@@ -885,9 +885,8 @@ class DefectsParser:
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If not provided, charge corrections cannot be
                 computed and so ``skip_corrections`` will be set to ``True``.
-                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-                tutorial section for information on calculating and converging
-                the dielectric constant.
+                See the |Dielectric Constant| tutorial section for information
+                on calculating and converging the dielectric constant.
             subfolder (PathLike):
                 Name of subfolder(s) within each defect calculation folder (in
                 the ``output_path`` directory) containing the VASP calculation
@@ -949,13 +948,13 @@ class DefectsParser:
                 CPUs available. Set to 1 for no multiprocessing.
             json_filename (PathLike):
                 Filename to save the parsed defect entries dict
-                (``DefectsParser.defect_dict``) to in ``output_path``, to avoid
-                having to re-parse defects when later analysing further and
-                aiding calculation provenance. Can be reloaded using the
+                (:attr:`DefectsParser.defect_dict`) to in ``output_path``, to
+                avoid having to re-parse defects when later analysing further
+                and aiding calculation provenance. Can be reloaded using the
                 ``loadfn`` function from ``monty.serialization`` (and then
                 input to |DefectThermodynamics| etc.). If ``None`` (default),
-                set as ``{Host Chemical Formula}_defect_dict.json.gz``.
-                If ``False``, no json file is saved.
+                set as ``{Host Chemical Formula}_defect_dict.json.gz``. If
+                ``False``, no json file is saved.
             parse_projected_eigen (bool):
                 Whether to parse the projected eigenvalues & magnetization from
                 the bulk and defect calculations (so
@@ -1250,9 +1249,10 @@ class DefectsParser:
         plot the defect thermodynamics (formation energies, transition levels,
         concentrations etc).
 
-        Note that the ``DefectEntry.name`` attributes (rather than the
-        ``defect_name`` key in the ``defect_dict``) are used to label the
-        defects in plots.
+        Note that :attr:`DefectEntry.name <doped.core.DefectEntry.name>`
+        attributes (rather than ``defect_name`` keys in
+        :attr:`DefectsParser.defect_dict`) are used to label the defects in
+        plots.
 
         See the |DefectThermodynamics| and accompanying methods docstrings in
         ``doped.thermodynamics`` for more.
@@ -1349,8 +1349,7 @@ class DefectsParser:
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
                 bulk DOS and defect supercell calculations. See the
-                :ref:`Tips:Density of States (DOS) Calculations` tips.
-                (Default: None)
+                |DOS Calculations| tips. (Default: None)
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
@@ -2364,9 +2363,8 @@ class DefectParser:
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If not provided, charge corrections cannot be
                 computed and so ``skip_corrections`` will be set to ``True``.
-                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-                tutorial section for information on calculating and converging
-                the dielectric constant.
+                See the |Dielectric Constant| tutorial section for information
+                on calculating and converging the dielectric constant.
             charge_state (int):
                 Charge state of defect. If not provided, will be automatically
                 determined from defect calculation outputs, or if that fails,
@@ -3153,8 +3151,7 @@ def shallow_dopant_binding_energy(
     Estimate the binding energy of a shallow dopant /defect in a semiconductor,
     using effective mass theory.
 
-    Discussion in the :ref:`Tips:Perturbed Host States (Shallow Defects)` tips
-    section.
+    Discussion in the |Shallow Defects| tips section.
 
     For delocalised, shallow states (a.k.a. perturbed host states), the
     hydrogenic effective mass model typically gives quite a good estimate of

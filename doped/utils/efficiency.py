@@ -298,7 +298,7 @@ def _species__str__(self):
     """
     Memoized ``Species.__str__`` (immutable objects); avoids heavy string
     formatting in the many millions of ``Species.__hash__`` (= ``hash(str)``)
-    calls from ``Composition`` ``dict`` operations.
+    calls from |Composition| ``dict`` operations.
 
     We memoize the string, not
     the hash: changing ``__hash__`` values breaks pre-built ``Species``-keyed
@@ -323,7 +323,7 @@ def _noise_rounded_bytes(arr) -> bytes:
     round-trips) share a hash.
 
     ``1e-10`` sits safely below the ``__eq__`` tolerances (``atol=1e-8``) for
-    ``Structure``/``PeriodicSite``, so hash-merged values are always still
+    |Structure|/|PeriodicSite|, so hash-merged values are always still
     eq-equal -- required for the ``_Structure__eq__`` hash-equality fast path
     to stay sound.
     """
@@ -464,7 +464,7 @@ def get_all_distances(
     Get the distances between two lists of coordinates taking into account
     periodic boundary conditions and the lattice.
 
-    See :meth:`~pymatgen.core.lattice.get_all_distances`.
+    See :meth:`~pymatgen.core.lattice.Lattice.get_all_distances`.
     """
     return _cached_get_all_distances(
         self, array_to_tuple(frac_coords1), array_to_tuple(frac_coords2)
@@ -579,9 +579,9 @@ def _Structure__eq__(self, other):
 
 def _structure__deepcopy__(self, memo):
     """
-    Fast ``__deepcopy__`` for ``Structure``: shallow ``.copy()``, then deep-
-    copy only the mutable ``properties`` dicts (structure- and site-level) so
-    the copy shares no state with the original.
+    Fast ``__deepcopy__`` for |Structure|: shallow ``.copy()``, then deep-copy
+    only the mutable ``properties`` dicts (structure- and site-level) so the
+    copy shares no state with the original.
     """
     new_structure = self.copy()
     new_structure.properties = copy.deepcopy(self.properties, memo)

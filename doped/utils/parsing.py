@@ -492,8 +492,8 @@ def _find_calc_outputs(
     Recursively find calculation output files under ``output_path`` and auto-
     detect the calculation subfolder when ``subfolder`` is ``None``.
 
-    Shared discovery logic used by both :func:`~doped.analysis.DefectsParser`
-    and :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer`.
+    Shared discovery logic used by both :class:`~doped.analysis.DefectsParser`
+    and :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`.
 
     Args:
         output_path (PathLike):
