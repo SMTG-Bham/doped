@@ -16,10 +16,12 @@ import pytest
 # Materials Project API key for tests
 api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/C
 
-# for pytest-mpl:
+# data/example directory paths for tests
 module_path = os.path.dirname(os.path.abspath(__file__))
 data_dir = os.path.join(module_path, "data")
+vasp_data_dir = os.path.join(data_dir, "vasp")
 EXAMPLE_DIR = os.path.join(module_path, "../examples")
+# for pytest-mpl:
 BASELINE_DIR = f"{data_dir}/remote_baseline_plots"
 STYLE = f"{module_path}/../doped/utils/doped.mplstyle"
 
@@ -113,7 +115,7 @@ def _potcars_available() -> bool:
 
     If not (testing on GitHub Actions), POTCAR testing will be skipped.
     """
-    from doped.vasp import _test_potcar_functional_choice
+    from doped.io.vasp.inputs import _test_potcar_functional_choice
 
     try:
         _test_potcar_functional_choice("PBE")

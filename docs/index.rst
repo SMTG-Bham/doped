@@ -281,6 +281,7 @@ Thanks to `Chaoqun Zhang <https://github.com/Warlocat>`__ for uploading the
    :maxdepth: 1
 
    Contributing
+   Adding_Calculators
    Code_Compatibility
    changelog_link
    doped on GitHub <https://github.com/SMTG-Bham/doped>

@@ -14,13 +14,15 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 from pymatgen.core.structure import PeriodicSite
+from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
-from doped.analysis import defect_site_from_structures
-from doped.core import DefectEntry, _parse_procar, template_defect_entry_from_structures
+from doped.core import DefectEntry, template_defect_entry_from_structures
+from doped.io import get_calculation_outputs
+from doped.io.outputs import CalculationOutputs
+from doped.parsing import defect_site_from_structures
 from doped.utils import vise_handling
-from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
 from doped.utils.plotting import doped_plot_style
 
 with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
@@ -34,9 +36,118 @@ with vise_handling():  # avoid vise issues (warning suppression, logging, Window
         PerfectBandEdgeState,
     )
     from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
-    from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
     from pydefect.defaults import defaults
-    from vise.analyzer.vasp.band_edge_properties import BandEdgeProperties, eigenvalues_from_vasprun
+    from vise.analyzer.vasp.band_edge_properties import BandEdgeProperties
+
+
+def _as_calculation_outputs(
+    outputs_or_native: CalculationOutputs | Vasprun,
+    projections: PathLike | Procar | None = None,
+) -> CalculationOutputs:
+    """
+    Normalise a ``CalculationOutputs`` / |Vasprun| (+ possible |Procar|) input
+    to a (calculator-agnostic) ``CalculationOutputs`` object.
+
+    Explicitly-supplied ``projections`` take precedence for the orbital
+    projections (``projected_eigenvalues``), matching previous ``doped``
+    behaviour with VASP objects.
+    """
+    if isinstance(outputs_or_native, CalculationOutputs):
+        return outputs_or_native
+
+    from doped.io.vasp.outputs import _parse_procar, calculation_outputs_from_vasprun
+
+    outputs = calculation_outputs_from_vasprun(outputs_or_native, procar=projections)
+    if projections is not None:  # explicitly-supplied projections take precedence
+        outputs.projected_eigenvalues = _parse_procar(projections).data
+    return outputs
+
+
+def _weighted_occ_sum(outputs: CalculationOutputs, spin: Spin = Spin.up) -> float:
+    """
+    Get the `k`-point-weighted sum of the band occupancies for the given spin
+    channel -- i.e. the number of electrons in that spin channel.
+    """
+    assert outputs.eigenvalues is not None  # checked by callers (with ``require()``)
+    band_occs = outputs.eigenvalues[spin][:, :, 1].sum(axis=1)  # summed over bands, for each k-point
+    return float(np.sum(band_occs * np.asarray(outputs.kpoint_weights)))
+
+
+def _is_noncollinear(outputs: CalculationOutputs) -> bool:
+    """
+    Determine whether the ``outputs`` calculation is a non-collinear (NCL) spin
+    calculation (i.e. with spin-orbit coupling (SOC) and/or non-collinear
+    magnetism), from the eigenvalues, occupancies, `k`-point weights and
+    electron count.
+
+    Non-collinear calculations have a single set of (spinor) bands, each
+    holding one electron, while non-spin-polarised calculations have a single
+    set of doubly-occupied bands (and collinear-spin-polarised calculations
+    have have two sets of singly-occupied bands) -- so the `k`-point-weighted
+    sum of band occupancies matches ``nelect`` for NCL calculations, but
+    ``nelect/2`` for non-spin-polarised (and ``nelect`` again, over both spin
+    channels, for collinear spin-polarised calculations).
+    """
+    eigenvalues_and_occs = outputs.eigenvalues
+    assert eigenvalues_and_occs is not None  # checked by callers (with ``require()``)
+    assert outputs.nelect is not None  # checked by callers (with ``require()``)
+    if len(eigenvalues_and_occs) > 1:
+        return False  # spin-polarised (collinear) calculation; two spin channels
+
+    summed_occs = _weighted_occ_sum(outputs)
+    # matches nelect for NCL (1 electron per spinor band), or nelect/2 for non-spin-polarised:
+    return abs(summed_occs - outputs.nelect) < abs(2 * summed_occs - outputs.nelect)
+
+
+def band_edge_properties_from_outputs(
+    outputs: CalculationOutputs | Vasprun, integer_criterion: float = 0.1
+) -> BandEdgeProperties:
+    """
+    Create a ``pydefect`` ``BandEdgeProperties`` object from a
+    :class:`~doped.io.outputs.CalculationOutputs` (or |Vasprun|) object.
+
+    Args:
+        outputs (CalculationOutputs or |Vasprun|):
+            ``CalculationOutputs`` (or |Vasprun|) object for the calculation,
+            with ``eigenvalues``, ``kpoint_coords``, ``kpoint_weights`` and
+            ``nelect``.
+        integer_criterion (float):
+            Threshold criterion for determining if a band is unoccupied
+            (< ``integer_criterion``), partially occupied (between
+            ``integer_criterion`` and 1 - ``integer_criterion``), or fully
+            occupied (> 1 - ``integer_criterion``). Default is 0.1.
+
+    Returns:
+        ``BandEdgeProperties`` object.
+    """
+    outputs = _as_calculation_outputs(outputs)
+    outputs.require(
+        "eigenvalues",
+        "kpoint_coords",
+        "kpoint_weights",
+        "nelect",
+        task="Band edge properties determination",
+    )
+
+    collinear_magnetization: float | np.ndarray = 0
+    assert outputs.eigenvalues is not None  # typing (require() ensures this)
+    if len(outputs.eigenvalues) > 1:  # collinear spin-polarised calculation
+        collinear_magnetization = (
+            outputs.magnetization
+            if outputs.magnetization is not None
+            else _weighted_occ_sum(outputs, Spin.up) - _weighted_occ_sum(outputs, Spin.down)
+        )
+
+    band_edge_prop = BandEdgeProperties(
+        eigenvalues={spin: e[:, :, 0] for spin, e in outputs.eigenvalues.items()},
+        nelect=outputs.nelect,
+        magnetization=collinear_magnetization,  # used by ``pydefect``/``vise`` w/collinear spin-polarised
+        kpoint_coords=outputs.kpoint_coords,
+        integer_criterion=integer_criterion,
+        is_non_collinear=_is_noncollinear(outputs),
+    )
+    band_edge_prop.structure = outputs.structure
+    return band_edge_prop
 
 
 def band_edge_properties_from_vasprun(
@@ -45,6 +156,8 @@ def band_edge_properties_from_vasprun(
     """
     Create a ``pydefect`` ``BandEdgeProperties`` object from a |Vasprun|
     object.
+
+    Convenience (VASP) wrapper for :func:`band_edge_properties_from_outputs`.
 
     Args:
         vasprun (|Vasprun|): |Vasprun| object.
@@ -57,17 +170,56 @@ def band_edge_properties_from_vasprun(
     Returns:
         ``BandEdgeProperties`` object.
     """
-    is_ncl = vasprun.parameters.get("LNONCOLLINEAR", False)
-    band_edge_prop = BandEdgeProperties(
-        eigenvalues=eigenvalues_from_vasprun(vasprun),
-        nelect=get_nelect_from_vasprun(vasprun),
-        magnetization=0 if is_ncl else get_magnetization_from_vasprun(vasprun),  # only needed for ISPIN=2
-        kpoint_coords=vasprun.actual_kpoints,
-        integer_criterion=integer_criterion,
-        is_non_collinear=is_ncl,
+    return band_edge_properties_from_outputs(vasprun, integer_criterion)
+
+
+def _get_edge_info(band_edge, orbs, outputs: CalculationOutputs) -> EdgeInfo:
+    """
+    Get the ``pydefect`` ``EdgeInfo`` object for a band edge, using the
+    calculation outputs (reimplementation of the ``pydefect`` ``get_edge_info``
+    function, working off calculator-agnostic ``CalculationOutputs`` rather
+    than |Vasprun| objects).
+    """
+    orbitals = make_bes.calc_orbital_character(
+        orbs, outputs.structure, Spin.up, band_edge.kpoint_index, band_edge.band_index
     )
-    band_edge_prop.structure = vasprun.final_structure
-    return band_edge_prop
+    assert outputs.eigenvalues is not None
+    energy, occupation = outputs.eigenvalues[Spin.up][band_edge.kpoint_index, band_edge.band_index, :]
+    return EdgeInfo(
+        band_edge.band_index,
+        tuple(band_edge.kpoint_coords),
+        OrbitalInfo(energy=energy, occupation=occupation, orbitals=orbitals),
+    )
+
+
+def make_perfect_band_edge_state_from_outputs(
+    outputs: CalculationOutputs | Vasprun, integer_criterion: float = 0.1
+) -> PerfectBandEdgeState:
+    """
+    Create a ``pydefect`` ``PerfectBandEdgeState`` object from a
+    :class:`~doped.io.outputs.CalculationOutputs` (or |Vasprun|) object,
+    without the need for the |Outcar| input (as in ``pydefect``).
+
+    Args:
+        outputs (CalculationOutputs or |Vasprun|):
+            ``CalculationOutputs`` (or |Vasprun|) object for the bulk cell
+            calculation, with eigenvalue data and orbital projections.
+        integer_criterion (float):
+            Threshold criterion for determining if a band is unoccupied
+            (< ``integer_criterion``), partially occupied (between
+            ``integer_criterion`` and 1 - ``integer_criterion``), or fully
+            occupied (> 1 - ``integer_criterion``). Default is 0.1.
+
+    Returns:
+        ``PerfectBandEdgeState`` object.
+    """
+    outputs = _as_calculation_outputs(outputs)
+    outputs.require("projected_eigenvalues", task="Band edge state determination")
+    band_edge_prop = band_edge_properties_from_outputs(outputs, integer_criterion)
+    orbs = outputs.projected_eigenvalues
+    vbm_info = _get_edge_info(band_edge_prop.vbm_info, orbs, outputs)
+    cbm_info = _get_edge_info(band_edge_prop.cbm_info, orbs, outputs)
+    return PerfectBandEdgeState(vbm_info, cbm_info)
 
 
 def make_perfect_band_edge_state_from_vasp(
@@ -77,6 +229,9 @@ def make_perfect_band_edge_state_from_vasp(
     Create a ``pydefect`` ``PerfectBandEdgeState`` object from just a |Vasprun|
     and |Procar| object, without the need for the |Outcar| input (as in
     ``pydefect``).
+
+    Convenience (VASP) wrapper for
+    :func:`make_perfect_band_edge_state_from_outputs`.
 
     Args:
         vasprun (|Vasprun|): |Vasprun| object.
@@ -90,29 +245,30 @@ def make_perfect_band_edge_state_from_vasp(
     Returns:
         ``PerfectBandEdgeState`` object.
     """
-    band_edge_prop = band_edge_properties_from_vasprun(vasprun, integer_criterion)
-    orbs, s = procar.data, vasprun.final_structure
-    vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, vasprun)
-    cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, vasprun)
-    return PerfectBandEdgeState(vbm_info, cbm_info)
+    return make_perfect_band_edge_state_from_outputs(
+        _as_calculation_outputs(vasprun, projections=procar), integer_criterion
+    )
 
 
 def make_band_edge_orbital_infos(
-    defect_vr: Vasprun,
+    defect_outputs: CalculationOutputs | Vasprun,
     vbm: float,
     cbm: float,
     eigval_shift: float = 0.0,
     neighbor_indices: list[int] | None = None,
-    defect_procar: Procar | None = None,
+    defect_projections: Procar | None = None,
 ):
     r"""
-    Make ``BandEdgeOrbitalInfos`` from a |Vasprun| object.
+    Make ``BandEdgeOrbitalInfos`` from a
+    :class:`~doped.io.outputs.CalculationOutputs` (or |Vasprun|) object.
 
-    Modified from ``pydefect`` to use projected orbitals stored in the
-    |Vasprun| object.
+    Modified from ``pydefect`` to use the projected orbitals stored in the
+    calculation outputs.
 
     Args:
-        defect_vr (|Vasprun|): Defect |Vasprun| object.
+        defect_outputs (CalculationOutputs or |Vasprun|):
+            ``CalculationOutputs`` (or |Vasprun|) object for the defect
+            supercell calculation.
         vbm (float): VBM eigenvalue in eV.
         cbm (float): CBM eigenvalue in eV.
         eigval_shift (float):
@@ -120,19 +276,25 @@ def make_band_edge_orbital_infos(
         neighbor_indices (list[int]):
             Indices of neighboring atoms to the defect site, for localisation
             analysis. Default is ``None``.
-        defect_procar (|Procar|):
+        defect_projections (|Procar|):
             ``pymatgen`` |Procar| object, for the defect supercell, if
             projected eigenvalue/orbitals data is not provided in
-            ``defect_vr``.
+            ``defect_outputs``.
 
     Returns:
         ``BandEdgeOrbitalInfos`` object.
     """
+    outputs = _as_calculation_outputs(defect_outputs, projections=defect_projections)
+    outputs.require(
+        "eigenvalues", "projected_eigenvalues", "kpoint_coords", task="Eigenvalue & orbital analysis"
+    )
+    assert outputs.eigenvalues is not None  # typing (require() ensures these)
+    assert outputs.kpoint_coords is not None
     eigval_range = defaults.eigval_range
-    kpt_coords = [tuple(coord) for coord in defect_vr.actual_kpoints]
+    kpt_coords = [tuple(coord) for coord in outputs.kpoint_coords]
     max_energy_by_spin, min_energy_by_spin = [], []
 
-    for e in defect_vr.eigenvalues.values():
+    for e in outputs.eigenvalues.values():
         max_energy_by_spin.append(np.amax(e[:, :, 0], axis=0))
         min_energy_by_spin.append(np.amin(e[:, :, 0], axis=0))
 
@@ -142,10 +304,10 @@ def make_band_edge_orbital_infos(
     lower_idx = np.argwhere(max_energy_by_band > vbm - eigval_range)[0][0]
     upper_idx = np.argwhere(min_energy_by_band < cbm + eigval_range)[-1][-1]
 
-    orbs = defect_vr.projected_eigenvalues if defect_procar is None else defect_procar.data
-    s = defect_vr.final_structure
+    orbs = outputs.projected_eigenvalues
+    s = outputs.structure
     orb_infos: list[Any] = []
-    for spin, eigvals in defect_vr.eigenvalues.items():
+    for spin, eigvals in outputs.eigenvalues.items():
         orb_infos.append([])
         for k_idx in range(len(kpt_coords)):
             orb_infos[-1].append([])
@@ -161,18 +323,18 @@ def make_band_edge_orbital_infos(
     return BandEdgeOrbitalInfos(
         orbital_infos=orb_infos,
         kpt_coords=kpt_coords,
-        kpt_weights=defect_vr.actual_kpoints_weights,
+        kpt_weights=np.asarray(outputs.kpoint_weights).tolist(),
         lowest_band_index=int(lower_idx),
-        fermi_level=defect_vr.efermi,
+        fermi_level=outputs.efermi,
         eigval_shift=eigval_shift,
     )
 
 
 def get_band_edge_info(
-    defect_vr: Vasprun,
-    bulk_vr: Vasprun,
-    defect_procar: PathLike | Procar | None = None,
-    bulk_procar: PathLike | Procar | None = None,
+    defect_outputs: CalculationOutputs | Vasprun,
+    bulk_outputs: CalculationOutputs | Vasprun,
+    defect_projections: PathLike | Procar | None = None,
+    bulk_projections: PathLike | Procar | None = None,
     defect_supercell_site: PeriodicSite | None = None,
     neighbor_cutoff_factor: float = 1.3,
 ) -> tuple[BandEdgeOrbitalInfos, EdgeInfo, EdgeInfo]:
@@ -184,30 +346,32 @@ def get_band_edge_info(
     See the :ref:`Tips:Perturbed Host States (Shallow Defects)` tips section.
 
     Args:
-        defect_vr (|Vasprun|):
-            |Vasprun| object of the defect supercell calculation. If
-            ``defect_procar`` is not provided, then this must have the
-            ``projected_eigenvalues`` attribute (i.e. from a calculation with
+        defect_outputs (CalculationOutputs or |Vasprun|):
+            :class:`~doped.io.outputs.CalculationOutputs` or |Vasprun| object
+            of the defect supercell calculation. If ``defect_projections``
+            is not provided, then this must have orbital projection data
+            (``projected_eigenvalues``; i.e. from a calculation with
             ``LORBIT > 10`` in the ``INCAR`` and parsed with
-            ``parse_projected_eigen = True`` (default)).
-        bulk_vr (|Vasprun|):
-            |Vasprun| object of the bulk supercell calculation. If
-            ``bulk_procar`` is not provided, then this must have the
-            ``projected_eigenvalues`` attribute (i.e. from a calculation with
+            ``parse_projected_eigen = True`` (default), with VASP).
+        bulk_outputs (CalculationOutputs or |Vasprun|):
+            :class:`~doped.io.outputs.CalculationOutputs` or |Vasprun| object
+            of the bulk supercell calculation. If ``bulk_projections`` is not
+            provided, then this must have orbital projection data
+            (``projected_eigenvalues``; i.e. from a calculation with
             ``LORBIT > 10`` in the ``INCAR`` and parsed with
-            ``parse_projected_eigen = True`` (default)).
-        defect_procar (PathLike, |Procar|):
+            ``parse_projected_eigen = True`` (default), with VASP).
+        defect_projections (PathLike, |Procar|):
             Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
             object, for the defect supercell calculation. Not required if the
-            supplied ``defect_vr`` was parsed with
-            ``parse_projected_eigen = True`` (default). Default is ``None``.
-        bulk_procar (PathLike, |Procar|):
+            supplied ``defect_outputs`` has orbital projection data. Default
+            is ``None``.
+        bulk_projections (PathLike, |Procar|):
             Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
             object, for the reference bulk supercell calculation. Not required
-            if the supplied ``bulk_vr`` was parsed with
-            ``parse_projected_eigen = True`` (default). Default is ``None``.
+            if the supplied ``bulk_outputs`` has orbital projection data.
+            Default is ``None``.
         defect_supercell_site (|PeriodicSite|):
             |PeriodicSite| object of the defect site in the defect supercell,
             from which the defect neighbours are determined for localisation
@@ -224,42 +388,36 @@ def get_band_edge_info(
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects for the
         bulk VBM and CBM.
     """
-    band_edge_prop = band_edge_properties_from_vasprun(bulk_vr)
-
-    if bulk_procar is not None:
-        bulk_procar = _parse_procar(bulk_procar)
-        pbes = make_perfect_band_edge_state_from_vasp(vasprun=bulk_vr, procar=bulk_procar)
+    bulk_outputs = _as_calculation_outputs(bulk_outputs, projections=bulk_projections)
+    defect_outputs = _as_calculation_outputs(defect_outputs, projections=defect_projections)
+    band_edge_prop = band_edge_properties_from_outputs(bulk_outputs)
 
     # get defect neighbour indices
-    sorted_distances = np.sort(defect_vr.final_structure.distance_matrix.flatten())
+    sorted_distances = np.sort(defect_outputs.structure.distance_matrix.flatten())
     min_distance = sorted_distances[sorted_distances > 0.5][0]
 
     if defect_supercell_site is None:
         defect_supercell_site = defect_site_from_structures(
-            defect_vr.final_structure, bulk_vr.final_structure, _parameter_order_warn=False
+            defect_outputs.structure, bulk_outputs.structure, _parameter_order_warn=False
         )
         assert isinstance(defect_supercell_site, PeriodicSite)  # typing
 
     neighbor_indices = [
         i
-        for i, site in enumerate(defect_vr.final_structure.sites)
+        for i, site in enumerate(defect_outputs.structure.sites)
         if defect_supercell_site.distance(site) <= min_distance * neighbor_cutoff_factor
     ]
 
     with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
-        if bulk_procar is not None:
-            vbm_info, cbm_info = pbes.vbm_info, pbes.cbm_info
-        else:
-            orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
-            vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
-            cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
+        orbs = bulk_outputs.projected_eigenvalues
+        vbm_info = _get_edge_info(band_edge_prop.vbm_info, orbs, bulk_outputs)
+        cbm_info = _get_edge_info(band_edge_prop.cbm_info, orbs, bulk_outputs)
 
         band_orb = make_band_edge_orbital_infos(
-            defect_vr,
+            defect_outputs,
             vbm_info.orbital_info.energy,
             cbm_info.orbital_info.energy,
             neighbor_indices=neighbor_indices,
-            defect_procar=_parse_procar(defect_procar),
         )
 
     return band_orb, vbm_info, cbm_info
@@ -271,15 +429,16 @@ def get_eigenvalue_analysis(
     filename: str | None = None,
     ks_labels: bool = False,
     style_file: str | None = None,
-    bulk_vr: PathLike | Vasprun | None = None,
-    bulk_procar: PathLike | Procar | None = None,
-    defect_vr: PathLike | Vasprun | None = None,
-    defect_procar: PathLike | Procar | None = None,
+    bulk_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
+    bulk_projections: PathLike | Procar | None = None,
+    defect_outputs: PathLike | Vasprun | CalculationOutputs | None = None,
+    defect_projections: PathLike | Procar | None = None,
     force_reparse: bool = False,
     ylims: tuple[float, float] | None = None,
     legend_kwargs: dict | None = None,
     similar_orb_criterion: float | None = None,
     similar_energy_criterion: float | None = None,
+    calculator: str = "vasp",
 ) -> BandEdgeStates | tuple[BandEdgeStates, plt.Figure]:
     r"""
     Get eigenvalue & orbital info (with automated classification of PHS states)
@@ -330,43 +489,45 @@ def get_eigenvalue_analysis(
             Path to a ``mplstyle`` file to use for the plot. If ``None``
             (default), uses the ``doped`` displacement plot style
             (``doped/utils/displacement.mplstyle``).
-        bulk_vr (PathLike, |Vasprun|):
+        bulk_outputs (PathLike, |Vasprun| or CalculationOutputs):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
-            ``pymatgen`` |Vasprun| object, for the reference bulk supercell
-            calculation. If ``None`` (default), tries to load the |Vasprun|
-            object from
+            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file, a
+            ``pymatgen`` |Vasprun| object or a
+            :class:`~doped.io.outputs.CalculationOutputs` object, for the
+            reference bulk supercell calculation. If ``None`` (default), tries
+            to load the |Vasprun| object from
             ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``
             or, failing that, from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
-        bulk_procar (PathLike, |Procar|):
+        bulk_projections (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if
-            ``bulk_vr`` was parsed with ``parse_projected_eigen = True``
+            ``bulk_outputs`` was parsed with ``parse_projected_eigen = True``
             (default). Either a path to the ``VASP`` ``PROCAR`` output file
             (with ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen``
             |Procar| object, for the reference bulk supercell calculation. If
             ``None`` (default), tries to load from a ``PROCAR(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
-        defect_vr (PathLike, |Vasprun|):
+        defect_outputs (PathLike, |Vasprun| or CalculationOutputs):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
-            ``pymatgen`` |Vasprun| object, for the defect supercell
-            calculation. If ``None`` (default), tries to load the |Vasprun|
-            object from
+            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file, a
+            ``pymatgen`` |Vasprun| object or a
+            :class:`~doped.io.outputs.CalculationOutputs` object, for the
+            defect supercell calculation. If ``None`` (default), tries to load
+            the |Vasprun| object from
             ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``
             or, failing that, from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
-        defect_procar (PathLike, |Procar|):
+        defect_projections (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if
-            ``defect_vr`` was parsed with ``parse_projected_eigen = True``
+            ``defect_outputs`` was parsed with ``parse_projected_eigen = True``
             (default). Either a path to the ``VASP`` ``PROCAR`` output file
             (with ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen``
             |Procar| object, for the defect supercell calculation. If
@@ -400,6 +561,11 @@ def get_eigenvalue_analysis(
             defect to bulk cells as determined by the charge correction in
             ``defect_entry.corrections_metadata`` if present. If this fails,
             then it is increased to the ``pydefect`` default of 0.5 eV.
+        calculator (str):
+            Name of the calculator used for the supercell calculations
+            (matching a ``doped.io.<calculator>`` parsing backend), used
+            when ``bulk_outputs``/``defect_outputs`` are given as paths
+            and ``defect_entry`` is not provided. Default: "vasp".
 
     Returns:
         ``pydefect`` ``BandEdgeStates`` object, containing the band-edge and
@@ -407,25 +573,42 @@ def get_eigenvalue_analysis(
         ``plot=True``).
     """
     if defect_entry is None:
-        if not all([bulk_vr, defect_vr]):
+        if not all([bulk_outputs, defect_outputs]):
             raise ValueError(
-                "If `defect_entry` is not provided, then both `bulk_vr` and `defect_vr` at a minimum "
-                "must be provided!"
+                "If `defect_entry` is not provided, then both `bulk_outputs` and `defect_outputs` at a "
+                "minimum must be provided!"
             )
 
-        bulk_vr = bulk_vr if isinstance(bulk_vr, Vasprun) else Vasprun(bulk_vr)
-        defect_vr = defect_vr if isinstance(defect_vr, Vasprun) else Vasprun(defect_vr)
+        def _structure_of(outputs_or_path):  # only used to set up the template ``DefectEntry`` below;
+            # ``bulk_outputs``/``defect_outputs`` are passed on as-is for the eigenvalue parsing:
+            if isinstance(outputs_or_path, CalculationOutputs):
+                return outputs_or_path.structure
+            if isinstance(outputs_or_path, PathLike):  # path; parse with the calculator backend:
+                return get_calculation_outputs(outputs_or_path, calculator=calculator).structure
+            return outputs_or_path.final_structure  # calculator-native object (e.g. VASP ``Vasprun``)
+
         defect_entry = template_defect_entry_from_structures(
-            defect_vr.final_structure, bulk_vr.final_structure, oxi_state="Undetermined", multiplicity=1
+            _structure_of(defect_outputs),
+            _structure_of(bulk_outputs),
+            oxi_state="Undetermined",
+            multiplicity=1,
+        )
+        defect_entry.calculation_metadata["calculator"] = calculator
+        defect_entry.calculation_metadata.update(  # so the backend can locate the calculation files:
+            {
+                f"{label}_path": outputs
+                for label, outputs in (("bulk", bulk_outputs), ("defect", defect_outputs))
+                if isinstance(outputs, PathLike)
+            }
         )
 
-    # TODO: Allow just bulk and 'defect_vr' to be passed directly for this function, so it can be used
-    #  with e.g. polarons etc
+    # TODO: Allow just bulk and 'defect_outputs' to be passed directly for this function, so it can be
+    #  used with e.g. polarons etc
     defect_entry._load_and_parse_eigenvalue_data(
-        bulk_vr=bulk_vr,
-        defect_vr=defect_vr,
-        bulk_procar=bulk_procar,
-        defect_procar=defect_procar,
+        bulk_outputs=bulk_outputs,
+        defect_outputs=defect_outputs,
+        bulk_projections=bulk_projections,
+        defect_projections=defect_projections,
         force_reparse=force_reparse,
     )
 

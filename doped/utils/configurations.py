@@ -15,7 +15,7 @@ from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.util.typing import PathLike
 
 from doped.utils.efficiency import StructureMatcher_scan_stol, get_element_min_max_bond_length_dict
-from doped.utils.parsing import check_atom_mapping_far_from_defect
+from doped.utils.mappings import check_atom_mapping_far_from_defect
 
 
 def get_transformation_from_s2_to_s1(
@@ -303,9 +303,10 @@ def orient_s2_like_s1(
 ) -> Structure:
     """
     Re-orient ``struct2`` to match the orientation of ``struct1`` as closely as
-    possible , with matching atomic indices as needed for VASP NEB calculations
-    and other structural transformation analyses (e.g. configuration coordinate
-    (CC) diagrams via ``nonrad``, ``CarrierCapture.jl`` etc.).
+    possible , with matching atomic indices as typically needed for NEB
+    calculations (e.g. with VASP) and other structural transformation analyses
+    (e.g. configuration coordinate (CC) diagrams via ``nonrad``,
+    ``CarrierCapture.jl`` etc.).
 
     This will give a fully symmetry-equivalent orientation (i.e. **will not
     change the actual geometry**) of ``struct2``, except if ``struct1`` and
@@ -314,9 +315,9 @@ def orient_s2_like_s1(
 
     This corresponds to minimising the root-mean-square displacement for the
     shortest `linear` path from ``struct1`` to a symmetry-equivalent definition
-    of ``struct2``, with matched atomic indices and lattices as required by
-    VASP NEB and ``nonrad`` functions. This function uses an accelerated
-    version of the
+    of ``struct2``, with matched atomic indices and lattices as often required
+    by NEB calculations (e.g. with VASP) and ``nonrad`` functions. This
+    function uses an accelerated version of the
     :meth:`~pymatgen.analysis.structure_matcher.StructureMatcher.get_s2_like_s1`
     method, extended to ensure the correct atomic indices matching and lattice
     vector definitions.
@@ -351,7 +352,7 @@ def orient_s2_like_s1(
             If ``True`` (default), check the atom mapping between ``struct1``
             and the re-oriented ``struct2`` (using
             ``check_atom_mapping_far_from_defect`` from
-            ``doped.utils.parsing``), warning if a significant mismatch
+            ``doped.utils.mappings``), warning if a significant mismatch
             remains throughout the cell after re-orientation. This typically
             indicates a mismatch in the lattice definitions (e.g. different
             tiling of primitive cells within identical supercell lattice
@@ -437,7 +438,7 @@ def orient_s2_like_s1(
             else struct2_really_like_struct1
         )
 
-        from doped.analysis import guess_defect_position  # avoid circular import
+        from doped.parsing import guess_defect_position  # avoid circular import
 
         if s1_for_check.composition == s2_for_check.composition and not check_atom_mapping_far_from_defect(
             defect_supercell=s2_for_check,
@@ -837,6 +838,8 @@ def write_path_structures(
     displacements2: np.ndarray | list[float] | None = None,
     reorient: bool | None = None,
     verbose: bool = False,
+    filename: str = "POSCAR",
+    fmt: str = "poscar",
     **sm_kwargs,
 ) -> dict[str, Structure] | tuple[dict[str, Structure], dict[str, Structure]]:
     """
@@ -931,6 +934,13 @@ def write_path_structures(
             prints information about the mass-weighted displacement (ΔQ in
             amu^(1/2)Å) between ``struct1`` and ``struct2`` (pre and post
             re-orientation). Default: ``False``
+        filename (str):
+            Filename to write each interpolated structure to, within its
+            folder. Default: ``"POSCAR"`` (i.e. VASP input files)
+        fmt (str):
+            Structure file format to write, as accepted by
+            ``Structure.to()`` (e.g. ``"poscar"``, ``"cif"``, ``"xsf"``).
+            Default: ``"poscar"``
         **sm_kwargs:
             Additional keyword arguments to forward to ``orient_s2_like_s1()``
             (and hence |StructureMatcher| / |StructureMatcher_scan_stol|),
@@ -960,6 +970,6 @@ def write_path_structures(
             PES_dir = f"PES_{i + 1}" if len(path_struct_dicts) > 1 else ""
             path_to_folder = f"{output_dir}/{PES_dir}/{folder}"
             os.makedirs(path_to_folder, exist_ok=True)
-            struct.to(filename=f"{path_to_folder}/POSCAR", fmt="poscar")
+            struct.to(filename=f"{path_to_folder}/{filename}", fmt=fmt)
 
     return path_structs

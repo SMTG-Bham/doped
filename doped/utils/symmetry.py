@@ -29,16 +29,17 @@ from scipy.spatial.distance import squareform
 from sympy import Eq, Expr, simplify, solve
 from tqdm import tqdm
 
-from doped.core import Defect, DefectEntry, template_defect_entry_from_structures
-from doped.utils.configurations import orient_s2_like_s1
-from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure
-from doped.utils.parsing import (
+from doped.core import (
+    Defect,
+    DefectEntry,
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
-    _get_site_mapping_from_coords_and_indices,
-    get_site_mappings,
+    template_defect_entry_from_structures,
 )
+from doped.utils.configurations import orient_s2_like_s1
+from doped.utils.efficiency import Element, PeriodicSite, SpacegroupAnalyzer, Structure
+from doped.utils.mappings import _get_site_mapping_from_coords_and_indices, get_site_mappings
 from doped.utils.supercells import get_min_image_distance, min_dist
 
 
@@ -3390,7 +3391,7 @@ def _defect_coords_from_structures(defect_supercell: Structure, bulk_supercell: 
     """
     Cartesian defect-site coordinates from bulk vs defect structure comparison.
     """
-    from doped.analysis import defect_site_from_structures  # avoid circular import
+    from doped.parsing import defect_site_from_structures  # avoid circular import
 
     site = defect_site_from_structures(defect_supercell, bulk_supercell, _parameter_order_warn=False)
     assert isinstance(site, PeriodicSite)
@@ -3565,7 +3566,7 @@ def local_point_symmetry(
     elif bulk_supercell is not None:  # determine from bulk vs defect structure comparison
         centre_cart = _defect_coords_from_structures(defect_supercell, bulk_supercell)
     else:  # no bulk reference either; guess the defect position
-        from doped.analysis import guess_defect_position  # avoid circular import
+        from doped.parsing import guess_defect_position  # avoid circular import
 
         centre_cart = guess_defect_position(defect_supercell)
         if centre_error_range is None:
@@ -4392,6 +4393,99 @@ def group_order_from_schoenflies(sch_symbol):
     Useful for symmetry and orientational degeneracy analysis.
     """
     return _point_group_order[sch_symbol]
+
+
+def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0) -> int:
+    """
+    Get the total number of electrons (including core electrons! -- so
+    different to ``NELECT`` in VASP in most cases) for a given structure and
+    charge state.
+
+    Args:
+        structure (|Structure|):
+            The structure for which to get the total number of electrons.
+        charge_state (int):
+            The charge state of the system. Default is 0.
+
+    Returns:
+        int:
+            The total number of electrons in the system, including core
+            electrons.
+    """
+    total_Z = int(
+        sum(Element(elt).Z * num for elt, num in structure.composition.get_el_amt_dict().items())
+    )
+    return int(total_Z + charge_state)
+
+
+def _simple_spin_degeneracy_from_num_electrons(num_electrons: int = 0) -> int:
+    """
+    Get the spin degeneracy of a system from the total number of electrons,
+    assuming simple singlet (S=0) behaviour for even-electron systems or
+    doublet (S=1/2) behaviour for odd-electron systems.
+
+    Spin multiplicity is equal to ``2S + 1``, so 1 for singlets (S = 0), 2 for
+    doublets (S = 1/2), 3 for triplets (S = 1) etc.
+
+    Args:
+        num_electrons (int): The total number of electrons.
+
+    Returns:
+        int:
+            The spin multiplicity assuming singlet or doublet behaviour.
+    """
+    return int(num_electrons % 2 + 1)
+
+
+def _spin_degeneracy_from_num_electrons_and_magnetization(
+    num_electrons: int, magnetization: float | np.ndarray | None = None
+) -> int:
+    """
+    Get the spin degeneracy (multiplicity) of a system from its total number of
+    electrons and (optionally) its total magnetization.
+
+    Spin degeneracy is determined from the total magnetization and thus
+    electron spin (S = N_μB/2 -- where N_μB is the magnetization in Bohr
+    magnetons, i.e. electronic units), using the spin multiplicity equation:
+    ``g_spin = 2S + 1``. If ``magnetization`` is ``None``, simple spin
+    behaviour is assumed, with singlet (S = 0) behaviour for even-electron
+    systems and doublet (S = 1/2) behaviour for odd-electron systems.
+
+    For non-collinear (NCL) magnetization (e.g. spin-orbit coupling (SOC)
+    calculations), the magnetization ``N_μB`` becomes a vector (spinor), in
+    which case we take the vector norm as the total magnetization. This can be
+    non-integer in these cases (e.g. due to SOC mixing of spin states, as
+    **_S_** is no longer a good quantum number). As an approximation for these
+    cases, we round ``N_μB`` to the nearest integer which would be allowed
+    under collinear magnetism (i.e. even numbers for even-electron systems,
+    odd numbers for odd-electron systems).
+
+    Args:
+        num_electrons (int):
+            The total number of electrons in the system.
+        magnetization (float | np.ndarray | None):
+            The total magnetization of the system (scalar, or vector for
+            non-collinear calculations). If ``None`` (default), simple
+            singlet/doublet behaviour is assumed from the electron count.
+
+    Returns:
+        int: Spin degeneracy of the system.
+    """
+    if magnetization is None:
+        return _simple_spin_degeneracy_from_num_electrons(int(num_electrons))
+
+    # take the vector norm as the total magnetization (for NCL (SOC) / vector magnetization):
+    total_magnetization = float(np.linalg.norm(magnetization))
+
+    # round to nearest possible value (even numbers for even-electron systems, odd for odd-electron):
+    if num_electrons % 2 == 0:  # even-electron system, spin degeneracy = 1, 3, 5, ...
+        total_magnetization = round(total_magnetization / 2) * 2  # nearest even number
+    else:
+        total_magnetization = round((total_magnetization - 1) / 2) * 2 + 1  # nearest odd number
+
+    # spin multiplicity = 2S + 1 = 2(mag/2) + 1 = mag + 1 (where mag is in Bohr magnetons
+    # i.e. number of electrons, as in VASP):
+    return int(abs(total_magnetization) + 1)
 
 
 def get_orientational_degeneracy(

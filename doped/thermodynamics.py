@@ -37,19 +37,16 @@ from doped.chemical_potentials import (
     get_X_rich_poor_limit,
     plot_chempot_heatmap,
 )
-from doped.core import DefectEntry, _get_abs_chempots, _no_chempots_warning
+from doped.core import DefectEntry, _get_abs_chempots, _get_bulk_supercell, _no_chempots_warning
+from doped.corrections import (
+    _convert_anisotropic_dielectric_to_isotropic_harmonic_mean,
+    _convert_dielectric_to_tensor,
+)
 from doped.generation import sort_defect_entries
+from doped.io import get_backend
 from doped.utils import _doped_obj_properties_methods
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
-from doped.utils.parsing import (
-    _compare_incar_tags,
-    _compare_kpoints,
-    _compare_potcar_symbols,
-    _get_bulk_supercell,
-    get_nelect_from_vasprun,
-    get_vasprun,
-)
 from doped.utils.plotting import (
     TransitionLevel,
     _format_TL_charge_label,
@@ -663,7 +660,7 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[Defect
     Returns:
         dict: Dictionary of ``{defect name without charge: [DefectEntry]}``.
     """
-    from doped.analysis import check_and_set_defect_entry_name  # avoid circular import
+    from doped.parsing import check_and_set_defect_entry_name  # avoid circular import
 
     grouped_entries: dict[str, set[DefectEntry]] = {}  # dict for groups of entries with the same prefix
 
@@ -939,7 +936,7 @@ class DefectThermodynamics(MSONable):
                 analysis. If ``None`` (default), will use ``"vbm"`` from the
                 ``calculation_metadata`` dict attributes of the parsed
                 |DefectEntry| objects, which by default is taken from the
-                bulk supercell VBM (unless ``bulk_band_gap_vr`` is set during
+                bulk supercell VBM (unless ``bulk_band_gap_outputs`` is set during
                 defect parsing). Note that ``vbm`` should only affect the
                 reference for the Fermi level values output by ``doped`` (as
                 this VBM eigenvalue is used as the zero reference), thus
@@ -1589,59 +1586,6 @@ class DefectThermodynamics(MSONable):
                 f"``DefectThermodynamics.check_compatibility = False``."
             )
 
-    def _check_bulk_defects_compatibility(self):
-        """
-        Helper function to quickly check if all entries have compatible
-        defect/bulk calculation settings.
-
-        Currently not used, as the bulk/defect compatibility is checked when
-        parsing, and the compatibility across bulk calculations is checked with
-        ``_check_bulk_compatibility()``.
-        """
-        # check each defect entry against its own bulk, and also check each bulk against each other
-        reference_defect_entry = next(iter(self.defect_entries.values()))
-        reference_run_metadata = reference_defect_entry.calculation_metadata["run_metadata"]
-        for defect_entry in self.defect_entries.values():
-            with warnings.catch_warnings(record=True) as captured_warnings:
-                run_metadata = defect_entry.calculation_metadata["run_metadata"]
-                # compare defect and bulk:
-                _compare_incar_tags(run_metadata["defect_incar"], run_metadata["bulk_incar"])
-                _compare_potcar_symbols(
-                    run_metadata["defect_potcar_symbols"], run_metadata["bulk_potcar_symbols"]
-                )
-                _compare_kpoints(
-                    run_metadata["defect_actual_kpoints"],
-                    run_metadata["bulk_actual_kpoints"],
-                    run_metadata["defect_kpoints"],
-                    run_metadata["bulk_kpoints"],
-                )
-
-                # compare bulk and reference bulk:
-                _compare_incar_tags(
-                    run_metadata["bulk_incar"],
-                    reference_run_metadata["bulk_incar"],
-                    defect_name=f"other bulk (for {reference_defect_entry.name})",
-                )
-                _compare_potcar_symbols(
-                    run_metadata["bulk_potcar_symbols"],
-                    reference_run_metadata["bulk_potcar_symbols"],
-                    defect_name=f"other bulk (for {reference_defect_entry.name})",
-                )
-                _compare_kpoints(
-                    run_metadata["defect_actual_kpoints"],
-                    reference_run_metadata["bulk_actual_kpoints"],
-                    run_metadata["defect_kpoints"],
-                    reference_run_metadata["bulk_kpoints"],
-                    defect_name=f"other bulk (for {reference_defect_entry.name})",
-                )
-
-            if captured_warnings:
-                concatenated_warnings = "\n".join(str(warning.message) for warning in captured_warnings)
-                warnings.warn(
-                    f"Incompatible defect/bulk calculation settings detected for defect "
-                    f"{defect_entry.name}: \n{concatenated_warnings}"
-                )
-
     def _get_bulk_comp_and_energy_per_atom_mode_values(self) -> tuple[Composition, float]:
         """
         Helper function to get the mode values of the bulk composition and
@@ -2090,7 +2034,7 @@ class DefectThermodynamics(MSONable):
                 ``calculation_metadata`` dict attributes of |DefectEntry|\s
                 in ``self.defect_entries`` if present, otherwise ``self.vbm``
                 -- which corresponds to the VBM of the `bulk supercell`
-                calculation by default, unless ``bulk_band_gap_vr`` is set
+                calculation by default, unless ``bulk_band_gap_outputs`` is set
                 during defect parsing).
                 If ``None`` (default), set to the mid-gap Fermi level (E_g/2).
             skip_formatting (bool):
@@ -2169,7 +2113,7 @@ class DefectThermodynamics(MSONable):
                 ``calculation_metadata`` dict attributes of |DefectEntry|\s
                 in ``self.defect_entries`` if present, otherwise ``self.vbm``
                 -- which corresponds to the VBM of the `bulk supercell`
-                calculation by default, unless ``bulk_band_gap_vr`` is set
+                calculation by default, unless ``bulk_band_gap_outputs`` is set
                 during defect parsing). If ``None`` (default), set to the
                 mid-gap Fermi level (E_g/2).
             skip_formatting (bool):
@@ -2434,7 +2378,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the Fermi level positions are given relative to ``self.vbm``,
         which is the VBM eigenvalue of the bulk supercell calculation by
-        default, unless ``bulk_band_gap_vr`` is set during defect parsing.
+        default, unless ``bulk_band_gap_outputs`` is set during defect parsing.
 
         This is computed by obtaining the formation energies for every stable
         defect with non-zero charge, and then finding the highest Fermi level
@@ -2574,7 +2518,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the band edge positions are taken from ``self.vbm`` and
         ``self.band_gap``, which are parsed from the `bulk supercell
-        calculation` by default, unless ``bulk_band_gap_vr`` is set during
+        calculation` by default, unless ``bulk_band_gap_outputs`` is set during
         defect parsing.
 
         If a dopant has a higher formation energy than the doping window at the
@@ -2835,7 +2779,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the band edge positions are taken from ``self.vbm`` and
         ``self.band_gap``, which are parsed from the `bulk supercell
-        calculation` by default, unless ``bulk_band_gap_vr`` is set during
+        calculation` by default, unless ``bulk_band_gap_outputs`` is set during
         defect parsing.
 
         Note that different defect entries (different charge states, and/or
@@ -3202,7 +3146,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the band edge positions are taken from ``self.vbm`` and
         ``self.band_gap``, which are parsed from the `bulk supercell`
-        calculation by default, unless ``bulk_band_gap_vr`` is set during
+        calculation by default, unless ``bulk_band_gap_outputs`` is set during
         defect parsing. The VBM lies at 0 eV (blue shaded region), and the CBM
         lies at ``self.band_gap`` (orange shaded region).
 
@@ -3369,7 +3313,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the transition level (and Fermi level) positions are given
         relative to ``self.vbm``, which is the VBM eigenvalue of the bulk
-        supercell calculation by default, unless ``bulk_band_gap_vr`` is set
+        supercell calculation by default, unless ``bulk_band_gap_outputs`` is set
         during defect parsing.
 
         By default, only returns the thermodynamic ground-state transition
@@ -4106,12 +4050,13 @@ class DefectThermodynamics(MSONable):
         return brentq(_get_total_q, -bracket, self.band_gap + bracket)
 
     def _parse_fermi_dos(
-        self, bulk_dos: PathLike | Vasprun | FermiDos | None = None, skip_dos_check: bool = False
+        self,
+        bulk_dos: PathLike | FermiDos | Any = None,
+        skip_dos_check: bool = False,
+        calculator: str = "vasp",
     ) -> FermiDos | None:
         if bulk_dos is None:
             return None
-
-        fdos = None
 
         if isinstance(bulk_dos, FermiDos):
             if skip_dos_check:  # skip the (~ms-scale) VBM/gap re-determination
@@ -4122,12 +4067,8 @@ class DefectThermodynamics(MSONable):
             fdos_vbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]  # tol 1e-4 is lowest possible, as VASP
             fdos_band_gap = fdos.get_gap(tol=1e-4, abs_tol=True)  # rounds the DOS outputs to 4 dp
 
-        if isinstance(bulk_dos, PathLike):
-            bulk_dos = get_vasprun(bulk_dos, parse_dos=True)  # converted to fdos in next block
-
-        if isinstance(bulk_dos, Vasprun):  # either supplied Vasprun or parsed from string there
-            fdos_band_gap, _cbm, fdos_vbm, _ = bulk_dos.eigenvalue_band_properties
-            fdos = get_fermi_dos(bulk_dos)
+        else:  # path to (or already-parsed) DOS calculation outputs; parse with calculator backend:
+            fdos, fdos_vbm, fdos_band_gap = get_backend(calculator).get_fermi_dos(bulk_dos)
 
         if (
             fdos
@@ -4139,8 +4080,9 @@ class DefectThermodynamics(MSONable):
                 f"The {mismatching} of the bulk DOS calculation (VBM = {fdos_vbm:.2f} eV, band gap = "
                 f"{fdos_band_gap:.2f} eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap` "
                 f"(VBM = {self.vbm:.2f} eV, band gap = {self.band_gap:.2f} eV; which are taken from the "
-                f"bulk supercell calculation by default, unless `bulk_band_gap_vr` is set during defect "
-                f"parsing). This can cause inaccuracies in thermodynamics & concentration analyses; see "
+                f"bulk supercell calculation by default, unless `bulk_band_gap_outputs` is set during "
+                f"defect parsing). This can cause inaccuracies in thermodynamics & concentration "
+                f"analyses; see "
                 f"https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations "
                 f"for advice.\n"
                 f"Note that the Fermi level will be always referenced to `DefectThermodynamics.vbm`!"
@@ -4168,7 +4110,7 @@ class DefectThermodynamics(MSONable):
 
         Note that the returned Fermi level is given relative to ``self.vbm``,
         which is the VBM eigenvalue of the bulk supercell calculation by
-        default, unless ``bulk_band_gap_vr`` is set during defect parsing.
+        default, unless ``bulk_band_gap_outputs`` is set during defect parsing.
 
         Note that this assumes `equilibrium` defect concentrations!
         ``DefectThermodynamics.get_fermi_level_and_concentrations()`` can
@@ -5317,23 +5259,30 @@ def _get_doping_scan_points(
     return points
 
 
-def get_fermi_dos(dos_vr: PathLike | Vasprun):
+def get_fermi_dos(dos: PathLike | FermiDos | Any, calculator: str = "vasp") -> FermiDos:
     """
-    Create a ``FermiDos`` object from the provided ``dos_vr``, which can be
-    either a path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` |Vasprun|
-    object (parsed with ``parse_dos = True``).
+    Create a ``pymatgen`` ``FermiDos`` object from the outputs of a bulk DOS
+    calculation, using the parser for the given ``calculator``.
 
     Args:
-        dos_vr (PathLike | |Vasprun|):
-            Path to a ``vasprun.xml(.gz)`` file, or a |Vasprun| object.
+        dos (PathLike | FermiDos | Any):
+            Path to the outputs of a bulk DOS calculation (a
+            ``vasprun.xml(.gz)`` file with the default ``vasp`` calculator),
+            or an already-parsed calculator-native object (e.g. a |Vasprun|
+            object parsed with ``parse_dos = True``). A ``FermiDos`` object
+            is returned as-is, allowing calculators without a ``doped.io``
+            backend to be used by constructing the ``FermiDos`` directly.
+        calculator (str):
+            Name of the calculator used for the DOS calculation (matching a
+            ``doped.io.<calculator>`` parsing backend). Default: "vasp".
 
     Returns:
         FermiDos: The ``FermiDos`` object.
     """
-    if not isinstance(dos_vr, Vasprun):
-        dos_vr = get_vasprun(dos_vr, parse_dos=True)
+    if isinstance(dos, FermiDos):
+        return dos
 
-    return FermiDos(dos_vr.complete_dos, nelecs=get_nelect_from_vasprun(dos_vr))
+    return get_backend(calculator).get_fermi_dos(dos)[0]  # (FermiDos, VBM, band gap)
 
 
 def scissor_dos(
@@ -5466,6 +5415,49 @@ def scissor_dos(
     return Dos.from_dict(scissored_dos_dict)
 
 
+def shallow_dopant_binding_energy(
+    eff_mass: float,
+    dielectric: float | np.ndarray | list,
+):
+    """
+    Estimate the binding energy of a shallow dopant /defect in a semiconductor,
+    using effective mass theory.
+
+    Discussion in the :ref:`Tips:Perturbed Host States (Shallow Defects)` tips
+    section.
+
+    For delocalised, shallow states (a.k.a. perturbed host states), the
+    hydrogenic effective mass model typically gives quite a good estimate of
+    the binding energy, at least for dispersive 3D semiconductors.
+
+    Note that this formula can also be used to estimate the binding energy of a
+    delocalised (Wannier-Mott) exciton, in which case the reduced effective
+    mass of the electron-hole pair should be used, as:
+
+    .. math::
+
+        μ_reduced = (m_e * m_h) / (m_e + m_h)
+
+    Args:
+        eff_mass (float):
+            Effective mass of the dopant.
+        dielectric (float or int or 3x1 matrix or 3x3 matrix):
+            Total dielectric constant (ionic + static contributions) of the
+            semiconductor host.
+
+    Returns:
+        float: Binding energy of the shallow dopant, in eV.
+    """
+    import scipy.constants as sc
+
+    rydberg_in_eV = sc.physical_constants["Rydberg constant times hc in eV"][0]
+
+    eff_dielectric = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
+        _convert_dielectric_to_tensor(dielectric)
+    )
+    return rydberg_in_eV * (eff_mass / eff_dielectric**2)  # in eV
+
+
 class FermiSolver(MSONable):
     def __init__(
         self,
@@ -5506,12 +5498,12 @@ class FermiSolver(MSONable):
                 A |DefectThermodynamics| object, providing access to defect
                 formation energies and other related thermodynamic properties.
             bulk_dos (FermiDos or |Vasprun| or PathLike):
-                Either a path to the ``vasprun.xml(.gz)`` output of a bulk DOS
-                calculation in VASP, a ``pymatgen`` |Vasprun| object or a
-                ``pymatgen`` ``FermiDos`` for the bulk electronic DOS, for
-                calculating carrier concentrations.
-                If not provided, uses ``DefectThermodynamics.bulk_dos`` if
-                present.
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of
+                states (DOS), for calculating carrier concentrations.
+                Alternatively, can be a ``pymatgen`` |Vasprun| object or path
+                to the ``vasprun.xml(.gz)`` output of a bulk DOS calculation in
+                ``VASP``. If not provided, uses
+                ``DefectThermodynamics.bulk_dos`` if present.
 
                 Usually this is a static calculation with the `primitive` cell
                 of the bulk material, with relatively dense `k`-point sampling
@@ -9010,8 +9002,8 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
         nelect (int):
             The total number of electrons in the system. If not provided, the
             number of electrons will be taken from the ``FermiDos`` object
-            (which usually takes this value from the ``vasprun.xml(.gz)`` when
-            parsing).
+            (which usually takes this value from the calculation output --
+            e.g. ``vasprun.xml(.gz)`` with VASP -- when parsing).
         bandgap (float):
             Band gap of the system in eV. If not provided, the band gap will be
             taken from the ``FermiDos`` object. When this function is used
@@ -9039,9 +9031,10 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
         spin_pol = False
 
     if nelect is None:
-        # this requires the input dos to be a FermiDos. NELECT could be calculated alternatively
-        # by integrating the tdos of a ``pymatgen`` ``Dos`` object, but this isn't expected to be
-        # a common use case and using parsed NELECT from vasprun.xml(.gz) is more reliable
+        # this requires the input dos to be a FermiDos. The electron count could be calculated
+        # alternatively by integrating the tdos of a ``pymatgen`` ``Dos`` object, but this isn't expected
+        # to be a common use case and using the electron count parsed from the calculation output (e.g.
+        # ``NELECT`` from ``vasprun.xml(.gz)`` with ``VASP``) is more reliable/robust.
         nelect = fermi_dos.nelecs
     if bandgap is None:
         bandgap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)

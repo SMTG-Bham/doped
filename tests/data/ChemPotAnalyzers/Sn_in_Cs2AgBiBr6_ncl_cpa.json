@@ -1793,6 +1793,18 @@
             ]
         }
     },
+    "calc_output_paths": [
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Ag_EaH=0/vasprun.xml.gz",
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Bulk_Supercell_Rattled/vasprun.xml.gz",
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Cs2AgBr3_EaH=0/vasprun.xml.gz",
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Br_EaH=0/vasprun.xml.gz",
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Bi_EaH=0/vasprun.xml.gz",
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Cs3Bi2Br9_EaH=0/vasprun.xml.gz",
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/CsAgBr3_EaH=0/vasprun.xml.gz",
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Cs_EaH=0/vasprun.xml.gz",
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/AgBr_EaH=0/vasprun.xml.gz",
+        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Sn_EaH=0/vasprun.xml.gz"
+    ],
     "composition": {
         "Ag": 1.0,
         "Bi": 1.0,
@@ -6440,17 +6452,5 @@
         "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Bulk_Supercell_Rattled/",
         "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Ag_EaH=0/"
     ],
-    "unstable_host": false,
-    "vasprun_paths": [
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Ag_EaH=0/vasprun.xml.gz",
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Bulk_Supercell_Rattled/vasprun.xml.gz",
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Cs2AgBr3_EaH=0/vasprun.xml.gz",
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Br_EaH=0/vasprun.xml.gz",
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Bi_EaH=0/vasprun.xml.gz",
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Cs3Bi2Br9_EaH=0/vasprun.xml.gz",
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/CsAgBr3_EaH=0/vasprun.xml.gz",
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Cs_EaH=0/vasprun.xml.gz",
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/AgBr_EaH=0/vasprun.xml.gz",
-        "/Users/kavanase/Projects/Miscellaneous/Sn_in_Cs2AgBiBr6/PBEsol_vasp_ncl_PhaseDiagram/PhaseDiagram/Sn_EaH=0/vasprun.xml.gz"
-    ]
+    "unstable_host": false
 }
