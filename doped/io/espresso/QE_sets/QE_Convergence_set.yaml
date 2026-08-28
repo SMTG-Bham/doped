@@ -1,0 +1,19 @@
+# Quantum ESPRESSO pw.x input defaults for k-point / cutoff convergence
+# testing of competing phases. Any pseudopotential library can be used; these
+# cutoffs suit the default filenames in QE_PSEUDO_LIBRARY.json, and should be
+# adjusted to whatever your chosen pseudopotentials recommend.
+
+# Keys are espresso namelists. Empty namelists ({}) are intentional and must be
+# kept: the namelist is still written to pw.in, and user_*_settings are
+# merged into it at runtime.
+control:
+  calculation: scf
+  tprnfor: true
+  tstress: true
+system:
+  ecutwfc: 60
+  ecutrho: 240
+electrons:
+  conv_thr: 1.0e-8
+ions: {}
+cell: {}

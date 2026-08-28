@@ -1,0 +1,33 @@
+# Quantum ESPRESSO pw.x input defaults for HSE06 hybrid-DFT relaxations of
+# competing phases, bulk cells and generated defect supercells.
+#
+# Keys are espresso namelists. Empty namelists ({}) are intentional and must be
+# kept: the namelist is still written to pw.in, and user_*_settings are
+# merged into it at runtime.
+control:
+  calculation: vc-relax
+  tprnfor: true
+  tstress: true
+system:
+  ecutwfc: 60
+  ecutrho: 240
+  input_dft: HSE
+  exx_fraction: 0.25
+  screening_parameter: 0.106
+  # Change exxdiv_treatment according to the nature of the simulation
+  # (currently set for cubic/quasi-cubic cells); refer to the following link for more information:
+  # https://gitlab.com/QEF/q-e/-/tree/master/PW/examples/EXX_example
+  exxdiv_treatment: gygi-baldereschi
+  nqx1: 1
+  nqx2: 1
+  nqx3: 1
+electrons:
+  conv_thr: 1.0e-8
+ions: {}
+cell: {}
+
+# Refer to the pw.x documentation for more information: https://www.quantum-espresso.org/Doc/INPUT_PW.html
+
+#Please note that these settings can be changed to add any other hybrid functional than the HSE06 functional used here.
+#Changing the hybrid functional from HSE06 would require one to change the input_dft parameter with other possible parameters linked with
+#the other hybrid functional whose use is intended. For more information refer https://gitlab.com/QEF/q-e/-/tree/master/PW/examples/EXX_example and https://www.quantum-espresso.org/Doc/INPUT_PW.html.
