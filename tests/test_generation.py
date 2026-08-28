@@ -103,6 +103,11 @@ def _check_defect_entry(
             assert unrelaxed_defect_name == get_defect_name_from_defect(defect_entry.defect)
         _print_warning_info(w)
         allowed_warning_substrings = ["cannot be determined from the local environment"]
+        if get_min_image_distance(defect_gen.bulk_supercell) < 8:  # the supercell-too-small warning
+            # legitimately fires for deliberately-tiny test cells (e.g. the 5.11 Å min-image AgCu cell)
+            allowed_warning_substrings.append(
+                "The supercell is too small for the defect local environment"
+            )
         host_symmetry_breaking = defect_entry.calculation_metadata.get(
             "host symmetry breaking beyond local radius"
         )

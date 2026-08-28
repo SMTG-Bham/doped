@@ -655,7 +655,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             symm_df, output, symm_w = _run_func_and_capture_stdout_warnings(
                 defect_thermo.get_symmetries_and_degeneracies, **kwargs
             )
-            assert not symm_w, "No warnings expected for get_symmetries_and_degeneracies"
+            if kwargs.get("symprec") == 1:  # too-small-supercell warnings expected at this large symprec
+                # (local cluster cannot cover the first coordination shell while allowing operation
+                # translations at the 2*symprec anchor-noise scale, for typical supercell sizes):
+                assert all("The supercell is too small" in str(warning.message) for warning in symm_w)
+            else:
+                assert not symm_w, "No warnings expected for get_symmetries_and_degeneracies"
             assert not output, "No output expected for get_symmetries_and_degeneracies"
             assert isinstance(symm_df, pd.DataFrame), "Expected a DataFrame"
             if kwargs.get("skip_formatting", False):

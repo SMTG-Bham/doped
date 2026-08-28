@@ -1340,10 +1340,20 @@ class DefectsParsingTestCase(unittest.TestCase):
                 {"C2v", "Cs", "Td"},
                 {"C1", "Cs", "Td"},
             ),
-            0.2: (
+            0.25: (
                 {"0": "C2v", "-1": "C2v", "-2": "Td"},
-                {"C2v", "Cs", "Td"},
+                {"C2v", "C3v", "Td"},
                 {"C1", "Cs", "Td"},
+            ),
+            0.5: (
+                {"0": "C2v", "-1": "Td", "-2": "Td"},
+                {"C2v", "C3v", "Td"},
+                {"Cs", "Td"},
+            ),
+            1.0: (  # mush regime; only certifiable alongside "supercell too small" warnings (below)
+                {"0": "D2d", "-1": "Td", "-2": "Td"},
+                {"C1", "Cs", "D2d", "Td"},
+                {"Cs", "Td"},
             ),
         }
         for symprec, (v_Zn, vac_sub_defect, inter_defect) in expected_symms.items():
@@ -1352,7 +1362,12 @@ class DefectsParsingTestCase(unittest.TestCase):
                 symm_df = thermo.get_symmetries_and_degeneracies(**kwargs)
             print(symm_df)  # for debugging
             _print_warning_info(w)
-            assert not w
+            if symprec is None:  # no warnings with the default symprec (0.1)
+                assert not w
+            else:  # at symprec >= 0.15, (some) ZnS defects trigger the too-small-supercell warning (the
+                # local cluster (radius 3.84 Å) cannot cover the first coordination shell while allowing
+                # operation translations at the anchor-noise scale (2*symprec)):
+                assert all("The supercell is too small" in str(warning.message) for warning in w)
             assert set(symm_df["Site_Symm"]) == {"Td", "C3v", "Cs", "C1"}
 
             vacancy_and_sub_rows = symm_df[
@@ -3040,38 +3055,41 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # iii) robustness to approximate defect positions: the defect position input is only used to place
         # the local analysis region (with the symmetry centre itself derived from the determined
-        # operations, and the analysis re-run recentred on the derived centre when not all candidate
-        # operations certify). An explicitly provided ``defect_frac_coords`` is otherwise respected (it may
-        # deliberately target a specific site, e.g. in a defect complex or multi-defect cell), so the guess
-        # must lie within ~``t_max/2`` of the true centre (see the note in (iv) below) -- only ~0.3 Å in
-        # this small (~3.8 Å radius), noisy supercell:
-        offset_frac = unrelaxed_defect_structure.lattice.get_fractional_coords(
-            center_cart + np.array([0.2, 0.2, 0.1])
-        )  # 0.3 Å off the true site
-        symbol, ops, info = local_point_symmetry(
-            breathing, entry.bulk_supercell, defect_frac_coords=offset_frac
-        )
-        assert symbol == "Td"
-        assert len(ops) == 24
-        assert np.linalg.norm(info["centre_cart"] - center_cart) < 0.1  # derived centre = true site
-        symbol, ops, _info = local_point_symmetry(
-            c3v_distorted, entry.bulk_supercell, defect_frac_coords=offset_frac
+        # operations, and the analysis re-run recentred on the derived and/or displaced-motif evidence
+        # centres when they differ significantly from the initial centre guess). An explicitly provided
+        # ``defect_frac_coords`` is otherwise respected (it may deliberately target a specific site, e.g.
+        # in a defect complex or multi-defect cell), so the guess must lie within ~``centre_error_range``
+        # (1.5 Å default) of the true centre. Track the current tolerance ceiling and crossover point:
+        # recovered up to 1.4 Å off the true site here, while beyond ~``centre_error_range`` the stranded
+        # subgroup's ops-derived centre is self-consistently wrong (the C3v fixed-point set is a line
+        # through the offset position), so the recentring re-runs cannot recover the true site and a
+        # spuriously lowered symmetry (currently C3v) is returned -- pinned to track tolerance changes:
+        offset_direction = np.array([0.5, 0.5, 0.3]) / np.linalg.norm([0.5, 0.5, 0.3])
+        for offset_magnitude in [0.3, 0.77, 1.4, 1.5, 2.0]:
+            offset_frac = unrelaxed_defect_structure.lattice.get_fractional_coords(
+                center_cart + offset_magnitude * offset_direction
+            )
+            symbol, ops, info = local_point_symmetry(
+                breathing, entry.bulk_supercell, defect_frac_coords=offset_frac
+            )
+            if offset_magnitude <= 1.4:  # recovers the true site and symmetry
+                assert symbol == "Td", f"{offset_magnitude} Å: expected Td, got {symbol}"
+                assert len(ops) == 24
+                assert np.linalg.norm(info["centre_cart"] - center_cart) < 0.1  # derived = true site
+            else:  # beyond ~``centre_error_range`` -- spuriously lowered (currently C3v):
+                assert len(ops) < 24, f"{offset_magnitude} Å: expected lowered symmetry, got {symbol}"
+                assert symbol == "C3v"
+                assert len(ops) == 6
+
+        symbol, ops, _info = local_point_symmetry(  # and an offset (0.3 Å) guess, C3v-distorted cell:
+            c3v_distorted,
+            entry.bulk_supercell,
+            defect_frac_coords=unrelaxed_defect_structure.lattice.get_fractional_coords(
+                center_cart + 0.3 * offset_direction
+            ),
         )
         assert symbol == "C3v"
         assert len(ops) == 6
-
-        # while a too-far-off guess (beyond the ~``t_max/2`` single-pass tolerance) returns a spuriously
-        # _lowered_ symmetry: only the subgroup (nearly) fixing the offset direction certifies, and its
-        # ops-derived centre is then self-consistently wrong (the C3v fixed-point set is a _line_ -- its
-        # axis -- so the recentring re-run cannot recover the true centre; see the note in (iv) below):
-        offset_frac = np.array(center_frac) + unrelaxed_defect_structure.lattice.get_fractional_coords(
-            [0.5, 0.5, 0.3]
-        )  # 0.77 Å off the true site
-        symbol, ops, info = local_point_symmetry(
-            breathing, entry.bulk_supercell, defect_frac_coords=offset_frac
-        )
-        assert len(ops) < 24  # spuriously lowered (currently C3v)
-        assert np.linalg.norm(info["centre_cart"] - center_cart) > 0.5  # stuck near the (wrong) input
 
         # for unknown or poor position guesses with a bulk reference available, ``defect_frac_coords``
         # should instead be omitted -- the cluster centre is then auto-determined from bulk vs defect
@@ -3112,23 +3130,21 @@ class DefectsParsingTestCase(unittest.TestCase):
         # re-run on the ops-derived centre -- the auto-determined defect site is deliberately not retried
         # (respecting explicit centre choices; see (iii) above), and the reference-free path has no
         # structure-comparison site anyway. In a single pass, a centre error ``d`` requires a fixing
-        # translation of
-        # up to ~``2*d`` per operation (``(R - I)`` applied to the offset), which must satisfy the
-        # translation bound ``|t| <= t_max = min(2*centre_range, radius - 2*symprec - shell_dist)``; the
-        # guess must therefore lie within ~``t_max/2`` of the true symmetry centre. This is
-        # ~``centre_range`` in roomy supercells, but is radius-limited to ~1 Å or below in smaller cells
-        # (extraction radius capped by the periodic boundary). The recentring re-run typically extends this
-        # (recovering the 1.62 Å-off guess below), but beyond ~2 Å the reference-free analysis returns a
-        # spuriously _lowered_ symmetry -- a certified-but-off-centre subgroup can have a self-consistent
-        # fixed point near the wrong input position, leaving the residual offset unobservable from the
-        # operations alone. This is mitigated in the ``point_symmetry_from_structure`` wrapper by
-        # cross-checking the reference-free local result against global spglib analysis of the defect
-        # supercell, taking the higher-symmetry result (each approach can only spuriously _lower_ the true
-        # symmetry, _in the noise free limit_). Global analysis gives C1 in this periodicity-breaking ZnS
-        # supercell, so demonstrate with a (non-periodicity-breaking) cubic conventional supercell and low
-        # noise (0.01 Å stdev; global spglib analysis requires _max_ deviations within ``symprec`` so is
-        # much less noise-tolerant than the local isometry analysis), with a position guess beyond the
-        # single-pass ~``t_max/2`` tolerance (1.62 Å off), recovered by the ops-derived recentring re-run:
+        # translation of up to ~``2*d`` per operation (``(R - I)`` applied to the offset), which must
+        # satisfy the candidate translation bound ``|t| <= t_max = 2*centre_error_range + 2*symprec``; the
+        # guess must therefore lie within ~``centre_error_range`` of the true symmetry centre. The
+        # recentring re-runs typically extend this somewhat (recovering the 1.62 Å-off guess below), but
+        # beyond ~2 Å the reference-free analysis returns a spuriously `lowered` symmetry -- a
+        # certified-but-off-centre subgroup can have a self-consistent fixed point near the wrong input
+        # position, leaving the residual offset unobservable from the operations alone. This is mitigated
+        # in the ``point_symmetry_from_structure`` wrapper by cross-checking the reference-free local
+        # result against global spglib analysis of the defect supercell, taking the higher-symmetry result
+        # (each approach can only spuriously `lower` the true symmetry, `in the noise free limit`). Global
+        # analysis gives C1 in this periodicity-breaking ZnS supercell, so demonstrate with a
+        # (non-periodicity-breaking) cubic conventional supercell and low noise (0.01 Å stdev; global
+        # spglib analysis requires `max` deviations within ``symprec`` so is much less noise-tolerant than
+        # the local isometry analysis), with a position guess beyond the single-pass
+        # ~``centre_error_range`` tolerance (1.62 Å off), recovered by the ops-derived recentring re-run:
         conv_structure = get_sga(
             get_primitive_structure(entry.bulk_supercell)
         ).get_conventional_standard_structure()
@@ -3245,25 +3261,68 @@ class DefectsParsingTestCase(unittest.TestCase):
             if symbol != ref_free_symbol:
                 auto_guess_flips.add(name)
 
-        assert with_bulk_flips == {("vac_1_Zn_-2", 0.77), ("vac_2_S_2", 0.77)}
-        assert auto_guess_flips == {"vac_1_Zn_-2", "vac_2_S_1"}
+        assert with_bulk_flips == {("vac_1_Zn_-2", 0.77)}
+        assert auto_guess_flips == {"vac_2_S_1"}  # ~2.5 Å guess error
 
         # track the current reference-free tolerance ceiling on real relaxed data (cf. the ~2.2 Å synthetic
-        # ceiling in (iv)): stable at 1.0 Å, spuriously lowered at ~1.5 Å (again a ceiling set mostly by
-        # the small ZnS supercells -- see the small-cell note above -- rather than the approach itself):
+        # ceiling in (iv)): stable to ~1.5 Å (extended from ~1.0 Å by the beyond-coverage centre-evidence
+        # recentring), spuriously lowered at ~2 Å (again a ceiling set mostly by the small ZnS supercells
+        # -- see the small-cell note above -- rather than the approach itself):
         sub_entry = thermo.defect_entries["sub_1_Al_on_Zn_0"]
         sub_sc = sub_entry.defect_supercell
         sub_cart = sub_sc.lattice.get_cartesian_coords(sub_entry.defect_supercell_site.frac_coords)
-        symbol, ops, _info = local_point_symmetry(
-            sub_sc, defect_frac_coords=sub_sc.lattice.get_fractional_coords(sub_cart + offset_direction)
-        )
-        assert symbol == "Td"
-        assert len(ops) == 24
-        symbol, ops, _info = local_point_symmetry(
-            sub_sc,
-            defect_frac_coords=sub_sc.lattice.get_fractional_coords(sub_cart + 1.5 * offset_direction),
-        )
-        assert len(ops) < 24  # spuriously lowered (currently C3v)
+        for offset_magnitude, expected_n_ops in [(1.0, 24), (1.5, 24), (2.0, "<24")]:
+            symbol, ops, _info = local_point_symmetry(
+                sub_sc,
+                defect_frac_coords=sub_sc.lattice.get_fractional_coords(
+                    sub_cart + offset_magnitude * offset_direction
+                ),
+            )
+            if expected_n_ops == 24:
+                assert symbol == "Td", f"{offset_magnitude} Å: expected Td, got {symbol}"
+                assert len(ops) == 24
+            else:  # beyond ceiling -- spuriously lowered (currently C3v)
+                assert len(ops) < 24, f"{offset_magnitude} Å: expected lowered symmetry, got {symbol}"
+                assert symbol == "C3v"
+                assert len(ops) == 6
+
+    def test_local_symmetry_symprec_monotonicity(self):
+        """
+        Determined local point symmetries should be non-decreasing with
+        ``symprec``, outside the warned too-small-supercell regime (see the
+        ``local_point_symmetry`` docstring).
+
+        Swept here for the historically regression-prone `displaced-motif` edge
+        cases -- split/displaced interstitials whose recorded sites sit ~1 Å+
+        from their symmetry centres, recovered only via the beyond-coverage
+        certified ops recentring re-runs.
+        """
+        from doped.utils.symmetry import local_point_symmetry
+
+        ZGO_thermo = loadfn(os.path.join(EXAMPLE_DIR, "ZGO/ZGO_thermo.json.gz"))
+        STO_thermo = loadfn(os.path.join(self.SrTiO3_DATA_DIR, "STO_wo_Al_thermo.json.gz"))
+        edge_cases = {  # (thermo, entry name): expected symbols per symprec swept below
+            (ZGO_thermo, "Zn_i_Td_+2"): ["Cs", "C2v", "C2v", "C2v", "C2v", "C2v"],  # split interstitial,
+            # with recorded site ~1.2 Å off the motif symmetry centre
+            (STO_thermo, "Int_Sr_1_2"): ["C4v", "C4v", "C4v", "D4h", "D4h", "D4h"],
+            (STO_thermo, "Int_Sr_1_1"): ["C4v", "C4v", "D4h", "D4h", "D4h", "D4h"],
+        }
+        symprecs = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]  # symprec = 1.0 excluded; too-small warned regime
+        for (thermo, entry_name), expected_symbols in edge_cases.items():
+            entry = thermo.defect_entries[entry_name]
+            orders = []
+            for symprec, expected_symbol in zip(symprecs, expected_symbols, strict=True):
+                with warnings.catch_warnings(record=True) as w:
+                    symbol, ops, _info = local_point_symmetry(
+                        entry.defect_supercell,
+                        entry.bulk_supercell,
+                        defect_frac_coords=entry.sc_defect_frac_coords,
+                        symprec=symprec,
+                    )
+                assert not w, f"{entry_name} @ {symprec}: {[str(warning.message) for warning in w]}"
+                assert symbol == expected_symbol, f"{entry_name} @ {symprec}: {symbol}"
+                orders.append(len(ops))
+            assert orders == sorted(orders), f"{entry_name}: non-monotonic group orders {orders}"
 
     def test_bulk_defect_compatibility_checks(self):
         """
