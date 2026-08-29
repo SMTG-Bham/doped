@@ -42,6 +42,8 @@ from doped.utils.parsing import (
     spin_degeneracy_from_vasprun,
 )
 
+kB = constants_value("Boltzmann constant in eV/K")  # ~8.617e-5 eV/K
+
 if TYPE_CHECKING:
     import matplotlib as mpl
     import plotly.graph_objects as go
@@ -103,8 +105,8 @@ class DefectEntry(thermo.DefectEntry):
         _sc_entry_energy: float | None = None,
     ):
         """
-        Subclass of :class:`pymatgen.analysis.defects.thermo.DefectEntry` with
-        additional attributes used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects`` ``DefectEntry`` class,
+        with additional attributes used by ``doped``.
 
         Core Attributes:
             defect:
@@ -415,10 +417,9 @@ class DefectEntry(thermo.DefectEntry):
                 (default), uses the default doped style
                 (from ``doped/utils/doped.mplstyle``).
             **kwargs:
-                Additional kwargs to pass to
-                :func:`~pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction`
-                (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
-                ``defect_frac_coords``).
+                Additional kwargs to pass to the ``pymatgen-analysis-defects``
+                ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
+                ``mad_tol``, ``q_model``, ``step``, ``defect_frac_coords``).
 
         Returns:
             ``utils.CorrectionResults`` (summary of the corrections applied and
@@ -1294,9 +1295,7 @@ class DefectEntry(thermo.DefectEntry):
         """
         # Note: Could in future operate in logspace (logsumexp), as in py-sc-fermi, but so far unnecessary
         with np.errstate(over="ignore"):
-            exp_factor = np.exp(
-                -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
-            )
+            exp_factor = np.exp(-formation_energy / (kB * temperature))
             return np.maximum(exp_factor * degeneracy_factor, 1e-150)
 
     def equilibrium_concentration(
@@ -2258,7 +2257,7 @@ class Defect(core.Defect):
         **doped_kwargs,
     ):
         """
-        Subclass of :class:`pymatgen.analysis.defects.core.Defect` with
+        Subclass of the ``pymatgen-analysis-defects`` ``Defect`` class, with
         additional attributes and methods used by ``doped``.
 
         Args:
@@ -2348,12 +2347,12 @@ class Defect(core.Defect):
         **doped_kwargs,
     ) -> "Defect":
         """
-        Create a ``doped`` |Defect| from a
-        :class:`pymatgen.analysis.defects.core.Defect` object.
+        Create a ``doped`` |Defect| from a ``pymatgen-analysis-defects``
+        ``Defect`` object.
 
         Args:
             defect:
-                :class:`pymatgen.analysis.defects.core.Defect` object.
+                ``pymatgen-analysis-defects`` ``Defect`` object.
             bulk_oxi_states:
                 Controls oxi-state guessing (later used for charge state
                 guessing). By default, oxidation states are taken from
@@ -2366,7 +2365,7 @@ class Defect(core.Defect):
                 already-set |Defect| ``oxi_state`` attribute (default = 0),
                 with no more guessing.
                 If ``True``, re-guesses the oxidation state of the defect
-                (ignoring the :class:`pymatgen.analysis.defects.core.Defect`
+                (ignoring the ``pymatgen-analysis-defects`` ``Defect``
                 ``oxi_state`` attribute).
 
                 If the structure is mixed-valence, then ``bulk_oxi_states``
@@ -3041,12 +3040,12 @@ def doped_defect_from_pmg_defect(
 ):
     """
     Create the corresponding ``doped`` |Defect| (``Vacancy``, ``Interstitial``,
-    ``Substitution``) from an input
-    :class:`pymatgen.analysis.defects.core.Defect` object.
+    ``Substitution``) from an input ``pymatgen-analysis-defects`` ``Defect``
+    object.
 
     Args:
         defect:
-            :class:`pymatgen.analysis.defects.core.Defect` object.
+            ``pymatgen-analysis-defects`` ``Defect`` object.
         bulk_oxi_states:
             Controls oxi-state guessing (later used for charge state guessing).
             By default, oxidation states are taken from
@@ -3058,7 +3057,7 @@ def doped_defect_from_pmg_defect(
             If ``bulk_oxi_states`` is ``False``, then just uses the already-set
             |Defect| ``oxi_state`` attribute (default = 0), with no more
             guessing. If ``True``, re-guesses the oxidation state of the defect
-            (ignoring the :class:`pymatgen.analysis.defects.core.Defect`
+            (ignoring the ``pymatgen-analysis-defects`` ``Defect``
             ``oxi_state`` attribute).
 
             If the structure is mixed-valence, then ``bulk_oxi_states``
@@ -3093,7 +3092,7 @@ def doped_defect_from_pmg_defect(
 class Vacancy(Defect, core.Vacancy):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of :class:`pymatgen.analysis.defects.core.Vacancy` with
+        Subclass of the ``pymatgen-analysis-defects`` ``Vacancy`` class, with
         additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
@@ -3109,8 +3108,8 @@ class Vacancy(Defect, core.Vacancy):
 class Substitution(Defect, core.Substitution):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of :class:`pymatgen.analysis.defects.core.Substitution` with
-        additional attributes and methods used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects`` ``Substitution`` class,
+        with additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
 
@@ -3125,8 +3124,8 @@ class Substitution(Defect, core.Substitution):
 class Interstitial(Defect, core.Interstitial):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of :class:`pymatgen.analysis.defects.core.Interstitial` with
-        additional attributes and methods used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects`` ``Interstitial`` class,
+        with additional attributes and methods used by ``doped``.
 
         If ``multiplicity`` is not set in ``kwargs``, then it will be
         automatically calculated using ``get_multiplicity``. Keyword arguments

@@ -4942,9 +4942,9 @@ class DefectThermodynamics(MSONable):
                 (default), uses the default ``doped`` style (from
                 ``doped/utils/doped.mplstyle``).
             **kwargs:
-                Additional keyword arguments to pass to
-                ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
-                (default = 1000) and ``cartesian`` (default = ``False``).
+                Additional keyword arguments to pass to |get_grid|, such as
+                ``n_points`` (default = 1000) and ``cartesian`` (default =
+                ``True`` for heatmap plotting, to ensure smooth interpolation).
 
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
@@ -7082,283 +7082,6 @@ class FermiSolver(MSONable):
             ]
         )
 
-    def interpolate_chempots(
-        self,
-        n_points: int = 10,
-        chempots: list[dict] | dict | None = None,
-        limits: list[str] | None = None,
-        el_refs: dict[str, float] | None = None,
-        annealing_temperature: float | None = None,
-        quenched_temperature: float = 300,
-        temperature: float = 300,
-        effective_dopant_concentration: float | None = None,
-        delta_VBM: float | Callable = 0.0,
-        delta_CBM: float | Callable = 0.0,
-        delta_gap: float | Callable = 0.0,
-        per_charge: bool = True,
-        per_site: bool = False,
-        return_annealing_values: bool = False,
-        fixed_defects: dict[str, float] | None = None,
-        free_defects: list[str] | None = None,
-        fix_charge_states: bool = False,
-        site_competition: bool | str = True,
-        **kwargs,
-    ) -> pd.DataFrame:
-        r"""
-        Interpolate between `two` sets of chemical potentials and solve for the
-        defect concentrations and Fermi level at each interpolated point.
-
-        Chemical potentials can be interpolated between two sets of chemical
-        potential dictionaries/values, or between two specified limits. If you
-        want to scan over a >=2D grid of chemical potentials, you should use
-        ``scan_chemical_potential_grid`` instead.
-
-        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
-        default) are specified, then the frozen defect approximation is
-        employed, whereby total defect concentrations are calculated at the
-        elevated annealing temperature, then fixed at these values (unless
-        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
-        level and relative charge state populations are recalculated at the
-        quenched temperature. Otherwise, if only ``temperature`` is specified,
-        then the Fermi level and defect/carrier concentrations are calculated
-        assuming thermodynamic equilibrium at that temperature.
-
-        See ``_(pseudo_)equilibrium_solve`` docstrings for more details.
-
-        Args:
-            n_points (int):
-                The number of points to generate between chemical potential
-                end points. Defaults to 10.
-            chempots (list[dict] | None):
-                The chemical potentials to interpolate between. This can be
-                either a list containing two dictionaries, each representing
-                a set of chemical potentials for a single limit (in the format:
-                ``{element symbol: chemical potential}``) to interpolate
-                between, or can be a single chemical potentials dictionary in
-                the ``doped`` format (i.e.
-                ``{"limits": [{'limit': [chempot_dict]}], ...}``) -- in which
-                case ``limits`` must be specified to pick the end-points to
-                interpolate between.
-
-                If ``None`` (default), will use
-                ``self.defect_thermodynamics.chempots``. Note that you can also
-                set ``FermiSolver.defect_thermodynamics.chempots = ...``
-                or ``DefectThermodynamics.chempots = ...`` (with the same input
-                options) to set the default chemical potentials for all
-                calculations.
-
-                If manually specifying chemical potentials with a list of two
-                dictionaries, you can also set the ``el_refs`` option with the
-                DFT reference energies of the elemental phases if desired, in
-                which case it is the formal chemical potentials (i.e. relative
-                to the elemental references) that should be given here,
-                otherwise the absolute (DFT) chemical potentials should be
-                given.
-            limits (list[str] | None):
-                The chemical potential limits to interpolate between, as a list
-                containing two strings. Each string should be in the format
-                ``"X-rich"/"X-poor"`` (see
-                :func:`~doped.chemical_potentials.get_X_rich_poor_limit`),
-                where X is an element in the system, or a key in
-                ``(self.defect_thermodynamics.)chempots["limits"]``.
-
-                If not provided, ``chempots`` must be specified as a list of
-                two single chemical potential dictionaries for single limits,
-                or must be a binary system with only 2 limits in ``chempots``.
-            el_refs (dict):
-                Dictionary of elemental reference energies for the chemical
-                potentials in the format:
-                ``{element symbol: reference energy}`` (to determine the formal
-                chemical potentials, when ``chempots`` has been manually
-                specified as ``[{element symbol: chemical potential}, ...]``).
-                Unnecessary if ``chempots`` is provided/present in format
-                generated by ``doped`` (i.e.
-                ``{"limits": [{'limit': [chempot_dict]}], ...}``).
-
-                One can also set ``DefectThermodynamics.el_refs = ...`` or
-                ``FermiSolver.defect_thermodynamics.el_refs = ...`` (with the
-                same input options) to set the default elemental reference
-                energies for all calculations.
-                (Default: None)
-            annealing_temperature (float | None):
-                Temperature in Kelvin at which to calculate the high
-                temperature (fixed) total defect concentrations, which should
-                correspond to the highest temperature during annealing /
-                synthesis of the material (at which we assume equilibrium
-                defect concentrations) within the frozen defect approach.
-                Default is ``None`` (uses ``temperature`` under thermodynamic
-                equilibrium).
-            quenched_temperature (float):
-                Temperature in Kelvin at which to calculate the self-consistent
-                (constrained equilibrium) Fermi level and carrier
-                concentrations, given the fixed total concentrations, which
-                should correspond to operating temperature of the material
-                (typically room temperature). Defaults to 300 K.
-            temperature (float):
-                The temperature at which to solve for defect concentrations
-                and Fermi level, under thermodynamic equilibrium (if
-                ``annealing_temperature`` is not specified).
-                Defaults to 300 K.
-            effective_dopant_concentration (float | None):
-                The fixed concentration (in cm^-3) of an arbitrary dopant or
-                impurity in the material. This value is included in the charge
-                neutrality condition to analyse the Fermi level and doping
-                response under hypothetical doping conditions.
-                A positive value corresponds to donor doping, while a negative
-                value corresponds to acceptor doping. For dopants of charge
-                ``q``, the input should be ``q * 'Dopant Concentration'``.
-                Defaults to ``None``, corresponding to no additional extrinsic
-                dopant.
-            delta_VBM (float | Callable):
-                Rigid shift (in eV; positive = upshift) to apply to the VBM
-                position `at the annealing temperature`, e.g. to model
-                temperature-dependent band edges. If set, applies a scissor
-                correction to ``bulk_dos`` (rigidly shifting the valence band)
-                while defect levels remain fixed. Can be a value or a function
-                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
-                is ``0.0`` (no VBM shift).
-            delta_CBM (float | Callable):
-                Rigid shift (in eV; positive = upshift) to apply to the CBM
-                position `at the annealing temperature`, e.g. to model
-                temperature-dependent band edges. If set, applies a scissor
-                correction to ``bulk_dos`` (rigidly shifting the conduction
-                band) while defect levels remain fixed. Can be a value or a
-                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
-                Default is ``0.0`` (no CBM shift).
-            delta_gap (float | Callable):
-                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
-                ``delta_CBM`` instead.) Change in band gap (in eV) of the
-                host material at the annealing temperature, assuming symmetric
-                renormalisation about the VBM and CBM (i.e. assuming equal
-                up/downshifts of the band-edges around their original
-                eigenvalues -> ``delta_VBM = -delta_gap/2``,
-                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
-                ``delta_VBM`` and ``delta_CBM`` take priority over
-                ``delta_gap``.
-            per_charge (bool):
-                Whether to break down the defect concentrations into individual
-                defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``,
-                ``v_Cd_-2`` instead of ``v_Cd``). Default is ``True``.
-            per_site (bool):
-                Whether to also return the concentrations as per-site
-                concentrations in percent (i.e. concentration divided by
-                ``DefectEntry.bulk_site_concentration``). Not supported for the
-                ``py-sc-fermi`` backend. Default is ``False``.
-            return_annealing_values (bool):
-                If True, also returns the Fermi level, electron and hole
-                concentrations and defect concentrations at the annealing
-                temperature. The Fermi level is given with respect to
-                ``DefectThermodynamics.vbm`` (i.e. the quenched VBM, same
-                reference as the returned (quenched) Fermi level). Default is
-                ``False``.
-            fixed_defects (dict[str, float] | None):
-                A dictionary of defect concentrations to fix regardless of
-                chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``, where ``defect_name`` is the
-                name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
-                ``"v_O_+2"``) the charge state; which will then fix either the
-                total concentration of that defect or only the concentration
-                for the specified charge state. Concentrations should be given
-                in cm^-3. This can be used to fix the concentrations of
-                specific defects regardless of the chemical potentials, or
-                anneal-quench procedure (e.g. to simulate the effect of a fixed
-                impurity concentration). Defaults to ``None``.
-            free_defects (list[str] | None):
-                A list of defects (without charge states) to be excluded from
-                high-temperature concentration fixing. Useful for highly mobile
-                defects that are not expected to be "frozen-in" upon quenching.
-                Any defects whose names begin with a string in this list will
-                be excluded from high-temperature concentration fixing (e.g.
-                ``"v_"`` will match all vacancy defects with
-                ``doped``\-formatted names). Defaults to ``None``.
-            fix_charge_states (bool):
-                Whether to fix the concentrations of individual defect charge
-                states (``True``) or allow charge states to vary while keeping
-                total defect concentrations fixed (``False``) upon quenching.
-                Not expected to be physically sensible in most cases.
-                Defaults to ``False``.
-            site_competition (bool | str):
-                If ``True`` (default), uses the updated Fermi-Dirac-like
-                formula for defect concentrations, which accounts for defect
-                site competition at high concentrations (see Kasamatsu et al.
-                (10.1016/j.ssi.2010.11.022) appendix for derivation -- updated
-                here to additionally account for configurational degeneracies
-                ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
-                the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1038/s41578-025-00879-y,
-                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
-                all defects which occupy the same site.
-                Note that this option is only supported for the ``doped``
-                backend. If ``False`` (or using the ``py-sc-fermi`` backend),
-                uses the standard dilute limit approximation.
-
-                Alternatively ``site_competition`` can be set to a string
-                (``"verbose"``), which will give the same behaviour as ``True``
-                as well as including the lattice site indices (used to
-                determine which defects will compete for the same sites) in the
-                output ``DataFrame``.
-            **kwargs:
-                Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
-
-        Returns:
-            pd.DataFrame:
-                A ``DataFrame`` containing the defect and carrier
-                concentrations for each interpolated set of chemical
-                potentials. Each row represents the concentrations for a
-                different interpolated point.
-        """
-        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
-
-        if isinstance(chempots, list):  # should be two single chempot dictionaries
-            if len(chempots) != 2:
-                raise ValueError(
-                    f"If `chempots` is a list, it must contain two dictionaries representing the starting "
-                    f"and ending chemical potentials. The provided list has {len(chempots)} entries!"
-                )
-            single_chempot_dict_1, single_chempot_dict_2 = chempots
-
-        else:  # should be a dictionary in the ``doped`` format or ``None``:
-            chempots, el_refs = self._get_and_check_thermo_chempots(chempots, el_refs)
-
-            if limits is None or len(limits) != 2:
-                if len(chempots["limits"]) == 2:
-                    limits = list(chempots["limits"].keys())
-                else:
-                    raise ValueError(
-                        f"If `chempots` is not provided as a list, then `limits` must be a list "
-                        f"containing two strings representing the chemical potential limits to "
-                        f"interpolate between. The provided `limits` is: {limits}."
-                    )
-
-            single_chempot_dict_1, el_refs = self._get_single_chempot_dict(limits[0], chempots, el_refs)
-            single_chempot_dict_2, el_refs = self._get_single_chempot_dict(limits[1], chempots, el_refs)
-
-        interpolated_chempots = get_interpolated_chempots(
-            single_chempot_dict_1, single_chempot_dict_2, n_points
-        )
-
-        return self.scan_chempots(
-            interpolated_chempots,
-            el_refs=el_refs,
-            annealing_temperature=annealing_temperature,
-            quenched_temperature=quenched_temperature,
-            temperature=temperature,
-            effective_dopant_concentration=effective_dopant_concentration,
-            delta_VBM=delta_VBM,
-            delta_CBM=delta_CBM,
-            delta_gap=delta_gap,
-            per_charge=per_charge,
-            per_site=per_site,
-            return_annealing_values=return_annealing_values,
-            fixed_defects=fixed_defects,
-            free_defects=free_defects,
-            fix_charge_states=fix_charge_states,
-            site_competition=site_competition,
-            **kwargs,
-        )
-
     def scan_chempots(
         self,
         chempots: list[dict[str, float]] | dict[str, dict] | None = None,
@@ -7387,9 +7110,11 @@ class FermiSolver(MSONable):
         Note that this function only solves for the Fermi level and
         defect/carrier concentrations `at the given chemical potentials` (and
         not at any points between them), whereas
-        ``scan_chemical_potential_grid``, ``interpolate_chempots`` and
-        ``optimise`` scan over the grid/points `between` given chemical
-        potentials (typically chemical potential limits), which may be desired.
+        :meth:`scan_chemical_potential_grid` and :meth:`optimise` scan over the
+        grid/points `between` given chemical potentials (typically chemical
+        potential limits), which may be desired. To scan along a line between
+        two specific chemical potential points, pass the output of
+        :func:`get_interpolated_chempots` as the input ``chempots`` here.
 
         If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
         default) are specified, then the frozen defect approximation is
@@ -7642,6 +7367,7 @@ class FermiSolver(MSONable):
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
         cartesian: bool = False,
+        grid_kwargs: dict[str, Any] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         r"""
@@ -7782,8 +7508,8 @@ class FermiSolver(MSONable):
             fixed_elements (dict):
                 A dictionary of chemical potentials to fix (in the format:
                 ``{column_name: value}``; e.g. ``{"Li": -2}``). See
-                :meth:`~doped.chemical_potentials.ChemicalPotentialGrid.get_constrained_grid`.
-                Only possible with >=4D chemical spaces.
+                |get_constrained_grid|. Only possible with >=3D (i.e. ternary
+                or higher) chemical spaces.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge
                 states (``True``) or allow charge states to vary while keeping
@@ -7818,6 +7544,11 @@ class FermiSolver(MSONable):
                 efficient, but means that the grid is evenly spaced in
                 barycentric ('relative') coordinates, and not necessarily in
                 Cartesian coordinates.
+            grid_kwargs (dict | None):
+                Additional keyword arguments to pass to |get_grid| for
+                controlling grid generation (e.g. ``resolution``,
+                ``max_points``, ``drop_duplicates``, ``include_vertices``).
+                Default is ``None``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
@@ -7830,8 +7561,14 @@ class FermiSolver(MSONable):
         """
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
-        grid = ChemicalPotentialGrid(chempots).get_grid(
-            n_points=n_points, cartesian=cartesian, fixed_elements=fixed_elements, decimal_places=6
+        grid = ChemicalPotentialGrid(chempots).get_grid(  # user-supplied ``grid_kwargs`` take precedence
+            **{
+                "n_points": n_points,
+                "cartesian": cartesian,
+                "fixed_elements": fixed_elements,
+                "decimal_places": 6,
+                **(grid_kwargs or {}),
+            }
         )
         chempot_dict_list = [
             {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}

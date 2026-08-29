@@ -99,7 +99,7 @@ def apply_s2_to_s1_transformation(
     ``struct2`` have different inequivalent lattices (e.g. different space
     groups) `and` ``new_lattice`` is explicitly set to ``"struct1"``. This
     function uses an accelerated version of the
-    :meth:`~pymatgen.analysis.structure_matcher.StructureMatcher.get_s2_like_s1`
+    :meth:`~pymatgen.core.structure_matcher.StructureMatcher.get_s2_like_s1`
     method, extended to ensure the correct atomic indices matching and lattice
     vector definitions, as well as allowing for cases where ``mapping`` does
     not include all sites in ``struct2`` (e.g. when using a subset of sites to
@@ -317,7 +317,7 @@ def orient_s2_like_s1(
     of ``struct2``, with matched atomic indices and lattices as required by
     VASP NEB and ``nonrad`` functions. This function uses an accelerated
     version of the
-    :meth:`~pymatgen.analysis.structure_matcher.StructureMatcher.get_s2_like_s1`
+    :meth:`~pymatgen.core.structure_matcher.StructureMatcher.get_s2_like_s1`
     method, extended to ensure the correct atomic indices matching and lattice
     vector definitions.
 

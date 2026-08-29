@@ -626,10 +626,9 @@ def _get_soap_vecs_for_guess(
     elements not present in ``struct`` are allowed in ``species`` (their SOAP
     channels are zero).
 
-    Refactored from the implementation in
-    :func:`~pymatgen.analysis.defects.finder.get_soap_vec` to be more efficient
-    (using a leaner, but robust SOAP featurisation) and to properly include
-    species identities.
+    Refactored from the ``pymatgen-analysis-defects`` ``get_soap_vec``
+    implementation, to be more efficient (using a leaner, but robust SOAP
+    featurisation) and to properly include species identities.
     """
     try:
         from dscribe.descriptors import SOAP
@@ -701,9 +700,8 @@ def guess_defect_position(
             ``bulk_supercell`` share the same lattice/origin alignment.
             Default is ``None``.
         soap_n_jobs (int):
-            ``n_jobs`` passed to ``dscribe``'s
-            :meth:`~dscribe.descriptors.SOAP.create` (parallelise over site
-            centres). Default is 1 (no parallelisation).
+            ``n_jobs`` passed to ``dscribe.descriptors.SOAP.create``
+            (parallelise over site centres). Default is 1 (no parallelisation).
         soap_r_cut (float):
             SOAP cut-off radius in Å (for ``dscribe``), default 5.0.
         soap_n_max (int):

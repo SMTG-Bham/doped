@@ -112,7 +112,25 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "pymatgen.analysis.defects": ("https://materialsproject.github.io/pymatgen-analysis-defects/", None),
     "ase": ("https://docs.ase-lib.org/", None),
+    "python": ("https://docs.python.org/3", None),
+    "matplotlib": ("https://matplotlib.org/stable/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
 }
+
+nitpicky = True  # Warn (loudly) about unresolvable cross-references
+# ``doped`` docstrings use short type names in ``Args:`` sections (e.g. ``Structure``, ``np.ndarray``,
+# ``3x3 matrix``), which napoleon/autodoc turn into ``py:class`` references that can never be resolved,
+# so these are ignored -- only for ``py:class``, keeping explicit ``:meth:``/``:func:``/``:attr:`` loud:
+nitpick_ignore_regex = [  # note: these are full-match (i.e. ``re.fullmatch``) patterns:
+    ("py:class", r"[^.]+"),  # bare type names; e.g. ``Structure``, ``PathLike``, ``ArrayLike``...
+    ("py:class", r".*\s.*"),  # prose type descriptions; e.g. ``3x3 matrix``, ``2D sequence``...
+    ("py:class", r"(np|pd|plt|mpl|go)\..*"),  # abbreviated module names in docstring types
+    ("py:class", r"pathlib\._local\..*"),  # ``pathlib.Path`` annotations, with python >= 3.13
+    # packages with no Sphinx inventories to link against;
+    ("py:.*", r"(monty|tqdm|sympy|pydefect|vise|plotly|dscribe)\..*"),
+    # ``pymatgen-analysis-defects`` (mapped above) publishes only module entries in its inventory:
+    ("py:(?!module).*", r"pymatgen\.analysis\.defects\..*"),
+]
 
 # -- Options for autodoc -----------------------------------------------------
 autoclass_content = "both"
@@ -151,6 +169,8 @@ rst_prolog = """
 .. |get_TLs| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels`
 .. |get_formation_energies| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`
 .. |ChemicalPotentialGrid| replace:: :class:`~doped.chemical_potentials.ChemicalPotentialGrid`
+.. |get_grid| replace:: :meth:`~doped.chemical_potentials.ChemicalPotentialGrid.get_grid`
+.. |get_constrained_grid| replace:: :meth:`~doped.chemical_potentials.ChemicalPotentialGrid.get_constrained_grid`
 .. |CompetingPhases| replace:: :class:`~doped.chemical_potentials.CompetingPhases`
 .. |CompetingPhasesAnalyzer| replace:: :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
 .. |Defect| replace:: :class:`~doped.core.Defect`
@@ -161,7 +181,7 @@ rst_prolog = """
 .. |point_symmetry_from_defect_entry| replace:: :func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()`
 .. |get_X_rich_poor_limit| replace:: :func:`~doped.chemical_potentials.get_X_rich_poor_limit`
 .. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
-.. |PeriodicSite| replace:: :class:`~pymatgen.core.structure.PeriodicSite`
+.. |PeriodicSite| replace:: :class:`~pymatgen.core.sites.PeriodicSite`
 .. |Composition| replace:: :class:`~pymatgen.core.composition.Composition`
 .. |Lattice| replace:: :class:`~pymatgen.core.lattice.Lattice`
 .. |Atoms| replace:: :class:`~ase.Atoms`

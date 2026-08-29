@@ -11,7 +11,7 @@ from collections import defaultdict
 from collections.abc import Callable, Generator, Sequence
 from functools import cached_property, lru_cache
 from string import digits
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -459,7 +459,7 @@ def get_all_distances(
     self,
     frac_coords1: "ArrayLike",
     frac_coords2: "ArrayLike",
-) -> NDArray[np.float64]:
+) -> NDArray[np.floating[Any]]:
     """
     Get the distances between two lists of coordinates taking into account
     periodic boundary conditions and the lattice.
@@ -1011,10 +1011,9 @@ def StructureMatcher_scan_stol(
 
 class DopedTopographyAnalyzer:
     """
-    This is a modified version of
-    :class:`~pymatgen.analysis.defects.utils.TopographyAnalyzer` to lean down
-    the input options and make initialisation far more efficient (~2 orders of
-    magnitude faster).
+    This is a modified version of the ``pymatgen-analysis-defects``
+    ``TopographyAnalyzer`` class, to lean down the input options and make
+    initialisation far more efficient (~2 orders of magnitude faster).
 
     The original code was written by Danny Broberg and colleagues
     (10.1016/j.cpc.2018.01.004), which was then added to ``pymatgen`` before

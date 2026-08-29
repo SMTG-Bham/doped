@@ -199,10 +199,9 @@ def get_freysoldt_correction(
             (default), uses the default ``doped`` style
             (from ``doped/utils/doped.mplstyle``).
         **kwargs:
-            Additional kwargs to pass to
-            :func:`~pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction`
-            (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
-            ``defect_frac_coords``).
+            Additional kwargs to pass to the ``pymatgen-analysis-defects``
+            ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
+            ``mad_tol``, ``q_model``, ``step``, ``defect_frac_coords``).
 
     Returns:
         ``CorrectionResults`` (summary of the corrections applied and
