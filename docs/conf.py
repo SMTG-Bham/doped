@@ -112,6 +112,7 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "pymatgen.analysis.defects": ("https://materialsproject.github.io/pymatgen-analysis-defects/", None),
     "ase": ("https://docs.ase-lib.org/", None),
+    "spglib": ("https://spglib.readthedocs.io/en/stable/", None),
     "python": ("https://docs.python.org/3", None),
     "matplotlib": ("https://matplotlib.org/stable/", None),
     "pandas": ("https://pandas.pydata.org/docs/", None),

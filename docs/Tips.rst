@@ -752,10 +752,11 @@ Symmetry Precision (``symprec``)
 --------------------------------
 When computing the symmetries of structures, a threshold parameter has to be set in order to distinguish
 structural/positional noise from distinct site differences. In ``doped`` as in ``spglib`` (and 
-``pymatgen``), this can be controlled with the ``symprec`` parameter (which can be set in |DefectsParser|,
-:class:`~doped.analysis.DefectParser`, all |DefectThermodynamics| symmetry/concentration functions,
+``pymatgen``), this can be controlled with the ``symprec`` parameter (see the :ref:`spglib definition
+<spglib:variables_symprec>`), which can be set in |DefectsParser|, :class:`~doped.analysis.DefectParser`,
+all |DefectThermodynamics| symmetry/concentration functions,
 :func:`~doped.utils.symmetry.get_orientational_degeneracy()`,
-:func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()` and others).
+:func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()` and others.
 
 By default, ``doped`` uses a value of ``symprec = 0.01`` for unrelaxed/bulk structures (matching the
 ``pymatgen`` default), and a larger ``symprec = 0.1`` for determining the point symmetries (and thus
@@ -774,8 +775,8 @@ etc.).
 .. note::
 
     Wyckoff letters for lattice sites can depend on the ordering of elements in the conventional standard
-    structure, for which doped uses the ``spglib`` convention (e.g. in the 
-    |DefectsGenerator| info output).
+    structure, for which doped uses the ``spglib`` :ref:`convention <spglib:def_standardized_unit_cell>`
+    (e.g. in the |DefectsGenerator| info output).
 
 .. note::
 
