@@ -1,7 +1,7 @@
 {
     "@class": "DefectsGenerator",
     "@module": "doped.generation",
-    "@version": "3.2.0",
+    "@version": "3.2.1",
     "_BilbaoCS_conv_cell_vector_mapping": [
         0,
         1,
@@ -5198,7 +5198,7 @@
         "Y_Ti_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -20851,7 +20851,7 @@
         "Y_i_C2v_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -38190,7 +38190,7 @@
         "v_Y_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -42599,56 +42599,113 @@
             "charge_state_guessing_log": [
                 {
                     "input_parameters": {
-                        "charge_state": -3
+                        "charge_state": -1,
+                        "max_host_oxi_magnitude": 4,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 2
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 1.0,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": -2
+                        "charge_state": 0,
+                        "max_host_oxi_magnitude": 4,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 3
                     },
-                    "padding": 1,
                     "probability": 1,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": -1
+                        "charge_state": -2,
+                        "max_host_oxi_magnitude": 4,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 1
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.6299605249474366,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 0.6299605249474366,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 0
+                        "charge_state": -3,
+                        "max_host_oxi_magnitude": 4,
+                        "oxi_probability": 1.0,
+                        "oxi_state": 0
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.4807498567691361,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 0.4807498567691361,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 1.0,
+                        "oxi_state_vs_max_host_charge": 1.0
                     },
                     "probability_threshold": 0.0075
                 },
                 {
                     "input_parameters": {
-                        "charge_state": 1
+                        "charge_state": 1,
+                        "max_host_oxi_magnitude": 4,
+                        "oxi_probability": 0.25,
+                        "oxi_state": 4
                     },
-                    "padding": 1,
-                    "probability": 1,
+                    "probability": 0.25,
                     "probability_factors": {
-                        "oxi_probability": 1
+                        "charge_state_magnitude": 1.0,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 0.25,
+                        "oxi_state_vs_max_host_charge": 1.0
+                    },
+                    "probability_threshold": 0.0075
+                },
+                {
+                    "input_parameters": {
+                        "charge_state": -4,
+                        "max_host_oxi_magnitude": 4,
+                        "oxi_probability": 0.00390625,
+                        "oxi_state": -1
+                    },
+                    "probability": 0.001550196339812695,
+                    "probability_factors": {
+                        "charge_state_magnitude": 0.3968502629920499,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 0.00390625,
+                        "oxi_state_vs_max_host_charge": 1.0
+                    },
+                    "probability_threshold": 0.0075
+                },
+                {
+                    "input_parameters": {
+                        "charge_state": 2,
+                        "max_host_oxi_magnitude": 4,
+                        "oxi_probability": 0.00390625,
+                        "oxi_state": 5
+                    },
+                    "probability": 0.001550196339812695,
+                    "probability_factors": {
+                        "charge_state_magnitude": 0.6299605249474366,
+                        "charge_state_vs_max_host_charge": 1.0,
+                        "oxi_probability": 0.00390625,
+                        "oxi_state_vs_max_host_charge": 0.6299605249474366
                     },
                     "probability_threshold": 0.0075
                 }
@@ -53786,7 +53843,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -54891,7 +54948,7 @@
             {
                 "@class": "Substitution",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -55917,7 +55974,7 @@
             {
                 "@class": "Vacancy",
                 "@module": "doped.core",
-                "@version": "3.2.0",
+                "@version": "3.2.1",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
