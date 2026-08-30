@@ -2977,8 +2977,10 @@ class DefectThermodynamics(MSONable):
                   (``Defect.name``; e.g. ``v_Cd``, ``Te_i``, ``F_O``).
                 - ``"element"``: mostly the same as ``"type"``, except
                   `extrinsic` defects of the same element are grouped under a
-                  single colour (e.g. ``F_O`` and ``F_i`` -> ``"F"``). Note
-                  that the thermodynamic-dominance ordering within such element
+                  single colour (e.g. ``F_O`` and ``F_i`` -> ``"F"``);
+                  intrinsic defects are unaffected, so this is equivalent to
+                  ``"type"`` for systems with no extrinsic defects. Note that
+                  the thermodynamic-dominance ordering within such element
                   groups (i.e. most opaque/solid line used for dominant
                   lowest-energy defect in the group) can depend on the chemical
                   potential conditions (unlike ``"type"`` / ``"site"`` groups).
@@ -5234,11 +5236,10 @@ def _get_doping_scan_points(
     All vertex chemical potential limits are always included (with
     ``chempot_dict=None``, meaning the caller should pass the full ``chempots``
     dict and select the limit by label). Additional `interior` chemical
-    potential grid points (i.e. non-vertex; convex combinations of the
-    vertices) are included if ``n_points > 0`` and there are at least two
-    vertex limits. Interior grid points are returned as single-limit chempots
-    dicts in ``{element: formal_chempot, ...}`` (i.e. wrt the ``el_refs``)
-    form.
+    potential grid points (i.e. convex combinations of the vertices) are
+    included if ``n_points > 0`` and there are at least two vertex limits.
+    Interior grid points are returned as single-limit chempots dicts in
+    ``{element: formal_chempot, ...}`` (i.e. wrt the ``el_refs``) form.
 
     Args:
         chempots (dict):
@@ -5259,29 +5260,15 @@ def _get_doping_scan_points(
     if n_points <= 0 or len(limits) < 2:
         return points
 
-    limits_wrt_el_refs = chempots.get("limits_wrt_el_refs", chempots["limits"])
-    n_elements = len(next(iter(limits_wrt_el_refs.values())))
-
     interior_chempot_dicts: list[dict] = []
-    try:
-        if n_elements == 2:
-            start = limits_wrt_el_refs[limits[0]]
-            end = limits_wrt_el_refs[limits[-1]]
-            all_points = get_interpolated_chempots(start, end, n_points)
-            interior_chempot_dicts = all_points[1:-1]  # drop endpoints (== vertex limits)
-        elif n_elements >= 3:
-            grid_df = ChemicalPotentialGrid(chempots).get_grid(
-                n_points=n_points,
-                cartesian=False,
-                decimal_places=6,
-                include_vertices=False,
-            )
-            interior_chempot_dicts = [
-                {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
-                for _idx, chempot_series in grid_df.iterrows()
-            ]
+    try:  # unformatted labels -> grid columns are plain element symbols;
+        interior_chempot_dicts = (
+            ChemicalPotentialGrid(chempots, format_chempot_labels=False)
+            .get_grid(n_points=n_points, cartesian=False, decimal_places=6, include_vertices=False)
+            .to_dict(orient="records")
+        )
     except (ValueError, IndexError):
-        # e.g. <2D chempot space, or degenerate polytope (too few vertices for ConvexHull)
+        # e.g. elemental system (no independent chempot dimension), or degenerate (identical) vertices
         interior_chempot_dicts = []
 
     for chempot_dict in interior_chempot_dicts:
