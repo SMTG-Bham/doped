@@ -16,12 +16,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.11"  # dictated by pymatgen-core>=2026.7.16
+requires-python = ">=3.11"  # dictated by pymatgen-core>=2026.8.30
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen-core>=2026.7.16",  # ROPT fix; https://github.com/materialsproject/pymatgen-core/pull/69
+    "pymatgen-core>=2026.8.30",  # basis-independent ``get_point_group_symbol()``
     # requires spglib >= 2.5
     "pymatgen-analysis-defects>=2023.8.22",
     "mp-api>=0.45",  # for Materials Project queries via ``mp_api.client.MPRester``
