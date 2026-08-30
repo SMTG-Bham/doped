@@ -8307,6 +8307,7 @@ class FermiSolver(MSONable):
                 "nsites": reference_site_conc * self.volume,  # sites per DOS cell
                 "name": label,
             }
+            charge_state_configs: dict[int, list[tuple[float, float]]] = {}  # {charge: [(E_f, g)]}
             for entry in entry_list:
                 formation_energy = self.defect_thermodynamics.get_formation_energy(
                     entry,
@@ -8317,15 +8318,25 @@ class FermiSolver(MSONable):
                     np.prod(list(entry.degeneracy_factors.values())) if entry.degeneracy_factors else 1
                 )
                 # py-sc-fermi assumes the same multiplicity (nsites) for all defect species / charge
-                # states of a given grouped defect, but this is not necessarily the case for
-                # interstitials (e.g. Te_i_Td_Te2.83_a), so we account for this in the degeneracy
-                # factors here (using site concentrations so this is also correct when different charge
-                # states use different supercell sizes):
+                # states of a given grouped defect, but this is not necessarily the case for interstitials
+                # (e.g. Te_i_Td_Te2.83_a), so we account for this in the degeneracy factors here (using
+                # site concentrations so this is also correct when different charge states use different
+                # supercell sizes)(TODO: Update with py-sc-fermi v3?)
                 degeneracy_factor *= _site_conc(entry) / reference_site_conc
-                defect_species_dict["charge_states"][entry.charge_state] = {
-                    "charge": entry.charge_state,
-                    "energy": formation_energy,
-                    "degeneracy": degeneracy_factor,  # has to be >=1 in py-sc-fermi
+                charge_state_configs.setdefault(entry.charge_state, []).append(
+                    (formation_energy, degeneracy_factor)
+                )
+
+            # ``py-sc-fermi`` keys charge states by charge, so a grouped (``dist_tol``-amalgamated) defect
+            # with multiple configurations at the same charge can only be represented by one of them; take
+            # the lowest-energy (i.e. Boltzmann-dominant) configuration:
+            # TODO: Update with py-sc-fermi v3 -- no longer ignore metastable configurations
+            for charge, configs in charge_state_configs.items():
+                energy, degeneracy = min(configs, key=lambda config: config[0])
+                defect_species_dict["charge_states"][charge] = {
+                    "charge": charge,
+                    "energy": energy,
+                    "degeneracy": degeneracy,  # must be >=1 in py-sc-fermi
                 }
             defect_species.append(defect_species_dict)
 

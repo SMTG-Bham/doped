@@ -450,11 +450,13 @@ def get_defect_type_palette(
       e.g. ``v_Cd``, ``Te_i``, ``F_O``).
     - ``"element"``: mostly the same as ``"type"``, except `extrinsic` defects
       of the same element are grouped under a single colour (e.g. ``F_O`` and
-      ``F_i`` -> ``"F"``). Note that the thermodynamic-dominance ordering of
-      variants within such element groups (i.e. most opaque/solid line used for
-      dominant lowest-energy defect in the group) can depend on the chemical
-      potential conditions (unlike ``"type"`` / ``"site"`` groups, where all
-      group members share the same stoichiometry).
+      ``F_i`` -> ``"F"``); intrinsic defects are unaffected, so this is
+      equivalent to ``"type"`` for systems with no extrinsic defects. Note that
+      the thermodynamic-dominance ordering of variants within such element
+      groups (i.e. most opaque/solid line used for dominant lowest-energy
+      defect in the group) can depend on the chemical potential conditions
+      (unlike ``"type"`` / ``"site"`` groups, where all group members share the
+      same stoichiometry).
     - ``"site"``: one colour per defect `group` (i.e. per cluster of
       inequivalent defect sites, keyed on the group names in
       ``DefectThermodynamics.all_entries``; e.g. ``Te_i_Td_Te2.83_a`` and
