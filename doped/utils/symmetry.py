@@ -310,6 +310,17 @@ def _cache_ready_get_sga(
         struct = struct.copy()
         for site in struct:
             site.properties = {}
+            if any(getattr(sp, "spin", None) is not None for sp in site.species):
+                # spins live on the ``Species`` objects rather than in ``properties``, and otherwise still
+                # trigger magnetic symmetry analysis in ``SpacegroupAnalyzer`` (and split otherwise-
+                # equivalent sites by spin). Not ``Structure.remove_spin()``, which rebuilds every species
+                # as a ``Species`` -- converting ``Element``\s and breaking on ``DummySpecies`` ("X"):
+                spinless: dict = {}
+                for sp, occu in site.species.items():
+                    if getattr(sp, "spin", None) is not None:
+                        sp = type(sp)(sp.symbol, sp.oxi_state, spin=None)  # noqa: PLW2901
+                    spinless[sp] = spinless.get(sp, 0) + occu  # accumulate; spin variants can merge
+                site.species = spinless
 
     sga = None
     trial_symprecs = [symprec, 0.1, 0.001, 1, 0.0001]
@@ -883,7 +894,26 @@ def _get_orientation_preserving_primitive(
     Returns ``None`` if ``structure`` is already primitive or ``spglib``
     primitive cell determination fails.
     """
-    cell = (structure.lattice.matrix, structure.frac_coords, [site.specie.Z for site in structure])
+    prim_and_matrix = _cache_ready_get_orientation_preserving_primitive(structure, symprec)
+    if prim_and_matrix is None:
+        return None
+    # fresh copies on every call (incl. cache hits) so caller mutation can't corrupt the cache:
+    return prim_and_matrix[0].copy(), prim_and_matrix[1].copy()
+
+
+@lru_cache(maxsize=int(1e3))
+def _cache_ready_get_orientation_preserving_primitive(
+    structure: Structure, symprec: float = 0.01
+) -> tuple[Structure, np.ndarray] | None:
+    """
+    ``_get_orientation_preserving_primitive`` code, cached.
+    """
+    # index species by symbol rather than using ``Z``, which for ``DummySpecies`` is ``hash(symbol)`` --
+    # randomised per process and outside ``spglib``'s int32 range. Symbol and ``Z`` are interchangeable
+    # here ``spglib`` only uses these numbers to tell species apart:
+    symbols = [site.specie.symbol for site in structure]
+    unique_symbols = list(dict.fromkeys(symbols))
+    cell = (structure.lattice.matrix, structure.frac_coords, [unique_symbols.index(s) for s in symbols])
     prim_cell = spglib.standardize_cell(cell, to_primitive=True, no_idealize=True, symprec=symprec)
     if prim_cell is None or len(prim_cell[2]) >= len(structure):
         return None
@@ -896,7 +926,8 @@ def _get_orientation_preserving_primitive(
             f"Non-integer supercell matrix ({supercell_matrix}) between the input structure and its "
             f"orientation-preserving primitive cell!"
         )
-    return Structure(prim_lattice, list(prim_cell[2]), prim_cell[1]), int_supercell_matrix.astype(int)
+    prim_species = [unique_symbols[number] for number in prim_cell[2]]
+    return Structure(prim_lattice, prim_species, prim_cell[1]), int_supercell_matrix.astype(int)
 
 
 _TRIAL_SYMPREC_DIST_TOL_FACTORS = np.array([1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1])

@@ -44,5 +44,6 @@
 - Update all tutorial notebooks to use latest codebase
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks. TODO in ``doped.chemical_potentials``.
 - Re-run pytest timings (with proper heavy-test skipping now, updated pmg `LOCPOT` parsing, many test changes etc)
+- Adversarial review on all changes
 - Remove SnB/doped co-dependent develop-branch pin in GH actions testing.
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.

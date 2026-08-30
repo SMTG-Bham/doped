@@ -9,6 +9,7 @@ import itertools
 import operator
 from collections import defaultdict
 from collections.abc import Callable, Generator, Sequence
+from fractions import Fraction
 from functools import cached_property, lru_cache
 from string import digits
 from typing import TYPE_CHECKING, Any
@@ -332,8 +333,13 @@ def _noise_rounded_bytes(arr) -> bytes:
 
 def _species_info(species: dict) -> tuple:
     # avoid ``str(el)`` (``Species.__str__``/format machinery); equal species give equal
-    # (symbol, oxi, amount) tuples, incl. amounts to distinguish partial occupancies:
-    return tuple((el.symbol, getattr(el, "_oxi_state", None), amt) for el, amt in species.items())
+    # ``(symbol, oxi, spin, amount)`` tuples, incl. amounts to distinguish partial occupancies. ``spin`` is
+    # included because ``Species.__eq__`` compares it, so omitting it made structures differing only in
+    # spin (e.g. ferro- vs antiferro-magnetic orderings of one lattice) compare equal and collide in...
+    return tuple(  # ...structure-keyed caches
+        (el.symbol, getattr(el, "_oxi_state", None), getattr(el, "_spin", None), amt)
+        for el, amt in species.items()
+    )
 
 
 # PeriodicSite overrides:
@@ -629,13 +635,27 @@ def _get_symmetry(self) -> tuple[NDArray, NDArray]:
     Get the symmetry operations associated with the structure, memoised per-
     instance and ``get_sga`` already caches SGA construction by structure.
 
+    For non-magnetic cells, the rotations/translations are extracted from the
+    symmetry dataset already computed at ``SpacegroupAnalyzer`` init, rather
+    than re-calling the (expensive) ``spglib.get_symmetry`` function.
+
     The cached arrays are frozen so caller mutation raises loudly rather than
     silently corrupting the shared values.
     """
     try:
         return self._doped_symmetry
     except AttributeError:
-        rotations, translations = _original_get_symmetry(self)
+        dataset = getattr(self, "_space_group_data", None)
+        if dataset is not None and len(self._cell) == 3 and hasattr(dataset, "rotations"):
+            # non-magnetic cell (no magmoms in ``self._cell``): reuse the init dataset, replicating
+            # ``SpacegroupAnalyzer._get_symmetry``'s cleanup of small/unity translation values;
+            rotations = dataset.rotations.copy()  # copy, to not freeze the shared dataset arrays below
+            translations = np.array(
+                [[float(Fraction(c).limit_denominator(1000)) for c in row] for row in dataset.translations]
+            )
+            translations[np.abs(translations) == 1] = 0  # fractional translations of 1 -> 0
+        else:  # magnetic cell, or no/unrecognised dataset; use original (``spglib``-calling) method
+            rotations, translations = _original_get_symmetry(self)
         rotations.flags.writeable = False  # freeze mutatable arrays
         translations.flags.writeable = False
         self._doped_symmetry = (rotations, translations)
