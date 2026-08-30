@@ -3115,7 +3115,11 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         Test |ChemicalPotentialGrid| generation and plotting for a complex
         quinary system (Na2FePO4F).
         """
-        grid_df = self.na2fepo4f_grid.get_grid(1e8, drop_duplicates=False)
+        grid_df = self.na2fepo4f_grid.get_grid(  # skip the post-processing steps at this size;
+            1e8,
+            drop_duplicates=False,
+            sort=False,  # ~10 s of the ~15 s call, for no gain here
+        )
         return _plot_Na2FePO4F_chempot_grid(grid_df, atol=0.01)
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid_cartesian.png")
@@ -3506,7 +3510,7 @@ class TestChemicalPotentialGrid1D(unittest.TestCase):
 
     Uses synthetic vertices (no API/fixture requirements). Higher-dimensional
     grid behaviour is tested in ``TestChemicalPotentialGrid`` (and
-    ``test_optimise_search.py`` / ``test_fermisolver.py``).
+    ``test_optimise.py`` / ``test_fermisolver.py``).
     """
 
     @classmethod
@@ -3548,6 +3552,34 @@ class TestChemicalPotentialGrid1D(unittest.TestCase):
             clamped = self.grid.get_grid(resolution=1e-6, max_points=100)
         assert len(clamped) <= 105  # max_points cap (+ exact vertices)
         assert any("max_points" in str(warning.message) for warning in w)
+
+    def test_1d_grid_sort_option(self):
+        """
+        ``sort=False`` should give the same rows, just in generation order --
+        vertices first, so the exact chemical potential limits still precede
+        their rounded lattice copies.
+        """
+        sorted_df = self.grid.get_grid(n_points=100)
+        unsorted_df = self.grid.get_grid(n_points=100, sort=False)
+        assert len(sorted_df) == len(unsorted_df)
+        assert sorted_df["μ_Cd (eV)"].round(4).is_monotonic_increasing
+        assert not unsorted_df["μ_Cd (eV)"].round(4).is_monotonic_increasing  # generation order
+        np.testing.assert_allclose(  # same points, different order:
+            np.sort(sorted_df.to_numpy(), axis=0), np.sort(unsorted_df.to_numpy(), axis=0)
+        )
+        vertices = self.grid.vertices.to_numpy()
+        assert np.array_equal(unsorted_df.iloc[: len(vertices)].to_numpy(), vertices)
+
+    def test_1d_grid_fixed_elements_error(self):
+        """
+        ``fixed_elements`` needs a ternary or higher system (>= 2 free chemical
+        potentials must remain); on a binary it must fail with a message.
+        """
+        for fixed_elements in [{"Cd": -0.5}, {"Cd": -0.5, "Te": -0.75}]:  # one, then all, fixed
+            with pytest.raises(ValueError) as exc:
+                self.grid.get_grid(n_points=30, fixed_elements=fixed_elements)
+            assert f"Fixing {len(fixed_elements)} of the 2 chemical potentials" in str(exc.value)
+            assert "requires a ternary or higher-dimensional system" in str(exc.value)
 
     def test_1d_grid_unordered_collinear_vertices(self):
         """

@@ -1732,8 +1732,8 @@ class CompetingPhases(MSONable):
         defect calculations for a final single-point energy calculation), to
         avoid spurious Pulay stress effects.
 
-        See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-        for tips on boosting the efficiency of competing phases calculations.
+        See the |Competing Phases Tips| tips section for tips on boosting the
+        efficiency of competing phases calculations.
 
         Args:
             kpoints_metals (float):
@@ -2685,6 +2685,7 @@ class ChemicalPotentialGrid(MSONable):
         decimal_places: int = 4,
         drop_duplicates: bool = True,
         include_vertices: bool = True,
+        sort: bool = True,
     ) -> pd.DataFrame:
         r"""
         Generates a grid of points that spans the chemical potential space
@@ -2748,18 +2749,28 @@ class ChemicalPotentialGrid(MSONable):
             drop_duplicates (bool):
                 Whether to drop duplicate points in the generated grid. With
                 barycentric coordinate generation, there can be duplicate
-                points in the generated grid from overlapping simplices. If
-                duplicates are acceptable (likely true for most downstream
+                points in the generated grid from overlapping simplices, and
+                with either generation scheme from ``decimal_places`` rounding
+                (when the grid spacing is finer than 10^[-decimal_places]).
+                If duplicates are acceptable (likely true for most downstream
                 usages; e.g. plotting etc) then this can be set to ``False`` to
-                speed up runtime. Default is ``True``.
+                speed up runtime and reduce peak memory. Default is ``True``.
             include_vertices (bool):
                 Whether to include the vertices themselves in the generated
                 grid. Default is ``True``.
+            sort (bool):
+                Whether to sort the output rows along the largest-span chemical
+                potential coordinate (e.g. so 1D chemical potential spaces are
+                path-ordered along the line). Only worth disabling for
+                extremely large grids, where this can speed up runtime and
+                reduce peak memory. Default is ``True``.
 
         Returns:
             pd.DataFrame:
                 A ``DataFrame`` containing the points within the convex hull.
-                Each row represents a point in the grid.
+                Each row represents a point in the grid, with rows sorted along
+                the largest-span chemical potential coordinate (if ``sort`` is
+                ``True``).
         """
         if fixed_elements:
             return self.get_constrained_grid(
@@ -2771,6 +2782,7 @@ class ChemicalPotentialGrid(MSONable):
                 decimal_places,
                 drop_duplicates,
                 include_vertices,
+                sort,
             )
 
         dependent_variable = self.vertices.columns[-1]
@@ -2852,11 +2864,27 @@ class ChemicalPotentialGrid(MSONable):
         ).round(decimal_places)
 
         if include_vertices:  # prepend the exact (unrounded) vertices, ensuring the chemical potential
-            # limits are in the grid `exactly` (with any rounded copies then dropped as duplicates below):
+            # limits are in the grid `exactly` (``drop_duplicates`` only drops exactly-equal rows):
             vertices_df = pd.DataFrame(self.vertices.to_numpy(), columns=grid_df.columns)
             grid_df = pd.concat([vertices_df, grid_df], ignore_index=True)
 
-        return grid_df if not drop_duplicates else grid_df.drop_duplicates()
+        if drop_duplicates:  # dependent μ is a function of independent coordinates, so compare only those
+            grid_df = grid_df.drop_duplicates(subset=list(independent_vars.columns))
+
+        return (
+            grid_df.sort_values(  # sort along the largest-span μ coordinate; giving path-ordered...
+                independent_vars.columns[
+                    int(np.argmax(spans))
+                ],  # ...outputs for 1D spaces (e.g. line plots)
+                key=lambda col: col.round(
+                    decimal_places
+                ),  # rounding so each prepended exact vertex ties..
+                kind="stable",  # ...with (and so stably sorts ahead of) its rounded lattice copy
+                ignore_index=True,
+            )
+            if sort
+            else grid_df
+        )
 
     def get_constrained_grid(
         self,
@@ -2868,6 +2896,7 @@ class ChemicalPotentialGrid(MSONable):
         decimal_places: int = 4,
         drop_duplicates: bool = True,
         include_vertices: bool = True,
+        sort: bool = True,
     ) -> pd.DataFrame:
         r"""
         Generates a grid of points that spans the chemical potential space
@@ -2885,7 +2914,10 @@ class ChemicalPotentialGrid(MSONable):
         Args:
             fixed_elements (dict):
                 A dictionary of chemical potentials to fix (in the format:
-                ``{column_name: value}``; e.g. ``{"Li": -2}``).
+                ``{column_name: value}``; e.g. ``{"Li": -2}``). At least two
+                chemical potentials must be left free (i.e. a ternary or higher
+                system, with at most ``n_elements - 2`` fixed), otherwise no
+                chemical potential range remains to grid over.
             n_points (int | None):
                 `Minimum` number of grid points to generate, within the
                 constrained subspace. The output grid will contain at least
@@ -2918,24 +2950,41 @@ class ChemicalPotentialGrid(MSONable):
             drop_duplicates (bool):
                 Whether to drop duplicate points in the generated grid. With
                 barycentric coordinate generation, there can be duplicate
-                points in the generated grid from overlapping simplices. If
-                duplicates are acceptable (likely true for most downstream
+                points in the generated grid from overlapping simplices, and
+                with either generation scheme from ``decimal_places`` rounding
+                (when the grid spacing is finer than 10^[-decimal_places]).
+                If duplicates are acceptable (likely true for most downstream
                 usages; e.g. plotting etc) then this can be set to ``False`` to
-                speed up runtime. Default is ``True``.
+                speed up runtime and reduce peak memory. Default is ``True``.
             include_vertices (bool):
                 Whether to include the vertices themselves in the generated
                 grid. Default is ``True``.
+            sort (bool):
+                Whether to sort the output rows along the largest-span chemical
+                potential coordinate (e.g. so 1D chemical potential spaces are
+                path-ordered along the line). Only worth disabling for
+                extremely large grids, where this can speed up runtime and
+                reduce peak memory. Default is ``True``.
 
         Returns:
             pd.DataFrame:
                 A ``DataFrame`` containing the points within the convex hull,
                 constrained by the fixed chemical potentials. Each row
-                represents a point in the grid.
+                represents a point in the grid, with rows sorted along the
+                largest-span chemical potential coordinate (if ``sort`` is
+                ``True``).
         """
         fixed_elements = {
             k if k in self.vertices.columns else f"μ_{k} (eV)": v for k, v in fixed_elements.items()
         }
         variables = [col for col in self.vertices.columns if col not in fixed_elements]
+        if len(variables) < 2:  # need >= 2 free chemical potentials (1 independent + 1 dependent) left
+            raise ValueError(
+                f"Fixing {len(fixed_elements)} of the {len(self.vertices.columns)} chemical potentials "
+                f"({', '.join(fixed_elements)}) leaves no free chemical potential range to scan over! "
+                f"`fixed_elements` requires a ternary or higher-dimensional system, with at most "
+                f"`n_elements - 2` fixed chemical potentials."
+            )
         dependent_variable = variables[-1]
         dependent_var = self.vertices[dependent_variable].to_numpy()
         independent_vars = self.vertices.drop(columns=dependent_variable)
@@ -2979,6 +3028,7 @@ class ChemicalPotentialGrid(MSONable):
             decimal_places=decimal_places,
             drop_duplicates=drop_duplicates,
             include_vertices=include_vertices,
+            sort=sort,
         ).dropna()
 
         for element_col_name, value in fixed_elements.items():  # add fixed-element values to the grid

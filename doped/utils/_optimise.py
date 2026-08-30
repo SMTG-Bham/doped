@@ -117,15 +117,15 @@ def _default_grid_resolution(
 ) -> float:
     """
     Resolve the default first-pass grid resolution for
-    ``FermiSolver.optimise``: the landscape smoothness scale.
+    ``FermiSolver.optimise``.
 
-    (``_landscape_smoothness_scale``), opportunistically refined toward the
-    quench-temperature floor (``kB * min(all temperatures)``) while the implied
-    grid size stays within a soft budget of 25% of ``max_initial_points`` --
-    insuring against smoothness-scale misclassification. Below the
-    minimum-temperature floor, no grid spacing resolves anything further
-    (sub-kT quasi-steps are the roughness check's and audit's job, not the
-    grid's).
+    This is the landscape smoothness scale (``_landscape_smoothness_scale``),
+    opportunistically refined toward the minimum-temperature floor
+    (``kB * min(all temperatures)``) while the implied grid size stays within
+    a soft budget of 25% of ``max_initial_points`` -- insuring against
+    smoothness-scale misclassification. Below the minimum-temperature floor,
+    no grid spacing resolves anything further (sub-kT quasi-steps are the
+    roughness check's and audit's job, not the grid's).
 
     Deliberately independent of the search ``tolerance``: the initial
     resolution is a completeness knob (in eV of chemical potential) set by the
@@ -327,12 +327,13 @@ def _select_seeds(
     points: np.ndarray, values: np.ndarray, spacing: float, beam_width: int, separation: float = 3.0
 ) -> list[int]:
     """
-    Select up to ``beam_width`` beam-search seed indices from sampled.
+    Select up to ``beam_width`` beam-search seed indices from sampled
+    ``(points, values)``.
 
-    ``(points, values)``: the discrete local optima of the sample (points whose
-    value is >= that of every sampled neighbour within ``1.55 * spacing``),
-    ranked by value and greedily deduplicated with a Chebyshev (∞-norm)
-    separation of ``separation * spacing``.
+    Seeds are the discrete local optima of the sample (points whose value
+    is >= that of every sampled neighbour within ``1.55 * spacing``), ranked
+    by value and greedily deduplicated with a Chebyshev (∞-norm) separation
+    of ``separation * spacing``.
 
     Fewer seeds than ``beam_width`` is normal (e.g. often one clear extremum in
     simple chemical potential spaces).
