@@ -28,12 +28,7 @@ from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry, guess_and_set_oxi_states_with_timeout
-from doped.generation import (
-    get_defect_name_from_defect,
-    get_defect_name_from_entry,
-    name_defect_entries,
-    sort_defect_entries,
-)
+from doped.generation import get_defect_name_from_entry, name_defect_entries, sort_defect_entries
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import (
     _doped_obj_properties_methods,
@@ -310,6 +305,10 @@ def defect_from_structures(
     defect structures, and returns a corresponding |Defect| object with the
     defect site in the primitive structure.
 
+    Use :func:`defect_site_from_structures` for fast defect site determination
+    without the additional |Defect| handling (initialisation, equivalent site /
+    multiplicity determination, oxidation state guessing etc.).
+
     Note that this assumes consistent cell definitions (lattice vectors and
     bases) for the input defect and bulk supercells, and does not perform any
     structural re-orientations.
@@ -344,9 +343,6 @@ def defect_from_structures(
             fast site matching and |Defect| creation are desired (e.g. when
             analysing MD trajectories of defects), where providing these
             parameters can greatly speed up parsing.
-            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
-            auto-determination and accelerate parsing, if these properties are
-            not required.
 
     Returns:
         defect (|Defect|):
@@ -473,12 +469,16 @@ def defect_and_info_from_structures(
 ) -> tuple[Defect, PeriodicSite, dict]:
     """
     Generates a corresponding |Defect| object from the supplied bulk and defect
-    supercells (using ``defect_from_structures``), and returns the |Defect|
+    supercells (using :func:`defect_from_structures`), and returns the |Defect|
     object, the (relaxed) defect site in the defect supercell (see
     ``Returns``), and a dictionary of calculation metadata (including the
     defect site in the bulk supercell, defect site indices in the defect and
     bulk supercells, the guessed initial defect structure, and the unrelaxed
     defect structure).
+
+    Use :func:`defect_site_from_structures` for fast defect site determination
+    without the additional |Defect| handling (initialisation, equivalent site /
+    multiplicity determination, oxidation state guessing etc.).
 
     Note that this assumes consistent cell definitions (lattice vectors and
     bases) for the input defect and bulk supercells, and does not perform any
@@ -498,9 +498,6 @@ def defect_and_info_from_structures(
             fast site matching and |Defect| creation are desired (e.g. when
             analysing MD trajectories of defects), where providing these
             parameters can greatly speed up parsing.
-            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
-            auto-determination and accelerate parsing, if these properties are
-            not required.
 
     Returns:
         tuple[Defect, PeriodicSite, dict]:
@@ -784,45 +781,6 @@ def guess_defect_position(
         axis=0,
         weights=squared_cosine_dissimilarities if np.sum(squared_cosine_dissimilarities) > 0 else None,
     )  # note we catch the edge case of zero dissimilarity (i.e. same structures); to avoid zero-division
-
-
-def defect_name_from_structures(
-    defect_supercell: Structure, bulk_supercell: Structure, _parameter_order_warn: bool = True, **kwargs
-) -> str:
-    """
-    Get the doped/SnB defect name using the bulk and defect structures.
-
-    Args:
-        defect_supercell (|Structure|):
-            Defect structure.
-        bulk_supercell (|Structure|):
-            Bulk (pristine) structure.
-        **kwargs:
-            Keyword arguments to pass to ``defect_from_structures`` (such as
-            ``oxi_state``, ``multiplicity``, ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``).
-
-    Returns:
-        str: Defect name.
-    """
-    if _parameter_order_warn:
-        _warn_parameter_order("defect_name_from_structures")  # TODO: Remove in doped v4.1
-    # set oxi_state and multiplicity to avoid wasting time trying to auto-determine when unnecessary here
-    default_init_kwargs: dict[str, Any] = {"oxi_state": "Undetermined", "multiplicity": 1}
-    default_init_kwargs.update(kwargs)
-    defect = defect_from_structures(
-        defect_supercell,
-        bulk_supercell,
-        return_all_info=False,
-        _parameter_order_warn=False,
-        **default_init_kwargs,
-    )
-    assert isinstance(defect, Defect)  # mypy typing
-
-    # note that if the symm_op approach fails for any reason here, the defect-supercell expansion
-    # approach will only be valid if the defect structure is a diagonal expansion of the primitive...
-
-    return get_defect_name_from_defect(defect)
 
 
 class DefectsParser:

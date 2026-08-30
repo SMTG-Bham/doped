@@ -6,10 +6,16 @@ import unittest
 
 import numpy as np
 import pytest
+import spglib
 from test_utils import EXAMPLE_DIR
 
 from doped.utils.efficiency import SpacegroupAnalyzer, Structure
-from doped.utils.symmetry import get_wyckoff_dict_from_sgn, get_wyckoff_label_and_equiv_coord_list
+from doped.utils.symmetry import (
+    get_wyckoff_dict_from_sgn,
+    get_wyckoff_label_and_equiv_coord_list,
+    schoenflies_from_hermann,
+    schoenflies_from_spacegroup_number,
+)
 
 
 class WyckoffTest(unittest.TestCase):
@@ -24,6 +30,18 @@ class WyckoffTest(unittest.TestCase):
             assert isinstance(wyckoff_dict, dict)
             assert all(isinstance(k, str) for k in wyckoff_dict)
             assert all(isinstance(v, list) for v in wyckoff_dict.values())
+
+    def test_schoenflies_from_spacegroup_number(self):
+        """
+        Cross-check ``doped``'s space group number -> point group (crystal
+        class) table against ``spglib``'s own space-group-type data, for all
+        230 space groups.
+        """
+        for hall_number in range(1, 531):  # all 230 space groups, over all their settings
+            sg_type = spglib.get_spacegroup_type(hall_number)
+            assert schoenflies_from_spacegroup_number(sg_type.number) == schoenflies_from_hermann(
+                sg_type.pointgroup_international
+            ), f"{sg_type.number} ({sg_type.international_short})"
 
     def test_wyckoff_label_and_equiv_coord_list(self):
         """

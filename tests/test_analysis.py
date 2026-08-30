@@ -31,12 +31,11 @@ from doped.analysis import (
     DefectParser,
     DefectsParser,
     defect_from_structures,
-    defect_name_from_structures,
     guess_defect_position,
     parse_symmetry_and_degeneracy_metadata,
     shallow_dopant_binding_energy,
 )
-from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
+from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.utils.efficiency import Structure
 from doped.utils.eigenvalues import get_eigenvalue_analysis
 from doped.utils.parsing import (
@@ -2709,8 +2708,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
 
-    def test_defect_name_from_structures(self):
-        # by proxy also tests defect_from_structures
+    def test_defect_from_structures(self):
+        # by proxy also tests defect_from_structures;
         for defect_gen_name in [
             "CdTe_defect_gen",
             "ytos_defect_gen",
@@ -2725,15 +2724,16 @@ class DefectsParsingTestCase(unittest.TestCase):
 
             for defect_entry in [entry for entry in defect_gen.values() if entry.charge_state == 0]:
                 print(defect_entry.defect, defect_entry.defect_supercell_site)
-                assert defect_name_from_structures(
-                    defect_entry.defect_supercell, defect_entry.bulk_supercell, _parameter_order_warn=False
-                ) == get_defect_name_from_defect(defect_entry.defect)
-
-                # Can't use defect.structure/defect.defect_structure because might be vacancy in a 1/2
-                # atom cell etc.:
-                # assert defect_name_from_structures(
-                #     defect_entry.defect.structure, defect_entry.defect.defect_structure
-                # ) == get_defect_name_from_defect(defect_entry.defect)
+                # set oxi_state and multiplicity to avoid wasting time auto-determining when not needed:
+                defect = defect_from_structures(
+                    defect_entry.defect_supercell,
+                    defect_entry.bulk_supercell,
+                    return_all_info=False,
+                    _parameter_order_warn=False,  # TODO: Remove in v4.1
+                    oxi_state="Undetermined",
+                    multiplicity=1,
+                )
+                assert defect == defect_entry.defect  # symmetry-equivalent site, same host & name
 
     def test_defect_from_structures_rattled(self):
         """

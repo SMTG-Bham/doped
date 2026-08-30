@@ -3133,15 +3133,15 @@ class Interstitial(Defect, core.Interstitial):
         ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor`` and
         ``verbose`` can also be passed in ``kwargs``.
         """
-        calc_multiplicity = "multiplicity" not in kwargs
-        kwargs.setdefault("multiplicity", 1)  # will break for Interstitials if not set
+        if calc_multiplicity := "multiplicity" not in kwargs and len(args) < 3:  # kwarg or 3rd positional
+            kwargs["multiplicity"] = 1  # placeholder; ``pymatgen`` breaks for Interstitials if not set
         multiplicity_kwargs = {
             k: kwargs.pop(k)
             for k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
             if k in kwargs
         }  # symprec set as self.symprec and used by default in ``get_multiplicity``
         super().__init__(*args, **kwargs)
-        if calc_multiplicity:
+        if calc_multiplicity:  # efficient ``doped`` auto multiplicity determination
             self.multiplicity = self.get_multiplicity(**multiplicity_kwargs)
 
     def __repr__(self) -> str:
