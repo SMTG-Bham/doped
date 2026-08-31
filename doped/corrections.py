@@ -56,8 +56,8 @@ from pymatgen.util.typing import PathLike
 
 from doped.analysis import _convert_dielectric_to_tensor, _get_output_files_and_check_if_multiple
 from doped import vise_handling
+from doped.io.espresso.outputs import get_cube
 from doped.utils.parsing import (
-    RunParser,
     _get_bulk_supercell,
     _get_core_potentials_from_outcar_obj,
     _get_defect_supercell,
@@ -121,7 +121,7 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
             return get_locpot(locpot_or_outcar_or_cube)
 
         elif obj_type == "cube":
-            return RunParser("espresso").get_cube(locpot_or_outcar_or_cube)
+            return get_cube(locpot_or_outcar_or_cube)
 
         else:  # OUTCAR for VASP, or a LOCPOT/.cube path for atomic site potentials
             path_basename = os.path.basename(str(locpot_or_outcar_or_cube)).lower()
