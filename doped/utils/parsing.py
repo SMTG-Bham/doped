@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from copy import deepcopy
 from functools import lru_cache, partialmethod
 from pathlib import Path
-from typing import Literal, Any
+from typing import Any
 from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
@@ -27,7 +27,6 @@ from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.coord import all_distances
 from pymatgen.util.typing import PathLike, SpeciesLike
-from scipy.interpolate import RegularGridInterpolator
 
 from doped import _warn_parameter_order
 from doped.core import DefectEntry, remove_site_oxi_state
@@ -2021,7 +2020,7 @@ def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
     Determine the total charge state of a system from the vasprun.
 
     This is VASP-specific; for Quantum ESPRESSO the charge is read directly
-    from the ``PWxml`` object (``PWxml.total_charge``, parsed from the QE
+    from the ``PWxml`` object (``PWxml.total_charge``, parsed from the espresso
     ``tot_charge`` XML field).
 
     Note that if the system is charged, then this function relies on access to
@@ -2085,18 +2084,23 @@ def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type
     defect_entry.corrections.update({f"{charge_correction_type}_charge_correction": corr})
 
 
+_calc_energy_metadata_parsing_action = "parse the calculation energy and metadata."
 _vasp_file_parsing_action_dict = {
-    "vasprun.xml": "parse the calculation energy and metadata.",
+    "vasprun.xml": _calc_energy_metadata_parsing_action,
     "OUTCAR": "parse core levels and compute the Kumagai (eFNV) image charge correction.",
     "LOCPOT": "parse the electrostatic potential and compute the Freysoldt (FNV) charge correction.",
-    ".cube": "parse electrostatic potentials (average/core) to compute charged defect corrections in QE",
+    ".cube": "parse electrostatic potentials (average/core) to compute charged defect corrections in espresso",
+    "espresso.xml": _calc_energy_metadata_parsing_action,
+    "espresso.xml.gz": _calc_energy_metadata_parsing_action,
+    ".xml": _calc_energy_metadata_parsing_action,
+    ".xml.gz": _calc_energy_metadata_parsing_action,
 }
 
 
 def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, dir_type="bulk"):
     filename = os.path.basename(chosen_filepath)
     if action is None:
-        action = _vasp_file_parsing_action_dict[file_type]
+        action = _vasp_file_parsing_action_dict.get(file_type)
     warnings.warn(
         f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
         f"{action}"
@@ -2142,442 +2146,3 @@ def get_dimer_bonds(structure: Structure, rtol: float = 1.05) -> dict[str, list[
     }
     return {k: v for k, v in dimer_bond_dict.items() if v}
 
-
-from ase.io.cube import read_cube_data
-from pymatgen.core.units import Ry_to_eV
-from pymatgen.entries.computed_entries import ComputedEntry
-from pymatgen.io.espresso.outputs.pwxml import PWxml
-from pymatgen.io.vasp import VolumetricData
-from scipy.ndimage import map_coordinates
-
-BOHR_TO_ANGSTROM = 0.529177
-
-
-class RunParser:
-    def __new__(cls, code: Literal["vasp", "espresso"], **kwargs):
-        code = code.lower()
-        if code == "vasp":
-            return RunParserVasp  # (**kwargs) #NOT IMPLEMENTED
-        elif code == "espresso":
-            return RunParserEspresso  # (**kwargs)
-        else:
-            raise ValueError(f"Unsupported code: {code}")
-
-
-class RunParserEspresso:
-    @classmethod
-    def get_run(cls, espressorun_path: PathLike, parse_mag: bool = False, standardize=True, **kwargs):
-        """
-        Similar to get_vasprun but for espresso.
-
-        if parse_projected_eigen = True: must provide filproj (for pwxml). (Use filproj = 'filproj' for projwfc.x
-        if parse_dos: Must give fildos.
-        """
-        espressorun_path = str(espressorun_path)  # convert to string if Path object
-        warnings.filterwarnings(
-            "ignore", category=UnknownPotcarWarning
-        )  # Ignore unknown POTCAR warnings when loading vasprun.xml
-        # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
-        warnings.filterwarnings(
-            "ignore", message="No POTCAR file with matching TITEL fields"
-        )  # `message` only needs to match start of message
-        default_kwargs = {"parse_dos": False, "exception_on_bad_xml": False}
-        default_kwargs.update(kwargs)
-        #TODO: Devise a test for working with projected eigenvalues: Currently untested with doped examples.
-        #PWxml._parse_projected_eigen = partialmethod(parse_projected_eigen, parse_mag=parse_mag) #??? Never called in doped? PWxml already has a _parse_projected_eigen though it only accepts filproj.
-
-        try:
-            with warnings.catch_warnings(record=True) as w:
-
-                # if standardize:
-                #     vasprun = cls.standardized_computed_entry(find_archived_fname(espressorun_path),
-                #                                             **default_kwargs)
-                # else:
-                vasprun = PWxml(find_archived_fname(espressorun_path), **default_kwargs)
-
-                # PWxml does not initialize atomic states and kpoints_opt_props
-                # see https://github.com/Griffin-Group/pymatgen-io-espresso/issues/27
-                vasprun.atomic_states = None
-
-                # if isinstance(vasprun.potcar_spec, list):
-                #     vasprun.potcar_spec = cls.potcar_spec_fix(vasprun)
-                # -----------------------------------
-            for warning in w:
-                if "XML is malformed" in str(warning.message):
-                    warnings.warn(
-                        f"espresso.xml file at {espressorun_path} is corrupted/incomplete. Attempting to "
-                        f"continue parsing but may fail!"
-                    )
-                else:  # show warning, preserving original category:
-                    warnings.warn(warning.message, category=warning.category)
-
-        except FileNotFoundError as exc:
-            raise FileNotFoundError(
-                f"espresso.xml not found at {espressorun_path}. Needed for parsing calculation output!"
-            ) from exc
-        return vasprun
-
-    @classmethod
-    def _parse_run_and_poss_projwfc(
-        cls,
-        vr_path: PathLike,
-        parse_projected_eigen: bool | None = None,
-        output_path: PathLike | None = None,
-        label: str = "bulk",
-        parse_procar: bool = True,
-    ):
-        procar = None
-
-        failed_eig_parsing_warning_message = (
-            f"Could not parse eigenvalue data from vasprun.xml.gz files in {label} folder at {output_path}"
-        )
-
-        try:
-            # Get run, parse_proj_eigen (if demanded), parse_eigen (if demanded) but definitely if bulk
-            vr = cls.get_run(
-                vr_path,
-                parse_projected_eigen=bool(parse_projected_eigen),
-                parse_eigen=(bool(parse_projected_eigen) or label == "bulk"),
-            )  # vr.eigenvalues not needed for defects except for vr-only eigenvalue analysis
-
-        except Exception as vr_exc:
-            # Get run, don't parse_proj_eigen, parse_eigen if bulkrun.
-            vr = cls.get_run(vr_path, parse_projected_eigen=False, parse_eigen=label == "bulk")
-            failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
-
-            # Parse from PROCAR if needed -> Goes to projwfc for espresso.
-            if parse_procar:
-                # But there might be multiple, so check.
-                procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
-                # Have the PROCAR? Now parse_projected_eigen if needed
-                if "PROCAR" in procar_path and parse_projected_eigen is not False:
-                    try:
-                        procar = get_procar(procar_path)
-
-                    except Exception as procar_exc:
-                        failed_eig_parsing_warning_message += (
-                            f"\nThen got the following error when attempting to parse projected eigenvalues "
-                            f"from the defect PROCAR(.gz):\n{procar_exc}"
-                        )
-        if vr.projected_eigenvalues is None and procar is None and parse_projected_eigen is True:
-            # only warn if parse_projected_eigen is set to True (not None)
-            warnings.warn(failed_eig_parsing_warning_message)
-
-        return vr, procar if parse_procar else vr
-
-    @classmethod
-    def ensure_band_edges(cls, vasprun_obj, occu_tol=1e-8, backend="doped"):
-        """
-        Ensure that the Vasprun object has VBM, CBM, and band_gap set.
-        """
-        if backend == "pymatgen":
-            vasprun_obj.occu_tol = occu_tol
-            band_gap, cbm, vbm, _ = vasprun_obj.eigenvalue_band_properties
-            vasprun_obj.vbm = vbm
-            vasprun_obj.cbm = cbm
-            vasprun_obj.band_gap = band_gap
-
-        elif backend == "doped":
-            from doped.utils.eigenvalues import band_edge_properties_from_vasprun
-
-            if (
-                not hasattr(vasprun_obj, "vbm")
-                or vasprun_obj.vbm is None
-                or not hasattr(vasprun_obj, "cbm")
-                or vasprun_obj.cbm is None
-                or not hasattr(vasprun_obj, "band_gap")
-                or vasprun_obj.band_gap is None
-            ):
-
-                band_edge_prop = band_edge_properties_from_vasprun(vasprun_obj)
-
-                if not band_edge_prop.is_metal:
-                    vasprun_obj.vbm = band_edge_prop.vbm_info.as_dict()["energy"]
-                    vasprun_obj.cbm = band_edge_prop.cbm_info.as_dict()["energy"]
-                    vasprun_obj.band_gap = vasprun_obj.cbm - vasprun_obj.vbm
-        else:
-            raise ValueError("Use doped or pymatgen for finding band_gap")
-        return vasprun_obj
-
-    @classmethod
-    def _get_cube_dict(cls, bulk_path, quiet=False):
-
-        bulk_cube_path, multiple = _get_output_files_and_check_if_multiple(".cube", bulk_path, dir_type="bulk")
-
-        bulk_cube = cls.get_cube(bulk_cube_path)
-        return {str(k): bulk_cube.get_average_along_axis(k) for k in [0, 1, 2]}
-
-    @classmethod
-    def _get_bulk_site_potentials(
-        cls, bulk_path: PathLike, quiet: bool = False, total_energy: list | float | None = None, beta: float = 0.5
-    ):
-        # try QE .cube first, then fall back to VASP LOCPOT:
-        bulk_vol_data_path, multiple = _get_output_files_and_check_if_multiple(".cube", bulk_path)
-        output_file = ".cube"
-        if not os.path.exists(bulk_vol_data_path):
-            bulk_vol_data_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", bulk_path)
-            output_file = "LOCPOT"
-        if multiple and not quiet:
-            _multiple_files_warning(
-                output_file,
-                bulk_path,
-                bulk_vol_data_path,
-                dir_type="bulk",
-            )
-        return get_atomic_site_potentials(bulk_vol_data_path, beta=beta)
-
-
-    @classmethod
-    def get_cube(cls, cube_path: PathLike):
-        """
-        Read the ``LOCPOT(.gz)`` file as a ``pymatgen`` ``Locpot`` object.
-        """
-        cube_path = str(cube_path)  # convert to string if Path object
-
-        try:
-            cube = VolumetricData.from_cube(cube_path)
-
-        except FileNotFoundError:
-            raise FileNotFoundError(
-                f"Cube file not found at {cube_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
-                f"Freysoldt (FNV) image charge correction!"
-            ) from None
-        return cube
-
-    def _get_bulk_cube_dict(bulk_path, quiet=False, filename=".cube"):
-        bulk_cube_path, multiple = _get_output_files_and_check_if_multiple(
-            filename, bulk_path, dir_type="bulk", quiet=quiet
-        )
-
-        bulk_cube = RunParser("espresso").get_cube(bulk_cube_path)
-        return {str(k): bulk_cube.get_average_along_axis(k) for k in [0, 1, 2]}
-
-    @classmethod
-    def _get_core_site_potentials(
-        cls,
-        cube_file=None,
-        data=None,
-        atoms=None,
-        radius_bohr=1.5,
-        n_points=500000,
-        verbose=False,
-    ):
-        """
-        Calculate spherical average potential at atomic sites from a .cube file
-        or preloaded data.
-        """
-        BOHR_TO_ANGSTROM = 0.529177
-
-        def spherical_average(pos, radius, data, cell, n_points=500000):
-            """
-            Compute spherical average of potential field around a point.
-            """
-            rand_dirs = np.random.normal(size=(n_points, 3))
-            rand_dirs /= np.linalg.norm(rand_dirs, axis=1)[:, None]
-            rand_radii = np.random.rand(n_points) ** (1 / 3) * radius
-            sample_points = pos + rand_dirs * rand_radii[:, None]
-
-            # Convert to fractional coordinates and then grid indices
-            frac = np.linalg.solve(cell.T, sample_points.T).T
-            frac %= 1.0
-            grid_points = frac * (np.array(data.shape) - 1)
-
-            # Interpolate potential values
-            values = map_coordinates(data, grid_points.T, order=1, mode="wrap")
-            return np.mean(values)
-
-        # === Load data if a file path is provided ===
-        if cube_file:
-            data, atoms = read_cube_data(cube_file)
-        elif data is None or atoms is None:
-            raise ValueError("You must provide either `cube_file` or both `data` and `atoms`.")
-
-        # === Prepare variables ===
-        cell = atoms.get_cell()
-        positions = atoms.get_positions()
-        radius_ang = radius_bohr * BOHR_TO_ANGSTROM
-
-        core_potentials = []
-
-        for i, pos in enumerate(positions):
-            avg_pot = spherical_average(pos, radius_ang, data, cell, n_points=n_points)
-            core_potentials.append(avg_pot)
-            if verbose:
-                print(f"{atoms[i].symbol:<6}{i + 1:>6}{avg_pot:>30.6f}")
-
-        core_dict = {
-            "site_potentials": np.array(core_potentials) * Ry_to_eV,
-            "atoms": atoms,
-            "positions": positions,
-        }
-
-        return core_dict
-
-    @classmethod
-    # @fileread
-    def standardized_computed_entry(
-        cls, xml_file: PathLike = None, computed_entry: ComputedEntry = None, **kwargs
-    ):
-        """
-        Return a computed entry with the standard formation enthalpy as total
-        energy.
-        """
-        if xml_file:
-            # print(xml_file, "\n")
-            calc = PWxml(xml_file)
-            computed_entry = calc.get_computed_entry(entry_id="")
-
-        # print("COMPUTEDENTRY: ", dir(computed_entry))
-        d_ = {
-            "energy": cls._standardize_total_energy(computed_entry),
-            "composition": computed_entry.composition,
-            "entry_id": "",
-            "correction": 0,  # pristine_calc.get_computed_entry(entry_id = "").correction
-            # "structure": computed_entry.structure
-        }
-
-        # print(computed_entry.structure)
-        ent = ComputedEntry.from_dict(d_)  # Computed entries list. Why twice?
-        ent.structure = computed_entry.structure
-
-        return ent
-
-    @classmethod
-    def _standardize_total_energy(cls, struct):
-        """
-        Hack for PWxml.
-
-        PWxml puts energy as the formation energy. Might need to be changed if
-        PWxml updates.
-        """
-        e_bulk = struct.energy
-        composition = struct.composition
-
-        comp_dict = composition.as_data_dict()["unit_cell_composition"]
-
-        elements = [k.name for k in struct.elements]
-        n_i = np.array(list(comp_dict.values()))
-        u_i = np.array([cls._get_element_formation_energy(elem) for elem in elements])
-
-        std_form_energy = (e_bulk - np.sum(n_i * u_i)) / np.sum(n_i)
-
-        return std_form_energy
-
-    @classmethod
-    def _get_element_formation_energy(cls, elem, pseudo="pbe", root=Path(".")):
-
-        elem_file = root / elem / f"{elem}_{pseudo}.xml"
-
-        comp_entry = PWxml(elem_file).get_computed_entry(entry_id="")
-        n_atoms = comp_entry.composition.as_data_dict()["unit_cell_composition"][elem]
-
-        energy = comp_entry.energy
-
-        en_per_atom = energy / n_atoms
-        return en_per_atom
-
-def get_atomic_site_potentials(volumetric_data_path: PathLike | VolumetricData, beta: float = 0.5):
-    """
-            Calculates atomic gaussian average site potential.
-
-            cube_path:  cube path for the potential
-
-            beta : Gaussian broadening factor at atomic sites (in bohr)
-
-            Returns:
-                 dict with keys:
-                     atomic sites
-                     Positions
-                     site_potential
-            """
-    if isinstance(volumetric_data_path, VolumetricData):
-        volumetric_data = volumetric_data_path
-        is_cube = False
-    elif str(volumetric_data_path).endswith('.cube'):
-        volumetric_data = VolumetricData.from_cube(volumetric_data_path)
-        is_cube = True
-    else:
-        volumetric_data = get_locpot(volumetric_data_path)
-        is_cube = False
-
-    nx, ny, nz = volumetric_data.dim
-    lattice = volumetric_data.structure.lattice
-
-    reci_latt = lattice.reciprocal_lattice
-    # integer Miller indices along each reciprocal axis, FFT-ordered:
-    nx_idx = np.roll(np.arange(-nx // 2, nx // 2, 1, dtype=int), int(nx // 2))
-    ny_idx = np.roll(np.arange(-ny // 2, ny // 2, 1, dtype=int), int(ny // 2))
-    nz_idx = np.roll(np.arange(-nz // 2, nz // 2, 1, dtype=int), int(nz // 2))
-
-    Nx, Ny, Nz = np.meshgrid(nx_idx, ny_idx, nz_idx, indexing="ij")
-    # G = n1*b1 + n2*b2 + n3*b3; compute |G|^2 using the reciprocal metric tensor to correctly handle
-    # non-orthorhombic cells:
-    recip_matrix = reci_latt.matrix  # rows are b1, b2, b3
-    metric = recip_matrix @ recip_matrix.T  # G_ij = bi . bj
-    g2 = (
-            Nx ** 2 * metric[0, 0]
-            + Ny ** 2 * metric[1, 1]
-            + Nz ** 2 * metric[2, 2]
-            + 2 * Nx * Ny * metric[0, 1]
-            + 2 * Nx * Nz * metric[0, 2]
-            + 2 * Ny * Nz * metric[1, 2]
-    )
-    if is_cube:  # QE cube: potential in Ry, beta given in bohr (atomic units)
-        pot = volumetric_data.data["total"] * -Ry_to_eV
-        beta_angstrom = beta * BOHR_TO_ANGSTROM
-    else:  # VASP LOCPOT: potential already in eV, and beta given directly in angstroms
-        pot = -volumetric_data.data["total"]
-        beta_angstrom = beta
-
-    v_G = np.fft.fftn(pot)
-    v_G *= np.exp(-0.5 * (beta_angstrom ** 2) * g2)  # Gaussian broadening in reciprocal space
-    v_R = np.real(np.fft.ifftn(v_G))
-
-    v_R_atomic_sites = interpolate_potentials_at_atomic_sites(v_R, volumetric_data)
-
-    sites = volumetric_data.structure.sites
-    coords = np.array([site.coords for site in sites])
-
-    efnv_plot_data_dict = {"positions": [], "site_potentials": [], "atoms": []}
-
-    efnv_plot_data_dict["site_potentials"].extend(v_R_atomic_sites)
-    efnv_plot_data_dict["positions"].extend(coords)
-    efnv_plot_data_dict["atoms"].extend(site.specie.symbol for site in sites)
-
-    return efnv_plot_data_dict
-
-
-
-
-def interpolate_potentials_at_atomic_sites(
-    smoothed_potential: np.ndarray,
-    volumetric_data: VolumetricData,
-):
-    nx, ny, nz = volumetric_data.dim
-
-    xpoints = np.linspace(0.0, 1.0, nx, endpoint=False)
-    ypoints = np.linspace(0.0, 1.0, ny, endpoint=False)
-    zpoints = np.linspace(0.0, 1.0, nz, endpoint=False)
-
-    # pad the grid with periodic images so (cubic) interpolation works at cell boundaries:
-    xpoints_padded = np.concatenate([xpoints[-1:] - 1.0, xpoints, xpoints[:1] + 1.0])
-    ypoints_padded = np.concatenate([ypoints[-1:] - 1.0, ypoints, ypoints[:1] + 1.0])
-    zpoints_padded = np.concatenate([zpoints[-1:] - 1.0, zpoints, zpoints[:1] + 1.0])
-
-    padded = np.concatenate(
-        [smoothed_potential[-1:, :, :], smoothed_potential, smoothed_potential[:1, :, :]], axis=0
-    )
-    padded = np.concatenate([padded[:, -1:, :], padded, padded[:, :1, :]], axis=1)
-    padded = np.concatenate([padded[:, :, -1:], padded, padded[:, :, :1]], axis=2)
-
-    # TODO: Will want to revisit this implementation; currently quite slow with cubic interpolation, but
-    # dropping to linear significantly worsens accuracy...
-    interpolator = RegularGridInterpolator(
-        (xpoints_padded, ypoints_padded, zpoints_padded),
-        padded,
-        method="cubic",  # 'linear' is faster, but 'cubic' is more accurate for interpolation
-        bounds_error=True,
-    )
-    frac_coords = np.mod(volumetric_data.structure.frac_coords, 1.0)
-
-    return interpolator(frac_coords)
