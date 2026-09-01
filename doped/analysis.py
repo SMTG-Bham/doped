@@ -336,9 +336,8 @@ def defect_from_structures(
             see return signature. (Default: ``False``)
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
+            (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
+            initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
             fast site matching and |Defect| creation are desired (e.g. when
             analysing MD trajectories of defects), where providing these
@@ -401,12 +400,9 @@ def defect_from_structures(
         frac_coords=defect_site_for_defect_obj.frac_coords,
         primitive=primitive_structure,
         supercell=bulk_supercell,
-        **{
-            k: v
-            for k, v in kwargs.items()
-            if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-        },  # allowed kwargs for ``get_equiv_frac_coords_in_primitive``
-    )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
+        **{k: v for k, v in kwargs.items() if k in ["symprec", "dist_tol_factor"]},
+        # allowed kwargs for ``get_equiv_frac_coords_in_primitive``
+    )  # equiv_coords=True
     assert isinstance(equiv_frac_coords_in_prim, list | np.ndarray)
     # sort equiv_frac_coords_in_prim deterministically, using _frac_coords_sort_func: (first coords in
     # equiv_frac_coords_in_prim are used as ``Defect.site``, for point defects)
@@ -429,11 +425,7 @@ def defect_from_structures(
             defect_site_in_prim.frac_coords = bulk_site_in_prim.frac_coords
 
         # also drop unsupported Defect() kwargs for non-interstitial defects:
-        kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k not in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-        }
+        kwargs = {k: v for k, v in kwargs.items() if k not in ["dist_tol_factor", "verbose"]}
 
     defect = MontyDecoder().process_decoded(  # initialise doped ``Defect`` object
         {
@@ -491,9 +483,8 @@ def defect_and_info_from_structures(
             Bulk supercell structure.
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
+            (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
+            initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
             fast site matching and |Defect| creation are desired (e.g. when
             analysing MD trajectories of defects), where providing these
@@ -2103,8 +2094,8 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
         **kwargs:
             Additional keyword arguments to pass to the
             |point_symmetry_from_defect_entry| function, such as ``symprec``,
-            ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
-            ``verbose``, ``bulk_symprec`` and ``centre_error_range``.
+            ``dist_tol_factor``, ``verbose``, ``bulk_symprec`` and
+            ``centre_error_range``.
     """
     relaxed_point_group = point_symmetry_from_defect_entry(
         defect_entry,
@@ -2119,7 +2110,7 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
         **{
             k.replace("bulk_", ""): v
             for k, v in kwargs.items()
-            if k in ["bulk_symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+            if k in ["bulk_symprec", "dist_tol_factor", "verbose"]
         },
     )  # same symprec used w/interstitial multiplicity for consistency
     assert isinstance(bulk_site_point_group, str)  # typing (str returned)
@@ -2135,7 +2126,6 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
                     "symprec",
                     "bulk_symprec",
                     "dist_tol_factor",
-                    "fixed_symprec_and_dist_tol_factor",
                     "verbose",
                 ]
             },
@@ -2455,7 +2445,6 @@ class DefectParser:
                     "dist_tol_factor",  # for interstitial multiplicities
                     "angle_tolerance",
                     "user_charges",
-                    "fixed_symprec_and_dist_tol_factor",
                     "verbose",
                 ]
             },

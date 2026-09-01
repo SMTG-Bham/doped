@@ -452,8 +452,8 @@ def get_defect_name_from_entry(
             ``True``.
         **kwargs:
             Additional keyword arguments to pass to
-            |point_symmetry_from_defect_entry|, such as ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor`` or ``verbose``.
+            |point_symmetry_from_defect_entry|, such as ``dist_tol_factor``
+            or ``verbose``.
 
     Returns:
         str: Defect name.
@@ -1448,8 +1448,7 @@ class DefectsGenerator(MSONable):
                   ``get_primitive_structure``, defect object initialisation
                   etc. Default is ``0.01``.
                 - Keyword arguments for ``get_all_equiv_sites``, such as
-                  ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
-                  and ``verbose``.
+                  ``dist_tol_factor``.
 
         Key attributes:
             defect_entries (dict):
@@ -1882,11 +1881,7 @@ class DefectsGenerator(MSONable):
                     equiv_coords=True,
                     symprec=self.symprec,
                     dist_tol_factor=self.kwargs.get("dist_tol_factor", 1.0),
-                    fixed_symprec_and_dist_tol_factor=self.kwargs.get(
-                        "fixed_symprec_and_dist_tol_factor", False
-                    ),
-                    verbose=self.kwargs.get("verbose", False),
-                )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
+                )  # equiv_coords=True
                 assert isinstance(equiv_frac_coords_in_prim, list | np.ndarray)
                 self.prim_interstitial_coords_mult_and_equiv_coords.append(
                     (
@@ -2880,7 +2875,6 @@ def get_interstitial_sites(
                         frac_coords,
                         host_structure,
                         symprec=symprec,
-                        return_symprec_and_dist_tol_factor=False,
                     ),
                 )
             ]

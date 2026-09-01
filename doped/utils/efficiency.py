@@ -6,9 +6,8 @@ functions/workflows/calculations in ``doped``.
 import contextlib
 import copy
 import itertools
-import operator
 from collections import defaultdict
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Generator, Sequence
 from fractions import Fraction
 from functools import cached_property, lru_cache
 from string import digits
@@ -1193,40 +1192,6 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     voronoi_struct.make_supercell(supercell_matrix)  # Map back to the supercell
 
     return voronoi_struct.sites.copy()  # copy() to help avoid mutability issues with cached outputs
-
-
-def _generic_group_labels(list_in: Sequence, comp: Callable = operator.eq) -> list[int]:
-    """
-    Group a list of unsortable objects, using a given comparator function.
-
-    Templated off the ``pymatgen-analysis-defects`` function, but fixed to
-    avoid broken reassignment logic and overwriting of labels (resulting in
-    sites being incorrectly dropped).
-
-    Previously in ``doped`` interstitial generation, but then removed after
-    updates in commit ``4699f38`` (for v3.0.0) to use faster site-matching
-    functions from ``doped``.
-
-    Args:
-        list_in (Sequence): A sequence of objects to group using ``comp``.
-        comp (Callable): A comparator function.
-
-    Returns:
-        list[int]: list of labels for the input list
-    """
-    list_out = [-1] * len(list_in)  # Initialize with -1 instead of None for clarity
-    label_num = 0
-
-    for i1 in range(len(list_in)):
-        if list_out[i1] != -1:  # Already labeled
-            continue
-        list_out[i1] = label_num
-        for i2 in range(i1 + 1, len(list_in)):
-            if list_out[i2] == -1 and comp(list_in[i1], list_in[i2]):
-                list_out[i2] = label_num
-        label_num += 1
-
-    return list_out
 
 
 class DopedVacancyGenerator(VacancyGenerator):

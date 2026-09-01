@@ -60,7 +60,13 @@ from doped.utils.plotting import (
     get_defect_type_palette,
     transition_level_diagram,
 )
-from doped.utils.symmetry import cluster_coords, get_all_equiv_sites, get_primitive_structure, get_sga
+from doped.utils.symmetry import (
+    LinkageMethod,
+    cluster_coords,
+    get_all_equiv_sites,
+    get_primitive_structure,
+    get_sga,
+)
 
 if TYPE_CHECKING:
     with contextlib.suppress(ImportError):
@@ -327,7 +333,7 @@ def group_defects_by_type_and_distance(
     defect_entries: list[DefectEntry],
     dist_tol: float = 1.5,
     symprec: float = 0.1,
-    method: str = "single",
+    method: LinkageMethod = "single",
 ) -> dict[str, dict[int, set[DefectEntry]]]:
     """
     Given an input list of |DefectEntry| objects, returns a dictionary of
@@ -403,7 +409,7 @@ def group_defects_by_distance(
     entry_list: list[DefectEntry],
     dist_tol: float = 1.5,
     symprec: float = 0.1,
-    method: str = "average",
+    method: LinkageMethod = "average",
 ) -> dict[int, set[DefectEntry]]:
     r"""
     Given an input list of |DefectEntry| objects, returns a dictionary of
@@ -470,7 +476,7 @@ def _group_defects_by_distance(
     entry_list: tuple[DefectEntry, ...],
     dist_tol: float = 1.5,
     symprec: float = 0.1,
-    method: str = "average",
+    method: LinkageMethod = "average",
 ) -> dict[int, frozenset[int]]:
     """
     Cached implementation of :func:`group_defects_by_distance`, returning
@@ -580,7 +586,6 @@ def _group_defects_by_distance(
                                     symm_bulk_struct,
                                     symprec=symprec,
                                     just_frac_coords=True,
-                                    return_symprec_and_dist_tol_factor=False,
                                 ),
                             )
                         )
@@ -3643,22 +3648,15 @@ class DefectThermodynamics(MSONable):
                 for your system (e.g. if there are very slight octahedral
                 distortions etc.). If set, then site symmetries & degeneracies
                 will be re-parsed/computed even if already present in the
-                |DefectEntry| object ``calculation_metadata``.
-                If ``fixed_symprec_and_dist_tol_factor`` is ``False``
-                (default), this value will be automatically adjusted (up to
-                10x, down to 0.1x) until the identified equivalent sites from
-                ``spglib`` have consistent point group symmetries. Setting
-                ``verbose`` to ``True`` will print information on the trialled
-                ``symprec`` (and ``dist_tol_factor`` values).
-                (Default: None)
+                |DefectEntry| object ``calculation_metadata``. (Default: None)
             **kwargs:
                 Additional keyword arguments to pass to
                 ``get_all_equiv_sites`` /
                 ``get_equiv_frac_coords_in_primitive``, such as
-                ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``, and
-                ``verbose``, and/or |Defect| initialization (such as
-                ``oxi_state``, ``multiplicity``, ``dist_tol_factor``) in the
-                ``defect_and_info_from_structures`` function.
+                ``dist_tol_factor`` and ``verbose``, and/or |Defect|
+                initialization (such as ``oxi_state``, ``multiplicity``,
+                ``dist_tol_factor``) in the ``defect_and_info_from_structures``
+                function.
 
         Returns:
             ``pandas`` ``DataFrame``
@@ -6546,12 +6544,12 @@ class FermiSolver(MSONable):
 
     # TODO: Should have a general ``scan()`` function, which takes in all variables, determines which
     #  are ranges/iterables to scan over (i.e. multi-dimension), and then calls the appropriate
-    #  ``scan_...``  function(s) to scan over
-    #  each N-dimensions, concatenates and returns the result
+    #  ``scan_...``  function(s) to scan over each N-dimensions, concatenates and returns the result
     # TODO: Related, can implement joblib Parallel / multiprocessing processing with smart batch size
     #  choices to make this much faster as well, if wanted. Smartest way would be to refactor all the
     #  internal pd.concat loops over self._solve to use a separate calc function, which internally
-    #  determines parallelisation speedup and batch size based on grid size, and acts accordingly
+    #  determines parallelisation speedup and batch size based on grid size, and acts accordingly (within
+    #  the general ``scan`` function?)
     def scan_temperature(
         self,
         annealing_temperature_range: float | range | list[float] | np.ndarray | None = None,

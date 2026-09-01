@@ -1139,13 +1139,7 @@ class DefectEntry(thermo.DefectEntry):
                 if already present in the |DefectEntry| object
                 ``calculation_metadata``.
                 You may want to adjust for your system (e.g. if there are very
-                slight octahedral distortions etc.). If
-                ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
-                this value will be automatically adjusted (up to 10x, down to
-                0.1x) until the identified equivalent sites from ``spglib``
-                have consistent point group symmetries. Setting ``verbose`` to
-                ``True`` will print information on the trialled ``symprec``
-                (and ``dist_tol_factor`` values).
+                slight octahedral distortions etc.).
                 (Default: None)
             bulk_symprec (float):
                 Symmetry precision to use for determining symmetry operations
@@ -1156,21 +1150,15 @@ class DefectEntry(thermo.DefectEntry):
                 distortions etc.). If set, then site symmetries & degeneracies
                 will be re-parsed/computed even if already present in the
                 |DefectEntry| object ``calculation_metadata``.
-                If ``fixed_symprec_and_dist_tol_factor`` is ``False``
-                (default), this value will be automatically adjusted (up to
-                10x, down to 0.1x) until the identified equivalent sites from
-                ``spglib`` have consistent point group symmetries. Setting
-                ``verbose`` to ``True`` will print information on the trialled
-                ``symprec`` (and ``dist_tol_factor`` values).
                 (Default: None)
             **kwargs:
                 Additional keyword arguments to pass to
                 ``get_all_equiv_sites`` /
                 ``get_equiv_frac_coords_in_primitive``, such as
-                ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``, and
-                ``verbose``, and/or |Defect| initialization (such as
-                ``oxi_state``, ``multiplicity``, ``dist_tol_factor``) in the
-                ``defect_and_info_from_structures`` function.
+                ``dist_tol_factor`` and ``verbose``, and/or |Defect|
+                initialization (such as ``oxi_state``, ``multiplicity``,
+                ``dist_tol_factor``) in the ``defect_and_info_from_structures``
+                function.
         """
         from doped.utils.symmetry import get_orientational_degeneracy, point_symmetry_from_defect_entry
 
@@ -1194,11 +1182,7 @@ class DefectEntry(thermo.DefectEntry):
                     self,
                     relaxed=False,
                     symprec=bulk_symprec,
-                    **{
-                        k: v
-                        for k, v in kwargs.items()
-                        if k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-                    },
+                    **{k: v for k, v in kwargs.items() if k in ["dist_tol_factor", "verbose"]},
                 )
             except Exception as e:
                 warnings.warn(f"Unable to determine bulk site symmetry for {self.name}, got error:\n{e!r}")
@@ -1222,11 +1206,7 @@ class DefectEntry(thermo.DefectEntry):
                     bulk_site_point_group=self.calculation_metadata["bulk site symmetry"],
                     symprec=symprec or 0.1,
                     bulk_symprec=bulk_symprec or 0.01,
-                    **{
-                        k: v
-                        for k, v in kwargs.items()
-                        if k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-                    },
+                    **{k: v for k, v in kwargs.items() if k in ["dist_tol_factor", "verbose"]},
                 )
             except Exception as e:
                 warnings.warn(
@@ -1727,9 +1707,8 @@ def template_defect_entry_from_structures(
             The bulk supercell structure.
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
+            (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
+            initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``) in the
             ``defect_and_info_from_structures`` function.
 
@@ -2753,31 +2732,19 @@ class Defect(core.Defect):
                 which uses ``self.symprec`` (which is ``0.01`` by default,
                 matching the ``pymatgen`` default. You may want to adjust
                 for your system (e.g. if there are very slight octahedral
-                distortions etc.). If ``fixed_symprec_and_dist_tol_factor`` is
-                ``False`` (default), this value will be automatically adjusted
-                (up to 10x, down to 0.1x) until the identified equivalent sites
-                from ``spglib`` have consistent point group symmetries. Setting
-                ``verbose`` to ``True`` will print information on the trialled
-                ``symprec`` (and ``dist_tol_factor``) values.
+                distortions etc.).
             dist_tol_factor (float):
                 Distance tolerance for clustering generated sites (to ensure
                 they are truly distinct), as a multiplicative factor of
                 ``symprec``. Default is 1.0 (i.e. ``dist_tol = symprec``, in
-                Å). If ``fixed_symprec_and_dist_tol_factor`` is ``False``
-                (default), this value will also be automatically adjusted if
-                necessary (up to 10x, down to 0.1x)(after ``symprec``
-                adjustments) until the identified equivalent sites from
-                ``spglib`` have consistent point group symmetries. Setting
-                ``verbose`` to ``True`` will print information on the trialled
-                ``dist_tol_factor`` (and ``symprec``) values.
+                Å).
             primitive_structure (|Structure| | None):
                 (Deprecated, to be removed in v4.1.) Unused; retained for
                 backwards compatibility. Primitive cell folding is now handled
                 internally in ``get_all_equiv_sites``.
             **kwargs:
                 Additional keyword arguments to pass to
-                ``get_all_equiv_sites``, such as ``fold_to_primitive``,
-                ``fixed_symprec_and_dist_tol_factor`` and ``verbose``.
+                ``get_all_equiv_sites``, such as ``fold_to_primitive``.
 
         Returns:
             int: The multiplicity of ``self.site`` in ``self.structure``.
@@ -3130,15 +3097,12 @@ class Interstitial(Defect, core.Interstitial):
         If ``multiplicity`` is not set in ``kwargs``, then it will be
         automatically calculated using ``get_multiplicity``. Keyword arguments
         for ``get_multiplicity``, such as ``symprec`` (-> ``self.symprec``),
-        ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor`` and
-        ``verbose`` can also be passed in ``kwargs``.
+        ``dist_tol_factor`` can also be passed in ``kwargs``.
         """
         if calc_multiplicity := "multiplicity" not in kwargs and len(args) < 3:  # kwarg or 3rd positional
             kwargs["multiplicity"] = 1  # placeholder; ``pymatgen`` breaks for Interstitials if not set
         multiplicity_kwargs = {
-            k: kwargs.pop(k)
-            for k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-            if k in kwargs
+            k: kwargs.pop(k) for k in ["dist_tol_factor"] if k in kwargs
         }  # symprec set as self.symprec and used by default in ``get_multiplicity``
         super().__init__(*args, **kwargs)
         if calc_multiplicity:  # efficient ``doped`` auto multiplicity determination
