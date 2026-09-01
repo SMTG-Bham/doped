@@ -55,6 +55,7 @@ from doped.utils.symmetry import (
     get_orientational_degeneracy,
     get_primitive_structure,
     get_sga,
+    group_order_from_schoenflies,
     point_symmetry_from_defect_entry,
     point_symmetry_from_structure,
     schoenflies_from_hermann,
@@ -107,6 +108,8 @@ def check_DefectsParser(dp, skip_corrections=False, **thermo_kwargs):
     assert dp.skip_corrections == skip_corrections
     assert len(dp.defect_folders) >= len(dp.defect_dict)
 
+    bulk_symprec = dp.kwargs.get("bulk_symprec", 0.01)
+
     for name, defect_entry in dp.defect_dict.items():
         print(f"Checking {name}")
         assert name == defect_entry.name
@@ -127,13 +130,26 @@ def check_DefectsParser(dp, skip_corrections=False, **thermo_kwargs):
             "Should be the same:",
             len(defect_entry.defect.equivalent_sites),
             defect_entry.defect.multiplicity,
-            defect_entry.defect.get_multiplicity(symprec=dp.kwargs.get("bulk_symprec", 0.01)),
+            defect_entry.defect.get_multiplicity(symprec=bulk_symprec),
         )  # debugging
         assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
         assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
-            symprec=dp.kwargs.get("bulk_symprec", 0.01)
+            symprec=bulk_symprec
         )
         assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+
+        bulk_site_symmetry = defect_entry.calculation_metadata.get("bulk site symmetry")
+        # site multiplicities must satisfy the orbit-stabiliser relation against the determined bulk site
+        # symmetry: multiplicity x |site point group| == number of spacegroup operations of the host cell
+        # (= n_primitive_cells x |host point group|:
+        if bulk_site_symmetry is not None:  # orbit-stabiliser check (see above)
+            site_pg_order = group_order_from_schoenflies(bulk_site_symmetry)
+            sga = get_sga(defect_entry.defect.structure, symprec=bulk_symprec)
+            n_ops = len(sga.get_symmetry_dataset().rotations)
+            assert defect_entry.defect.multiplicity * site_pg_order == n_ops, (
+                f"{name}: multiplicity {defect_entry.defect.multiplicity} x |{bulk_site_symmetry}| "
+                f"({site_pg_order}) != {n_ops}"
+            )
 
         from pymatgen.analysis.defects.core import Substitution as pmg_Substitution
         from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
@@ -2899,6 +2915,23 @@ class DefectsParsingTestCase(unittest.TestCase):
         dp, _warnings = _create_dp_and_capture_warnings(self.ZnS_DATA_DIR, dielectric=8.9)
         assert len(dp.defect_dict) == 17
 
+        # site multiplicities must satisfy the orbit-stabilizer relation against the determined bulk site
+        # symmetry: multiplicity x |site point group| == |host point group| (24, Td, for this F-43m host):
+        from doped.utils.symmetry import group_order_from_schoenflies, schoenflies_from_structure
+
+        host_pg_order = group_order_from_schoenflies(
+            schoenflies_from_structure(next(iter(dp.defect_dict.values())).bulk_supercell)
+        )
+        assert host_pg_order == 24  # Td
+        for name, defect_entry in dp.defect_dict.items():
+            bulk_site_symmetry = defect_entry.calculation_metadata.get("bulk site symmetry")
+            if bulk_site_symmetry is None:
+                continue
+            multiplicity = defect_entry.defect.multiplicity
+            assert multiplicity * group_order_from_schoenflies(bulk_site_symmetry) == host_pg_order, (
+                f"{name}: multiplicity {multiplicity} x |{bulk_site_symmetry}| != {host_pg_order}"
+            )
+
         for name, defect_entry in dp.defect_dict.items():
             print(f"Checking symmetry for {name}")
             bulk_site_symmetry = defect_entry.calculation_metadata["bulk site symmetry"]
@@ -4036,9 +4069,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         bulk ``symprec=0.01`` (which previously caused false periodicity
         breaking warnings).
         """
+        # the site sits ~0.013 Å off its ideal C4v position, with the stabilising operations' images
+        # spread continuously over 0-0.013 Å; ~0.0065 Å symprec tolerance:
         symprec_settings_and_expected_syms = [
             ({"bulk_symprec": 0.01}, "C4v", "C4v"),
-            ({"bulk_symprec": 0.008}, "Cs", "C4v"),
+            ({"bulk_symprec": 0.008}, "C4v", "C4v"),
             ({"bulk_symprec": 0.005}, "Cs", "C4v"),
             ({"bulk_symprec": 0.0025}, "C1", "C4v"),
             ({"symprec": 0.01}, "C4v", "Cs"),

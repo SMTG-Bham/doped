@@ -57,8 +57,10 @@ from doped.utils.parsing import _get_defect_supercell_frac_coords, get_vasprun
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     get_min_dist_between_equiv_sites,
+    group_order_from_schoenflies,
     point_symmetry_from_site,
     point_symmetry_from_structure,
+    schoenflies_from_structure,
 )
 
 
@@ -641,6 +643,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         self.capsys.readouterr()  # clear previous stdout
         print("Checking get_symmetries_and_degeneracies()...")
+        host_pg_order = group_order_from_schoenflies(
+            schoenflies_from_structure(next(iter(defect_thermo.defect_entries.values())).defect.structure)
+        )
         # test runs fine with different options for ``get_symmetries_and_degeneracies``:
         prev_df = None
         for kwargs in [
@@ -677,6 +682,18 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 "Mult",
             }
             assert set(symm_df.index.names) == {"Defect", "q"}
+
+            print("Checking orbit-stabiliser relation for site multiplicities & symmetries")
+            # per-primitive-cell site multiplicities must satisfy the orbit-stabiliser relation against the
+            # determined bulk site symmetries: Mult x |site point group| == |host point group|:
+            for (defect_name, q), row in symm_df.iterrows():
+                if "N/A" in (row["Site_Symm"], str(row["Mult"])):
+                    continue  # symmetry/multiplicity determination failed; warned separately
+                site_pg_order = group_order_from_schoenflies(row["Site_Symm"])
+                assert np.isclose(row["Mult"] * site_pg_order, host_pg_order), (
+                    f"{defect_name}_{q}: Mult {row['Mult']} x |{row['Site_Symm']}| ({site_pg_order}) "
+                    f"!= {host_pg_order}"
+                )
 
             if prev_df is not None:
                 print("Comparing to previous symm_df")
@@ -3417,7 +3434,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Chemical potential heatmap plotting requires 3-D data",
             "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
             "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.799",
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.719",
         ]:
             assert info_substring in output
         assert not w
@@ -3435,7 +3452,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Chemical potential heatmap plotting requires 3-D data",
             "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
             "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.799",
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.719",
         ]:
             assert info_substring in output
         assert not w
@@ -3543,9 +3560,9 @@ def test_Sb2S3_doping_interior_grid_scan():
 def test_Cu2SiSe3_dopability_interior_grid_scan():
     """
     As for ``test_Sb2S3_doping_interior_grid_scan``, but for the ternary system
-    Cu2SiSe3, which covers the barycentric |ChemicalPotentialGrid| path in
-    ``_get_doping_scan_points`` (whereas Sb2S3 is binary and hits the 1D
-    linear-interpolation branch).
+    Cu2SiSe3, which covers the multi-dimensional barycentric
+    |ChemicalPotentialGrid| path in ``_get_doping_scan_points`` (whereas Sb2S3
+    is binary and hits the 1D line-segment branch of ``get_grid``).
 
     The p-type dopability limit is ~0.04 eV lower (more VBM-ward) at an
     interior chemical potential point than at any vertex of the Cu-Si-Se

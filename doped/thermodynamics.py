@@ -7363,6 +7363,14 @@ class FermiSolver(MSONable):
         ``doped``-formatted chemical potential dictionary, and then calls
         ``_solve`` for each point in the grid.
 
+        1D chemical potential spaces -- binary systems, or any two chemical
+        potential limits of a multinary system (supplied as a two-limit
+        ``chempots`` dict) -- are scanned as uniformly-gridded line segments,
+        with output rows ordered along the line (suited to e.g. line plots).
+        Alternatively, ``scan_chempots`` with
+        :func:`get_interpolated_chempots` gives a path-ordered scan between
+        two specific chemical potential points (in any system).
+
         If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
         default) are specified, then the frozen defect approximation is
         employed, whereby total defect concentrations are calculated at the
@@ -8664,6 +8672,20 @@ def get_interpolated_chempots(
     Here, these should be dictionaries of chemical potentials for `single`
     limits, in the format: ``{element symbol: chemical potential}``.
 
+    This can be combined with ``FermiSolver.scan_chempots`` to give a
+    path-ordered scan of defect/carrier concentrations along the line between
+    two chemical potential points (e.g. two chemical potential limits):
+
+    .. code-block:: python
+
+        chempots = solver.defect_thermodynamics.chempots
+        mu_start = chempots["limits_wrt_el_refs"][get_X_rich_poor_limit("Cd-rich")]
+        mu_end = chempots["limits_wrt_el_refs"][get_X_rich_poor_limit("Te-rich")]
+        mu_df = solver.scan_chempots(
+            get_interpolated_chempots(mu_start, mu_end, n_points=20),
+            annealing_temperature=1000,
+        )
+
     Args:
         chempot_start (dict):
             A dictionary representing the starting chemical potentials.
@@ -8804,17 +8826,62 @@ def _get_min_max_target_values(
         return x.min() if "min" in min_or_max else x.max()
 
     chempots_labels = [col for col in results_df.columns if col.startswith("μ_")]
+    target_names, column = _resolve_target_names(results_df, target, min_or_max, verbose=verbose)
 
-    # handle MultiIndex (per_charge=True gives ("Defect", "Charge") tuples) -- extract defect names:
-    defect_names = (
+    if column:  # target is a column in the df
+        target_name = target_names[0]
+        current_value = min_or_max_func(results_df[target_name])
+        target_df = results_df[results_df[target_name] == current_value]
+        target_chempot = target_df[chempots_labels]
+
+    else:  # target is df row/defect(s); filter for this, handling simple and MultiIndex (per_charge=True):
+        filtered_df = results_df[_get_defect_names(results_df).isin(target_names)]
+        # TODO: When adding element option, will need to subtract for vacancies...
+
+        # group by chemical potentials, to sum values at the same chempots (e.g. for different defects /
+        # charge states); only sum the concentration column to avoid issues with non-numeric columns (e.g.
+        # "Charge State Population" strings):
+        summed_conc = filtered_df.groupby(chempots_labels)["Concentration (cm^-3)"].sum()
+        current_value = min_or_max_func(summed_conc)  # find the extremum
+        target_chempot = summed_conc[summed_conc == current_value].index.to_frame()  # chempots at extremum
+        # get all DataFrame rows which have the chempots matching the extremum row:
+        target_df = results_df[results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)]
+
+    target_chempot = target_chempot.drop_duplicates(ignore_index=True)
+    return target_df, current_value, target_chempot
+
+
+def _get_defect_names(results_df: pd.DataFrame) -> pd.Index:
+    """
+    Get the defect names from a concentrations ``DataFrame`` index, handling
+    MultiIndex (``per_charge=True`` gives ("Defect", "Charge") tuples).
+    """
+    return (
         results_df.index.get_level_values("Defect")
         if isinstance(results_df.index, pd.MultiIndex)
         else results_df.index
     )
 
-    # determine target; can be column, defect name, element (TODO), starting string of column name,
-    # starting string of defect name, column name subset or defect name subset, w/that preferential order:
 
+def _resolve_target_names(
+    results_df: pd.DataFrame, target: str, min_or_max: str, verbose: bool = False
+) -> tuple[list[str], bool]:
+    """
+    Resolve the ``target`` of a ``FermiSolver.optimise`` search to the matching
+    column or defect name(s) in a ``results_df`` ``DataFrame`` (as output by
+    ``FermiSolver._solve`` / ``scan_chempots``), printing the identified
+    targets if ``verbose``.
+
+    The target can be a column name, defect name, starting string of a column
+    name, starting string of a defect name, column name subset or defect name
+    subset, with that preferential order.
+
+    Returns:
+        tuple[list[str], bool]:
+            The matching target name(s), and whether the target is a column
+            (``True``) or defect name(s) (``False``).
+    """
+    defect_names = _get_defect_names(results_df)
     target_names = (
         [col for col in results_df.columns if col == target]
         or [name for name in defect_names if name == target]
@@ -8823,7 +8890,7 @@ def _get_min_max_target_values(
         or [col for col in results_df.columns if target in col]
         or [name for name in defect_names if target in name]
     )
-    target_names = sorted(set(target_names), key=target_names.index)  # preserve order
+    target_names = list(dict.fromkeys(target_names))  # deduplicate, preserving order
 
     if not target_names:
         raise ValueError(
@@ -8831,7 +8898,7 @@ def _get_min_max_target_values(
             f"name/substring! See docstring for more info."
         )
 
-    column = next(iter(target_names)) in results_df.columns
+    column = target_names[0] in results_df.columns
 
     if verbose:
         print(
@@ -8839,34 +8906,31 @@ def _get_min_max_target_values(
             f"{'column' if column else 'defect(s)'}: {target_names}..."
         )
 
+    if column and len(target_names) > 1:  # can only match one column (but multiple rows fine)
+        warnings.warn(
+            f"Multiple columns with the name '{target}' found in the results DataFrame! "
+            f"Choosing the first match '{target_names[0]}' as the target."
+        )
+
+    return target_names, column
+
+
+def _extract_target_value(
+    results_df: pd.DataFrame, target_names: list[str], column: bool, min_or_max: str
+) -> float:
+    """
+    Extract the target value from a single-chemical-potential-point solve
+    ``DataFrame`` (as output by ``FermiSolver._solve``), given resolved
+    ``target_names`` and ``column`` from ``_resolve_target_names``: the
+    (min/max) value of the target column, or the summed concentration of the
+    target defect(s).
+    """
     if column:
-        target_name = next(iter(target_names))
-        if len(target_names) > 1:  # can only match one column
-            warnings.warn(
-                f"Multiple columns with the name '{target}' found in the results DataFrame! "
-                f"Choosing the first match '{target_name}' as the target."
-            )
-        current_value = min_or_max_func(results_df[target_name])
-        target_df = results_df[results_df[target_name] == current_value]
-        target_chempot = target_df[chempots_labels]
+        series = results_df[target_names[0]]
+        return float(series.min() if "min" in min_or_max else series.max())
 
-    else:
-        # filter df for the chosen defect(s), handling both simple and MultiIndex (per_charge=True):
-        filtered_df = results_df[defect_names.isin(target_names)]
-        # TODO: When adding element option, will need to subtract for vacancies...
-
-        # group by chemical potentials, to sum values at the same chempots (e.g. for different defects /
-        # charge states); only sum the concentration column to avoid issues with non-numeric columns (e.g.
-        # "Charge State Population" strings):
-        summed_conc = filtered_df.groupby(chempots_labels)["Concentration (cm^-3)"].sum()
-        current_value = min_or_max_func(summed_conc)  # find the extremum
-        # get chempots which min/maximise the target:
-        target_chempot = summed_conc[summed_conc == current_value].index.to_frame()
-        # get all DataFrame rows which have the chempots matching the extremum row:
-        target_df = results_df[results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)]
-
-    target_chempot = target_chempot.drop_duplicates(ignore_index=True)
-    return target_df, current_value, target_chempot
+    matching = _get_defect_names(results_df).isin(target_names)
+    return float(results_df.loc[matching, "Concentration (cm^-3)"].sum())
 
 
 def _ensure_list(

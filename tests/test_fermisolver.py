@@ -31,6 +31,7 @@ from test_thermodynamics import (
 )
 from test_utils import EXAMPLE_DIR, STYLE, _print_warning_info, custom_mpl_image_compare, data_dir
 
+from doped.chemical_potentials import ChemicalPotentialGrid
 from doped.thermodynamics import (
     DefectThermodynamics,
     FermiSolver,
@@ -38,7 +39,7 @@ from doped.thermodynamics import (
     get_fermi_dos,
     get_interpolated_chempots,
 )
-from doped.utils.plotting import _get_group_keyed_colors_and_linestyles, format_defect_name
+from doped.utils.plotting import format_defect_name, get_defect_colors_and_linestyles
 
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
 
@@ -1279,21 +1280,21 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             defects = list(df.index.unique())
             # colour keyed on the extrinsic element (so that e.g. F_Se and F_i share a colour), with
             # substitutions/interstitials (and inequivalent sites) differentiated by cycled linestyles:
-            colors, linestyles = _get_group_keyed_colors_and_linestyles(
+            colors, linestyles = get_defect_colors_and_linestyles(
                 Se_ext_thermo,
-                {defect: defect for defect in defects},
+                defects,
                 variant_style="linestyle",
                 color_grouping="element",
                 colormap="batlowS",
             )
-            for i, defect in enumerate(defects):
+            for defect in defects:
                 rows = df[df.index == defect].sort_values("Annealing Temperature (K)")
                 ax.plot(
                     rows["Annealing Temperature (K)"],
                     rows["Concentration (cm^-3)"],
                     label=format_defect_name(defect, include_charge=False),
-                    color=colors[i],
-                    linestyle=linestyles[i],
+                    color=colors[defect],
+                    linestyle=linestyles[defect],
                     marker="o",
                 )
             carriers = df.drop_duplicates("Annealing Temperature (K)").sort_values(
@@ -1390,16 +1391,28 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     # scan_chempots, scan_chemical_potential_grid, optimise
 
     @parameterize_backend()
-    def test_scan_chemical_potential_grid_non_2D_data(self, backend):
+    def test_scan_chemical_potential_grid_binary_1D(self, backend):
+        """
+        Test that ``scan_chemical_potential_grid`` supports binary (1D)
+        chemical potential spaces; the "grid" is then a uniformly spaced line
+        between the two limits (which are included exactly).
+        """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        with pytest.raises(ValueError) as exc:
-            solver.scan_chemical_potential_grid()
-        assert (
-            "Chemical potential grid generation is only possible for systems with "
-            "two or more independent variables (chemical potentials), i.e. ternary or "
-            "higher-dimensional systems. Stable chemical potential ranges are just a line for binary "
-            "systems, for which ``FermiSolver.interpolate_chempots()`` can be used." in str(exc.value)
+        concentrations = solver.scan_chemical_potential_grid(n_points=10, annealing_temperature=800)
+        unique_chempots = concentrations[["μ_Cd (eV)", "μ_Te (eV)"]].drop_duplicates()
+        assert len(unique_chempots) >= 10
+        # all points lie exactly on the CdTe stability line (μ_Cd + μ_Te = ΔHf(CdTe)):
+        formation_energy = solver._get_single_chempot_dict(limit="Cd-rich")[0]["Te"]
+        assert np.allclose(  # atol to accommodate default grid rounding (``decimal_places=4``):
+            unique_chempots["μ_Cd (eV)"] + unique_chempots["μ_Te (eV)"], formation_energy, atol=1e-3
         )
+        for limit in ["Cd-rich", "Te-rich"]:  # limits included exactly (unrounded):
+            single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit=limit)
+            assert any(
+                row["μ_Cd (eV)"] == single_chempot_dict["Cd"]
+                and row["μ_Te (eV)"] == single_chempot_dict["Te"]
+                for _idx, row in unique_chempots.iterrows()
+            )
 
     @parameterize_backend()
     def test_scan_dopant_concentration_equilibrium(self, backend):
@@ -1649,20 +1662,20 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             strict=True,
         ):
             defects = list(df.index.unique())
-            colors, linestyles = _get_group_keyed_colors_and_linestyles(
+            colors, linestyles = get_defect_colors_and_linestyles(
                 solver.defect_thermodynamics,
-                {defect: defect for defect in defects},
+                defects,
                 variant_style="both",
                 colormap="batlowS",
             )  # default type grouping
-            for i, defect in enumerate(defects):
+            for defect in defects:
                 rows = df[df.index == defect].sort_values("Dopant (cm^-3)")
                 ax.plot(
                     rows["Dopant (cm^-3)"],
                     rows["Concentration (cm^-3)"],
                     label=format_defect_name(defect, include_charge=False, include_site_info=True),
-                    color=colors[i],
-                    linestyle=linestyles[i],
+                    color=colors[defect],
+                    linestyle=linestyles[defect],
                     marker="o",
                 )
             carriers = df.drop_duplicates("Dopant (cm^-3)").sort_values("Dopant (cm^-3)")
@@ -3768,7 +3781,8 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         Test that ``optimise`` never re-solves the same (rounded) chemical
         potential point (the evaluation cache is shared across all search
         branches, polish and audit steps), and that repeated calls give
-        identical (deterministic) results.
+        identical (deterministic) results (with the random audit, with the same
+        seed).
         """
         solver = FermiSolver(
             self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend="doped"
@@ -3800,9 +3814,8 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         scale use the hybrid grid scheme (coarse barycentric "guarantee"
         lattice + uniform cartesian overlay at the finer resolution), rather
         than a dense barycentric lattice -- which heavily oversamples the small
-        sliver simplices of many-vertex hulls like Cu2SiSe3's (its density is
-        set by the global hull diameter), costing several times more solves for
-        the same effective sampling.
+        sliver simplices of many-vertex hulls like Cu2SiSe3's, which would cost
+        more solves for the same effective sampling.
         """
         n_solves = []
         original_solve = self.solver_doped._solve
@@ -3821,7 +3834,8 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             n_audit_points=0,
             polish=False,
         )
-        # a dense 0.1 eV barycentric first pass alone costs >700 solves here; hybrid ~330 total:
+        # a dense 0.1 eV barycentric first pass alone would cost >700 solves here; hybrid ~330 total:
+        assert len(ChemicalPotentialGrid(self.Cu2SiSe3_thermo.chempots).get_grid(resolution=0.1)) > 700
         assert len(n_solves) < 500
         assert np.isclose(result["μ_Cu (eV)"].iloc[0], -0.4636, atol=1e-3)  # Cu-poor vertex optimum
 
@@ -3847,12 +3861,27 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         assert np.isclose(result.iloc[0]["μ_Cu (eV)"], 0, atol=1e-6)  # Cu-rich limit, as with defaults
         _check_output_concentrations(solver, result)
 
+        n_solves = []
+        original_solve = solver._solve
+
+        def counting_solve(*args, **kwargs):  # spy wrapping the real _solve
+            n_solves.append(1)
+            return original_solve(*args, **kwargs)
+
+        solver._solve = counting_solve
+        mode_solve_counts = []
         for mode in ["fast", "simple", "legacy"]:  # equivalent shorthands for the above
+            n_solves.clear()
             assert result.equals(solver.optimise(**optimise_kwargs, mode=mode))
+            mode_solve_counts.append(len(n_solves))
+        assert len(set(mode_solve_counts)) == 1  # identical search configurations -> identical costs
 
         # explicitly-set search kwargs take precedence over the ``mode`` preset (a 0.2 eV first-pass
         # grid adds points, changing the solved-points pool but not the (vertex) optimum here):
+        n_solves.clear()
         overridden = solver.optimise(**optimise_kwargs, mode="fast", initial_grid_resolution=0.2)
+        solver._solve = original_solve
+        assert len(n_solves) > mode_solve_counts[0]  # finer first-pass grid actually altered the search
         assert overridden.iloc[0]["μ_Cu (eV)"] == result.iloc[0]["μ_Cu (eV)"]
 
         with pytest.raises(ValueError, match="Unrecognised optimise `mode`"):
