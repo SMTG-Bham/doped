@@ -3,17 +3,20 @@ Quantum ESPRESSO (``pw.x`` and pp.x(.cube files)) calculation output parsing for
 """
 
 import contextlib
+import copy
 import inspect
 import os
 import warnings
 from pathlib import Path
-from typing import Any, Literal  # noqa: F401  (kept for the moved annotations)
+from typing import TYPE_CHECKING, Any, Literal  # noqa: F401  (kept for the moved annotations)
 from xml.parsers.expat import ExpatError
 
 import numpy as np
 from ase.io.cube import read_cube_data
+from pymatgen.core import Composition
 from pymatgen.core.units import Ry_to_eV
-from pymatgen.entries.computed_entries import ComputedEntry
+from pymatgen.electronic_structure.dos import Dos, FermiDos
+from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.espresso.outputs.pwxml import PWxml
 from pymatgen.io.espresso.utils import parse_pwvals
 from pymatgen.io.vasp import VolumetricData
@@ -21,15 +24,27 @@ from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.util.typing import PathLike
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import map_coordinates
+from tqdm import tqdm
 
+from doped import pool_manager
 from doped.io import utils as _io_utils
-from doped.io.espresso.inputs import SUBFOLDER_PRIORITY  # noqa: F401  (re-exported backend constant)
+from doped.io.espresso.inputs import (
+    SUBFOLDER_PRIORITY,  # noqa: F401  (re-exported backend constant)
+    DopedDictSetQE,
+    _kpoints_grid_from_reciprocal_density,
+    default_qe_HSE_set as _qe_hse_relax_defaults,
+    default_qe_set as _qe_convergence_defaults,
+)
 from doped.io.outputs import CalculationOutputs
 from doped.io.utils import _multiple_files_warning, find_archived_fname
-from doped.utils.parsing import (  # VASP-only helpers; no ``doped.io`` home outside ``doped/io/vasp/``
+from doped.utils.parsing import (  # ``doped.utils.parsing`` helpers; no ``doped.io`` home outside vasp
+    _get_output_files_and_check_if_multiple,
     get_locpot,
     get_magnetization_from_vasprun,
 )
+
+if TYPE_CHECKING:
+    from doped.chemical_potentials import CompetingPhases, CompetingPhasesAnalyzer
 
 BOHR_TO_ANGSTROM = 0.529177
 
@@ -1425,4 +1440,1021 @@ MISMATCH_WARNING_SPECS = {
     },
 }
 
+# =====================================================================================================
+# Quantum ESPRESSO utilities for thermodynamics.py
+# (helpers for using Quantum ESPRESSO outputs with the thermodynamic / concentration analyses above)
+# =====================================================================================================
+
+
+def get_fermi_dos_from_espresso_dos(
+    dos: PathLike,
+    bulk_pwxml: PathLike | None = None,
+    structure=None,
+    nelecs: float | None = None,
+) -> FermiDos:
+    r"""
+    Create a ``pymatgen`` ``FermiDos`` object from a Quantum ESPRESSO density
+    of states (DOS), for use as the ``bulk_dos`` input to
+    ``DefectThermodynamics`` (for Fermi level / carrier concentration
+    analyses).
+
+    ``doped``\'s ``bulk_dos`` handling natively supports ``pymatgen``
+    ``FermiDos``/|Vasprun| inputs, but a Quantum ESPRESSO ``EspressoDos`` (from
+    ``pymatgen.io.espresso``) carries no crystal structure, which is needed for
+    the volume -> cm^-3 normalisation of carrier concentrations. The structure
+    is therefore supplied here -- most conveniently via the bulk supercell
+    ``espresso.xml`` (``bulk_pwxml``), i.e. the cell the DOS was computed on.
+    The band edges (VBM/CBM/gap) are determined from the DOS itself, as for the
+    VASP (|Vasprun|) workflow.
+
+    The returned ``FermiDos`` can be passed directly as the ``bulk_dos`` input
+    to ``DefectThermodynamics``.
+
+    Args:
+        dos (PathLike | EspressoDos):
+            A ``pymatgen`` ``EspressoDos`` object, or a path to a Quantum
+            ESPRESSO ``dos.x`` output file (``fildos``), parsed with
+            ``EspressoDos.from_fildos``.
+        bulk_pwxml (PathLike | PWxml | None):
+            A ``pymatgen`` ``PWxml`` object, or a path to the bulk supercell
+            ``espresso.xml`` file (i.e. the cell the DOS was computed on), used
+            to obtain the ``structure`` for the volume normalisation and the
+            number of valence electrons (``nelec``) for the DOS normalisation.
+        structure (Structure | None):
+            The structure of the cell the DOS was computed on (usually the bulk
+            supercell), used for the volume -> cm^-3 normalisation. Taken from
+            ``bulk_pwxml`` if not provided directly.
+        nelecs (float | None):
+            The number of valence electrons in the cell the DOS was computed on
+            (Quantum ESPRESSO's ``nelec``), used to normalise the DOS. Taken
+            from ``bulk_pwxml`` if not provided directly. If neither is given,
+            ``FermiDos`` falls back to the all-electron count (with a warning),
+            which inflates carrier concentrations.
+
+    Returns:
+        FermiDos: The ``FermiDos`` object.
+    """
+    from pymatgen.io.espresso.outputs.dos import EspressoDos
+    from pymatgen.io.espresso.outputs.pwxml import PWxml
+
+    if not isinstance(dos, EspressoDos):
+        dos = EspressoDos.from_fildos(dos)
+
+    if bulk_pwxml is not None and not isinstance(bulk_pwxml, PWxml):
+        bulk_pwxml = PWxml(find_archived_fname(str(bulk_pwxml)))  # resolves ``.xml`` -> ``.xml.gz``
+
+    if structure is None and isinstance(bulk_pwxml, PWxml):
+        structure = bulk_pwxml.final_structure
+
+    if structure is None:
+        raise ValueError(
+            "The bulk structure is required to build a `FermiDos` from a Quantum ESPRESSO DOS (for the "
+            "volume -> cm^-3 normalisation), but was not provided. Either supply `bulk_pwxml` (the bulk "
+            "supercell `espresso.xml`) or `structure` directly."
+        )
+
+
+    if nelecs is None and isinstance(bulk_pwxml, PWxml):
+        nelecs = bulk_pwxml.nelec
+
+    if nelecs is None:
+        warnings.warn(
+            "The number of valence electrons (`nelec`) could not be determined (no `bulk_pwxml` or "
+            "`nelecs` is provided), so the `FermiDos` will normalise the DOS to the all-electron count "
+            "from the structure composition. This results in the wrong carrier concentrations."
+            " Please provide `bulk_pwxml` (the bulk supercell `espresso.xml`) or set `nelecs` explicitly (Quantum ESPRESSO's `nelec`)."
+        )
+
+    return FermiDos(
+        Dos(efermi=dos.efermi, energies=dos.energies, densities=dos.tdos),
+        structure=structure,
+        nelecs=nelecs,
+    )
+
+
+# =====================================================================================================
+# Quantum ESPRESSO utilities for chemical_potentials.py
+# (competing-phase input generation & output parsing for chemical potential analysis; moved here from
+# ``doped/chemical_potentials.py``, with the former ``CompetingPhasesQE``/``CompetingPhasesAnalyzerQE``
+# classes converted to module-level functions per the PR #154 ``doped.io`` backend layout)
+# =====================================================================================================
+
+# ──────────────────────────────────────────────────────────────────────────
+# espresso competing-phase parsing helpers
+# ──────────────────────────────────────────────────────────────────────────
+
+
+# TODO: Break up to match the PR #154 backend protocol: the parsing here should become
+#  ``get_competing_phase_entry(path)`` (returning just the entry, with convergence & folder info in
+#  ``entry.data``), with exception catching handled by the generic
+#  ``_parse_entry_and_catch_exception`` in ``chemical_potentials.py``.
+def _parse_entry_from_espresso_and_catch_exception(
+    espresso_path: PathLike,
+) -> tuple:
+    """
+    Parse a espresso ``.xml`` output file into a ``ComputedStructureEntry``,
+    catching any exceptions and returning the error message and path if one
+    is raised.  Analogous to ``_parse_entry_from_vasprun_and_catch_exception``.
+    """
+    try:
+
+        pwxml = get_espresso_run(espresso_path)
+        # ``PWxml`` (pymatgen-io-espresso) subclasses ``Vasprun`` but never sets the
+        # ``generator`` attribute (espresso's espresso.xml has no ``<generator>`` block). Recent
+        # pymatgen versions access ``self.generator["DATE"]`` when building the default
+        # ``entry_id`` in the inherited ``Vasprun.get_computed_entry()``, raising
+        # ``AttributeError: 'PWxml' object has no attribute 'generator'``. Pass an explicit
+        # ``entry_id`` to bypass that branch:
+        entry = pwxml.get_computed_entry(entry_id=f"pwxml-{espresso_path}")
+        unique_symbols = sorted(set(pwxml.atomic_symbols))
+        kpoints_grid = _get_qe_kpoints_grid(pwxml)
+        summary_dict = {}
+        with contextlib.suppress(Exception):
+            band_gap, cbm, *_ = pwxml.eigenvalue_band_properties
+            # guard against infinite band gaps (common with band-gap materials in espresso; no empty bands calculated without setting nbnd),
+            # which would otherwise break entry classification and JSON serialisation:
+            summary_dict["band_gap"] = _handle_infinite_band_gap(band_gap, cbm, espresso_path)[0]
+            summary_dict["total_magnetization"] = get_magnetization_from_vasprun(pwxml)
+
+        entry.data.update(
+            {
+                "formula_pretty": entry.composition.reduced_formula,
+                "nsites": len(entry.structure),
+                "volume": entry.structure.volume,
+                "energy_per_atom": entry.energy_per_atom,
+                "elements": unique_symbols,
+                "nelements": len(unique_symbols),
+                "kpoints": (
+                    kpoints_grid if kpoints_grid is not None else list(pwxml.kpoints_frac)
+                ),
+                "qe_input": pwxml.parameters,
+                "pseudo_filenames": list(pwxml.potcar_spec),
+                "summary": summary_dict,
+            }
+        )
+        electronic_converged = pwxml.converged_electronic
+        ionic_converged = pwxml.converged_ionic
+        folder = os.path.dirname(str(espresso_path))
+        return entry, folder, electronic_converged, ionic_converged
+    except Exception as e:
+        return str(e), espresso_path, False, False
+
+
+def _default_qe_competing_phases_path(composition: str | Composition) -> str:
+    """
+    Get the default host-compound folder for QE competing phase calculations:
+    ``"{host}_QE/CompetingPhases_{host}_QE"`` (e.g.
+    ``"MgO_QE/CompetingPhases_MgO_QE"``), i.e. a ``{host}_QE`` parent folder
+    keyed on the host composition's reduced formula.
+
+    Used as the default ``output_path`` for :func:`qe_convergence_setup` /
+    :func:`write_relaxation_files` when writing inputs, and as the default
+    parsing path for :func:`get_competing_phases_analyzer`, so that
+    generated inputs are found again without having to specify the path.
+
+    Args:
+        composition (str or ``Composition``):
+            Composition of the host material (e.g. ``"MgO"``).
+
+    Returns:
+        str:
+            The default competing phases folder for this host composition.
+    """
+    host = Composition(composition).reduced_formula
+    return os.path.join(f"{host}_QE", f"CompetingPhases_{host}_QE")
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# competing-phase input generation (formerly ``CompetingPhasesQE`` methods)
+# NOTE: under the PR #154 ``doped.io`` layout, these input-generation functions belong in
+# ``doped/io/espresso/inputs.py`` (with only the parsing functions here in ``outputs.py``)
+# ──────────────────────────────────────────────────────────────────────────
+
+
+# TODO: Break up into ``get_kpoint_convergence_sets``/``write_kpoint_convergence_files`` (plus the
+#  ``ecutwfc`` sweep, which has no VASP analogue) to match the PR #154 backend protocol; kept as-is
+#  (just renamed ``self`` -> ``competing_phases``) for now.
+def qe_convergence_setup(
+    competing_phases: "CompetingPhases",
+    output_path: PathLike | None = None,
+    kpoints_metals: tuple[float, float, float] = (40, 1000, 5),
+    kpoints_nonmetals: tuple[float, float, float] = (5, 120, 5),
+    kpoint_sweep_ecutwfc: int | None = None,
+    ecut_convergence: tuple = (20, 90, 10),
+    ecut_kpoints_metals: float = 200,
+    ecut_kpoints_nonmetals: float = 64,
+    pseudo_dir: str = "./pseudo_folder_name/",
+    pseudo_map: dict | None = None,
+    soc: bool = False,
+    kpoints_shift: tuple[int, int, int] = (0, 0, 0),
+    user_system_settings: dict | None = None,
+    user_control_settings: dict | None = None,
+    user_electron_settings: dict | None = None,
+) -> None:
+    """
+    Generates espresso ``pw.in`` input files for k-points and plane-wave cutoff
+    (``ecutwfc``) convergence testing of competing phases, using the
+    :data:`~doped.io.espresso.inputs.QE_PSEUDO_LIBRARY` filenames by default.
+    Analogous to ``doped.io.vasp.inputs.write_kpoint_convergence_files``
+    (formerly ``CompetingPhases.convergence_setup``) for VASP.
+
+    All competing-phase inputs are written under a single host-compound folder.
+    Two separate sub-trees are written per phase (under
+    ``output_path/<phase>/``):
+
+    - ``kpoint_converge/k<kx>_<ky>_<kz>/pw.in``: k-point grid varied at fixed
+      ``ecutwfc``. Skipped for diatomic molecules (Γ-only is exact for
+      molecules-in-a-box, so there is no k-point grid to converge).
+    - ``ecut_convergence/ecutwfc_<N>/pw.in``: ``ecutwfc`` varied at a
+      fixed k-point grid. Generated for *all* phases including molecules
+      (the plane-wave cutoff must be converged for molecules too).
+      ``ecutrho`` is left at the set default while ``ecutwfc`` is swept,
+      following standard ``ecutwfc``-convergence methodology.
+
+    Args:
+        competing_phases (CompetingPhases):
+            The :class:`~doped.chemical_potentials.CompetingPhases` object
+            whose entries to generate calculation inputs for.
+        output_path (PathLike or None):
+            Host-compound parent folder under which all competing-phase
+            sub-folders are written. If ``None`` (default), this is set to
+            ``"{host_compound}_QE/CompetingPhases_{host_compound}_QE"``
+            (e.g. ``"MgO_QE/CompetingPhases_MgO_QE"``), i.e. a
+            ``{host}_QE`` parent folder keyed on the host composition's
+            reduced formula.
+        kpoints_metals (tuple[float, float, float]):
+            ``(min, max, step)`` reciprocal k-point density (Å^-3) range
+            to test for metallic phases (``max`` exclusive).
+             Default ``(40, 1000, 5)``. Note that only
+            unique k-point grids are generated, so small step sizes (as
+            default) just result in each k-points choice between ``min``
+            and ``max`` being included.
+        kpoints_nonmetals (tuple[float, float, float]):
+            ``(min, max, step)`` reciprocal k-point density (Å^-3) range
+            to test for non-metallic phases (``max`` exclusive).
+            Default ``(5, 120, 5)``. Note that
+            only unique k-point grids are generated, so small step sizes
+            (as default) just result in each k-points choice between
+            ``min`` and ``max`` being included.
+        kpoint_sweep_ecutwfc (int or None):
+            ``ecutwfc`` (Ry) held fixed while the k-grid is swept.
+            ``None`` (default) keeps the YAML set default (60 Ry).
+        ecut_convergence (tuple):
+            ``(min, max, step)`` ``ecutwfc`` range in Ry for the cutoff
+            convergence sweep, with ``max`` inclusive. Default
+            ``(20, 90, 10)`` (i.e. 20, 30, 40, 50, 60, 70, 80, 90 Ry).
+        ecut_kpoints_metals (float):
+            Fixed reciprocal k-point density (Å^-3) used for metallic
+            phases during the ``ecutwfc`` sweep. Default 200.
+        ecut_kpoints_nonmetals (float):
+            Fixed reciprocal k-point density (Å^-3) used for non-metallic
+            phases during the ``ecutwfc`` sweep. Default 64. Molecules use
+            Γ-only sampling regardless.
+        pseudo_dir (str):
+            Path to the directory containing UPF pseudopotential files,
+            written into ``&CONTROL``. Default ``"./pseudo"``.
+        pseudo_map (dict or None):
+            ``{element_symbol: pseudo_filename}`` mapping, e.g.
+            ``{"O": "O.pbe-n-kjpaw_psl.0.1.UPF"}``. Defaults to the
+            1.3.0 PBE Efficiency filename for each element; any entries
+            given here override that default per element.
+        soc (bool):
+            If ``True``, include spin-orbit coupling by setting
+            ``noncolin=.true.`` and ``lspinorb=.true.`` in ``&SYSTEM``
+            for every phase (requires fully-relativistic
+            pseudopotentials). Magnetic phases are then seeded via
+            ``starting_magnetization`` instead of
+            ``nspin``/``tot_magnetization`` (which espresso does not allow
+            for noncolinear calculations). Should be consistent with the
+            defect supercell calculations. Default ``False``.
+        kpoints_shift (tuple):
+            ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
+            ``K_POINTS automatic`` card, e.g. ``(1, 1, 1)`` for a
+            half-grid (Γ-shifted) Monkhorst-Pack mesh. Default
+            ``(0, 0, 0)`` (no shift).
+        user_system_settings (dict or None):
+            Override default ``&SYSTEM`` namelist settings, e.g.
+            ``{"ecutwfc": 80, "ecutrho": 400"}``.
+        user_control_settings (dict or None):
+            Override default ``&CONTROL`` namelist settings.
+        user_electron_settings (dict or None):
+            Override default ``&ELECTRONS`` namelist settings.
+    """
+    # (lazy import to avoid a circular ``doped.chemical_potentials`` <-> ``doped.io`` module import)
+    from doped.chemical_potentials import _get_competing_phase_folder_name
+
+    if output_path is None:
+        output_path = _default_qe_competing_phases_path(competing_phases.composition)
+
+    base = copy.deepcopy(_qe_convergence_defaults)
+    base["control"]["pseudo_dir"] = pseudo_dir
+    base["control"]["calculation"] = "scf"  # convergence testing uses single-point SCF
+    base["system"].update(user_system_settings or {})
+    base["control"].update(user_control_settings or {})
+    base["electrons"].update(user_electron_settings or {})
+    if soc:  # spin-orbit coupling: noncolinear magnetisation with fully-relativistic pseudos
+        base["system"].setdefault("noncolin", True)
+        base["system"].setdefault("lspinorb", True)
+    kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
+    ecut_kppvol_by_metallicity = {
+        "non-metals": ecut_kpoints_nonmetals,
+        "metals": ecut_kpoints_metals,
+    }
+    ecut_min, ecut_max, ecut_step = ecut_convergence
+
+    for entry, etype, structure in competing_phases._iter_entries_with_categories():
+        nl_settings = copy.deepcopy(base)
+        nl_settings["system"]["ibrav"] = 0
+        nl_settings["system"]["nat"] = len(structure)
+        # TODO: Input files for multi-oxidation states (as in ``doped/qe.py``); ``ntyp`` here
+        # counts distinct ``Species`` while ``write_qe_pw_input`` strips oxidation states and
+        # writes one ``ATOMIC_SPECIES`` line per element, so a structure with multiple
+        # oxidation states of the same element (e.g. Fe(2+)/Fe(3+)) gives ``ntyp`` greater than
+        # the number of written species, which espresso rejects.
+        nl_settings["system"]["ntyp"] = len(set(structure.species))
+
+        _set_spin_polarisation(nl_settings["system"], user_system_settings or {}, entry)
+        if etype == "metals":  # only metallic phases get Gaussian smearing (as in ``espresso.py``)
+            _set_default_metal_smearing(nl_settings["system"])
+
+        phase_folder = os.path.join(str(output_path), _get_competing_phase_folder_name(entry))
+
+        # k-point convergence: vary k-grid at fixed ecut. Skipped for
+        # molecules (Γ-only is exact for a molecule-in-a-box).
+        if "molecule" not in etype:
+            kpoint_nl_settings = copy.deepcopy(nl_settings)
+            if kpoint_sweep_ecutwfc is not None:
+                kpoint_nl_settings["system"]["ecutwfc"] = kpoint_sweep_ecutwfc
+            min_k, max_k, step_k = kpoints_by_metallicity[etype]
+            seen_kgrids: set[tuple[int, int, int]] = set()
+            for kpoint in np.arange(min_k, max_k, step_k):
+                kgrid = _kpoints_grid_from_reciprocal_density(structure, kpoint)
+                kgrid_tuple = (kgrid[0], kgrid[1], kgrid[2])
+                if kgrid_tuple in seen_kgrids:
+                    continue
+                seen_kgrids.add(kgrid_tuple)
+                kname = "k" + "_".join(str(k) for k in kgrid)
+                DopedDictSetQE.write_qe_pw_input(
+                    filepath=os.path.join(phase_folder, "kpoint_converge", kname, "pw.in"),
+                    structure=structure,
+                    namelist_settings=kpoint_nl_settings,
+                    kpoints=kgrid,
+                    pseudo_map=pseudo_map,
+                    kpoints_shift=kpoints_shift,
+                )
+
+        # ecutwfc convergence: vary ecutwfc at a fixed k-grid.
+        ecut_kgrid = (
+            None
+            if "molecule" in etype
+            else _kpoints_grid_from_reciprocal_density(
+                structure, ecut_kppvol_by_metallicity[etype]
+            )
+        )
+        for ecut in range(ecut_min, ecut_max + 1, ecut_step):
+            ecut_nl_settings = copy.deepcopy(nl_settings)
+            ecut_nl_settings["system"]["ecutwfc"] = ecut
+            DopedDictSetQE.write_qe_pw_input(
+                filepath=os.path.join(
+                    phase_folder, "ecut_convergence", f"ecutwfc_{ecut}", "pw.in"
+                ),
+                structure=structure,
+                namelist_settings=ecut_nl_settings,
+                kpoints=ecut_kgrid,
+                pseudo_map=pseudo_map,
+                kpoints_shift=kpoints_shift,
+            )
+
+    if competing_phases.molecular_entries:
+        print(
+            f"Note that diatomic molecular phases, calculated as molecules-in-a-box "
+            f"({', '.join([e.name for e in competing_phases.molecular_entries])} in this case), do not "
+            f"require k-point convergence testing (Γ-only sampling is sufficient), but are "
+            f"still included in the ecutwfc (plane-wave cutoff) convergence sweep."
+        )
+
+
+def write_relaxation_files(
+    competing_phases: "CompetingPhases",
+    output_path: PathLike | None = None,
+    kpoints_metals: float = 200,
+    kpoints_nonmetals: float = 64,
+    pseudo_dir: str = "./pseudo_folder_name/",
+    pseudo_map: dict | None = None,
+    use_hse: bool = False,
+    soc: bool = False,
+    kpoints_shift: tuple[int, int, int] = (0, 0, 0),
+    user_system_settings: dict | None = None,
+    user_control_settings: dict | None = None,
+    user_electron_settings: dict | None = None,
+    user_ions_settings: dict | None = None,
+    user_cell_settings: dict | None = None,
+) -> None:
+    """
+    Generates espresso ``pw.in`` input files for standard (variable-cell)
+    relaxations of competing phases, using the default settings by default
+    (i.e. the functional implied by your chosen pseudopotentials), or
+    HSE06 hybrid DFT if ``use_hse=True``.  Analogous to
+    ``doped.io.vasp.inputs.write_relaxation_files`` for VASP (renamed from
+    ``qe_std_setup`` to match the PR #154 backend protocol naming) -- note
+    that the VASP function uses HSE06 by default, while here PBE is the
+    default.
+
+    Each phase input is written to
+    ``output_path/<phase>/espresso_std/pw.in``, i.e. under a single
+    host-compound parent folder.
+
+    Args:
+        competing_phases (CompetingPhases):
+            The :class:`~doped.chemical_potentials.CompetingPhases` object
+            whose entries to generate calculation inputs for.
+        output_path (PathLike or None):
+            Host-compound parent folder under which all competing-phase
+            sub-folders are written. If ``None`` (default), this is set to
+            ``"{host_compound}_QE/CompetingPhases_{host_compound}_QE"``
+            (e.g. ``"MgO_QE/CompetingPhases_MgO_QE"``), i.e. a
+            ``{host}_QE`` parent folder keyed on the host composition's
+            reduced formula.
+        kpoints_metals (float):
+            Reciprocal k-point density (Å^-3) for metallic phases.
+            Default 200.
+        kpoints_nonmetals (float):
+            Reciprocal k-point density (Å^-3) for non-metallic phases.
+            Default 64.
+        pseudo_dir (str):
+            Path to the directory containing UPF pseudopotential files.
+            Default ``"./pseudo_folder_name/"``.
+        pseudo_map (dict or None):
+            ``{element_symbol: pseudo_filename}`` mapping. Defaults to the
+            :data:`~doped.io.espresso.inputs.QE_PSEUDO_LIBRARY` filename
+            for each element; any
+            entries given here override that default per element.
+        use_hse (bool):
+            If ``True``, use HSE06 hybrid DFT settings. If ``False``
+            (default), use the default settings. Note that any changes to
+            the functional should be consistent with those used for the
+            defect supercell calculations.
+            Default = ``False``
+        soc (bool):
+            If ``True``, include spin-orbit coupling by setting
+            ``noncolin=.true.`` and ``lspinorb=.true.`` in ``&SYSTEM``
+            for every phase (requires fully-relativistic
+            pseudopotentials). Magnetic phases are then seeded via
+            ``starting_magnetization`` instead of
+            ``nspin``/``tot_magnetization`` (which espresso does not allow
+            for noncolinear calculations). Should be consistent with the
+            defect supercell calculations. Default ``False``.
+        kpoints_shift (tuple):
+            ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
+            ``K_POINTS automatic`` card, e.g. ``(1, 1, 1)`` for a
+            half-grid (Γ-shifted) Monkhorst-Pack mesh. Default
+            ``(0, 0, 0)`` (no shift). Ignored for molecules (Γ-only).
+        user_system_settings (dict or None):
+            Override default ``&SYSTEM`` namelist settings.
+        user_control_settings (dict or None):
+            Override default ``&CONTROL`` namelist settings.
+        user_electron_settings (dict or None):
+            Override default ``&ELECTRONS`` namelist settings.
+        user_ions_settings (dict or None):
+            Override default ``&IONS`` namelist settings (e.g.
+            ``{"ion_dynamics": "bfgs"}``).
+        user_cell_settings (dict or None):
+            Override default ``&CELL`` namelist settings (e.g.
+            ``{"cell_dofree": "all", "press": 0.0}``). These apply to the
+            variable-cell relaxation performed for solid phases. Ignored
+            for molecules, which are relaxed at fixed cell (so ``&CELL`` is
+            not written).
+    """
+    # (lazy import to avoid a circular ``doped.chemical_potentials`` <-> ``doped.io`` module import)
+    from doped.chemical_potentials import _get_competing_phase_folder_name
+
+    if output_path is None:
+        output_path = _default_qe_competing_phases_path(competing_phases.composition)
+
+    base = copy.deepcopy(
+        _qe_hse_relax_defaults if use_hse else _qe_convergence_defaults
+    )
+    base["control"]["pseudo_dir"] = pseudo_dir
+    base["control"]["calculation"] = "vc-relax"  # std setup does full cell relaxation
+    base["system"].update(user_system_settings or {})
+    base["control"].update(user_control_settings or {})
+    base["electrons"].update(user_electron_settings or {})
+    base["ions"].update(user_ions_settings or {})
+    base["cell"].update(user_cell_settings or {})
+    if soc:  # spin-orbit coupling: noncolinear magnetisation with fully-relativistic pseudos
+        base["system"].setdefault("noncolin", True)
+        base["system"].setdefault("lspinorb", True)
+
+    for entry, etype, structure in competing_phases._iter_entries_with_categories():
+        nl_settings = copy.deepcopy(base)
+        nl_settings["system"]["ibrav"] = 0
+        nl_settings["system"]["nat"] = len(structure)
+        # TODO: Input files for multi-oxidation states (as in ``doped/qe.py``); ``ntyp`` here
+        # counts distinct ``Species`` while ``write_qe_pw_input`` strips oxidation states and
+        # writes one ``ATOMIC_SPECIES`` line per element, so a structure with multiple
+        # oxidation states of the same element (e.g. Fe(2+)/Fe(3+)) gives ``ntyp`` greater than
+        # the number of written species, which espresso rejects.
+        nl_settings["system"]["ntyp"] = len(set(structure.species))
+
+        if "molecule" in etype:
+            nl_settings["control"]["calculation"] = "relax"
+            kgrid = None
+        elif "non-metals" in etype:
+            kgrid = _kpoints_grid_from_reciprocal_density(structure, kpoints_nonmetals)
+        else:
+            kgrid = _kpoints_grid_from_reciprocal_density(structure, kpoints_metals)
+
+        _set_spin_polarisation(nl_settings["system"], user_system_settings or {}, entry)
+        if etype == "metals":
+            _set_default_metal_smearing(nl_settings["system"])
+
+        folder = os.path.join(
+            str(output_path), _get_competing_phase_folder_name(entry), "espresso_std"
+        )
+        DopedDictSetQE.write_qe_pw_input(
+            filepath=os.path.join(folder, "pw.in"),
+            structure=structure,
+            namelist_settings=nl_settings,
+            kpoints=kgrid,
+            pseudo_map=pseudo_map,
+            kpoints_shift=kpoints_shift,
+        )
+
+
+def _set_spin_polarisation(
+    system_settings: dict,
+    user_system_settings: dict,
+    entry: ComputedEntry | ComputedStructureEntry,
+) -> None:
+    """
+    Set ``nspin = 2`` and ``tot_magnetization`` in the espresso ``&SYSTEM``
+    namelist if the entry has a non-zero total magnetization.
+    Analogous to ``doped.io.vasp.inputs._set_spin_polarisation`` for VASP
+    (``ISPIN`` / ``NUPDOWN``).
+    """
+    magnetization = entry.data.get("summary", {}).get("total_magnetization")
+    if magnetization is not None and magnetization > 0.1:  # account for magnetic moment
+        if system_settings.get("noncolin"):
+            # noncolinear (SOC) calculations: ``nspin``/``tot_magnetization`` are LSDA-only
+            # (not allowed by espresso with ``noncolin``), so seed the magnetisation via
+            # ``starting_magnetization`` instead (expanded per-species on writing):
+            system_settings.setdefault("starting_magnetization", 0.1)
+            return
+        system_settings["nspin"] = user_system_settings.get("nspin", 2)
+        if "tot_magnetization" not in system_settings and int(magnetization) > 0:
+            system_settings["tot_magnetization"] = int(magnetization)
+
+
+def _set_default_metal_smearing(system_settings: dict) -> None:
+    """
+    Set ``occupations = 'smearing'``, ``smearing = 'gaussian'``
+    and ``degauss = 0.005`` Ry in the espresso ``&SYSTEM``
+    namelist for metallic phases.  Analogous to
+    ``doped.io.vasp.inputs._set_default_metal_smearing`` for VASP
+    (``ISMEAR`` / ``SIGMA``).
+    """
+    system_settings.setdefault("occupations", "smearing")
+    system_settings.setdefault("smearing", "gaussian")
+    system_settings.setdefault("degauss", 0.005)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# competing-phase output parsing & chemical potentials
+# (formerly ``CompetingPhasesAnalyzerQE`` methods)
+# ──────────────────────────────────────────────────────────────────────────
+
+
+# TODO: Fold into ``CompetingPhasesAnalyzer(..., calculator="espresso")`` dispatch on the PR #154
+#  merge, where ``__init__``/``_from_calc_outputs`` handle this via the ``doped.io`` backend protocol
+#  (this factory then becomes redundant).
+def get_competing_phases_analyzer(
+    composition: str | Composition,
+    entries: (
+        PathLike | list[PathLike] | list[ComputedEntry] | list[ComputedStructureEntry] | None
+    ) = None,
+    subfolder: PathLike | None = "espresso_std",
+    single_extrinsic_phase_limits: bool = False,
+    verbose: bool = True,
+    processes: int | None = None,
+    check_compatibility: bool = True,
+) -> "CompetingPhasesAnalyzer":
+    r"""
+    Build a :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` from
+    Quantum ESPRESSO ``.xml`` output files (replacing the former
+    ``CompetingPhasesAnalyzerQE`` class).
+
+    Any espresso output file with a ``.xml`` extension is parsed (e.g.
+    ``espresso.xml``).
+
+    Usage is otherwise identical to ``CompetingPhasesAnalyzer`` — pass the
+    path to a competing phases directory tree (generated by
+    :func:`write_relaxation_files`) or a list of paths to espresso ``.xml``
+    files. If no path is given, the default ``output_path`` written by
+    :func:`write_relaxation_files` for this host composition is used.
+
+    Args:
+        composition (str, ``Composition``):
+            Composition of the host material (e.g. ``'MgO'``).
+        entries (PathLike, list[PathLike], list[ComputedEntry], None):
+            Either a path to the base folder containing espresso outputs (with
+            subfolders like ``formula_EaH_X/espresso_std/espresso.xml``),
+            a list of paths to espresso ``.xml`` output files, or a list of
+            pre-built ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
+            If ``None`` (default), this is set to
+            ``"{host_compound}_QE/CompetingPhases_{host_compound}_QE"``
+            (e.g. ``"MgO_QE/CompetingPhases_MgO_QE"``), matching the
+            default ``output_path`` written by
+            :func:`write_relaxation_files`.
+
+        subfolder (PathLike):
+            Subfolder within each calculation directory that contains the
+            espresso ``.xml`` output. Default ``"espresso_std"``.
+        single_extrinsic_phase_limits (bool):
+            If ``True``, only consider chemical potential limits where a
+            single extrinsic phase is in equilibrium with the host (see
+            ``CompetingPhasesAnalyzer`` docstring). Default ``False``.
+        verbose (bool):
+            Whether to warn about directories where no ``.xml`` output
+            was found. Default ``True``.
+        processes (int):
+            Number of worker processes for parallel parsing. ``None``
+            (default) uses a single process.
+        check_compatibility (bool):
+            Whether to check pseudopotential and espresso input parameter
+            consistency across the parsed entries. Default ``True``.
+
+    Returns:
+        CompetingPhasesAnalyzer:
+            The initialised analyzer, with entries parsed from the espresso
+            outputs.
+    """
+    # (lazy import to avoid a circular ``doped.chemical_potentials`` <-> ``doped.io`` module import)
+    from doped.chemical_potentials import CompetingPhasesAnalyzer
+
+    # ``__new__`` skips the VASP-parsing ``__init__`` (as the former subclass ``__init__`` did):
+    cpa = CompetingPhasesAnalyzer.__new__(CompetingPhasesAnalyzer)
+    cpa.composition = Composition(composition)
+    cpa.elements = [c.symbol for c in cpa.composition.elements]
+    cpa.intrinsic_elements = cpa.elements.copy()
+    cpa.extrinsic_elements = []
+    cpa.single_extrinsic_phase_limits = single_extrinsic_phase_limits
+
+    if entries is None:
+        entries = _default_qe_competing_phases_path(cpa.composition)
+
+    if not isinstance(entries, str | PathLike | list):
+        raise TypeError(
+            f"`entries` must be either a path to a directory containing espresso outputs, "
+            f"a list of paths to espresso `.xml` output files, or a list of "
+            f"ComputedEntry/ComputedStructureEntry objects, got type {type(entries)} instead!"
+        )
+
+    cpa.espresso_paths = []
+    cpa.vasprun_paths = []  # kept for MSONable / as_dict compatibility
+    cpa.parsed_folders = []
+
+    if isinstance(entries, str | PathLike) or (
+        isinstance(entries, list) and isinstance(entries[0], str | PathLike)
+    ):
+        _from_espresso_outputs(
+            cpa,
+            path=entries,
+            subfolder=subfolder,
+            verbose=verbose,
+            processes=processes,
+            check_compatibility=check_compatibility,
+        )
+    else:
+        _from_entries_qe(cpa, entries, check_compatibility=check_compatibility)
+
+    return cpa
+
+
+#TODO:  Some pymatgen-espresso helpers are not present, eg. Unconverged calculation warnings (Find every one of these discrepancies and fix - at least the ones relevant to doped)
+# TODO: Restructure into the generic ``CompetingPhasesAnalyzer._from_calc_outputs`` (PR #154), which
+#  dispatches to the backend ``get_competing_phase_entry`` via ``_parse_entry_and_catch_exception``;
+#  kept as-is (just ``self`` -> ``competing_phases_analyzer``) for now.
+def _from_espresso_outputs(
+    competing_phases_analyzer: "CompetingPhasesAnalyzer",
+    path: PathLike | list[PathLike] | None = None,
+    subfolder: PathLike | None = "espresso_std",
+    verbose: bool = True,
+    processes: int | None = None,
+    check_compatibility: bool = True,
+) -> None:
+    r"""
+    Parses competing phase energies from espresso ``.xml`` output files,
+    generating ``ComputedStructureEntry``\s and then continuing
+    initialisation with ``_from_entries_qe``.
+    Analogous to ``CompetingPhasesAnalyzer._from_vaspruns`` for VASP
+    (PR #154: ``CompetingPhasesAnalyzer._from_calc_outputs``).
+
+
+    Args:
+        competing_phases_analyzer (CompetingPhasesAnalyzer):
+            The (partially-initialised) analyzer to populate with the parsed
+            entries -- see :func:`get_competing_phases_analyzer`.
+        path (PathLike or list or None):
+            Either a path to the base folder containing competing phase
+            calculation outputs (e.g.
+            ``path/formula_EaH_X/{subfolder}/espresso.xml``), or a list
+            of paths to espresso ``.xml`` output files. If ``None`` (default),
+            uses ``_default_qe_competing_phases_path(composition)``
+            (e.g. ``"MgO_QE/CompetingPhases_MgO_QE"``), matching the
+            default ``output_path`` written by
+            :func:`write_relaxation_files`.
+        subfolder (PathLike):
+            Subfolder containing the espresso ``.xml`` output within each
+            calculation directory. Default ``"espresso_std"``.
+        verbose (bool):
+            Whether to warn about skipped directories.
+        processes (int):
+            Number of worker processes for parallel parsing. Defaults to 1
+            (serial); espresso XML files are small enough that the overhead of
+            multiprocessing is rarely worthwhile.
+        check_compatibility (bool):
+            Whether to check pseudopotential and espresso input parameter
+            consistency. Default ``True``.
+    """
+    skipped_folders: list = []
+
+    if path is None:
+        path = _default_qe_competing_phases_path(competing_phases_analyzer.composition)
+
+    if isinstance(path, list):
+        for p in path:
+            if ".xml" in str(p) and os.path.isfile(p):
+                competing_phases_analyzer.espresso_paths.append(str(p))
+            elif os.path.isdir(p) and (
+                xml_path := _find_espresso_xml_in_directory(p, subfolder)
+            ):
+                competing_phases_analyzer.espresso_paths.append(xml_path)
+            else:
+                skipped_folders.append(f"{p} or {p}/{subfolder}" if subfolder else p)
+
+    elif isinstance(path, PathLike):
+        for p in os.listdir(path):
+            if os.path.isdir(os.path.join(path, p)) and not str(p).startswith("."):
+                if xml_path := _find_espresso_xml_in_directory(
+                    os.path.join(path, p), subfolder
+                ):
+                    competing_phases_analyzer.espresso_paths.append(xml_path)
+                else:
+                    skipped_folders += [f"{p} or {p}/{subfolder}" if subfolder else str(p)]
+    else:
+        raise ValueError(
+            "`path` should either be a path to a folder (with competing phase "
+            "calculations), or a list of paths to espresso `.xml` output files."
+        )
+
+    skipped_folders_for_warning = []
+    for folder_name in skipped_folders:
+        comps = []
+        for part in str(folder_name).split(" or ")[0].split("_"):
+            with contextlib.suppress(ValueError):
+                comps.append(Composition(part))
+        if "EaH" in str(folder_name) or comps:
+            skipped_folders_for_warning.append(folder_name)
+
+    if skipped_folders_for_warning and verbose:
+        parent_folder_string = f" (in {path})" if isinstance(path, PathLike) else ""
+        warnings.warn(
+            f"`.xml` files could not be found in the following "
+            f"directories{parent_folder_string}, and so they will be skipped for "
+            f"parsing:\n" + "\n".join(str(f) for f in skipped_folders_for_warning)
+        )
+
+    competing_phases_analyzer.entries = []
+    failed_parsing_dict: dict[str, list] = {}
+    processes = processes or 1
+
+    parsing_results = []
+    if processes > 1:
+        with pool_manager(processes) as pool:
+            for result in tqdm(
+                pool.imap_unordered(
+                    _parse_entry_from_espresso_and_catch_exception,
+                    competing_phases_analyzer.espresso_paths,
+                ),
+                total=len(competing_phases_analyzer.espresso_paths),
+                desc="Parsing espresso `.xml` outputs...",
+            ):
+                parsing_results.append(result)
+    else:
+        for xml_path in tqdm(
+            competing_phases_analyzer.espresso_paths, desc="Parsing espresso `.xml` outputs..."
+        ):
+            parsing_results.append(
+                _parse_entry_from_espresso_and_catch_exception(xml_path)
+            )
+
+    electronic_unconverged: list = []
+    ionic_unconverged: list = []
+    for result in parsing_results:
+        if isinstance(result[0], ComputedEntry | ComputedStructureEntry):
+            competing_phases_analyzer.entries.append(result[0])
+            competing_phases_analyzer.parsed_folders.append(result[1])
+            if not result[2]:
+                electronic_unconverged.append(result[1])
+            if not result[3]:
+                ionic_unconverged.append(result[1])
+        else:
+            if str(result[0]) in failed_parsing_dict:
+                failed_parsing_dict[str(result[0])] += [result[1]]
+            else:
+                failed_parsing_dict[str(result[0])] = [result[1]]
+
+    if failed_parsing_dict:
+        warnings.warn(
+            "Failed to parse the following `.xml` files:\n(files: error)\n"
+            + "\n".join(
+                [f"{paths}: {error}" for error, paths in failed_parsing_dict.items()]
+            )
+        )
+
+    for unconverged, label in zip(
+        [electronic_unconverged, ionic_unconverged],
+        ["Electronic", "Ionic"],
+        strict=False,
+    ):
+        if unconverged:
+            warnings.warn(
+                f"{label} convergence was not reached for espresso `.xml` outputs in:\n"
+                + "\n".join(unconverged)
+            )
+
+    if not competing_phases_analyzer.entries:
+        raise FileNotFoundError(
+            "No `.xml` files have been parsed, suggesting issues with parsing! "
+            "Please check that folders and input parameters are in the correct format "
+            "(see docstrings/tutorials)."
+        )
+
+    _from_entries_qe(
+        competing_phases_analyzer,
+        competing_phases_analyzer.entries,
+        check_compatibility=check_compatibility,
+    )
+
+
+# TODO: Superseded by the generic ``CompetingPhasesAnalyzer._find_calc_output_in_directory`` + the
+#  backend ``CALC_OUTPUT_MASK``/``_find_calc_outputs`` machinery on the PR #154 merge.
+def _find_espresso_xml_in_directory(
+    directory: PathLike, subfolder: PathLike | None = "espresso_std"
+) -> str | None:
+    """
+    Find a single espresso ``.xml`` output file in ``directory``, looking first in
+    ``directory/{subfolder}`` (if ``subfolder`` is given) and then in
+    ``directory`` itself.
+
+    Args:
+        directory (PathLike):
+            Calculation directory to search.
+        subfolder (PathLike or None):
+            Subfolder of ``directory`` to search first (e.g.
+            ``"espresso_std"``). If ``None``, only ``directory`` itself is
+            searched.
+
+    Returns:
+        str or None:
+            Path to the identified ``.xml`` file, or ``None`` if none was
+            found in either location. A warning is raised if multiple
+            ``.xml`` files are found in the matched directory.
+    """
+    search_dirs = [os.path.join(str(directory), str(subfolder))] if subfolder else []
+    search_dirs.append(str(directory))
+
+    for search_dir in search_dirs:
+        xml_path, multiple = None, False
+        with contextlib.suppress(FileNotFoundError, NotADirectoryError):
+            xml_path, multiple = _get_output_files_and_check_if_multiple(".xml", search_dir)
+        if xml_path and os.path.exists(xml_path):
+            if multiple:
+                warnings.warn(
+                    f"Multiple `.xml` files found in directory: {search_dir}. Using "
+                    f"{xml_path} to parse the calculation energy and metadata."
+                )
+            return str(xml_path)
+
+    return None
+
+
+# TODO: Break up per PR #154: the espresso input / pseudopotential compatibility checks here should
+#  become the backend-protocol ``check_entry_compatibility(entries, template_candidates)`` function,
+#  with ``_from_entries`` called by ``CompetingPhasesAnalyzer`` directly; kept as-is for now.
+def _from_entries_qe(
+    competing_phases_analyzer: "CompetingPhasesAnalyzer",
+    entries: list[ComputedEntry | ComputedStructureEntry],
+    check_compatibility: bool = True,
+) -> None:
+    r"""
+    Initialises a ``CompetingPhasesAnalyzer`` from a list of
+    ``ComputedEntry``\s / ``ComputedStructureEntry``\s parsed from espresso
+    outputs.
+
+    Args:
+        competing_phases_analyzer (CompetingPhasesAnalyzer):
+            The (partially-initialised) analyzer to populate -- see
+            :func:`get_competing_phases_analyzer`.
+        entries (list):
+            ``ComputedEntry`` / ``ComputedStructureEntry`` objects to
+            build the phase diagram from.
+        check_compatibility (bool):
+            Whether to compare pseudopotential filenames and espresso input
+            parameters across entries. Default ``True``.
+    """
+    competing_phases_analyzer._from_entries(entries, check_compatibility=False)
+
+    if not check_compatibility:
+        return
+
+    # espresso input parameter consistency check (analogous to INCAR check):
+    sorted_with_qe_input = [
+        entry
+        for entry in [competing_phases_analyzer.bulk_entry, *entries]
+        if entry.data.get("qe_input")
+    ]
+    if sorted_with_qe_input:
+        ref_entry = sorted_with_qe_input[0]
+        for entry in entries:
+            mismatches = _compare_qe_input_parameters(
+                ref_entry.data["qe_input"],
+                entry.data.get("qe_input", {}),
+                # the occupation scheme is set per-phase (``doped`` writes gaussian smearing for
+                # metals, fixed occupations otherwise), so is not a mismatch between phases:
+                ignore_params={"occupations", "smearing", "degauss"},
+                warn=False,
+            )
+            entry.data["mismatching_QE_input_params"] = (
+                mismatches if not isinstance(mismatches, bool) else False
+            )
+
+        mismatching_qe_input_warnings = sorted(
+            [
+                (entry.name, set(entry.data.get("mismatching_QE_input_params")))
+                for entry in entries
+                if entry.data.get("mismatching_QE_input_params")
+            ],
+            key=lambda x: (len(x[1]), x[0]),
+            reverse=True,
+        )
+        if mismatching_qe_input_warnings:
+            warnings.warn(
+                f"There are mismatching espresso input parameters for (some of) your competing "
+                f"phases calculations which are likely to cause errors in the parsed results "
+                f"(energies & thus chemical potential limits). Found the following "
+                f"differences:\n"
+                f"(in the format: 'Entries: (espresso parameter, value in entry, value in "
+                f"reference))'; cutoffs in Ry:\n"
+                f"{_format_mismatching_qe_input_warning(mismatching_qe_input_warnings)}\n"
+                f"Where {ref_entry.name} was used as the reference entry calculation.\n"
+                f"In general, the same espresso input settings should be used in all final "
+                f"calculations for parameters which can affect energies!"
+            )
+
+    # Pseudopotential consistency check (analogous to POTCAR check):
+    sorted_with_pseudo = [
+        entry
+        for entry in [competing_phases_analyzer.bulk_entry, *entries]
+        if entry.data.get("pseudo_filenames")
+    ]
+    if sorted_with_pseudo:
+        pseudo_ref_entry = sorted_with_pseudo[0]
+        for entry in entries:
+            pseudo_mismatches = _compare_pseudo_symbols(
+                pseudo_ref_entry.data["pseudo_filenames"],
+                entry.data.get("pseudo_filenames", []),
+                only_matching_elements=True,
+            )
+            entry.data["mismatching_pseudo_filenames"] = (
+                pseudo_mismatches if not isinstance(pseudo_mismatches, bool) else False
+            )
+
+        mismatching_pseudo_warnings = sorted(
+            [
+                (entry.name, entry.data.get("mismatching_pseudo_filenames"))
+                for entry in entries
+                if entry.data.get("mismatching_pseudo_filenames")
+            ],
+            key=lambda x: (len(x[1]), x[0]),
+            reverse=True,
+        )
+        if mismatching_pseudo_warnings:
+            joined_info_string = "\n".join(
+                [
+                    f"{name}: {mismatching}"
+                    for name, mismatching in mismatching_pseudo_warnings
+                ]
+            )
+            warnings.warn(
+                f"There are mismatching pseudopotential filenames for (some of) your "
+                f"competing phases calculations which are likely to cause errors in the "
+                f"parsed results (energies & thus chemical potential limits). Found the "
+                f"following differences:\n"
+                f"(in the format: (entry pseudopotential, reference pseudopotential)):\n"
+                f"{joined_info_string}\n"
+                f"Where {pseudo_ref_entry.name} was used as the reference entry "
+                f"calculation.\n"
+                f"The same pseudopotentials should be used in all final calculations!"
+            )
 
