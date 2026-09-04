@@ -42,3 +42,4 @@ tutorials:
    GGA_workflow_tutorial
    CCD_NEB_tutorial
    stenciling_tutorial
+   GPAW Support <GPAW_Support>
