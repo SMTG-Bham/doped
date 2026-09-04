@@ -100,6 +100,7 @@ class GPAWDefectRelaxSet:
                 - "fmax": 0.05
                 - "optimizer": "BFGS"
                 - "legacy_gpaw": True
+                - "initial_magnetic_moments": None
             calculation_type (str):
                 Type of calculation script to generate. Supported values are
                 "relax" (default) and "singlepoint".
@@ -171,6 +172,18 @@ class GPAWDefectRelaxSet:
         convergence = settings.pop("convergence", {})
         optimizer = settings.pop("optimizer", "BFGS")
         legacy_gpaw = settings.pop("legacy_gpaw", True)
+        initial_magnetic_moments = settings.pop("initial_magnetic_moments", None)
+
+        magnetic_moments_line = ""
+        if initial_magnetic_moments is not None:
+            if len(initial_magnetic_moments) != len(self.defect_supercell):
+                raise ValueError(
+                    "initial_magnetic_moments must contain one value per atom "
+                    f"({len(self.defect_supercell)} values required)"
+                )
+            magnetic_moments_line = (
+                f"atoms.set_initial_magnetic_moments({list(initial_magnetic_moments)!r})\n"
+            )
 
         # Determine charge
         charge = self.charge_state or 0
@@ -227,6 +240,7 @@ from gpaw import GPAW, PW, LCAO, FD
 
 # Read structure
 atoms = read('{structure_filename}')
+{magnetic_moments_line}
 
 # Setup calculator
 calc = GPAW(

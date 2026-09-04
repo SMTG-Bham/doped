@@ -95,6 +95,28 @@ class GPAWTest(unittest.TestCase):
         assert "ase.optimize" not in content
         assert "dyn.run" not in content
 
+    def test_gpaw_initial_magnetic_moments(self):
+        magnetic_moments = [1.0] + [0.0] * (len(self.structure) - 1)
+        input_set = GPAWDefectRelaxSet(
+            self.structure,
+            gpaw_settings={"initial_magnetic_moments": magnetic_moments},
+            calculation_type="singlepoint",
+        )
+        input_set.write_input(self.output_dir)
+
+        with open(os.path.join(self.output_dir, "singlepoint.py")) as file:
+            content = file.read()
+
+        assert f"atoms.set_initial_magnetic_moments({magnetic_moments!r})" in content
+        assert "initial_magnetic_moments=" not in content
+
+        invalid_set = GPAWDefectRelaxSet(
+            self.structure,
+            gpaw_settings={"initial_magnetic_moments": [*magnetic_moments, 0.0]},
+        )
+        with pytest.raises(ValueError, match="one value per atom"):
+            invalid_set.write_input(self.output_dir)
+
     def test_find_gpaw_output(self):
         calc_dir = os.path.join(self.output_dir, "calculation")
         os.makedirs(calc_dir)
