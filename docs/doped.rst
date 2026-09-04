@@ -14,6 +14,7 @@ Modules
    doped.core
    doped.corrections
    doped.generation
+   doped.gpaw
    doped.init
    doped.thermodynamics
    doped.utils
