@@ -38,7 +38,8 @@ def main():
     bulk_set.write_input("bulk")
 
     # Setup Defects
-    for defect_name, defect_entry in defect_gen.defect_entries.items():
+    for defect_entry in defect_gen.defect_entries.values():
+        defect_name = f"{defect_entry.defect.name}_{defect_entry.charge_state:+d}"
         # Example of filtering defects:
         # if "v_Mg" not in defect_name and "Mg_O" not in defect_name:
         #     continue

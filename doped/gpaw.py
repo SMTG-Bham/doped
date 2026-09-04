@@ -462,62 +462,92 @@ class GPAWParser:
         self.atoms = None
 
 
-def get_gpaw_defect_entry(
-    defect_path: str,
-    bulk_path: str,
-    dielectric: float | np.ndarray | None = None,
-    charge_state: int = 0,
-    bulk_parser: GPAWParser | None = None,
+def _get_gpaw_bulk_data(bulk_parser: GPAWParser, bulk_path: str | os.PathLike) -> dict[str, Any]:
+    """
+    Parse reusable bulk reference data once.
+    """
+    band_gap, cbm, vbm, efermi = bulk_parser.get_eigenvalue_properties()
+    return {
+        "bulk_entry": bulk_parser.get_computed_structure_entry(),
+        "bulk_site_potentials": bulk_parser.get_site_potentials(),
+        "bulk_locpot_dict": bulk_parser.get_locpot_dict(),
+        "bulk_path": str(bulk_path),
+        "vbm": vbm,
+        "band_gap": band_gap,
+        "cbm": cbm,
+        "efermi": efermi,
+    }
+
+
+def _get_gpaw_defect_entry_from_parsers(
+    defect_parser: GPAWParser,
+    bulk_parser: GPAWParser,
+    defect_path: str | os.PathLike,
+    dielectric: float | np.ndarray | None,
+    charge_state: int,
+    bulk_data: dict[str, Any],
 ) -> DefectEntry:
     """
-    Convenience function to create a DefectEntry from GPAW directories.
-
-    Assumes 'relaxed.gpw(.gz)' exists in both directories. # TODO: This should
-    auto-detect the output file, with a name preference, as for VASP
+    Build a defect entry from already-open GPAW parsers.
     """
-    defect_parser = GPAWParser(os.path.join(defect_path, "relaxed.gpw.gz"))
-
-    close_bulk = False
-    if bulk_parser is None:
-        bulk_parser = GPAWParser(os.path.join(bulk_path, "relaxed.gpw.gz"))
-        close_bulk = True
-
-    # Identify defect
     defect = defect_from_structures(defect_parser.structure, bulk_parser.structure)
     assert isinstance(defect, Defect)  # typing
 
-    # Band edge data
-    band_gap, cbm, vbm, efermi = bulk_parser.get_eigenvalue_properties()
-
-    defect_entry = DefectEntry(
+    return DefectEntry(
         defect=defect,
         charge_state=charge_state,
         sc_entry=defect_parser.get_computed_structure_entry(),
-        bulk_entry=bulk_parser.get_computed_structure_entry(),
+        bulk_entry=bulk_data["bulk_entry"],
         sc_defect_frac_coords=defect.site.frac_coords,
         defect_supercell=defect_parser.structure,
         bulk_supercell=bulk_parser.structure,
         defect_supercell_site=defect.site,
         calculation_metadata={
-            "bulk_path": bulk_path,
-            "defect_path": defect_path,
+            "bulk_path": bulk_data["bulk_path"],
+            "defect_path": str(defect_path),
             "dielectric": dielectric,
-            "bulk_site_potentials": bulk_parser.get_site_potentials(),
+            "bulk_site_potentials": bulk_data["bulk_site_potentials"],
             "defect_site_potentials": defect_parser.get_site_potentials(),
-            "bulk_locpot_dict": bulk_parser.get_locpot_dict(),
+            "bulk_locpot_dict": bulk_data["bulk_locpot_dict"],
             "defect_locpot_dict": defect_parser.get_locpot_dict(),
-            "vbm": vbm,
-            "band_gap": band_gap,
-            "cbm": cbm,
-            "efermi": efermi,
+            "vbm": bulk_data["vbm"],
+            "band_gap": bulk_data["band_gap"],
+            "cbm": bulk_data["cbm"],
+            "efermi": bulk_data["efermi"],
         },
     )
 
-    defect_parser.close()
-    if close_bulk:
-        bulk_parser.close()
 
-    return defect_entry
+def get_gpaw_defect_entry(
+    defect_path: str | os.PathLike,
+    bulk_path: str | os.PathLike,
+    dielectric: float | np.ndarray | None = None,
+    charge_state: int = 0,
+    bulk_parser: GPAWParser | None = None,
+    legacy_gpaw: bool = True,
+) -> DefectEntry:
+    """
+    Create a defect entry from GPAW output files or directories.
+    """
+    defect_parser = GPAWParser(defect_path, legacy_gpaw=legacy_gpaw)
+    close_bulk = bulk_parser is None
+    if bulk_parser is None:
+        bulk_parser = GPAWParser(bulk_path, legacy_gpaw=legacy_gpaw)
+
+    try:
+        bulk_data = _get_gpaw_bulk_data(bulk_parser, bulk_path)
+        return _get_gpaw_defect_entry_from_parsers(
+            defect_parser=defect_parser,
+            bulk_parser=bulk_parser,
+            defect_path=defect_path,
+            dielectric=dielectric,
+            charge_state=charge_state,
+            bulk_data=bulk_data,
+        )
+    finally:
+        defect_parser.close()
+        if close_bulk:
+            bulk_parser.close()
 
 
 class GPAWDefectsParser:
@@ -527,35 +557,64 @@ class GPAWDefectsParser:
 
     def __init__(
         self,
-        output_path: str = ".",
-        bulk_path: str | None = None,
+        output_path: str | os.PathLike = ".",
         dielectric: float | np.ndarray | None = None,
-        subfolder: str | None = None,
+        subfolder: str | os.PathLike | None = None,
+        bulk_path: str | os.PathLike | None = None,
+        legacy_gpaw: bool = True,
     ):
         """
         Args:
             output_path (str): Path to directory containing defect folders.
-            bulk_path (str): Path to bulk reference folder.
             dielectric (float or matrix): Dielectric constant for corrections.
             subfolder (str): Optional subfolder within each defect folder.
+            bulk_path (str): Path to bulk reference folder.
+            legacy_gpaw (bool): Whether to use GPAW's legacy calculator.
+
+        Attributes:
+            defect_dict (dict): Parsed defect entries keyed by calculation folder name.
         """
-        self.output_path = output_path
+        self.output_path = str(output_path)
         self.dielectric = dielectric
         self.subfolder = subfolder
+        self.legacy_gpaw = legacy_gpaw
 
         if bulk_path is None:
             # Try to find bulk folder
-            folders = [f for f in os.listdir(output_path) if os.path.isdir(os.path.join(output_path, f))]
+            folders = [
+                f for f in os.listdir(self.output_path) if os.path.isdir(os.path.join(self.output_path, f))
+            ]
             bulk_folders = [f for f in folders if "bulk" in f.lower()]
             if not bulk_folders:
                 raise ValueError("Could not find bulk folder. Please specify bulk_path.")
-            self.bulk_path = os.path.join(output_path, bulk_folders[0])
+            bulk_folder = sorted(bulk_folders, key=lambda name: (name.lower() != "bulk", name))[0]
+            self.bulk_path = os.path.join(self.output_path, bulk_folder)
         else:
-            self.bulk_path = bulk_path
+            bulk_path = os.fspath(bulk_path)
+            self.bulk_path = (
+                bulk_path if os.path.isabs(bulk_path) else os.path.join(self.output_path, bulk_path)
+            )
 
-    def parse_all(self) -> dict[str, DefectEntry]:
+        self.defect_dict = self._parse_all()
+
+    @staticmethod
+    def _get_charge_state(folder: str, parsed_charge: int | None) -> int:
         """
-        Parses all defect folders in output_path.
+        Use the GPAW charge, falling back to a signed folder-name component.
+        """
+        if parsed_charge is not None:
+            return int(parsed_charge)
+        for component in reversed(folder.split("_")):
+            if component.startswith(("+", "-")):
+                try:
+                    return int(component)
+                except ValueError:
+                    pass
+        return 0
+
+    def _parse_all(self) -> dict[str, DefectEntry]:
+        """
+        Parse all GPAW defect calculations during initialisation.
         """
         defect_dict = {}
         folders = [
@@ -569,51 +628,47 @@ class GPAWDefectsParser:
             if os.path.abspath(os.path.join(self.output_path, f)) != os.path.abspath(self.bulk_path)
         ]
 
-        # Instantiate bulk parser once
-        bulk_parser = GPAWParser(os.path.join(self.bulk_path, "relaxed.gpw.gz"))
+        bulk_parser = GPAWParser(self.bulk_path, legacy_gpaw=self.legacy_gpaw)
+        try:
+            bulk_data = _get_gpaw_bulk_data(bulk_parser, self.bulk_path)
+            for folder in defect_folders:
+                defect_dir = os.path.join(self.output_path, folder)
+                try:
+                    gpw_file = _find_gpaw_output(defect_dir, self.subfolder)
+                except FileNotFoundError:
+                    continue
+                except ValueError as exc:
+                    print(f"Failed to parse {folder}: {exc}")
+                    continue
 
-        for folder in defect_folders:
-            defect_dir = os.path.join(self.output_path, folder)
-            if self.subfolder:
-                defect_dir = os.path.join(defect_dir, self.subfolder)
+                print(f"Parsing {folder}...")
+                defect_parser = None
+                try:
+                    defect_parser = GPAWParser(gpw_file, legacy_gpaw=self.legacy_gpaw)
+                    charge_state = self._get_charge_state(folder, defect_parser.charge)
+                    defect_entry = _get_gpaw_defect_entry_from_parsers(
+                        defect_parser=defect_parser,
+                        bulk_parser=bulk_parser,
+                        defect_path=os.path.dirname(gpw_file),
+                        dielectric=self.dielectric,
+                        charge_state=charge_state,
+                        bulk_data=bulk_data,
+                    )
 
-            if not os.path.exists(os.path.join(defect_dir, "relaxed.gpw.gz")):
-                continue
+                    if self.dielectric is not None and charge_state != 0:
+                        try:
+                            defect_entry.get_kumagai_correction()
+                        except Exception as exc:
+                            print(f"Warning: Kumagai correction failed for {folder}: {exc}")
 
-            print(f"Parsing {folder}...")
-            try:
-                # Get charge from the calculation file directly
-                defect_parser = GPAWParser(os.path.join(defect_dir, "relaxed.gpw.gz"))
-                charge_state = defect_parser.charge
-                defect_parser.close()
-
-                # Fallback to folder name only if calculation lacked a charge parameter
-                if charge_state is None:
-                    charge_state = 0
-                    if "_" in folder:
-                        suffix = folder.rsplit("_", 1)[-1]
-                        if suffix.startswith(("+", "-")):
-                            charge_state = int(suffix)
-
-                defect_entry = get_gpaw_defect_entry(
-                    defect_dir,
-                    self.bulk_path,
-                    dielectric=self.dielectric,
-                    charge_state=charge_state,
-                    bulk_parser=bulk_parser,
-                )
-
-                # Apply Kumagai correction if possible
-                if self.dielectric is not None and charge_state != 0:
-                    try:
-                        defect_entry.get_kumagai_correction()
-                    except Exception as e:
-                        print(f"Warning: Kumagai correction failed for {folder}: {e}")
-
-                defect_dict[defect_entry.name] = defect_entry
-            except Exception as e:
-                print(f"Failed to parse {folder}: {e}")
-
-        bulk_parser.close()
+                    defect_entry.name = folder
+                    defect_dict[folder] = defect_entry
+                except Exception as exc:
+                    print(f"Failed to parse {folder}: {exc}")
+                finally:
+                    if defect_parser is not None:
+                        defect_parser.close()
+        finally:
+            bulk_parser.close()
 
         return defect_dict

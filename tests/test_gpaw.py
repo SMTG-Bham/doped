@@ -127,8 +127,7 @@ class GPAWTest(unittest.TestCase):
         # Initialize the parser
         dp_gpaw = GPAWDefectsParser(output_path=gpaw_mgo_dir, bulk_path=gpaw_bulk_dir, dielectric=10.0)
 
-        # Parse all relaxed defects in the folder
-        defect_dict = dp_gpaw.parse_all()
+        defect_dict = dp_gpaw.defect_dict
         assert len(defect_dict) >= 4, "Not all defects were parsed!"
 
         # Expected Kumagai corrections mapped by DEFECT NAME
@@ -227,7 +226,7 @@ class GPAWTest(unittest.TestCase):
 
         dp_gpaw = GPAWDefectsParser(output_path=gpaw_mgo_dir, bulk_path=gpaw_bulk_dir, dielectric=10.0)
 
-        defect_dict = dp_gpaw.parse_all()
+        defect_dict = dp_gpaw.defect_dict
 
         print("\n--- Calculated Freysoldt (FNV) Corrections ---")
 
@@ -309,8 +308,7 @@ class GPAWTest(unittest.TestCase):
             dielectric=10.0,  # Dummy dielectric
         )
 
-        # Parse the graphene defects
-        defect_dict = dp_gpaw.parse_all()
+        defect_dict = dp_gpaw.defect_dict
         assert len(defect_dict) >= 5, "Not enough Graphene defects were parsed!"
 
         # Expected Kumagai corrections mapped by defect name (values from local run)
