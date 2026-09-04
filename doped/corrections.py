@@ -508,8 +508,31 @@ def get_kumagai_correction(
         Ewald.ewald_rec = ewald_rec
         point_charge_correction = -ewald.lattice_energy * charge**2 if charge else 0.0
 
-        if defect_region_radius is None:
+        auto_defect_region_radius = defect_region_radius is None
+        if auto_defect_region_radius:
             defect_region_radius = get_wigner_seitz_radius(lattice)
+
+        site_distances = np.array([site.distance for site in sites])
+        if not site_distances.size:
+            raise ValueError("No matched atomic sites are available for eFNV potential sampling.")
+
+        if not np.any(site_distances > defect_region_radius):
+            if not auto_defect_region_radius:
+                raise ValueError(
+                    "No atomic sites lie outside the supplied defect_region_radius "
+                    f"({defect_region_radius:.3f} Å). Please use a smaller radius."
+                )
+
+            target_sample_count = min(10, len(site_distances))
+            defect_region_radius = np.nextafter(
+                np.sort(site_distances)[-target_sample_count],
+                -np.inf,
+            )
+            warnings.warn(
+                "The default Wigner-Seitz defect region contains all matched atomic sites, "
+                "so its radius has been reduced to include at least "
+                f"{target_sample_count} sites in the eFNV sampling region."
+            )
 
         for site, rel_coord in zip(sites, rel_coords, strict=False):
             if site.distance > defect_region_radius:

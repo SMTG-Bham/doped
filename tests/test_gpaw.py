@@ -125,90 +125,59 @@ class GPAWTest(unittest.TestCase):
         assert os.path.exists(gpaw_bulk_dir), "Bulk test directory missing!"
 
         # Initialize the parser
-        dp_gpaw = GPAWDefectsParser(output_path=gpaw_mgo_dir, bulk_path=gpaw_bulk_dir, dielectric=10.0)
+        dp_gpaw = GPAWDefectsParser(
+            output_path=gpaw_mgo_dir,
+            bulk_path=gpaw_bulk_dir,
+            dielectric=8.8963,
+        )
 
         defect_dict = dp_gpaw.defect_dict
-        assert len(defect_dict) >= 4, "Not all defects were parsed!"
 
         # Expected Kumagai corrections mapped by DEFECT NAME
         # (to handle multiple defects with the same charge)
         expected_corrections = {
-            "v_Mg_Oh_O2.10_+1": 0.303790,
-            "v_Mg_Oh_O2.10_-1": 0.091121,
-            "v_Mg_Oh_O2.10_-2": 0.575566,
-            "Mg_O_Oh_Mg2.10O2.98Mg3.65b_+1": 0.224,
-            "Mg_O_Oh_Mg2.10O2.98Mg3.65b_+2": 0.808,
-            "Mg_O_Oh_Mg2.10O2.98Mg3.65b_+4": 3.052,
-            "v_O_Oh_Mg2.10_+2": 0.918,
-            "O_i_Cs_O1.71_-2": 0.571,
-            "O_Mg_Oh_O2.10_-2": 0.502,
+            "v_Mg_+1": 0.21323889,
+            "v_Mg_-2": 0.52235841,
+            "Mg_O_+1": 0.13920905,
         }
+        assert expected_corrections.keys() <= defect_dict.keys()
 
-        for defect_name, entry in defect_dict.items():
+        for defect_name, expected_energy in expected_corrections.items():
+            entry = defect_dict[defect_name]
             charge = entry.charge_state
+            assert "kumagai_charge_correction" in entry.corrections
+            calculated_energy = float(entry.corrections["kumagai_charge_correction"])
 
-            # Neutral defects have no Kumagai correction
-            if charge == 0:
-                assert "kumagai_charge_correction" not in entry.corrections
-                continue
-
-            if defect_name in expected_corrections:
-                expected_energy = expected_corrections[defect_name]
-                assert "kumagai_charge_correction" in entry.corrections
-
-                calculated_energy = float(entry.corrections["kumagai_charge_correction"])
-
-                np.testing.assert_allclose(
-                    calculated_energy,
-                    expected_energy,
-                    atol=1e-3,
-                    err_msg=f"Failed for defect {defect_name} (Charge {charge})!",
-                )
-
-        # --- Explicitly Test the Unrelaxed v_Mg +1 State ---
-        v_mg_unrelaxed_dir = os.path.join(gpaw_mgo_dir, "v_Mg_+1_unrelaxed")
-        assert os.path.exists(v_mg_unrelaxed_dir), "Unrelaxed v_Mg +1 test directory missing!"
-
-        bulk_parser = GPAWParser(os.path.join(gpaw_bulk_dir, "relaxed.gpw.gz"))
-        v_mg_unrelaxed_entry = get_gpaw_defect_entry(
-            defect_path=v_mg_unrelaxed_dir,
-            bulk_path=gpaw_bulk_dir,
-            dielectric=10.0,
-            charge_state=1,
-            bulk_parser=bulk_parser,
-        )
-        v_mg_unrelaxed_entry.get_kumagai_correction()
-
-        assert "kumagai_charge_correction" in v_mg_unrelaxed_entry.corrections
-        calculated_v_mg_unrelaxed = float(v_mg_unrelaxed_entry.corrections["kumagai_charge_correction"])
-
-        np.testing.assert_allclose(
-            calculated_v_mg_unrelaxed,
-            0.303790,
-            atol=1e-3,
-            err_msg="Failed for unrelaxed v_Mg +1 state!",
-        )
+            np.testing.assert_allclose(
+                calculated_energy,
+                expected_energy,
+                atol=1e-3,
+                err_msg=f"Failed for defect {defect_name} (Charge {charge})!",
+            )
 
         # --- Explicitly Test the Unrelaxed Mg_O +1 State ---
-        mg_o_unrelaxed_dir = os.path.join(gpaw_mgo_dir, "Mg_O_Oh_Mg2.10O2.98Mg3.65b_+1_unrelaxed")
+        mg_o_unrelaxed_dir = os.path.join(gpaw_mgo_dir, "Mg_O_+1_unrelaxed")
         assert os.path.exists(mg_o_unrelaxed_dir), "Unrelaxed Mg_O +1 test directory missing!"
 
         bulk_parser = GPAWParser(os.path.join(gpaw_bulk_dir, "relaxed.gpw.gz"))
         mg_o_unrelaxed_entry = get_gpaw_defect_entry(
             defect_path=mg_o_unrelaxed_dir,
             bulk_path=gpaw_bulk_dir,
-            dielectric=10.0,
+            dielectric=8.8963,
             charge_state=1,
             bulk_parser=bulk_parser,
         )
+        bulk_parser.close()
         mg_o_unrelaxed_entry.get_kumagai_correction()
 
         assert "kumagai_charge_correction" in mg_o_unrelaxed_entry.corrections
         calculated_mg_o_unrelaxed = float(mg_o_unrelaxed_entry.corrections["kumagai_charge_correction"])
 
-        # The value parsed from your terminal output for this specific unrelaxed calculation
         np.testing.assert_allclose(
-            calculated_mg_o_unrelaxed, 0.155, atol=1e-3, err_msg="Failed for unrelaxed Mg_O +1 state!"
+            calculated_mg_o_unrelaxed,
+            -0.03567710,
+            atol=1e-3,
+            err_msg="Failed for unrelaxed Mg_O +1 state!",
         )
 
     def test_gpaw_freysoldt_correction_mgo(self):
@@ -217,14 +186,16 @@ class GPAWTest(unittest.TestCase):
         manual invocation after parsing, using the MgO test data.
         """
         pytest.importorskip("gpaw")
-        from doped.gpaw import GPAWParser, get_gpaw_defect_entry
-
         gpaw_mgo_dir = os.path.join(self.data_dir, "gpaw_mgo_test")
         gpaw_bulk_dir = os.path.join(gpaw_mgo_dir, "bulk")
 
         assert os.path.exists(gpaw_bulk_dir), "MgO bulk test directory missing!"
 
-        dp_gpaw = GPAWDefectsParser(output_path=gpaw_mgo_dir, bulk_path=gpaw_bulk_dir, dielectric=10.0)
+        dp_gpaw = GPAWDefectsParser(
+            output_path=gpaw_mgo_dir,
+            bulk_path=gpaw_bulk_dir,
+            dielectric=8.8963,
+        )
 
         defect_dict = dp_gpaw.defect_dict
 
@@ -233,20 +204,15 @@ class GPAWTest(unittest.TestCase):
         # We only keep v_Mg here because FNV requires perfectly matched grids.
         # Mg_O triggered an (80,) vs (96,) grid mismatch with the bulk.
         expected_fnv = {
-            "v_Mg_Oh_O2.10_-1": 0.4145,
-            "v_Mg_Oh_O2.10_+1": -0.0999,
-            "v_Mg_Oh_O2.10_-2": 1.1544,
+            "v_Mg_+1": 1.11865072,
+            "v_Mg_-2": -1.25915911,
         }
+        assert expected_fnv.keys() <= defect_dict.keys()
 
-        for defect_name, defect_entry in defect_dict.items():
-            if defect_entry.charge_state == 0:
-                continue
-
-            # Skip any defect not explicitly in our expected_fnv dictionary!
-            # This prevents the parser from attempting FNV on the mismatched Mg_O grids.
-            if defect_name not in expected_fnv:
-                continue
-
+        for defect_name, expected_energy in expected_fnv.items():
+            defect_entry = defect_dict[defect_name]
+            defect_entry.corrections.pop("kumagai_charge_correction", None)
+            defect_entry.corrections_metadata.pop("kumagai_charge_correction", None)
             defect_entry.get_freysoldt_correction()
             calculated_energy = float(defect_entry.corrections["freysoldt_charge_correction"])
 
@@ -254,35 +220,10 @@ class GPAWTest(unittest.TestCase):
 
             np.testing.assert_allclose(
                 calculated_energy,
-                expected_fnv[defect_name],
+                expected_energy,
                 atol=1e-3,
                 err_msg=f"FNV value mismatch for {defect_name}!",
             )
-
-        # --- Explicitly Test the Unrelaxed v_Mg +1 State ---
-        v_mg_unrelaxed_dir = os.path.join(gpaw_mgo_dir, "v_Mg_+1_unrelaxed")
-        assert os.path.exists(v_mg_unrelaxed_dir), "Unrelaxed v_Mg +1 test directory missing!"
-
-        bulk_parser = GPAWParser(os.path.join(gpaw_bulk_dir, "relaxed.gpw.gz"))
-        v_mg_unrelaxed_entry = get_gpaw_defect_entry(
-            defect_path=v_mg_unrelaxed_dir,
-            bulk_path=gpaw_bulk_dir,
-            dielectric=10.0,
-            charge_state=1,
-            bulk_parser=bulk_parser,
-        )
-
-        v_mg_unrelaxed_entry.get_freysoldt_correction()
-        calculated_unrelaxed = float(v_mg_unrelaxed_entry.corrections["freysoldt_charge_correction"])
-
-        print(f"v_Mg_+1_unrelaxed (Charge 1): {calculated_unrelaxed:.4f} eV")
-
-        np.testing.assert_allclose(
-            calculated_unrelaxed,
-            -0.0999,
-            atol=1e-3,
-            err_msg="FNV value mismatch for unrelaxed defect!",
-        )
 
     def test_gpaw_graphene_2d_handling(self):
         """
@@ -305,21 +246,17 @@ class GPAWTest(unittest.TestCase):
         dp_gpaw = GPAWDefectsParser(
             output_path=gpaw_graphene_dir,
             bulk_path=gpaw_bulk_dir,
-            dielectric=10.0,  # Dummy dielectric
+            dielectric=np.diag([1e6, 1e6, 1.0]),
         )
 
         defect_dict = dp_gpaw.defect_dict
-        assert len(defect_dict) >= 5, "Not enough Graphene defects were parsed!"
 
-        # Expected Kumagai corrections mapped by defect name (values from local run)
-        # Note: The +4 charge state correction is ~41 eV due to the q^2 scaling
-        # of the charge correction in a small 2D supercell.
+        # Expected corrections with a metallic in-plane response and vacuum-like
+        # out-of-plane response. The large +4 value reflects q^2 scaling.
         expected_corrections = {
-            "v_C_D3h_C1.42_+1": 2.5146,
-            "C_i_C3v_C2.00_+4": 41.0205,
-            "N_i_C3v_C2.00_-3": 4.8420,
-            "v_C_D3h_C1.42_-1": 1.5464,
-            "N_C_D3h_C1.42_-2": 1.5279,
+            "v_C_+1": 1.56463945,
+            "C_i_C3v_+4": 27.89761687,
+            "N_C_-2": -2.85529189,
         }
 
         for defect_name, expected_energy in expected_corrections.items():

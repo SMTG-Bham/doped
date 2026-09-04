@@ -490,7 +490,11 @@ def _get_gpaw_defect_entry_from_parsers(
     """
     Build a defect entry from already-open GPAW parsers.
     """
-    defect = defect_from_structures(defect_parser.structure, bulk_parser.structure)
+    defect = defect_from_structures(
+        defect_supercell=defect_parser.structure,
+        bulk_supercell=bulk_parser.structure,
+        _parameter_order_warn=False,
+    )
     assert isinstance(defect, Defect)  # typing
 
     return DefectEntry(
