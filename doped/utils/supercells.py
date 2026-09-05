@@ -1589,7 +1589,7 @@ def _get_min_image_distances_from_matrices(matrices: np.ndarray) -> np.ndarray:
 
 def _get_complex_min_image_distances_from_matrices(
     matrices: np.ndarray,
-    cart_coords: np.ndarray,
+    cart_coords: "np.ndarray | Sequence[np.ndarray]",
     min_image_dists: np.ndarray | None = None,
 ) -> np.ndarray:
     """
@@ -1600,9 +1600,10 @@ def _get_complex_min_image_distances_from_matrices(
     Args:
         matrices (np.ndarray):
             ``(N, 3, 3)`` array of lattice matrices.
-        cart_coords (np.ndarray):
+        cart_coords (np.ndarray | Sequence[np.ndarray]):
             ``(n, 3)`` array of Cartesian coordinates of the constituent
-            point defect sites of the complex, unwrapped.
+            point defect sites of the complex, unwrapped (or a sequence of
+            such arrays for evaluating over multiple complexes e.g. the orbit).
         min_image_dists (np.ndarray):
             Optional ``(N,)`` array of pre-computed (single-site) minimum
             image distances for ``matrices``, which upper bound the complex
@@ -1611,12 +1612,18 @@ def _get_complex_min_image_distances_from_matrices(
             instead (looser, but requiring no extra computation).
 
     Returns:
-        np.ndarray: ``(N,)`` array of complex min image distances, to 4 d.p.
+        np.ndarray:
+            ``(N,)`` array of complex min image distances, to 4 d.p., or
+            ``(len(cart_coords), N)`` if a sequence of complexes is given.
     """
+    single = np.ndim(cart_coords[0]) < 2
     # intra complex vectors plus self vector - only i<j needed because (-R,r_ji) -> (R,r_ij)
-    # (1+n(n-1)/2, 3)
-    intra_vecs = np.array([np.zeros(3), *(j - i for i, j in combinations(cart_coords, 2))])
-    complex_span = np.linalg.norm(intra_vecs, axis=1).max()
+    # (1+n(n-1)/2, 3) for each set of coordinates
+    intra_vec_sets = [
+        np.array([np.zeros(3), *(j - i for i, j in combinations(coords, 2))])
+        for coords in ([cart_coords] if single else cart_coords)
+    ]
+    complex_span = max(np.linalg.norm(intra_vecs, axis=1).max() for intra_vecs in intra_vec_sets)
 
     upper_bounds = (
         2 ** (1 / 6) * np.cbrt(np.abs(_fast_3x3_determinant_vectorized(matrices)))
@@ -1628,7 +1635,7 @@ def _get_complex_min_image_distances_from_matrices(
     naxes = np.ceil(max_rs[:, None] * recip_lens + 1e-9).astype(int)  # (N, 3) per-axis integer ranges
 
     # TODO outer loop over intra_vecs instead and use tighter bound instead of span?
-    complex_min_image_dists = np.empty(len(matrices))
+    complex_min_image_dists = np.empty((len(intra_vec_sets), len(matrices)))
     unique_triples, inverse = np.unique(naxes, axis=0, return_inverse=True)
     for triple_idx, (ni, nj, nk) in enumerate(unique_triples):  # group matrices by required ranges
         coeffs = _nonzero_coeffs_in_box(int(ni), int(nj), int(nk))
@@ -1636,19 +1643,25 @@ def _get_complex_min_image_distances_from_matrices(
         for chunk in np.array_split(group_indices, max(1, len(group_indices) * len(coeffs) // int(4e6))):
             # TODO ceil not floor?
             # NOTE peak memory usage is now ~175 MB
-            vectors = coeffs @ matrices[chunk]  # (M, C, 3) possible lattice vectors, batched matmul
+            vectors = np.einsum(  # (M, C, 3) lattice vectors
+                "ck,nkj->ncj", coeffs, matrices[chunk], optimize=True
+            )
             sq_lengths = np.einsum("kij,kij->ki", vectors, vectors)  # (M, C) squared vector lengths
-            best_sq_dists = sq_lengths.min(axis=1)  # (M,); the point min image distances
-            for intra_vec in intra_vecs[1:]:  # loop over O(n^2) intra complex vectors
-                # |a+b|^2 = |a|^2+|b|^2+2a.b in place - instead of extra (M,C,3) to add directly...
-                sq_dists = vectors @ intra_vec  # (M, C) products
-                sq_dists *= 2
-                sq_dists += sq_lengths
-                sq_dists += intra_vec @ intra_vec
-                np.minimum(best_sq_dists, sq_dists.min(axis=1), out=best_sq_dists)
-            complex_min_image_dists[chunk] = np.sqrt(best_sq_dists)
+            point_sq_dists = sq_lengths.min(axis=1)  # (M,); the point min image distances
+            for set_idx, intra_vecs in enumerate(intra_vec_sets):
+                best_sq_dists = point_sq_dists.copy()
+                for intra_vec in intra_vecs[1:]:  # loop over O(n^2) intra complex vectors
+                    # |a+b|^2 = |a|^2+|b|^2+2a.b in place - instead of extra (M,C,3) to add directly...
+                    sq_dists = vectors @ intra_vec  # (M, C) products
+                    sq_dists *= 2
+                    sq_dists += sq_lengths
+                    sq_dists += intra_vec @ intra_vec
+                    np.minimum(best_sq_dists, sq_dists.min(axis=1), out=best_sq_dists)
+                # clamp at 0 for rounding issues
+                complex_min_image_dists[set_idx, chunk] = np.sqrt(np.maximum(best_sq_dists, 0))
 
-    return complex_min_image_dists.round(4)  # as in _get_complex_min_image_distance_from_matrix
+    complex_min_image_dists = complex_min_image_dists.round(4)
+    return complex_min_image_dists[0] if single else complex_min_image_dists
 
 
 def _find_ideal_supercell_for_target_metric(
