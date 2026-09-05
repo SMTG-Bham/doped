@@ -39,8 +39,13 @@ from doped.chemical_potentials import (
 )
 from doped.core import DefectEntry, _get_abs_chempots, _no_chempots_warning
 from doped.generation import sort_defect_entries
-from doped.utils import _doped_obj_properties_methods
-from doped.utils._optimise import _beam_zoom_search, _default_grid_resolution, _landscape_smoothness_scale
+from doped.utils import _doped_obj_properties_methods, _signed_charge
+from doped.utils._optimise import (
+    _beam_zoom_search,
+    _default_grid_resolution,
+    _independent_columns,
+    _landscape_smoothness_scale,
+)
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
 from doped.utils.parsing import (
@@ -791,7 +796,7 @@ class _VectorisedConcData(NamedTuple):
         """
         if skip_formatting:
             return self.charges.astype(int)
-        return [f"{'+' if charge > 0 else ''}{int(charge)}" for charge in self.charges]
+        return [_signed_charge(int(charge)) for charge in self.charges]
 
     def defect_totals(self, concentrations: np.ndarray) -> np.ndarray:
         """
@@ -2181,7 +2186,7 @@ class DefectThermodynamics(MSONable):
             table.append(
                 {
                     "Defect": name.rsplit("_", 1)[0],  # name without charge
-                    "q": charge if skip_formatting else f"{'+' if charge > 0 else ''}{charge}",
+                    "q": charge if skip_formatting else _signed_charge(charge),
                     "ΔEʳᵃʷ": defect_entry.get_ediff() - correction,
                     "qE_VBM": charge * vbm,
                     "qE_F": charge * fermi_level,
@@ -3700,7 +3705,7 @@ class DefectThermodynamics(MSONable):
         symmetry_df = pd.DataFrame(table_list)
 
         if not skip_formatting:
-            symmetry_df["q"] = symmetry_df["q"].apply(lambda x: f"{'+' if x > 0 else ''}{x}")
+            symmetry_df["q"] = symmetry_df["q"].apply(_signed_charge)
 
         return symmetry_df.set_index(["Defect", "q"])
 
@@ -4767,11 +4772,8 @@ class DefectThermodynamics(MSONable):
                 )
 
             if per_charge:  # format charge states
-                conc_df.index = conc_df.index.set_levels(
-                    conc_df.index.levels[1].map(
-                        lambda q: f"{'+' if q > 0 else ''}{int(q) if np.isclose(q, int(q)) else q}"
-                    ),
-                    level=1,
+                conc_df.index = conc_df.index.set_levels(  # ``int(q)``: level may be upcast to float
+                    conc_df.index.levels[1].map(lambda q: _signed_charge(int(q))), level=1
                 )
 
         return conc_df
@@ -6035,7 +6037,8 @@ class FermiSolver(MSONable):
                 error_message="The `fixed_defects` option is currently only supported for the py-sc-fermi "
                 "backend"
             )
-        if self.backend == "py-sc-fermi" and per_site:
+        use_py_sc_fermi = self.backend == "py-sc-fermi" or py_sc_fermi_required
+        if use_py_sc_fermi and per_site:
             raise ValueError("The `per_site` option is not supported for the py-sc-fermi backend.")
 
         # kwargs shared by both backend leaf calls (``_get_fermi_level_and_carriers`` and
@@ -6047,7 +6050,7 @@ class FermiSolver(MSONable):
             "effective_dopant_concentration": effective_dopant_concentration,
         }
 
-        if self.backend == "doped" and not py_sc_fermi_required:
+        if not use_py_sc_fermi:
             fermi_level, electrons, holes = self._get_fermi_level_and_carriers(
                 **common_kwargs, site_competition=bool(site_competition)
             )
@@ -6396,7 +6399,8 @@ class FermiSolver(MSONable):
                 error_message="The `fix_charge_states`, `free_defects` and `fixed_defects` options are "
                 "currently only supported for the py-sc-fermi backend"
             )
-        if self.backend == "py-sc-fermi" and per_site:
+        use_py_sc_fermi = self.backend == "py-sc-fermi" or py_sc_fermi_required
+        if use_py_sc_fermi and per_site:
             raise ValueError("The `per_site` option is not supported for the py-sc-fermi backend.")
 
         common_kwargs: dict[str, Any] = {  # kwargs shared by both backend leaf calls
@@ -6411,7 +6415,7 @@ class FermiSolver(MSONable):
             **kwargs,
         }
 
-        if self.backend == "doped" and not py_sc_fermi_required:
+        if not use_py_sc_fermi:
             common_kwargs["chempots"] = common_kwargs.pop("single_chempot_dict")
             results = self.defect_thermodynamics.get_fermi_level_and_concentrations(
                 skip_formatting=True,  # keep concentration values as floats
@@ -7971,10 +7975,13 @@ class FermiSolver(MSONable):
             max_initial_points (int):
                 Hard cap on the number of first-pass grid points; if the grid
                 implied by the (requested or default) resolution exceeds this,
-                the resolution is clamped, with a warning. Mostly only relevant
-                for high-dimensional chemical spaces. For 1D (binary system)
-                line searches, the first pass is capped at
-                ``min(1000, max_initial_points)`` points. Default is 100,000.
+                the resolution is clamped, with a warning (for hybrid first
+                passes -- see ``cartesian`` -- the barycentric lattice is
+                capped at half this budget, leaving the rest for the Cartesian
+                overlay). Mostly only relevant for high-dimensional chemical
+                spaces. For 1D (binary system) line searches, the first pass
+                is capped at ``min(1000, max_initial_points)`` points. Default
+                is 100,000.
             n_audit_points (int | None):
                 Number of uniform random points over the full stability region
                 evaluated after all search branches converge, to audit for
@@ -8075,16 +8082,20 @@ class FermiSolver(MSONable):
         chempots_grid = ChemicalPotentialGrid(chempots)
         columns = list(chempots_grid.vertices.columns)
         elements = [col.split("_")[1].split()[0] for col in columns]  # "μ_X (eV)" -> "X"
-        vertices = chempots_grid.vertices.to_numpy()
-        points_budget = grid_max_points = max_initial_points  # used by ``make_grid`` & first-pass...
-        if len(columns) == 2:  # ...resolution default
-            grid_max_points = min(1000, grid_max_points)  # 1D line searches gain nothing beyond ~1000
 
-        polytope_rows = None
+        def single_chempot_dict_from_points(point: np.ndarray) -> dict[str, float]:
+            return dict(zip(elements, point, strict=True))
+
+        vertices = chempots_grid.vertices.to_numpy()
+        polytope_rows = vertices
         if fixed_elements:  # vertices of the constrained sub-polytope (``n_points=1`` gives just the...
             polytope_rows = chempots_grid.get_grid(  # ...corners), for audit sampling/polish feasibility:
                 n_points=1, fixed_elements=fixed_elements, decimal_places=6
             )[columns].to_numpy()
+        search_dimension = max(len(_independent_columns(polytope_rows)), 1)
+        grid_max_points = (
+            min(1000, max_initial_points) if search_dimension == 1 else max_initial_points
+        )  # 1D line searches gain nothing beyond ~1000 points
 
         smoothness_scale = _landscape_smoothness_scale(  # kT-based guarantee resolution; grids finer...
             temperature,  # ...than this are built as a hybrid of a barycentric "guarantee" lattice at...
@@ -8098,10 +8109,9 @@ class FermiSolver(MSONable):
             verts: np.ndarray, n_points: int = n_points, resolution: float | None = None
         ) -> np.ndarray:
             grid = ChemicalPotentialGrid.from_dataframe(pd.DataFrame(verts, columns=columns))
-            grid_kwargs: dict[str, Any] = {  # ``max_points`` clamps the resolution (with a warning)...
-                "fixed_elements": fixed_elements,  # ...avoiding memory/runtime blow-ups in high-D spaces
+            grid_kwargs: dict[str, Any] = {
+                "fixed_elements": fixed_elements,
                 "decimal_places": 6,
-                "max_points": grid_max_points,
             }
             # for sub-smoothness-scale resolutions (the opportunistic first-pass refinement toward the
             # min-protocol-temperature floor, or an explicit finer ``initial_grid_resolution``), build a
@@ -8112,30 +8122,40 @@ class FermiSolver(MSONable):
             # scales ideally with resolution. Skipped for 1D chemical potential spaces (uniform regardless)
             hybrid = (
                 not cartesian  # not already Cartesian
-                and len(columns) > 2  # not 1D
+                and search_dimension > 1  # not 1D
                 and resolution is not None  # resolution set
                 and np.isfinite(resolution)
                 and resolution < smoothness_scale  # resolution below smoothness scale
             )
+            base_max_points = max(grid_max_points // 2, 1) if hybrid else grid_max_points
             grid_df = grid.get_grid(
                 n_points=n_points,
                 resolution=smoothness_scale if hybrid else resolution,  # if not hybrid, use ``resolution``
                 cartesian=cartesian,
+                max_points=base_max_points,
                 **grid_kwargs,
             )
             remaining_budget = grid_max_points - len(grid_df)  # the overlay gets remaining points budget
             if hybrid and remaining_budget > 0:  # -> combined first pass <=``max_initial_points``
-                try:  # polytope vertices are prepended by both grids, but deduplicated in ``evaluate``
+                try:
                     overlay_df = grid.get_grid(
                         resolution=resolution,
                         cartesian=True,  # Cartesian overlay grid
-                        **{**grid_kwargs, "max_points": remaining_budget},
+                        max_points=remaining_budget,
+                        **grid_kwargs,
                     )
-                    grid_df = pd.concat([grid_df, overlay_df])
-                except ValueError:  # very narrow regions can have no in-hull cartesian mesh points...
+                    grid_df = pd.concat([grid_df, overlay_df], ignore_index=True)
+                except ValueError as exc:  # very narrow regions can have no in-hull Cartesian points...
+                    if "No points found inside convex hull" not in str(exc):
+                        raise
+
                     grid_df = grid.get_grid(  # ...(e.g. all spans < resolution); fall back to a plain...
-                        n_points=n_points, resolution=resolution, cartesian=False, **grid_kwargs
-                    )  # ...barycentric grid at the requested resolution (cheap for such small hulls)
+                        n_points=n_points,  # ...barycentric grid at the requested resolution
+                        resolution=resolution,
+                        cartesian=False,
+                        max_points=grid_max_points,
+                        **grid_kwargs,
+                    )
             return grid_df[columns].to_numpy()
 
         if search_kwargs["initial_grid_resolution"] is None:  # default first-pass grid resolution;
@@ -8146,16 +8166,16 @@ class FermiSolver(MSONable):
                 temperature=temperature,
                 annealing_temperature=annealing_temperature,
                 quenched_temperature=quenched_temperature,
-                max_initial_points=points_budget,
+                max_initial_points=grid_max_points,
             )
 
-        sign = -1 if "min" in min_or_max else 1  # ``_beam_zoom_search`` maximises; negate to minimise
+        sign = -1 if min_or_max == "min" else 1  # ``_beam_zoom_search`` maximises; negate to minimise
         cache: dict[tuple, float] = {}  # cache solved chempot points (keyed on rounded coordinates),...
         target_names: list[str] | None = None  # ...so overlapping search branch domains don't re-solve
         column = False
 
         def evaluate(points: np.ndarray) -> np.ndarray:
-            nonlocal target_names, column  # resolved once, from the first solve (bound in ``optimise``)
+            nonlocal target_names, column
             points = np.asarray(points, dtype=float)
             keys = list(map(tuple, np.round(points, 6)))
             uncached: dict[tuple, int] = {}  # first-occurrence row index of each uncached point
@@ -8165,19 +8185,17 @@ class FermiSolver(MSONable):
 
             for key, i in tqdm(uncached.items(), disable=len(uncached) < 10):
                 results_df = self._solve(
-                    single_chempot_dict=dict(zip(elements, points[i], strict=True)),
+                    single_chempot_dict=single_chempot_dict_from_points(points[i]),
                     el_refs=el_refs,
                     **solve_kwargs,
                 )
-                if target_names is None:  # resolve target names once (and print info)
+                if target_names is None:  # resolve and validate the target once, from the first solve
                     target_names, column = _resolve_target_names(results_df, target, min_or_max, True)
-                    # a column target must be a per-solve quantity...
-                    series = results_df[target_names[0]] if column else None
-                    if series is not None and (series != series.iloc[0]).any():  # ...not per-defect-row
+                    if column and results_df[target_names[0]].unique().size > 1:  # NaN-safe constancy
                         raise ValueError(
                             f"Target column '{target_names[0]}' varies between the defect rows of a "
-                            f"single solve, so is not a valid `optimise` target; specify a defect name "
-                            f"(or name substring) instead!"
+                            f"single solve, so is not a valid `optimise` target; specify a defect "
+                            f"name (or name substring) instead!"
                         )
                 cache[key] = sign * _extract_target_value(results_df, target_names, column)
 
@@ -8192,7 +8210,7 @@ class FermiSolver(MSONable):
                 f"potential points, so the search could not be performed!"
             )
         return self._solve(  # full solve output (concentrations, Fermi level, chempots...) at the optimum
-            single_chempot_dict=dict(zip(elements, result.point, strict=True)),
+            single_chempot_dict=single_chempot_dict_from_points(result.point),
             el_refs=el_refs,
             **solve_kwargs,
         )
@@ -8838,7 +8856,7 @@ def _get_species_names_from_df(results_df: pd.DataFrame) -> pd.Index:
     defects = results_df.index.get_level_values("Defect")
     charges = results_df.index.get_level_values("Charge")
     return pd.Index(  # ``int(q)``: charge levels may be int (``_solve``) or str (concentration frames)
-        [f"{d}_{'+' if int(q) > 0 else ''}{int(q)}" for d, q in zip(defects, charges, strict=True)]
+        [f"{d}_{_signed_charge(int(q))}" for d, q in zip(defects, charges, strict=True)]
     )
 
 
@@ -8922,7 +8940,7 @@ def _extract_target_value(results_df: pd.DataFrame, target_names: list[str], col
         return float(results_df[target_names[0]].iloc[0])
 
     matching = _target_rows_mask(results_df, target_names)
-    return float(results_df.loc[matching, "Concentration (cm^-3)"].sum())
+    return float(results_df.loc[matching, "Concentration (cm^-3)"].sum(skipna=False))
 
 
 def _ensure_list(

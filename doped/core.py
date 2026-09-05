@@ -20,7 +20,13 @@ from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
-from doped.utils import _doped_obj_properties_methods, get_mp_context, vise_handling, warn_once
+from doped.utils import (
+    _doped_obj_properties_methods,
+    _signed_charge,
+    get_mp_context,
+    vise_handling,
+    warn_once,
+)
 from doped.utils.efficiency import (
     Composition,
     Element,
@@ -230,7 +236,7 @@ class DefectEntry(thermo.DefectEntry):
             except Exception:
                 name_wout_charge = self.defect.name
 
-            self.name = f"{name_wout_charge}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
+            self.name = f"{name_wout_charge}_{_signed_charge(self.charge_state)}"
         else:
             self.name = name
 

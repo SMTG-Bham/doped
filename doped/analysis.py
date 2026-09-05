@@ -33,6 +33,7 @@ from doped.thermodynamics import DefectThermodynamics
 from doped.utils import (
     _doped_obj_properties_methods,
     _ignore_pmg_warnings,
+    _signed_charge,
     _warn_parameter_order,
     get_mp_context,
     pool_manager,
@@ -161,7 +162,7 @@ def check_and_set_defect_entry_name(
     defect_name_w_charge_state = (
         possible_defect_name
         if (possible_defect_name.endswith((f"_{charge_state}", f"_{charge_state:+}")))
-        else f"{possible_defect_name}_{'+' if charge_state > 0 else ''}{charge_state}"
+        else f"{possible_defect_name}_{_signed_charge(charge_state)}"
     )
 
     with contextlib.suppress(Exception):  # check if defect name is recognised
@@ -173,8 +174,7 @@ def check_and_set_defect_entry_name(
     # recognised:
     if "full_unrelaxed_defect_name" not in defect_entry.calculation_metadata:
         defect_entry.calculation_metadata["full_unrelaxed_defect_name"] = (
-            f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_"
-            f"{'+' if charge_state > 0 else ''}{charge_state}"
+            f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_{_signed_charge(charge_state)}"
         )
 
     if formatted_defect_name is not None:
@@ -1774,10 +1774,7 @@ def _name_parsed_defect_entries(
     new_named_defect_entries_dict = name_defect_entries(entries_to_rename)
     # set name attribute: (these are names without charges!)
     for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
-        defect_entry.name = (
-            f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
-            f"{defect_entry.charge_state}"
-        )
+        defect_entry.name = f"{defect_name_wout_charge}_{_signed_charge(defect_entry.charge_state)}"
 
     if duplicate_names := [  # if any duplicate names, crash (and burn, b...)
         defect_entry.name for defect_entry in entries_to_rename if defect_entry.name in defect_dict

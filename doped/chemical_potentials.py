@@ -2649,11 +2649,7 @@ class ChemicalPotentialGrid(MSONable):
         return {
             "@module": self.__class__.__module__,
             "@class": self.__class__.__name__,
-            "vertices": {
-                "index": self.vertices.index.tolist(),
-                "columns": self.vertices.columns.tolist(),
-                "data": self.vertices.to_numpy().tolist(),
-            },
+            "vertices": self.vertices.to_dict(orient="split"),
         }
 
     @classmethod
@@ -2668,12 +2664,7 @@ class ChemicalPotentialGrid(MSONable):
         Returns:
             |ChemicalPotentialGrid| object
         """
-        vertices = pd.DataFrame(
-            d["vertices"]["data"],
-            index=d["vertices"]["index"],
-            columns=d["vertices"]["columns"],
-        )
-        return cls.from_dataframe(vertices)
+        return cls.from_dataframe(pd.DataFrame(**d["vertices"]))
 
     def get_grid(
         self,
@@ -2785,31 +2776,25 @@ class ChemicalPotentialGrid(MSONable):
                 sort,
             )
 
-        dependent_variable = self.vertices.columns[-1]
-        dependent_var = self.vertices[dependent_variable].to_numpy()
-        independent_vars = self.vertices.drop(columns=dependent_variable)
-
-        n_dims = independent_vars.shape[1]  # number of independent variables (dimensions)
-        if n_dims < 1:
+        if self.vertices.shape[1] < 2:
             raise ValueError(
                 "Chemical potential grid generation requires at least one independent variable (chemical "
                 "potential), i.e. a binary or higher-dimensional system!"
             )
-
-        ind_vars = independent_vars.to_numpy()
-        spans = np.ptp(
-            ind_vars, axis=0
-        )  # affine rank of the vertex set; 1 for any collinear set of limits
-        rank = np.linalg.matrix_rank(
-            ind_vars - ind_vars.mean(axis=0), tol=1e-4 * float(spans.max() or 1.0)
-        )
-        if rank == 0:
+        independent_indices = _independent_columns(self.vertices.to_numpy())
+        if not len(independent_indices):
             raise ValueError(
                 "All supplied chemical potential limits (vertices) are identical, so no grid can be "
                 "generated between them!"
             )
+        independent_vars = self.vertices.iloc[:, independent_indices]
+        dependent_vars = self.vertices.drop(columns=list(independent_vars.columns))
+        n_dims = independent_vars.shape[1]  # affine dimensionality of the chemical-potential region
 
-        if rank == 1:  # 1D space (e.g. a binary system, or two limits of a multinary system); stable
+        ind_vars = independent_vars.to_numpy()
+        spans = np.ptp(ind_vars, axis=0)
+
+        if n_dims == 1:  # 1D space (e.g. a binary system, or two limits of a multinary system); stable
             # chemical potential range is just a line segment, for which barycentric and Cartesian grids
             cartesian = False  # are identical -> "hull" = the segment endpoints,
             order = np.argsort(
@@ -2822,15 +2807,20 @@ class ChemicalPotentialGrid(MSONable):
 
         # ensure vertices and dependent values are aligned:
         coords_hull = ind_vars[hull_idx]
-        values_hull = dependent_var[hull_idx]
+        values_hull = dependent_vars.to_numpy()[hull_idx]
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
             if resolution is not None and np.isfinite(resolution):
                 step = resolution  # direct grid spacing (eV) requested
-                implied_total = np.prod(np.maximum(spans / step, 1))  # product of steps per dim
-                if max_points is not None and implied_total > max_points:
-                    # coarsen `before` materialising the grid, to avoid memory blow-ups:
-                    step *= float(implied_total / max_points) ** (1 / n_dims)
+
+                def _num_cartesian_points(grid_step: float) -> int:
+                    # ``np.arange`` creates ``ceil(span / step)`` values per axis
+                    return math.prod(max(math.ceil(float(span) / grid_step), 1) for span in spans)
+
+                if max_points is not None and (n := _num_cartesian_points(step)) > max_points:
+                    while n > max_points:  # scale to implied density; loop covers ``ceil`` leftovers
+                        step = float(np.nextafter(step * (n / max_points) ** (1 / n_dims), np.inf))
+                        n = _num_cartesian_points(step)
                     _warn_resolution_clamped(resolution, max_points, step)
             else:  # hull volume (in N-D) times grid density = num points:
                 req_grid_density = n_points / hull.volume  # points per N-D volume
@@ -2860,18 +2850,17 @@ class ChemicalPotentialGrid(MSONable):
 
         grid_df = pd.DataFrame(
             grid_with_values,
-            columns=[*list(independent_vars.columns), dependent_variable],
+            columns=[*list(independent_vars.columns), *list(dependent_vars.columns)],
         ).round(decimal_places)
 
         if include_vertices:  # prepend the exact (unrounded) vertices, ensuring the chemical potential
             # limits are in the grid `exactly` (``drop_duplicates`` only drops exactly-equal rows):
-            vertices_df = pd.DataFrame(self.vertices.to_numpy(), columns=grid_df.columns)
-            grid_df = pd.concat([vertices_df, grid_df], ignore_index=True)
+            grid_df = pd.concat([self.vertices[grid_df.columns], grid_df], ignore_index=True)
 
         if drop_duplicates:  # dependent μ is a function of independent coordinates, so compare only those
             grid_df = grid_df.drop_duplicates(subset=list(independent_vars.columns))
 
-        return (
+        grid_df = (
             grid_df.sort_values(  # sort along the largest-span μ coordinate; giving path-ordered...
                 independent_vars.columns[
                     int(np.argmax(spans))
@@ -2885,6 +2874,7 @@ class ChemicalPotentialGrid(MSONable):
             if sort
             else grid_df
         )
+        return grid_df[list(self.vertices.columns)]  # retain column ordering
 
     def get_constrained_grid(
         self,
@@ -2985,16 +2975,13 @@ class ChemicalPotentialGrid(MSONable):
                 f"`fixed_elements` requires a ternary or higher-dimensional system, with at most "
                 f"`n_elements - 2` fixed chemical potentials."
             )
-        dependent_variable = variables[-1]
-        dependent_var = self.vertices[dependent_variable].to_numpy()
-        independent_vars = self.vertices.drop(columns=dependent_variable)
-        vertices = independent_vars.to_numpy()
+        vertices = self.vertices.to_numpy()
 
         for element, value in fixed_elements.items():
             try:
                 vertices = _intersect_hull_with_plane(
                     vertices,
-                    list(independent_vars.columns).index(element),
+                    list(self.vertices.columns).index(element),
                     value,
                     tol=10 ** (-decimal_places),
                 )
@@ -3006,17 +2993,9 @@ class ChemicalPotentialGrid(MSONable):
                         f"vertices:\n{self.vertices}\n"
                     ) from e
 
-                raise e
+                raise
 
-        # Interpolate the values to get the dependent chemical potential
-        grid_with_values = _griddata_linear_in_hull(
-            independent_vars.to_numpy(), dependent_var, vertices, tol=10 ** (-decimal_places)
-        )
-
-        constrained_vertices = pd.DataFrame(
-            grid_with_values,
-            columns=[*list(independent_vars.columns), dependent_variable],
-        )
+        constrained_vertices = pd.DataFrame(vertices, columns=self.vertices.columns).drop_duplicates()
         # these are our new constrained vertices, now we generate the grid (without the fixed element):
         input_constrained_vertices = constrained_vertices.drop(columns=list(fixed_elements.keys()))
         constrained_grid = ChemicalPotentialGrid.from_dataframe(input_constrained_vertices)
@@ -3029,12 +3008,12 @@ class ChemicalPotentialGrid(MSONable):
             drop_duplicates=drop_duplicates,
             include_vertices=include_vertices,
             sort=sort,
-        ).dropna()
+        )
 
         for element_col_name, value in fixed_elements.items():  # add fixed-element values to the grid
-            grid_df[element_col_name] = [value] * len(grid_df)
+            grid_df[element_col_name] = value
 
-        return grid_df
+        return grid_df[list(self.vertices.columns)]  # retain column ordering
 
 
 def _warn_resolution_clamped(resolution: float, max_points: int, achieved_resolution: float) -> None:
@@ -3151,9 +3130,10 @@ def _lattice_in_hull(
 
     Returns:
         np.ndarray:
-            A grid of points inside the convex hull, in Cartesian coordinates.
-            The shape of the array is (M, k), where M is the number of points
-            in the grid.
+            A grid of points inside the convex hull, in Cartesian coordinates,
+            with shape ``(M, k)`` -- or ``(M, k+m)`` if ``Y`` is provided (the
+            ``m`` interpolated values appended as the last columns) -- where
+            ``M`` is the number of points in the grid.
     """
     if vertices.ndim != 2:
         raise ValueError("`vertices` must be a 2-D array (N_points, N_dimensions)")
@@ -3219,10 +3199,10 @@ def _lattice_in_hull(
     if Y is None:
         return points_inside
 
-    vals_per_simplex = Y[simplices]  # (S, k_s+1)
-    # values_inside: (S, L) -> reshape -> (S*L,)
-    Y_inside = np.einsum("LK,SK->SL", bary_coords, vals_per_simplex).ravel()
-    return np.hstack((points_inside, Y_inside.reshape(-1, 1)))
+    Y_2d = np.asarray(Y).reshape(len(Y), -1)  # (n, m); promotes (n,) -> (n, 1)
+    vals_per_simplex = Y_2d[simplices]  # (S, k_s+1, m)
+    Y_inside = np.einsum("LK,SKm->SLm", bary_coords, vals_per_simplex).reshape(-1, Y_2d.shape[1])
+    return np.hstack((points_inside, Y_inside))
 
 
 def _griddata_linear_in_hull(
@@ -3231,13 +3211,13 @@ def _griddata_linear_in_hull(
     """
     Linear ND interpolation of ``xi``, using input data ``X`` and ``Y``, which
     also returns values `on` the convex hull boundary (which ``griddata`` often
-    fails to do), and NaN for points truly outside the convex hull.
+    fails to do), dropping query points outside the convex hull.
 
     Args:
         X (np.ndarray):
             (n, k) float array of data points to interpolate between.
         Y (np.ndarray):
-            (n,) float array of values at ``X``.
+            ``(n,)`` or ``(n, m)`` float array of values at ``X``.
         xi (np.ndarray):
             (L, k) float array of query points to interpolate values for.
         tol (float):
@@ -3250,10 +3230,11 @@ def _griddata_linear_in_hull(
             conditioning, and "Qc" keeps coplanar points.
 
     Returns:
-         np.ndarray:
-            (N, k+1) float array of interpolated values within the
-            convex hull, with NaN values outside the hull, and the input
-            query points (xi) concatenated to the end.
+        np.ndarray:
+            ``(N, k+m)`` float array of the ``N <= L`` query points inside the
+            convex hull (first ``k`` columns) with their interpolated values
+            (last ``m`` columns; ``m = 1`` if ``Y`` is 1D). Raises
+            ``ValueError`` if no query points lie inside the hull.
     """
     n, k = np.shape(X)
     # Delaunay triangulation breaks our k-D polyhedron (polytope) of the convex hull into k-D
@@ -3275,28 +3256,28 @@ def _griddata_linear_in_hull(
         transform = delaunay_tri.transform  # (S, k+1, k)
 
     inside_hull = simplex_indices >= 0  # outside = -1; tol treats near-edge as inside; (L,)
-    if not inside_hull.any():  # no inside points, return array of NaNs of shape (L,)
+    if not inside_hull.any():  # no query points inside the hull
         raise ValueError("No points found inside convex hull (of chemical potentials)")
 
     X_inside = xi[inside_hull]  # (N, k) where N is number of points inside hull; N <= L
-    # k is the xi dimension (k-D chemical potential space)
-    # inside_hull_simplex_indices = simplex_indices[inside_hull]  # (N,)
+    inside_simplex_indices = simplex_indices[inside_hull]  # (N,); k is the xi (chempot space) dimension
 
     # Linear interpolation via barycentric coordinates:
     # SciPy exposes an affine map from x to barycentric coords via tri.transform:
     #   For each simplex i:  T_i c = x - r_i, with c[:-1] first d barycentric coordinates,
     #   and c_last = 1 - sum(c[:-1])
     # (This mirrors what ``LinearNDInterpolator`` does under the hood)
-    Ti = transform[simplex_indices[inside_hull]]  # (N, k+1, k)
+    Ti = transform[inside_simplex_indices]  # (N, k+1, k)
     Xdif = X_inside - Ti[:, -1, :]  # x - r, shape (N, k)
     lam = np.einsum("Nij,Nj->Ni", Ti[:, :k, :], Xdif)  # first k barycentrics; (N, k)
     bary_coords = np.concatenate([lam, 1.0 - lam.sum(axis=1, keepdims=True)], axis=1)  # (N, k+1)
 
-    vertex_indices_of_simplices = simplices[simplex_indices[inside_hull]]  # (N, k+1)
-    vertex_values_of_simplices = Y[vertex_indices_of_simplices]  # (N, k+1)
-    values_inside = np.einsum("Ni,Ni->N", bary_coords, vertex_values_of_simplices)  # N
+    vertex_indices_of_simplices = simplices[inside_simplex_indices]  # (N, k+1)
+    Y_2d = np.asarray(Y).reshape(len(Y), -1)  # (n, m); promotes (n,) -> (n, 1)
+    vertex_values_of_simplices = Y_2d[vertex_indices_of_simplices]  # (N, k+1, m)
+    values_inside = np.einsum("Ni,Nim->Nm", bary_coords, vertex_values_of_simplices)
     # combine input xi points (which are inside hull) with interpolated values for returned output:
-    return np.hstack((X_inside, values_inside.reshape(-1, 1)))  # (N, k+1)
+    return np.hstack((X_inside, values_inside))
 
 
 def entries_from_chempot_limits(

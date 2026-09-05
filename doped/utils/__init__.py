@@ -183,6 +183,15 @@ def _warn_parameter_order(func_name: str, stacklevel: int = 3):
     )
 
 
+def _signed_charge(charge: int) -> str:
+    """
+    Format a charge state with an explicit ``+`` for positive values (and no
+    sign for zero or negative values), e.g. ``+1``, ``0``, ``-2``; as used in
+    ``doped`` defect names (e.g. ``v_Cd_+1``, ``v_Cd_0``, ``v_Cd_-2``).
+    """
+    return f"{charge:+}" if charge > 0 else str(charge)
+
+
 def _doped_obj_properties_methods(obj):
     """
     Return a tuple of the attributes & properties and methods of a given

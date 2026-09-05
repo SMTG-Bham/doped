@@ -27,6 +27,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
 from doped.core import _get_abs_chempots
+from doped.utils import _signed_charge
 from doped.utils.symmetry import sch_symbols  # point group symbols
 
 if TYPE_CHECKING:
@@ -1064,14 +1065,6 @@ def _set_title_and_save_figure(
         fig = ax.get_figure()
         assert isinstance(fig, Figure)
         fig.savefig(filename, dpi=600, bbox_inches="tight", transparent=True)
-
-
-def _signed_charge(charge: int) -> str:
-    """
-    Format a charge state with an explicit ``+`` for positive values (and no
-    sign for zero or negative values), e.g. ``+1``, ``0``, ``-2``.
-    """
-    return f"{charge:+}" if charge > 0 else str(charge)
 
 
 def format_defect_name(

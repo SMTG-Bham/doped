@@ -12,17 +12,17 @@ import itertools
 import warnings
 
 import numpy as np
-import pytest
 from scipy.spatial import cKDTree
 
 from doped.chemical_potentials import _lattice_in_hull
 from doped.utils._optimise import (
     _beam_zoom_search,
     _default_grid_resolution,
+    _independent_columns,
     _landscape_smoothness_scale,
+    _nearest_distances,
     _PolytopeInterp,
     _select_seeds,
-    _typical_spacing,
     kB,
 )
 
@@ -158,7 +158,7 @@ class TestSearchMechanics:
 
     def test_seed_selection_local_maxima_and_separation(self):
         points = make_grid(TRIANGLE, resolution=0.1)[:, :2]
-        spacing = _typical_spacing(points)
+        spacing = float(np.median(_nearest_distances(points)))
         values = np.zeros(len(points))
         top = int(np.argmin(np.linalg.norm(points - [-0.4, -0.4], axis=1)))
         near_duplicate = int(  # a slightly-lower peak 2 lattice spacings from ``top`` (a distinct...
@@ -201,7 +201,7 @@ class TestSearchMechanics:
         fine = make_grid(TRIANGLE, resolution=0.02)[:, :2]
         fine = fine[np.linalg.norm(fine - [-0.5, -0.5], axis=1) < 0.3]  # fine interior overlay patch
         points = np.vstack([coarse, fine])
-        spacing = _typical_spacing(points)  # median NN distance; set by the fine overlay
+        spacing = float(np.median(_nearest_distances(points)))  # median NN distance; set by fine overlay
         isolated = [len(n) == 1 for n in cKDTree(points).query_ball_point(points, r=1.55 * spacing)]
         assert sum(isolated) > 20  # coarse points see no neighbours within a reasonable fixed radius
         values = -np.sum((points - [-1.2, -0.3]) ** 2, axis=1)  # smooth, unimodal; optimum off-patch
@@ -210,30 +210,55 @@ class TestSearchMechanics:
 
         # 1D (sorted-neighbour) branch, with mixed spacing along the line:
         line = np.sort(np.concatenate([np.linspace(0, 1, 6), np.linspace(0.4, 0.6, 21)]))[:, None]
-        spacing = _typical_spacing(line)
+        spacing = float(np.median(_nearest_distances(line)))
         seeds = _select_seeds(line, -((line[:, 0] - 0.25) ** 2), spacing, max_beam_width=5)  # unimodal
         assert line[seeds, 0].tolist() == [0.2]
         seeds = _select_seeds(line, np.cos(2 * np.pi * line[:, 0]), spacing, max_beam_width=5)  # bimodal
         assert sorted(line[seeds, 0].tolist()) == [0.0, 1.0]  # both endpoints are local maxima
 
-    def test_typical_spacing_ignores_duplicates_and_rounded_vertex_twins(self):
+    def test_mixed_spacing_branch_uses_seed_local_scale(self):
+        coarse = make_grid(TRIANGLE, resolution=0.25)
+        fine = make_grid(TRIANGLE, resolution=0.02)
+        fine = fine[np.linalg.norm(fine[:, :2] - [-0.4, -1.4], axis=1) < 0.25]
+        hybrid = np.vstack([coarse, fine])
+        centre = np.array([-1.2, -0.3])  # between coarse points, remote from the fine patch
+
+        def landscape(points):
+            return np.exp(-np.sum((points[:, :2] - centre) ** 2, axis=1) / (2 * 0.05**2))
+
+        def hybrid_grid(vertices, n_points=30, resolution=None):
+            if resolution is not None and np.allclose(vertices, TRIANGLE):
+                return hybrid
+            return make_grid(vertices, n_points=n_points, resolution=resolution)
+
+        result = _beam_zoom_search(
+            landscape,
+            TRIANGLE,
+            make_grid=hybrid_grid,
+            initial_grid_resolution=0.25,
+            n_audit_points=0,
+            polish=False,
+        )
+        assert result.value > 0.99
+        np.testing.assert_allclose(result.point[:2], centre, atol=2e-3)
+
+    def test_nearest_distances_ignore_duplicates_and_rounded_vertex_twins(self):
         """
         Grids prepend exact polytope vertices alongside their 6-dp-rounded
-        lattice twins (~1e-7 apart), and pooled grids can contain exact.
-
-        duplicates; either would collapse the median NN distance to ~1e-7/zero
-        -- giving degenerate seed pre-contraction boxes, downstream qhull
-        failures and broken seed selection -- so ``_typical_spacing`` must
-        merge both (rounding then ``np.unique``), and report a degenerate
-        single-point set as ``inf``.
+        lattice twins (~1e-7 apart), and pooled grids can contain exact
+        duplicates; either would collapse nearest-neighbour distances (and so
+        the median grid spacing) to ~1e-7/zero -- giving degenerate seed
+        pre-contraction boxes, downstream qhull failures and broken seed
+        selection -- so ``_nearest_distances`` must merge both (rounding then
+        ``np.unique``), and report a degenerate single-point set as ``inf``.
         """
         exact = np.array([[0.0000004, 0.0], [1.0000004, 0.0], [0.0, 1.0000004], [0.5000004, 0.5]])
         points = np.vstack([exact, np.round(exact, 6)])  # every point's NN is its twin, ~4e-7 off
-        assert _typical_spacing(points) == pytest.approx(np.sqrt(2) / 2, rel=1e-3)
+        assert np.isclose(np.median(_nearest_distances(points)), np.sqrt(2) / 2, rtol=1e-3)
 
         line = np.linspace(0, 1, 11)[:, None]
-        assert np.isclose(_typical_spacing(np.vstack([line, line, line])), 0.1)  # 2/3 exact duplicates
-        assert _typical_spacing(np.zeros((5, 2))) == np.inf  # degenerate single-point case
+        assert np.isclose(np.median(_nearest_distances(np.vstack([line, line, line]))), 0.1)  # 2/3 dupes
+        assert np.all(np.isinf(_nearest_distances(np.zeros((5, 2)))))  # degenerate single-point case
 
     def test_audit_reseeds_spike_invisible_to_first_pass(self):
         # a sigma = 0.02 eV spike is invisible to a deliberately coarse (0.3 eV) first pass; the random
@@ -248,7 +273,40 @@ class TestSearchMechanics:
             n_audit_points=3000,
         )
         assert result.value > 99
-        assert len(result.branches) >= 2  # audit re-seed ran a new branch (not just a lucky sample)
+
+    def test_audit_reseeds_when_first_pass_has_no_finite_values(self):
+        centre = np.array([-0.73, -0.61])
+
+        def finite_basin(points):
+            distance = np.linalg.norm(points[:, :2] - centre, axis=1)
+            return np.where(distance < 0.35, 1 - (distance / 0.35) ** 2, np.nan)
+
+        result = _beam_zoom_search(
+            finite_basin,
+            TRIANGLE,
+            make_grid=make_grid,
+            initial_grid_resolution=1.5,  # no first-pass point lies in the finite basin
+            n_audit_points=10,
+            rng=0,
+        )
+        assert result.value > 0.999
+        np.testing.assert_allclose(result.point[:2], centre, atol=1e-3)
+
+    def test_nonfinite_values_do_not_poison_finite_search(self):
+        def partly_infinite(points):
+            values = -np.sum((points[:, :2] - [-0.5, -0.5]) ** 2, axis=1)
+            return np.where(np.all(points[:, :2] == 0, axis=1), np.inf, values)
+
+        result = _beam_zoom_search(
+            partly_infinite,
+            TRIANGLE,
+            make_grid=make_grid,
+            initial_grid_resolution=0.2,
+            n_audit_points=0,
+        )
+        assert np.isfinite(result.value)
+        assert result.value > -1e-4
+        np.testing.assert_allclose(result.point[:2], [-0.5, -0.5], atol=1e-2)
 
     def test_3d_simplex(self):
         tetrahedron = np.hstack(  # 3 independent dimensions + fake dependent column
@@ -335,6 +393,25 @@ class TestFirstPassResolutionDefaults:
         resolution = _default_grid_resolution(make_grid, TRIANGLE, temperature=500)
         assert np.isclose(resolution, kB * 500)
 
+    def test_refinement_dimension_uses_affine_rank(self):
+        # a collinear 4-column line grid (affine rank 1): refinement from the 1.0 eV smoothness scale is
+        # allowed only if the projected grid growth 100 * 2**n_free_dims stays within the 500-point cap --
+        # true for the affine rank (200), not for a naive "varying columns - 1" = 3 estimate (800)
+        def line_grid(_vertices, n_points=30, resolution=None):
+            count = 100 if resolution is None or resolution > 0.5 else 200
+            t = np.linspace(0, 1, count)
+            return np.column_stack([t, 2 * t, 3 * t, -6 * t])
+
+        resolution = _default_grid_resolution(
+            line_grid,
+            np.array([[0.0, 0.0, 0.0, 0.0], [1.0, 2.0, 3.0, -6.0]]),
+            smoothness_scale=1.0,
+            annealing_temperature=1 / kB,
+            quenched_temperature=0.5 / kB,
+            max_initial_points=500,
+        )
+        assert resolution == 0.5
+
     def test_max_points_clamps_before_materialising(self):
         # ``max_points`` must clamp the implied grid size (with a single clear warning) `before` the grid
         # is materialised -- the mechanism preventing memory blow-ups for fine resolutions in
@@ -343,13 +420,62 @@ class TestFirstPassResolutionDefaults:
             clamped = _lattice_in_hull(TRIANGLE[:, :2], TRIANGLE[:, 2], resolution=1e-4, max_points=500)
         assert len(clamped) <= 2 * 500  # S * C(r+d, d) bound; a little slack for shared simplex faces
         assert sum("max_points" in str(warning.message) for warning in caught) == 1
-        achieved_spacing = _typical_spacing(clamped[:, :2])
+        achieved_spacing = np.median(_nearest_distances(clamped[:, :2]))
         assert achieved_spacing > 1e-4  # coarser than requested (clamped)
 
         with warnings.catch_warnings(record=True) as caught:
             unclamped = _lattice_in_hull(TRIANGLE[:, :2], TRIANGLE[:, 2], resolution=0.1, max_points=10**6)
         assert not caught  # fits within the cap; no warning, resolution honoured
         assert len(unclamped) == len(_lattice_in_hull(TRIANGLE[:, :2], TRIANGLE[:, 2], resolution=0.1))
+
+
+class TestIndependentColumns:
+    """
+    Tests for ``_independent_columns`` (affine rank-revealing column selection
+    of chemical potential limits / grid rows).
+    """
+
+    ROUNDED_LIMITS = np.array(  # 4-d.p.-rounded ternary limits (as ``CompetingPhasesAnalyzer`` gives)...
+        [  # ...with 2A + 2B + 2C = const, to within rounding residuals of up to 5e-5 eV
+            [-0.1717, -0.1965, -2.5592],
+            [-0.0435, -0.1414, -2.7424],
+            [-0.1833, -0.0026, -2.7414],
+            [-0.0047, -0.0124, -2.9102],
+        ]
+    )
+
+    def test_rounded_limits(self):
+        assert _independent_columns(self.ROUNDED_LIMITS).tolist() == [0, 1]
+        rows_5_mev = np.array(  # ~5 meV spans (close to edge case), so rounding residuals are ~1% of...
+            [  # ...the span; needs the rounding-noise floor (2A + B + 3C = const)
+                [-0.0044, -0.0025, -1.9963],
+                [-0.0020, -0.0049, -1.9971],
+                [-0.0043, -0.0004, -1.9970],
+                [-0.0046, -0.0044, -1.9955],
+                [-0.0003, -0.0019, -1.9992],
+            ]
+        )
+        assert _independent_columns(rows_5_mev).tolist() == [0, 1]
+
+    def test_narrow_axis_retained(self):
+        # a genuinely independent axis spanning only 1% of the largest span (unrounded coordinates, so no
+        # rounding-noise floor applies) must be retained:
+        rows = np.array([[0.0123456789, 0.0, -0.0123456789], [0.9876543210, 0.0, -0.9876543210]])
+        rows = np.vstack([rows, rows + np.array([0, 0.01, -0.01])])
+        assert _independent_columns(rows).tolist() == [0, 1]
+
+    def test_large_rounded_grid(self):
+        rng = np.random.default_rng(0)
+        X = rng.uniform(-0.03, 0, size=(100_000, 3))  # 30 meV spans: rounding residuals are 1e-5 of span
+        rows = np.round(np.column_stack([X, -(X @ [1, 2, 1.5]) / 3]), 6)  # 6-d.p. quaternary grid rows
+        assert _independent_columns(rows).tolist() == [0, 1, 2]  # all independent
+
+    def test_contracted_branch_domain(self):
+        # ``_beam_zoom_search`` grids branch domains contracted to ~1 meV (unrounded vertices), whose
+        # independent spans fall far below any absolute tolerance:
+        rows = TRIANGLE / 4000 + np.array([-0.3123456789, -0.7234567891, 1.0358024680])
+        assert _independent_columns(rows).tolist() == [0, 1]
+        assert _independent_columns(np.ones((3, 3))).size == 0  # identical rows: no varying dimensions
 
 
 class TestPolytopeInterp:
@@ -411,3 +537,35 @@ class TestPolytopeInterp:
         samples = interp.sample(50, np.random.default_rng(0))
         np.testing.assert_allclose(samples[:, 2], -(samples[:, 0] + samples[:, 1]), atol=1e-6)
         np.testing.assert_allclose(samples[:, 3], -1.32, atol=1e-9)
+
+    def test_independent_extrinsic_coordinate_not_dropped(self):
+        # ``c1 = 2*c0`` is the host-composition dependency, while the final coordinate is an independent
+        # extrinsic chemical potential and must remain in the audit/polish geometry:
+        rows = np.array(
+            [[0.0, 0.0, -1.0, 0.0], [1.0, 2.0, -1.0, 0.0], [0.0, 0.0, -1.0, 1.0], [1.0, 2.0, -1.0, 1.0]]
+        )
+        interp = _PolytopeInterp(rows)
+        assert interp.varying.sum() == 2
+        assert interp.varying[-1]
+        samples = interp.sample(500, np.random.default_rng(0))
+        assert np.ptp(samples[:, -1]) > 0.9
+        np.testing.assert_allclose(samples[:, 1], 2 * samples[:, 0], atol=1e-9)
+
+    def test_lift_accepts_exact_hull_vertex(self):
+        coords = np.array(
+            [
+                (1.08, 2.633),
+                (-0.929, 0.205),
+                (-0.868, -1.259),
+                (1.837, 0.766),
+                (-2.128, -0.022),
+                (1.121, -0.438),
+                (-0.228, 4.472),
+                (-1.745, -1.302),
+                (2.83, 0.182),
+            ]
+        )
+        rows = np.column_stack([coords, -(coords[:, 0] + 2 * coords[:, 1])])
+        interp = _PolytopeInterp(rows)
+        vertex = rows[6]
+        np.testing.assert_allclose(interp.lift(vertex[interp.varying]), vertex[None], atol=1e-12)

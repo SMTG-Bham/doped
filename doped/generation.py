@@ -44,7 +44,7 @@ from doped.core import (
     get_oxi_probabilities,
     guess_and_set_oxi_states_with_timeout,
 )
-from doped.utils import parsing, pool_manager, supercells, symmetry
+from doped.utils import _signed_charge, parsing, pool_manager, supercells, symmetry
 from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
 from doped.utils.parsing import reorder_s2_like_s1
 from doped.utils.plotting import format_defect_name
@@ -2070,7 +2070,7 @@ class DefectsGenerator(MSONable):
             for charge in charge_states:
                 defect_entry = deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
                 defect_entry.charge_state = charge
-                defect_entry.name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
+                defect_entry.name = f"{defect_name_wout_charge}_{_signed_charge(charge)}"
                 self.defect_entries[defect_entry.name] = defect_entry
 
             pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
@@ -2173,7 +2173,7 @@ class DefectsGenerator(MSONable):
             name
             for charge in charge_states
             for name in matching_entry_names_wout_charge
-            if name.endswith(f"_{'+' if charge > 0 else ''}{charge}")
+            if name.endswith(f"_{_signed_charge(charge)}")
         ]
 
     def add_charge_states(self, defect_entry_name: str, charge_states: list | int):
@@ -2208,9 +2208,7 @@ class DefectsGenerator(MSONable):
             for charge in charge_states:
                 defect_entry = deepcopy(previous_defect_entry)
                 defect_entry.charge_state = charge
-                defect_entry.name = (
-                    f"{defect_entry.name.rsplit('_', 1)[0]}_{'+' if charge > 0 else ''}{charge}"
-                )
+                defect_entry.name = f"{defect_entry.name.rsplit('_', 1)[0]}_{_signed_charge(charge)}"
                 self.defect_entries[defect_entry.name] = defect_entry
 
         # sort defects and defect entries for deterministic behaviour:

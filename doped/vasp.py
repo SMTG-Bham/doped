@@ -29,7 +29,13 @@ from doped.generation import (
     get_defect_name_from_entry,
     name_defect_entries,
 )
-from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
+from doped.utils import (
+    _doped_obj_properties_methods,
+    _ignore_pmg_warnings,
+    _signed_charge,
+    get_mp_context,
+    pool_manager,
+)
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
@@ -600,9 +606,7 @@ class DefectDictSet(DopedDictSet):
                 Additional kwargs to pass to |VaspInputSet|.
         """
         _ignore_pmg_warnings()
-        self.poscar_comment = (
-            poscar_comment or f"{structure.formula} {'+' if charge_state > 0 else ''}{charge_state}"
-        )
+        self.poscar_comment = poscar_comment or f"{structure.formula} {_signed_charge(charge_state)}"
         custom_user_incar_settings = user_incar_settings or {}
 
         # get base config and set EDIFF
@@ -860,8 +864,7 @@ class DefectRelaxSet(MSONable):
         if isinstance(self.defect_entry, Structure):
             self.defect_supercell = self.defect_entry
             self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
-                f"{self.defect_supercell.formula} {'+' if self.charge_state > 0 else ''}"
-                f"{self.charge_state}"
+                f"{self.defect_supercell.formula} {_signed_charge(self.charge_state)}"
             )
             self.bulk_supercell = None
 
@@ -890,7 +893,7 @@ class DefectRelaxSet(MSONable):
                 name = self.defect_supercell.formula
 
             self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
-                f"{name} {approx_coords} {'+' if self.charge_state > 0 else ''}{self.charge_state}"
+                f"{name} {approx_coords} {_signed_charge(self.charge_state)}"
             )
 
         if soc is not None:
@@ -929,12 +932,7 @@ class DefectRelaxSet(MSONable):
             self.defect_supercell,
             charge_state=self.charge_state,
             user_incar_settings=self.user_incar_settings,
-            user_kpoints_settings=Kpoints().from_dict(
-                {
-                    "comment": "Γ-only KPOINTS from doped",
-                    "generation_style": "Gamma",
-                }
-            ),
+            user_kpoints_settings=Kpoints.gamma_automatic(comment="Γ-only KPOINTS from doped"),
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=self.poscar_comment,
@@ -1186,12 +1184,7 @@ class DefectRelaxSet(MSONable):
             bulk_supercell,
             charge_state=0,
             user_incar_settings=user_incar_settings,
-            user_kpoints_settings=Kpoints().from_dict(
-                {
-                    "comment": "Γ-only KPOINTS from doped",
-                    "generation_style": "Gamma",
-                }
-            ),
+            user_kpoints_settings=Kpoints.gamma_automatic(comment="Γ-only KPOINTS from doped"),
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=f"{bulk_supercell.formula} -- Bulk",
@@ -1376,7 +1369,7 @@ class DefectRelaxSet(MSONable):
         if defect_dir is None:
             if isinstance(self.defect_entry, Structure):  # no defect name, use unreduced formula & charge
                 formula = self.defect_entry.formula.replace(" ", "")
-                defect_dir = f"{formula}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
+                defect_dir = f"{formula}_{_signed_charge(self.charge_state)}"
             else:
                 if self.defect_entry.name is None:
                     self.defect_entry.name = get_defect_name_from_entry(self.defect_entry, relaxed=False)
@@ -2420,8 +2413,7 @@ class DefectsSet(MSONable):
             # set name attribute: (these are names without charges!)
             for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
                 defect_entry.name = (
-                    f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
-                    f"{defect_entry.charge_state}"
+                    f"{defect_name_wout_charge}_{_signed_charge(defect_entry.charge_state)}"
                 )
 
             # if any duplicate names, crash (and burn, b...)

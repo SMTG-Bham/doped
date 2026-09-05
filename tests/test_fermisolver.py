@@ -43,7 +43,8 @@ from doped.thermodynamics import (
     get_fermi_dos,
     get_interpolated_chempots,
 )
-from doped.utils._optimise import _landscape_smoothness_scale
+from doped.utils import _signed_charge
+from doped.utils._optimise import _independent_columns, _landscape_smoothness_scale
 from doped.utils.plotting import format_defect_name, get_defect_colors_and_linestyles
 
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
@@ -65,6 +66,20 @@ def _target_extremum(results_df: pd.DataFrame, target: str, min_or_max: str) -> 
         rows = results_df[_target_rows_mask(results_df, target_names)]
         series = rows.groupby(chempot_cols)["Concentration (cm^-3)"].sum()
     return float(series.min() if min_or_max == "min" else series.max())
+
+
+def test_extract_target_value_propagates_nan_concentrations():
+    """
+    Failed concentration targets should remain invalid rather than summing to a
+    false zero/partial value.
+    """
+    results = pd.DataFrame(
+        {"Concentration (cm^-3)": [np.nan, 4.0]},
+        index=pd.Index(["v_O", "v_O"], name="Defect"),
+    )
+    assert np.isnan(_extract_target_value(results, ["v_O"], False))
+    results["Concentration (cm^-3)"] = np.nan
+    assert np.isnan(_extract_target_value(results, ["v_O"], False))
 
 
 def _optimise_speed_kwargs(backend: str) -> dict:
@@ -301,7 +316,7 @@ def check_concentrations_df(solver, concentrations, free_defects=None):
 
         if isinstance(defect, tuple):  # (defect_name, charge)
             defect_name, charge = defect
-            defect_species = f"{defect_name}_{'+' if charge > 0 else ''}{charge}"
+            defect_species = f"{defect_name}_{_signed_charge(charge)}"
             total_concentration = solver.defect_thermodynamics.get_equilibrium_concentrations(
                 **concentration_kwargs, per_charge=False, skip_formatting=True
             )["Concentration (cm^-3)"].loc[defect_name]
@@ -2356,7 +2371,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         species, charges = _get_species_names_from_df(result), result.index.get_level_values("Charge")
         assert any(charges > 0)
         for name, q in zip(species, charges, strict=True):
-            assert name.endswith(f"_{'+' if q > 0 else ''}{q}")
+            assert name.endswith(f"_{_signed_charge(q)}")
         assert "Te_Cd_+2" in species
 
     def test_optimise_refinement_seeds_quench_crossover_peak(self):
@@ -3554,6 +3569,11 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         Previously reported by Peter Russell to fail, which was due to rounding
         errors. Fixed now, with ``fixed_elements`` input supported.
         """
+        constrained_vertices = ChemicalPotentialGrid(self.Y_doped_Cd2Sb2O7_thermo.chempots).get_grid(
+            n_points=1, fixed_elements={"O": -1.32}, decimal_places=6
+        )
+        assert len(_independent_columns(constrained_vertices.to_numpy())) == 2
+
         solver = FermiSolver(defect_thermodynamics=self.Y_doped_Cd2Sb2O7_thermo, backend="doped")
         result = solver.optimise(
             target="Electrons (cm^-3)",
@@ -3577,6 +3597,20 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         assert np.isclose(formal_chempots["Y"], -8.0855, atol=1e-3)
 
         _check_output_concentrations(solver, result)
+
+    @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
+    def test_automatic_py_sc_fermi_path_rejects_per_site(self):
+        chempots = self.solver_doped.defect_thermodynamics.chempots
+        single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(
+            limit=next(iter(chempots["limits"]))
+        )
+        with pytest.raises(ValueError, match=r"per_site.*not supported"):
+            self.solver_doped._solve(
+                single_chempot_dict,
+                el_refs=el_refs,
+                per_site=True,
+                fixed_defects={},
+            )
 
     @parameterize_backend()
     def test_optimise_defect_3D_non_limiting_chempot(self, backend):
@@ -3960,6 +3994,19 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         solver._solve = original_solve
         assert result.equals(solver.optimise(**optimise_kwargs))  # deterministic (incl. random audit)
 
+    def test_optimise_default_settings(self):
+        """
+        Full default (``"robust"`` mode) settings on a many-vertex ternary
+        hull: the kT-scaled first pass, beam, contracted branch domains (down
+        to ~meV spans, gridded through ``ChemicalPotentialGrid``), polish and
+        audit all run end-to-end (~11k solves), finding the Cu-poor vertex hole
+        maximum.
+        """
+        result = self.solver_doped.optimise(target="Holes (cm^-3)", min_or_max="max")
+        assert np.isclose(result["Holes (cm^-3)"].iloc[0], 1.2852e16, rtol=1e-3)
+        assert np.isclose(result["μ_Cu (eV)"].iloc[0], -0.4636, atol=1e-3)  # Cu-poor vertex optimum
+        assert np.isclose(result["μ_Se (eV)"].iloc[0], 0.0, atol=1e-3)
+
     def test_optimise_hybrid_first_pass_cost(self):
         """
         Test that ``optimise`` first passes finer than the kT-based smoothness
@@ -3990,6 +4037,20 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         assert len(ChemicalPotentialGrid(self.Cu2SiSe3_thermo.chempots).get_grid(resolution=0.1)) > 700
         assert len(n_solves) < 500
         assert np.isclose(result["μ_Cu (eV)"].iloc[0], -0.4636, atol=1e-3)  # Cu-poor vertex optimum
+
+    def test_optimise_hybrid_budget_warns_when_resolution_is_clamped(self):
+        with warnings.catch_warnings(record=True) as caught:
+            result = self.solver_doped.optimise(
+                target="Holes (cm^-3)",
+                annealing_temperature=3000,
+                initial_grid_resolution=0.01,
+                max_initial_points=78,
+                max_beam_width=1,
+                n_audit_points=0,
+                polish=False,
+            )
+        assert any("max_points" in str(warning.message) for warning in caught)
+        assert np.isfinite(result["Holes (cm^-3)"].iloc[0])
 
     def test_optimise_legacy_configuration(self):
         """

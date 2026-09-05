@@ -51,13 +51,12 @@ generated from a different algorithm), and/or customise the generation algorithm
 
 Efficient Interstitial Screening
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-As described in the defect calculation tutorial (`YouTube <https://youtu.be/FWz7nm9qoNg>`__,
-`B站 <https://www.bilibili.com/list/6073855/?sid=4603908&oid=113988666990435&bvid=BV1V5KVeYEMn>`__),
-our recommended workflow for calculating interstitial defects is to first generate the set of candidate
-interstitial sites for your structure using |DefectsGenerator| (which uses Voronoi 
-tessellation for this, see note below), and then perform Gamma-point-only relaxations (using ``vasp_gam``) 
-for each charge state of the generated interstitial candidates, and then pruning some of the candidate 
-sites based on the criteria below. Typically the easiest way to do this is to follow the workflow shown in 
+Our recommended workflow for calculating interstitial defects is to first generate the set of candidate
+interstitial sites for your structure using |DefectsGenerator| (which uses Voronoi tessellation along with
+clustering, exclusion of extremely short interstitial-host distances and candidate adsorbate sites, see note
+below), and then perform Gamma-point-only relaxations (e.g. using ``vasp_gam``) for each charge state of the
+generated interstitial candidates, and then pruning some of the candidate sites based on the criteria below.
+Typically the easiest way to do this is to follow the workflow shown in
 the defect generation tutorial, and then run the |ShakeNBreak| ``vasp_gam`` relaxations for the 
 ``Unperturbed`` and ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, 
 you can generate the ``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in
@@ -728,7 +727,7 @@ This tag is particularly important for magnetic materials (as discussed in the
 `Magnetism <https://shakenbreak.readthedocs.io/en/latest/Tips.html#magnetism>`__ section of the
 ``ShakeNBreak`` tips page), and can be useful if trying to favour a specific polaron/spin configuration
 (as briefly discussed at `this point <https://youtu.be/FWz7nm9qoNg?si=sOnJQ5b0tZ5WwNO-&t=6914>`__ in the
-YouTube defects tutorial). This tag can be set using the ``user_incar_settings`` parameter in the
+old YouTube defects tutorial). This tag can be set using the ``user_incar_settings`` parameter in the
 ``doped.vasp`` classes, for which the python API helps streamline this process when setting ``MAGMOM``
 for multiple defects.
 
