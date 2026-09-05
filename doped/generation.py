@@ -2755,7 +2755,7 @@ class DefectsGenerator(MSONable):
             ]
 
         pool = {  # any position may draw on any of the resolved names
-            name: available[name] for name in chain.from_iterable(names)
+            name: available[name] for group in names for name in group
         }
 
         taken = {name.rsplit("_", 1)[0] for name in self.defect_entries}
@@ -2809,8 +2809,6 @@ class DefectsGenerator(MSONable):
             return
 
         # match against complexes already generated
-        # TODO revisit - probably can be more efficient, DefectComplex.__eq__ is slow - but
-        # currently insignificant compared to DefectEntry copying
         generated: dict[str, DefectComplex] = {  # {name (wout charge): complex} already generated
             name.rsplit("_", 1)[0]: cast("DefectComplex", defect_entry.defect)
             for name, defect_entry in self.defect_entries.items()
@@ -2824,6 +2822,15 @@ class DefectsGenerator(MSONable):
                 new_complexes.append((defect_complex, constituent_names))
             else:
                 duplicate_names.append(name)
+
+        # sort new complexes before labelling to give deterministic _a, _b etc suffixes up to
+        # within a single generation method run - but cannot guarantee deterministic if collided
+        # names are generated in separate generation calls
+        new_complexes.sort(
+            key=lambda complex_and_names: _defect_sort_key(
+                complex_and_names[0], self._element_list, include_frac_coords=True
+            )
+        )
 
         # label collided names
         names, renames = _disambiguate_names(
@@ -2872,7 +2879,7 @@ class DefectsGenerator(MSONable):
                 entry_pbar.update(remaining)
 
         if neutral_defect_entries:
-            self._warn_if_ill_defined(neutral_defect_entries)
+            self._warn_if_small_supercell(neutral_defect_entries)
 
         added = [defect_entry.defect for defect_entry in neutral_defect_entries.values()]
         self.defects.setdefault("others", []).extend(added)
@@ -2893,7 +2900,9 @@ class DefectsGenerator(MSONable):
             },
         )
 
-    def _warn_if_ill_defined(self, defect_entries: dict[str, DefectEntry], min_span_factor: float = 1.5):
+    def _warn_if_small_supercell(
+        self, defect_entries: dict[str, DefectEntry], min_span_factor: float = 1.5
+    ):
         """
         Small supercell warnings for complexes.
         """
@@ -3096,11 +3105,7 @@ class DefectsGenerator(MSONable):
         charge_states: list | int,
         match_charge_states: bool = True,
     ) -> tuple[list, list]:
-        # the final ``_``-delimited term is a charge state only if it is a signed integer: a trailing
-        # digit alone is not sufficient (eg complex point group -C3 or closest neighbour _Te2.83)
-        charge = defect_entry_name.rsplit("_", 1)[-1]
-        if "_" in defect_entry_name and charge.lstrip("+-").isdigit():
-            defect_entry_name = defect_entry_name.rsplit("_", 1)[0]  # name without charge
+        defect_entry_name = _name_wout_charge_state(defect_entry_name)
 
         if isinstance(charge_states, int | float):
             charge_states = [round(charge_states)]
@@ -3578,8 +3583,10 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
                 ),
             )
         )
-    except ValueError as value_err:
+    except (ValueError, TypeError) as sort_err:
         # possibly defect entries with names not in doped format, try sorting without using name:
+        from doped.complexes import get_defect_complex_name  # avoid circular import
+
         try:
 
             def _defect_entry_sort_func(defect_entry):
@@ -3588,6 +3595,10 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
                 )
                 if unrelaxed_defect_name_w_charge is not None:
                     name_from_defect = unrelaxed_defect_name_w_charge.rsplit("_", 1)[0]  # without charge
+                elif isinstance(defect_entry.defect, core.DefectComplex):
+                    name_from_defect = get_defect_complex_name(
+                        defect_entry.defect, element_list=element_list
+                    )
                 else:
                     name_from_defect = get_defect_name_from_defect(
                         defect_entry.defect,
@@ -3595,12 +3606,7 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
                     )
                 return (
                     defect_entry.defect.defect_type.value,
-                    _list_index_or_val(
-                        element_list, _first_and_second_element(defect_entry.defect.name)[0]
-                    ),
-                    _list_index_or_val(
-                        element_list, _first_and_second_element(defect_entry.defect.name)[1]
-                    ),
+                    _name_elements(defect_entry.defect.name, defect_entry.defect),
                     defect_entry.name.rsplit("_", 1)[0],  # name without charge
                     name_from_defect,  # doped name without charge
                     -defect_entry.charge_state,  # charge state
@@ -3612,8 +3618,8 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
                     key=lambda s: _defect_entry_sort_func(s[1]),  # sort by defect entry object
                 )
             )
-        except ValueError as value_err_2:
-            raise value_err_2 from value_err
+        except (ValueError, TypeError) as sort_err_2:
+            raise sort_err_2 from sort_err
 
     if isinstance(defect_entries, list):  # then return as a list
         return list(sorted_defect_entries_dict.values())
