@@ -105,6 +105,7 @@ Studies using ``doped``, so far
 ===============================
 
 - N\.-R. Skogemyr **First-Principles Defect Thermodynamics of MgSnN₂: Origin and Suppression of Unintentional n-Type Conductivity** `MSc Thesis, Linköping University <https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510>`__ 2026
+- K\. Li, J. Yang, Y. Zhai and H. Li **Disentangling cation–polyanion coupling reveals which anion motion dominates cation transport in solid electrolytes** `Nature Communications <https://doi.org/10.1038/s41467-026-77273-x>`__ 2026
 - J\. Yi et al. **Thermal cycling–induced nitriding increases energy-storage density in titanate ferroelectric films** `Science <https://doi.org/10.1126/science.aeb5274>`__ 2026
 - J\. Zhou et al. **Antimony sulfide photovoltaics with high open-circuit voltage not limited by self-trapped excitons** `Nature Communications <https://doi.org/10.1038/s41467-026-76845-1>`__ 2026
 - X\. Pan et al. **Understanding the Origins of Self-Recoverable Mechanoluminescence for Rational Materials Design** `Journal of the American Chemical Society <https://doi.org/10.1021/jacs.6c07144>`__ 2026
