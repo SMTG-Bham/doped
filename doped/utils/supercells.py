@@ -701,7 +701,7 @@ def _argmin_p_matrix_sort(P_batch: np.ndarray, cell: np.ndarray, eff: float) -> 
     ``_P_matrix_sort_func(P, cell, eff)``, without a Python loop (vectorised).
     """
     P_batch = np.asarray(P_batch)
-    transformed = P_batch @ cell
+    transformed = np.einsum("nik,kj->nij", P_batch, cell, optimize=True)
     norms = np.linalg.norm(transformed, axis=2)
     d = norms / eff - 1.0
     cubic_metric = np.round(np.sum(d * d, axis=1), 4)
@@ -833,8 +833,8 @@ def _get_candidate_P_arrays(
     # any P in valid_P that are all negative, flip the sign of the matrix:
     valid_P[np.all(valid_P <= 0, axis=(1, 2))] *= -1
 
-    # get unique lattices before computing metrics (batched matmul, uses BLAS rather than ``np.einsum``):
-    cell_matrices = valid_P @ norm_cell
+    # optimised matmul
+    cell_matrices = np.einsum("nik,kj->nij", valid_P, norm_cell, optimize=True)
 
     lengths_angles = _vectorized_lengths_and_angles_from_matrices(cell_matrices)
     # for each row in lengths_angles, get the product multiplied by the sum, as a hash:
@@ -1578,7 +1578,9 @@ def _get_min_image_distances_from_matrices(matrices: np.ndarray) -> np.ndarray:
         # ``inverse[i]`` is the index of ``naxes[i]``'s match in ``unique_triples`` (``np.unique`` output)
         for chunk in np.array_split(group_indices, max(1, len(group_indices) * len(coeffs) // int(4e6))):
             # chunked to bound peak memory usage (~100 MB) for large candidate sets / ranges
-            vectors = coeffs @ matrices[chunk]  # (M, C, 3) possible lattice vectors, batched matmul
+            vectors = np.einsum(  # (M, C, 3) lattice vectors
+                "ck,nkj->ncj", coeffs, matrices[chunk], optimize=True
+            )
             sq_dists = np.einsum("kij,kij->ki", vectors, vectors)  # (M, C) squared vector lengths
             min_image_dists[chunk] = np.sqrt(sq_dists.min(axis=1))
 
