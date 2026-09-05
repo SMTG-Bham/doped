@@ -40,6 +40,7 @@ from doped.chemical_potentials import (
 from doped.core import DefectEntry, _get_abs_chempots, _no_chempots_warning
 from doped.generation import sort_defect_entries
 from doped.utils import _doped_obj_properties_methods
+from doped.utils._optimise import _beam_zoom_search, _default_grid_resolution, _landscape_smoothness_scale
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
 from doped.utils.parsing import (
@@ -5555,15 +5556,16 @@ class FermiSolver(MSONable):
                 The code backend used for the thermodynamic calculations
                 (``"doped"`` or ``"py-sc-fermi"``).
             volume (float):
-                Volume of the unit cell in the bulk DOS calculation (stored in
+                Volume of the unit cell in the bulk DOS calculation (from
                 ``self.defect_thermodynamics.bulk_dos``).
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
                 the reason for this difference is known/acceptable.
             py_sc_fermi_dos (DOS):
-                A ``py-sc-fermi`` ``DOS`` object, generated from the input
-                ``FermiDos`` object, for use with the ``py-sc-fermi`` backend.
+                A ``py-sc-fermi`` ``DOS`` object, derived from
+                ``self.defect_thermodynamics.bulk_dos``, for use with the
+                ``py-sc-fermi`` backend.
         """
         # shallow copy so attribute writes here (e.g. ``_bulk_dos``, ``_chempots``) don't mutate
         # the user's original ``DefectThermodynamics`` object; shared attributes
@@ -5580,8 +5582,6 @@ class FermiSolver(MSONable):
                 "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
                 "concentrations and solving for Fermi level position."
             )
-        self.volume: float = self.defect_thermodynamics.bulk_dos.volume
-
         if "fermi" in backend.lower():
             if bool(importlib.util.find_spec("py_sc_fermi")):
                 self.backend = "py-sc-fermi"
@@ -5594,7 +5594,8 @@ class FermiSolver(MSONable):
         else:
             raise ValueError(f"Unrecognised `backend`: {backend}")
 
-        self.py_sc_fermi_dos = None
+        self._py_sc_fermi_dos: DOS | None = None  # derived lazily from ``bulk_dos``; see property
+        self._py_sc_fermi_dos_source: FermiDos | None = None  # the ``bulk_dos`` it was derived from
         self._DefectSystem = self._DefectSpecies = self._DefectChargeState = self._DOS = None
 
         if self.backend == "py-sc-fermi":
@@ -5612,6 +5613,45 @@ class FermiSolver(MSONable):
                 "You must supply a chemical potentials dictionary or have them present in the "
                 "DefectThermodynamics object."
             )
+
+    @property
+    def volume(self) -> float:
+        """
+        Volume (in Å^3) of the unit cell in the bulk DOS calculation (from
+        ``self.defect_thermodynamics.bulk_dos``).
+        """
+        return self.defect_thermodynamics.bulk_dos.volume
+
+    @property
+    def py_sc_fermi_dos(self) -> "DOS | None":
+        """
+        ``py-sc-fermi`` ``DOS`` object derived from
+        ``self.defect_thermodynamics.bulk_dos``, for use with the ``py-sc-
+        fermi`` backend (``None`` if not activated).
+
+        Re-derived automatically if ``self.defect_thermodynamics.bulk_dos``
+        is reassigned.
+        """
+        fdos = self.defect_thermodynamics.bulk_dos
+        if self._DOS is None or not isinstance(fdos, FermiDos):  # py-sc-fermi backend not activated
+            return self._py_sc_fermi_dos
+        if self._py_sc_fermi_dos is None or self._py_sc_fermi_dos_source is not fdos:
+            self.py_sc_fermi_dos = self._derive_py_sc_fermi_dos(fdos)  # (re-)derive from current DOS
+        return self._py_sc_fermi_dos
+
+    @py_sc_fermi_dos.setter
+    def py_sc_fermi_dos(self, dos: "DOS | None"):
+        self._py_sc_fermi_dos = dos
+        self._py_sc_fermi_dos_source = self.defect_thermodynamics.bulk_dos
+
+    def _derive_py_sc_fermi_dos(self, fdos: FermiDos) -> "DOS":
+        # the energy array passed to ``py-sc-fermi`` ``DOS`` is ``fdos.energies - thermo.vbm``, so in that
+        # shifted frame the CBM sits at ``dos_cbm - thermo.vbm``, not at ``thermo.band_gap`` (those differ
+        # whenever the DOS and bulk supercell calculations yield slightly different VBM eigenvalues)...
+        dos_cbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[0]  # ...which is common in practice
+        return _get_py_sc_fermi_dos_from_fermi_dos(
+            fdos, vbm=self.defect_thermodynamics.vbm, bandgap=dos_cbm - self.defect_thermodynamics.vbm
+        )
 
     def _activate_py_sc_fermi_backend(self, error_message: str | None = None):
         orig_showwarning = warnings.showwarning
@@ -5639,17 +5679,7 @@ class FermiSolver(MSONable):
         self._DOS = DOS
 
         if isinstance(self.defect_thermodynamics.bulk_dos, FermiDos):
-            # the energy array passed to ``py-sc-fermi`` ``DOS`` is ``fdos.energies - thermo.vbm``,
-            # so in that shifted frame the CBM sits at ``dos_cbm - thermo.vbm``, not at
-            # ``thermo.band_gap`` (those differ whenever the DOS and bulk supercell calculations
-            # yield slightly different VBM eigenvalues, which is common in practice):
-            fdos = self.defect_thermodynamics.bulk_dos
-            dos_cbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[0]
-            self.py_sc_fermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
-                fdos,
-                vbm=self.defect_thermodynamics.vbm,
-                bandgap=dos_cbm - self.defect_thermodynamics.vbm,
-            )
+            self.py_sc_fermi_dos = self._derive_py_sc_fermi_dos(self.defect_thermodynamics.bulk_dos)
 
         ms = (  # multiplicity scaling
             next(iter(self.defect_thermodynamics.defect_entries.values())).defect.structure.volume
@@ -6346,13 +6376,13 @@ class FermiSolver(MSONable):
         """
         # TODO: Allow matching of substring (e.g. "O_i" matching "O_i_C2" and "O_i_Ci") for fixed_defects
         #  and update docstrings ("...where the _total_ concentration of all defect entries whose names
-        #  begin with ``defect_name`` will...") & tests accordingly, see _get_min_max_target_values
+        #  begin with ``defect_name`` will...") & tests accordingly, see ``_resolve_target_names``
         # TODO: Should allow just specifying an (extrinsic) element for fixed_defects, to allow the user
         #  to specify the known concentration of a dopant / over/under-stoichiometry of a given element
         #  (but with unknown relative populations of different possible defects) -- realistically the most
         #  commonly desired option (but would require a bit of refactoring from the current `py-sc-fermi`
-        #  implementation; see code in _get_min_max_target_values()). The DefectThermodynamics JSONs in
-        #  the repo for extrinsic-doped Selenium would be a good test case for this.
+        #  implementation; see ``_resolve_target_names`` / ``_target_rows_mask``). The
+        #  DefectThermodynamics JSONs in the repo for extrinsic-doped Selenium would be a good test case.
         # TODO: In future the ``fixed_defects``, ``free_defects`` and ``fix_charge_states`` options may
         #  be added to the ``doped`` backend (in theory very simple to add, and `doped` quicker)
         # TODO: When implementing the general scan method, add a lean/``DataFrame``-free solve mode for
@@ -7622,6 +7652,7 @@ class FermiSolver(MSONable):
         self,
         target: str,
         min_or_max: str = "max",
+        mode: str = "robust",
         chempots: dict | None = None,
         annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
@@ -7641,19 +7672,19 @@ class FermiSolver(MSONable):
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
         cartesian: bool = False,
+        max_beam_width: int | None = None,
+        initial_grid_resolution: float | None = None,
+        max_initial_points: int = 100_000,
+        n_audit_points: int | None = None,
+        polish: bool | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         r"""
         Search for the chemical potentials that minimise or maximise a target
         variable, such as electron concentration, within a specified tolerance.
 
-        See ``target`` argument description below for valid choices. This
-        function iterates over a grid of chemical potentials and "zooms in" on
-        the chemical potential that either minimises or maximises the target
-        variable. The process continues until the `relative` change in the
-        target variable is less than the specified tolerance.
-
-        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        See ``target`` argument description below for valid choices. If
+        ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
         default) are specified, then the frozen defect approximation is
         employed, whereby total defect concentrations are calculated at the
         elevated annealing temperature, then fixed at these values (unless
@@ -7662,6 +7693,66 @@ class FermiSolver(MSONable):
         quenched temperature. Otherwise, if only ``temperature`` is specified,
         then the Fermi level and defect/carrier concentrations are calculated
         assuming thermodynamic equilibrium at that temperature.
+
+        The search operates over the polytope region of stable chemical
+        potentials, using a multi-stage global optimisation strategy:
+
+        1. A dense first-pass scan, with grid spacing set by the smoothness
+           scale of the target landscape -- given by ``kB * T_search``, where
+           ``T_search`` is the lowest temperature at which any direct-μ-coupled
+           degree of freedom still responds: kT for full equilibrium
+           (``temperature``), kT_anneal for frozen-totals anneal+quench
+           approaches, or kT_quench when ``free_defects`` are used. This is
+           overridable via ``initial_grid_resolution``, and opportunistically
+           refined toward the ``kB * min(protocol temperatures)`` floor when
+           cheap and below ``max_initial_points`` (for frozen-totals).
+           Refinement below the smoothness scale is added as a uniform
+           Cartesian overlay mesh on the smoothness-scale barycentric lattice
+           (see ``cartesian`` below).
+        2. Beam search: up to ``max_beam_width`` spatially-separated local
+           optima of the sampled landscape are taken as seeds, and an
+           independent "zoom" search (iteratively contracting the search domain
+           halfway toward the running optimum and re-scanning with
+           ``n_points``-point grids) is run for each, until the `relative`
+           change in the target value is less than ``tolerance`` on two
+           consecutive iterations.
+        3. A final local (Nelder-Mead) polish of each converged branch optimum
+           (see ``polish``), refining to solver precision.
+        4. A random audit of ``n_audit_points`` uniform samples over the full
+           stability region, re-seeding a new search branch if a significantly
+           better point is found -- making no assumptions about landscape
+           smoothness, as a backstop layer for e.g. sharp charge compensation
+           crossover points.
+
+        The global optimum over all evaluations is returned. Note that features
+        narrower than the achieved first-pass grid spacing can in principle be
+        missed -- which is why the audit layer exists -- though in practice
+        this is expected to be exceedingly rare.
+        Frozen-species totals remain smooth on their freeze-in kT scale
+        regardless of protocol, so stoichiometry-type targets are the
+        well-behaved/guaranteed case, while targets whose optimum sits `at` a
+        compensation singularity (e.g. minimising net carriers or summed defect
+        concentrations) are challenging and mostly out-of-scope for grid-based
+        methods (dedicated root-find preferred). Charge-state-resolved targets
+        (e.g. ``"v_O_+1"``) under anneal+quench sit in-between: an intermediate
+        charge state is populated (significantly) only while the quenched Fermi
+        level sits in its stability window, which can give a sharp peak at the
+        quench compensation crossover, which the sub-kT_anneal first-pass
+        refinement seeds deterministically (and the random audit
+        probabilistically). For higher confidence in challenging cases, a
+        paranoid grid spacing of ``~kT/(n_max * (1 + |q|_max))`` can be set via
+        ``initial_grid_resolution``, where ``n_max`` is the maximum number of
+        atoms added/removed per element to create a given defect (1 for point
+        defects, >=1 for complexes) and ``q_max`` is the largest absolute
+        defect charge state. This originates from: ``c ~ exp(-E_f/kT)`` with
+        ``E_f ~ -Σn_i μ_i + q*E_F``, which differentiated gives the log-slope
+        with respect to a chemical potential as:
+        ``∂ln c/∂μ_i = (n_i - q ∂E_F/∂μ_i) / kT``.
+
+        The legacy (pre-v4) single-branch greedy algorithm (sufficient in most
+        cases) can be recovered with ``mode="fast"`` (equivalent to
+        ``max_beam_width=1, initial_grid_resolution=np.inf, n_audit_points=0``
+        and ``polish=False``).
 
         See ``_(pseudo_)equilibrium_solve`` docstrings for more details.
 
@@ -7678,10 +7769,21 @@ class FermiSolver(MSONable):
                 variable. If a defect name substring is given instead (e.g.
                 ``Te_i``), then the target variable will be the summed
                 concentration of all defects with that substring in their name
-                (e.g. ``Te_i_Td_Te2.83``, ``Te_i_C3v`` etc).
+                (e.g. ``Te_i_Td_Te2.83``, ``Na_i_C3v``, ``v_Ga_-3`` etc).
             min_or_max (str):
                 Specify whether to "minimise" ("min") or "maximise" ("max";
                 default) the target variable.
+            mode (str):
+                Search-settings preset: ``"robust"`` (default; the full
+                multi-stage global search described above) or ``"fast"``,
+                which matches the legacy (pre-``doped``-v4) greedy
+                single-branch search and its lower cost -- equivalent to
+                ``max_beam_width=1``, ``initial_grid_resolution=np.inf``,
+                ``n_audit_points=0``, ``polish=False``, and so can converge to
+                local (non-global) optima for multi-modal target landscapes
+                (though in practice this is rare). Any of the individual search
+                settings listed below, if explicitly set, override the ``mode``
+                preset values.
             chempots (dict | None):
                 Dictionary of chemical potentials to scan over, in the
                 ``doped`` format (i.e.
@@ -7718,14 +7820,18 @@ class FermiSolver(MSONable):
                 ``annealing_temperature`` is not specified).
                 Defaults to 300 K.
             tolerance (float):
-                The convergence criterion for the target variable. The search
-                stops when the relative change in the target value is less than
-                this value. Defaults to ``0.01``.
+                The convergence criterion for the target variable: each search
+                branch stops when the `relative` change in the target value is
+                less than this tolerance on two consecutive zoom iterations,
+                and audit improvements within this (relative) value do not
+                trigger re-seeding. Defaults to ``0.01`` (i.e. 1%).
             n_points (int):
-                `Minimum` number of grid points to generate for each iteration
-                of the search; see ``scan_chemical_potential_grid`` docstring.
-                Large values are typically not required as the search will
-                iterate to convergence. Defaults to 30.
+                `Minimum` number of grid points to generate for each zoom
+                iteration of each search branch (the first-pass grid density
+                is instead controlled by ``initial_grid_resolution``); see
+                ``scan_chemical_potential_grid`` docstring. Large values are
+                typically not required as each branch iterates to convergence.
+                Defaults to 30.
             effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -7764,8 +7870,9 @@ class FermiSolver(MSONable):
                 ``delta_gap``.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
-                defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``,
-                ``v_Cd_-2`` instead of ``v_Cd``). Default is ``True``.
+                defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2``
+                instead of ``v_Cd``). Default is ``True`` (and required if the
+                target is a charged defect species).
             per_site (bool):
                 Whether to also return the concentrations as per-site
                 concentrations in percent (i.e. concentration divided by
@@ -7799,8 +7906,8 @@ class FermiSolver(MSONable):
             fixed_elements (dict):
                 A dictionary of chemical potentials to fix (in the format:
                 ``{column_name: value}``; e.g. ``{"Li": -2}``). See
-                :meth:`~doped.chemical_potentials.ChemicalPotentialGrid.get_constrained_grid`.
-                Only possible with >=4D chemical spaces.
+                |get_constrained_grid|. Only possible with >=3D (i.e. ternary
+                or higher) chemical spaces.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge
                 states (``True``) or allow charge states to vary while keeping
@@ -7829,13 +7936,60 @@ class FermiSolver(MSONable):
                 determine which defects will compete for the same sites) in the
                 output ``DataFrame``.
             cartesian (bool):
-                Whether to generate the search grid (over chemical potentials)
-                in Cartesian (energy) coordinates. If ``False`` (default), the
-                grid is generated in barycentric coordinates, which is far more
-                efficient, but means that the grid is evenly spaced in
-                barycentric ('relative') coordinates, and not necessarily in
-                Cartesian coordinates. Cartesian grid spacing is always used
-                for 1D chemical potential spaces.
+                Whether to generate the search grids (over chemical potentials)
+                purely in Cartesian (energy) coordinates. If ``False``
+                (default), grids are generated in barycentric (relative)
+                coordinates -- guaranteeing dense sampling of the stability
+                region boundaries (simplex edges/faces, where optima typically
+                lie) -- with any first-pass refinement below the kT-based
+                smoothness scale added as a uniform Cartesian overlay mesh.
+                ``True`` uses uniform Cartesian meshes throughout; cheapest,
+                but boundaries/slivers in chemical potential space are then
+                only sampled where mesh lines happen to cross them (vertices
+                (limits) are always included in either case). Has no effect for
+                1D (binary system) chemical potential spaces, where grids are
+                uniformly spaced along the line in either case.
+            max_beam_width (int | None):
+                Maximum number of independent zoom search branches, each seeded
+                from a distinct spatially-separated local optimum of the
+                first-pass scan (``1`` corresponds to single-branch (greedy)
+                search). Only as many branches as the sampled landscape has
+                distinct local optima are used -- typically one or two
+                branches, as most chemical potential landscapes are unimodal,
+                in which case ``max_beam_width`` has no effect on cost. Default
+                is ``None`` -- per-``mode`` default: 5 (robust) / 1 (fast).
+            initial_grid_resolution (float | None):
+                Target grid spacing (in eV of chemical potential) of the
+                first-pass scan. In the default ``"robust"`` mode, ``None``
+                uses the landscape smoothness scale ``kB * T_search`` described
+                above, opportunistically refined toward the
+                ``kB * min(protocol temperatures)`` floor (i.e. only for
+                frozen-totals anneal+quench, where the two differ) while the
+                grid size is within 25% of ``max_initial_points``; in
+                ``"fast"`` mode, ``None`` gives ``np.inf``, skipping the dense
+                first pass (which is then just an ``n_points`` grid).
+            max_initial_points (int):
+                Hard cap on the number of first-pass grid points; if the grid
+                implied by the (requested or default) resolution exceeds this,
+                the resolution is clamped, with a warning. Mostly only relevant
+                for high-dimensional chemical spaces. For 1D (binary system)
+                line searches, the first pass is capped at
+                ``min(1000, max_initial_points)`` points. Default is 100,000.
+            n_audit_points (int | None):
+                Number of uniform random points over the full stability region
+                evaluated after all search branches converge, to audit for
+                missed basins (re-seeding a new search branch if a
+                significantly better point is found). ``0`` disables the audit.
+                Default is ``None`` -- per-``mode`` default: 200 (robust) /
+                0 (fast).
+            polish (bool | None):
+                Whether to run a final local (Nelder-Mead) refinement from each
+                converged branch optimum, refining the returned optimum to
+                solver precision. Recommended, as the relative-change stopping
+                rule alone can leave a few-percent error in the optimised
+                target value in gradual basins, and on many-vertex stability
+                regions. Default is ``None`` -- per-``mode`` default: ``True``
+                (robust) / ``False`` (fast).
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
@@ -7848,196 +8002,25 @@ class FermiSolver(MSONable):
 
         Raises:
             ValueError:
-                If neither ``chempots`` nor ``self.chempots`` is provided, or
-                if ``min_or_max`` is not ``"minimise"/"min"`` or
-                ``"maximise"/"max"``.
+                If neither ``chempots`` nor ``self.chempots`` is provided, if
+                ``min_or_max`` is not ``"minimise"/"min"`` or
+                ``"maximise"/"max"``, if ``mode`` is not a recognised preset
+                name, or if no finite ``target`` value is obtained at any
+                sampled chemical potential point.
         """
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
-        # Determine the dimensionality of the chemical potential space, and call appropriate method
+        if min_or_max.lower()[:3] not in {"min", "max"}:
+            raise ValueError(
+                f"Unrecognised optimise `min_or_max` ('{min_or_max}')! Must be 'minimise'/'min' or "
+                f"'maximise'/'max'."
+            )
+        min_or_max = min_or_max.lower()[:3]  # normalise, for the ``"min" in min_or_max`` checks below
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         # TODO: Add option of just specifying an element, to min/max its summed defect concentrations
-        # TODO: Test setting target to a defect species (with charge)
-        # TODO: Low-priority; support fixed_elements for 3D chempot spaces?
+        if not per_charge and target in self.defect_thermodynamics.defect_entries:
+            per_charge = True  # charged species target (e.g. "v_Cd_-2"); requires per-charge solve output
 
-        if len(el_refs) == 2:
-            optimise_func = self._optimise_line
-        else:
-            optimise_func = self._optimise_grid
-            kwargs.update({"cartesian": cartesian, "fixed_elements": fixed_elements})
-
-        return optimise_func(
-            target=target,
-            min_or_max=min_or_max,
-            chempots=chempots,
-            annealing_temperature=annealing_temperature,
-            quenched_temperature=quenched_temperature,
-            temperature=temperature,
-            tolerance=tolerance,
-            n_points=n_points,
-            effective_dopant_concentration=effective_dopant_concentration,
-            delta_VBM=delta_VBM,
-            delta_CBM=delta_CBM,
-            delta_gap=delta_gap,
-            per_charge=per_charge,
-            per_site=per_site,
-            return_annealing_values=return_annealing_values,
-            fixed_defects=fixed_defects,
-            free_defects=free_defects,
-            fix_charge_states=fix_charge_states,
-            site_competition=site_competition,
-            **kwargs,
-        )
-
-    def _optimise_line(
-        self,
-        target: str,
-        min_or_max: str = "max",
-        chempots: dict | None = None,
-        annealing_temperature: float | None = None,
-        quenched_temperature: float = 300,
-        temperature: float = 300,
-        tolerance: float = 0.01,
-        n_points: int = 30,
-        effective_dopant_concentration: float | None = None,
-        delta_VBM: float | Callable = 0.0,
-        delta_CBM: float | Callable = 0.0,
-        delta_gap: float | Callable = 0.0,
-        per_charge: bool = True,
-        per_site: bool = False,
-        return_annealing_values: bool = False,
-        fixed_defects: dict[str, float] | None = None,
-        free_defects: list[str] | None = None,
-        fix_charge_states: bool = False,
-        site_competition: bool | str = True,
-        **kwargs,
-    ) -> pd.DataFrame:
-        r"""
-        ``optimise`` function for 1D chemical potential spaces (i.e. binary
-        systems).
-
-        See the main ``optimise`` docstring for more details.
-        """
-        chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
-
-        # Assuming 1D space, focus on one label and get the Rich/Poor limits:
-        unformatted_chempots_labels = list(el_refs.keys())
-        rich = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-rich")
-        poor = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-poor")
-        chempots_dict_list = get_interpolated_chempots(rich[0], poor[0], n_points)
-        delta_gap_verbose = kwargs.pop("verbose", False)  # don't interfere with other verbose option here
-
-        previous_value = None
-        while True:  # Calculate results based on the given temperature conditions
-            target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
-                target=target,
-                min_or_max=min_or_max,
-                previous_value=previous_value,
-                tolerance=tolerance,
-                chempots=chempots_dict_list,
-                el_refs=el_refs,
-                annealing_temperature=annealing_temperature,
-                quenched_temperature=quenched_temperature,
-                temperature=temperature,
-                effective_dopant_concentration=effective_dopant_concentration,
-                delta_VBM=delta_VBM,
-                delta_CBM=delta_CBM,
-                delta_gap=delta_gap,
-                per_charge=per_charge,
-                per_site=per_site,
-                return_annealing_values=return_annealing_values,
-                fixed_defects=fixed_defects,
-                free_defects=free_defects,
-                fix_charge_states=fix_charge_states,
-                verbose=previous_value is None,  # first iteration, print info on target cols/rows
-                site_competition=site_competition,
-                delta_gap_verbose=delta_gap_verbose,
-                **kwargs,
-            )
-            if converged:
-                break
-
-            previous_value = current_value  # otherwise update
-
-            # get midpoints of chempots_dict_list and target_chempot, and use these:
-            midpoint_chempots = [
-                {
-                    k.split("_")[1].split()[0]: (chempot_dict[k.split("_")[1].split()[0]] + v) / 2
-                    for k, v in target_chempot.iloc[0].items()
-                }
-                for chempot_dict in [chempots_dict_list[0], chempots_dict_list[-1]]
-            ]
-            # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
-            # function, then we could just take the closest vertices around ``target_chempot`` and use
-            # these, but we know that chempots & temperature & other constraints -> defect concentrations
-            # can be highly non-linear (e.g. CdTe concentrations in SK thesis, 10.1016/j.joule.2024.05.004,
-            # 10.1002/smll.202102429, 10.1021/acsenergylett.4c02722), so best to use this safe (but slower)
-            # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
-            chempots_dict_list = get_interpolated_chempots(
-                chempot_start=midpoint_chempots[0],
-                chempot_end=midpoint_chempots[1],
-                n_points=n_points,
-            )
-
-        return target_df
-
-    def _scan_chempots_and_compare(
-        self,
-        target: str,
-        min_or_max: str,
-        previous_value: float | None = None,
-        tolerance: float = 0.01,
-        chempots: list[dict[str, float]] | dict[str, dict] | None = None,
-        el_refs: dict[str, float] | None = None,
-        annealing_temperature: float | None = None,
-        quenched_temperature: float = 300,
-        temperature: float = 300,
-        effective_dopant_concentration: float | None = None,
-        delta_VBM: float | Callable = 0.0,
-        delta_CBM: float | Callable = 0.0,
-        delta_gap: float | Callable = 0.0,
-        per_charge: bool = True,
-        per_site: bool = False,
-        return_annealing_values: bool = False,
-        fixed_defects: dict[str, float] | None = None,
-        free_defects: list[str] | None = None,
-        fix_charge_states: bool = False,
-        verbose: bool = False,
-        site_competition: bool | str = True,
-        **kwargs,
-    ):
-        """
-        Convenience method for use in the ``_optimise_...`` methods, which
-        scans over a set of chemical potentials and compares the target value
-        to a previous value, returning the new target dataframe, value and
-        corresponding chemical potentials.
-
-        Unique Args:
-            previous_value (float):
-                The previous value of the target variable.
-            verbose (bool):
-                Whether to print information on identified target
-                rows/columns.
-            **kwargs:
-                All other arguments are the same as for the ``optimise``
-                method, see its docstring for more details.
-
-        Returns:
-            target_df (pd.DataFrame):
-                A ``DataFrame`` containing the current results of the
-                optimisation, including the optimal chemical potentials and
-                corresponding values of the target variable.
-            current_value (float):
-                The current (updated) value of the target variable.
-            target_chempot (pd.DataFrame):
-                The chemical potentials corresponding to the current value.
-            converged (bool):
-                Whether the search has converged to within ``tolerance``.
-        """
-        if "delta_gap_verbose" in kwargs:
-            kwargs["verbose"] = kwargs.pop("delta_gap_verbose")
-        results_df = self.scan_chempots(
-            chempots=chempots,
-            el_refs=el_refs,
+        solve_kwargs = dict(  # per-point Fermi-solve settings, passed through to ``self._solve``:
             annealing_temperature=annealing_temperature,
             quenched_temperature=quenched_temperature,
             temperature=temperature,
@@ -8052,112 +8035,167 @@ class FermiSolver(MSONable):
             free_defects=free_defects,
             fix_charge_states=fix_charge_states,
             site_competition=site_competition,
+            verbose=kwargs.pop("verbose", False),  # scissor_dos verbosity; separate to search info
             **kwargs,
         )
-
-        target_df, current_value, target_chempot = _get_min_max_target_values(
-            results_df, target, min_or_max, verbose=verbose
-        )
-        converged = (  # Check if the change in the target value is less than the tolerance
-            previous_value is not None
-            and (
-                current_value == previous_value
-                or abs((current_value - previous_value) / (previous_value or current_value)) < tolerance
+        presets: dict[str, dict[str, Any]] = {  # per-``mode`` search-setting defaults:
+            "robust": {  # full multi-stage global search (see docstring)
+                "max_beam_width": 5,
+                "initial_grid_resolution": None,  # -> landscape smoothness scale (kB * T_search)
+                "n_audit_points": 200,
+                "polish": True,
+            },
+            "fast": {  # ~legacy greedy single-branch search behaviour & cost (retaining the
+                "max_beam_width": 1,  # two-consecutive-iteration convergence rule)
+                "initial_grid_resolution": np.inf,
+                "n_audit_points": 0,
+                "polish": False,
+            },
+        }
+        preset = presets.get(mode)
+        if preset is None:
+            raise ValueError(
+                f"Unrecognised optimise `mode` ('{mode}')! Must be 'robust' (default) or 'fast'."
             )
-        )  # divide by (previous_value or current_value) to avoid division by zero
+        search_kwargs: dict[str, Any] = {  # search settings, passed to ``_beam_zoom_search`` below;
+            "tolerance": tolerance,  # explicitly-set values take precedence over the ``mode`` preset:
+            "n_points": n_points,
+            **{
+                key: preset[key] if user_value is None else user_value
+                for key, user_value in {
+                    "max_beam_width": max_beam_width,
+                    "initial_grid_resolution": initial_grid_resolution,
+                    "n_audit_points": n_audit_points,
+                    "polish": polish,
+                }.items()
+            },
+        }
 
-        return target_df, current_value, target_chempot, converged
-
-    def _optimise_grid(
-        self,
-        target: str,
-        min_or_max: str = "max",
-        chempots: dict | None = None,
-        annealing_temperature: float | None = None,
-        quenched_temperature: float = 300,
-        temperature: float = 300,
-        tolerance: float = 0.01,
-        n_points: int = 30,
-        effective_dopant_concentration: float | None = None,
-        delta_VBM: float | Callable = 0.0,
-        delta_CBM: float | Callable = 0.0,
-        delta_gap: float | Callable = 0.0,
-        per_charge: bool = True,
-        per_site: bool = False,
-        return_annealing_values: bool = False,
-        fixed_defects: dict[str, float] | None = None,
-        free_defects: list[str] | None = None,
-        fix_charge_states: bool = False,
-        site_competition: bool | str = True,
-        cartesian: bool = False,
-        fixed_elements: dict[str, float] | None = None,
-        **kwargs,
-    ) -> pd.DataFrame:
-        r"""
-        ``optimise`` function for >=2D chemical potential spaces (i.e.
-        elementary/non-binary systems).
-
-        See the main ``optimise`` docstring for more details.
-        """
-        chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
+        # prepare search grid:
         chempots_grid = ChemicalPotentialGrid(chempots)
-        delta_gap_verbose = kwargs.pop("verbose", False)  # don't interfere with other verbose option here
+        columns = list(chempots_grid.vertices.columns)
+        elements = [col.split("_")[1].split()[0] for col in columns]  # "μ_X (eV)" -> "X"
+        vertices = chempots_grid.vertices.to_numpy()
+        points_budget = grid_max_points = max_initial_points  # used by ``make_grid`` & first-pass...
+        if len(columns) == 2:  # ...resolution default
+            grid_max_points = min(1000, grid_max_points)  # 1D line searches gain nothing beyond ~1000
 
-        previous_value = None
-        while True:
-            chempots_dict_list = [
-                {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
-                for _idx, chempot_series in chempots_grid.get_grid(
-                    n_points=n_points,
-                    cartesian=cartesian,
-                    fixed_elements=fixed_elements,
-                    decimal_places=6,
-                ).iterrows()
-            ]
-            target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
-                target=target,
-                min_or_max=min_or_max,
-                previous_value=previous_value,
-                tolerance=tolerance,
-                chempots=chempots_dict_list,
-                el_refs=el_refs,
+        polytope_rows = None
+        if fixed_elements:  # vertices of the constrained sub-polytope (``n_points=1`` gives just the...
+            polytope_rows = chempots_grid.get_grid(  # ...corners), for audit sampling/polish feasibility:
+                n_points=1, fixed_elements=fixed_elements, decimal_places=6
+            )[columns].to_numpy()
+
+        smoothness_scale = _landscape_smoothness_scale(  # kT-based guarantee resolution; grids finer...
+            temperature,  # ...than this are built as a hybrid of a barycentric "guarantee" lattice at...
+            annealing_temperature,  # ...this scale plus a uniform cartesian overlay at the finer...
+            quenched_temperature,  # ...(opportunistically-refined) resolution -- see ``make_grid`` below
+            free_defects,
+        )
+
+        # define the required ``make_grid`` function for the beam search:
+        def make_grid(
+            verts: np.ndarray, n_points: int = n_points, resolution: float | None = None
+        ) -> np.ndarray:
+            grid = ChemicalPotentialGrid.from_dataframe(pd.DataFrame(verts, columns=columns))
+            grid_kwargs: dict[str, Any] = {  # ``max_points`` clamps the resolution (with a warning)...
+                "fixed_elements": fixed_elements,  # ...avoiding memory/runtime blow-ups in high-D spaces
+                "decimal_places": 6,
+                "max_points": grid_max_points,
+            }
+            # for sub-smoothness-scale resolutions (the opportunistic first-pass refinement toward the
+            # min-protocol-temperature floor, or an explicit finer ``initial_grid_resolution``), build a
+            # hybrid grid: the barycentric lattice -- which guarantees <= resolution spacing on every hull
+            # simplex edge/face (where optima typically lie), but heavily oversamples small simplices of
+            # many-vertex hulls (density is set by the global hull diameter) -- is kept at the kT-based
+            # smoothness scale, and the extra refinement uses a uniform Cartesian overlay mesh, whose cost
+            # scales ideally with resolution. Skipped for 1D chemical potential spaces (uniform regardless)
+            hybrid = (
+                not cartesian  # not already Cartesian
+                and len(columns) > 2  # not 1D
+                and resolution is not None  # resolution set
+                and np.isfinite(resolution)
+                and resolution < smoothness_scale  # resolution below smoothness scale
+            )
+            grid_df = grid.get_grid(
+                n_points=n_points,
+                resolution=smoothness_scale if hybrid else resolution,  # if not hybrid, use ``resolution``
+                cartesian=cartesian,
+                **grid_kwargs,
+            )
+            remaining_budget = grid_max_points - len(grid_df)  # the overlay gets remaining points budget
+            if hybrid and remaining_budget > 0:  # -> combined first pass <=``max_initial_points``
+                try:  # polytope vertices are prepended by both grids, but deduplicated in ``evaluate``
+                    overlay_df = grid.get_grid(
+                        resolution=resolution,
+                        cartesian=True,  # Cartesian overlay grid
+                        **{**grid_kwargs, "max_points": remaining_budget},
+                    )
+                    grid_df = pd.concat([grid_df, overlay_df])
+                except ValueError:  # very narrow regions can have no in-hull cartesian mesh points...
+                    grid_df = grid.get_grid(  # ...(e.g. all spans < resolution); fall back to a plain...
+                        n_points=n_points, resolution=resolution, cartesian=False, **grid_kwargs
+                    )  # ...barycentric grid at the requested resolution (cheap for such small hulls)
+            return grid_df[columns].to_numpy()
+
+        if search_kwargs["initial_grid_resolution"] is None:  # default first-pass grid resolution;
+            search_kwargs["initial_grid_resolution"] = _default_grid_resolution(  # smoothness scale; ...
+                make_grid,  # ...opportunistically refined toward the min-protocol-temperature floor...
+                vertices,  # ...within a soft budget of 25% of the points cap
+                smoothness_scale=smoothness_scale,
+                temperature=temperature,
                 annealing_temperature=annealing_temperature,
                 quenched_temperature=quenched_temperature,
-                temperature=temperature,
-                effective_dopant_concentration=effective_dopant_concentration,
-                delta_VBM=delta_VBM,
-                delta_CBM=delta_CBM,
-                delta_gap=delta_gap,
-                per_charge=per_charge,
-                per_site=per_site,
-                return_annealing_values=return_annealing_values,
-                fixed_defects=fixed_defects,
-                free_defects=free_defects,
-                fix_charge_states=fix_charge_states,
-                verbose=previous_value is None,  # first iteration, print info on target cols/rows
-                site_competition=site_competition,
-                delta_gap_verbose=delta_gap_verbose,
-                **kwargs,
+                max_initial_points=points_budget,
             )
-            if converged:
-                break
 
-            previous_value = current_value  # otherwise update
+        sign = -1 if "min" in min_or_max else 1  # ``_beam_zoom_search`` maximises; negate to minimise
+        cache: dict[tuple, float] = {}  # cache solved chempot points (keyed on rounded coordinates),...
+        target_names: list[str] | None = None  # ...so overlapping search branch domains don't re-solve
+        column = False
 
-            new_vertices_df = (
-                chempots_grid.vertices + target_chempot.iloc[0]
-            ) / 2  # 1 row - target_chempot
-            # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
-            # function, then we could just take the closest vertices around ``target_chempot`` and use
-            # these, but we know that chempots & temperature & other constraints -> defect concentrations
-            # can be highly non-linear (e.g. CdTe concentrations in SK thesis, 10.1016/j.joule.2024.05.004,
-            # 10.1002/smll.202102429, 10.1021/acsenergylett.4c02722), so best to use this safe (but slower)
-            # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
+        def evaluate(points: np.ndarray) -> np.ndarray:
+            nonlocal target_names, column  # resolved once, from the first solve (bound in ``optimise``)
+            points = np.asarray(points, dtype=float)
+            keys = list(map(tuple, np.round(points, 6)))
+            uncached: dict[tuple, int] = {}  # first-occurrence row index of each uncached point
+            for i, key in enumerate(keys):
+                if key not in cache and key not in uncached:
+                    uncached[key] = i
 
-            # Generate a new grid around target_chempot which doesn't go outside the starting grid bounds:
-            chempots_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
+            for key, i in tqdm(uncached.items(), disable=len(uncached) < 10):
+                results_df = self._solve(
+                    single_chempot_dict=dict(zip(elements, points[i], strict=True)),
+                    el_refs=el_refs,
+                    **solve_kwargs,
+                )
+                if target_names is None:  # resolve target names once (and print info)
+                    target_names, column = _resolve_target_names(results_df, target, min_or_max, True)
+                    # a column target must be a per-solve quantity...
+                    series = results_df[target_names[0]] if column else None
+                    if series is not None and (series != series.iloc[0]).any():  # ...not per-defect-row
+                        raise ValueError(
+                            f"Target column '{target_names[0]}' varies between the defect rows of a "
+                            f"single solve, so is not a valid `optimise` target; specify a defect name "
+                            f"(or name substring) instead!"
+                        )
+                cache[key] = sign * _extract_target_value(results_df, target_names, column)
 
-        return target_df
+            return np.array([cache[key] for key in keys])
+
+        result = _beam_zoom_search(
+            evaluate, vertices, make_grid=make_grid, polytope_rows=polytope_rows, **search_kwargs
+        )
+        if not np.isfinite(result.value):  # no sampled point gave a finite target value (e.g. all-NaN)
+            raise ValueError(
+                f"No finite '{target}' value was obtained at any of the {len(cache)} sampled chemical "
+                f"potential points, so the search could not be performed!"
+            )
+        return self._solve(  # full solve output (concentrations, Fermi level, chempots...) at the optimum
+            single_chempot_dict=dict(zip(elements, result.point, strict=True)),
+            el_refs=el_refs,
+            **solve_kwargs,
+        )
 
     def _generate_dopant_for_py_sc_fermi(self, effective_dopant_concentration: float) -> "DefectSpecies":
         """
@@ -8776,81 +8814,6 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
     return py_sc_fermi_dos
 
 
-def _get_min_max_target_values(
-    results_df: pd.DataFrame, target: str, min_or_max: str, verbose: bool = False
-) -> tuple:
-    """
-    Convenience function to get the minimum or maximum value(s) of a ``target``
-    column or row in a ``results_df`` DataFrame, and the corresponding chemical
-    potentials.
-
-    Mainly intended for internal ``doped`` usage in the ``FermiSolver``
-    ``optimise`` method.
-
-    Args:
-        results_df (pd.DataFrame):
-            ``DataFrame`` of defect concentrations, as output by the
-            ``FermiSolver`` ``scan_chempots`` /
-            ``scan_chemical_potential_grid`` methods (which corresponds to the
-            ``_(pseudo_)equilibrium_solve`` ``DataFrame`` outputs, appended
-            together for multiple chemical potentials).
-        target (str):
-            The target variable to minimise or maximise, e.g., "Electrons
-            (cm^-3)", "Te_i", "Fermi Level (eV wrt VBM)" etc. Valid ``target``
-            values are column names (or substrings), such as
-            "Electrons (cm^-3)", "Holes (cm^-3)", "Fermi Level (eV wrt VBM)",
-            "μ_X (eV)", etc., or defect names (without charge states), such as
-            "v_O", "Te_i", etc.
-            If a full defect name is given (e.g. ``Te_i_Td_Te2.83``) then the
-            concentration of that defect will be used as the target variable.
-            If a defect name substring is given instead (e.g. ``Te_i``), then
-            the target variable will be the summed concentration of all defects
-            with that substring in their name (e.g. ``Te_i_Td_Te2.83``,
-            ``Te_i_C3v`` etc).
-        min_or_max (str):
-            Whether to find the minimum or maximum value(s) of the target.
-            Should be either "min" or "max".
-        verbose (bool):
-            Whether to print information on identified target rows/columns.
-
-    Returns:
-        tuple:
-            A tuple containing the results ``DataFrame`` at the chemical
-            potentials which minimise/maximise the target property
-            (``target_df``), the minimised/maximised value of the target
-            property, and the corresponding chemical potentials -- in the given
-            chemical potential range.
-    """
-
-    def min_or_max_func(x):
-        return x.min() if "min" in min_or_max else x.max()
-
-    chempots_labels = [col for col in results_df.columns if col.startswith("μ_")]
-    target_names, column = _resolve_target_names(results_df, target, min_or_max, verbose=verbose)
-
-    if column:  # target is a column in the df
-        target_name = target_names[0]
-        current_value = min_or_max_func(results_df[target_name])
-        target_df = results_df[results_df[target_name] == current_value]
-        target_chempot = target_df[chempots_labels]
-
-    else:  # target is df row/defect(s); filter for this, handling simple and MultiIndex (per_charge=True):
-        filtered_df = results_df[_get_defect_names(results_df).isin(target_names)]
-        # TODO: When adding element option, will need to subtract for vacancies...
-
-        # group by chemical potentials, to sum values at the same chempots (e.g. for different defects /
-        # charge states); only sum the concentration column to avoid issues with non-numeric columns (e.g.
-        # "Charge State Population" strings):
-        summed_conc = filtered_df.groupby(chempots_labels)["Concentration (cm^-3)"].sum()
-        current_value = min_or_max_func(summed_conc)  # find the extremum
-        target_chempot = summed_conc[summed_conc == current_value].index.to_frame()  # chempots at extremum
-        # get all DataFrame rows which have the chempots matching the extremum row:
-        target_df = results_df[results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)]
-
-    target_chempot = target_chempot.drop_duplicates(ignore_index=True)
-    return target_df, current_value, target_chempot
-
-
 def _get_defect_names(results_df: pd.DataFrame) -> pd.Index:
     """
     Get the defect names from a concentrations ``DataFrame`` index, handling
@@ -8863,6 +8826,33 @@ def _get_defect_names(results_df: pd.DataFrame) -> pd.Index:
     )
 
 
+def _get_species_names_from_df(results_df: pd.DataFrame) -> pd.Index:
+    """
+    Get the charged defect species names (e.g. ``"v_Cd_-2"``; ``doped`` naming
+    format) from a ``per_charge=True`` (("Defect", "Charge") ``MultiIndex``)
+    concentrations ``DataFrame`` index; empty for per-defect (summed over
+    charge states) frames.
+    """
+    if not isinstance(results_df.index, pd.MultiIndex):
+        return pd.Index([])
+    defects = results_df.index.get_level_values("Defect")
+    charges = results_df.index.get_level_values("Charge")
+    return pd.Index(  # ``int(q)``: charge levels may be int (``_solve``) or str (concentration frames)
+        [f"{d}_{'+' if int(q) > 0 else ''}{int(q)}" for d, q in zip(defects, charges, strict=True)]
+    )
+
+
+def _target_rows_mask(results_df: pd.DataFrame, target_names: list[str]) -> np.ndarray:
+    """
+    Boolean mask of the ``results_df`` rows matching ``target_names`` (defect
+    names, or charged defect species names for ``per_charge=True`` frames).
+    """
+    mask = _get_defect_names(results_df).isin(target_names)
+    if isinstance(results_df.index, pd.MultiIndex):
+        mask |= _get_species_names_from_df(results_df).isin(target_names)
+    return mask
+
+
 def _resolve_target_names(
     results_df: pd.DataFrame, target: str, min_or_max: str, verbose: bool = False
 ) -> tuple[list[str], bool]:
@@ -8872,9 +8862,9 @@ def _resolve_target_names(
     ``FermiSolver._solve`` / ``scan_chempots``), printing the identified
     targets if ``verbose``.
 
-    The target can be a column name, defect name, starting string of a column
-    name, starting string of a defect name, column name subset or defect name
-    subset, with that preferential order.
+    The target can be a column name, defect name, charged defect species name,
+    starting string of a column name, starting string of a defect name, column
+    name subset or defect name subset, with that preferential order.
 
     Returns:
         tuple[list[str], bool]:
@@ -8882,9 +8872,11 @@ def _resolve_target_names(
             (``True``) or defect name(s) (``False``).
     """
     defect_names = _get_defect_names(results_df)
+    species_names = _get_species_names_from_df(results_df)  # charged defect species
     target_names = (
         [col for col in results_df.columns if col == target]
         or [name for name in defect_names if name == target]
+        or [name for name in species_names if name == target]
         or [col for col in results_df.columns if col.lower().startswith(target.lower())]
         or [name for name in defect_names if name.lower().startswith(target.lower())]
         or [col for col in results_df.columns if target in col]
@@ -8915,21 +8907,21 @@ def _resolve_target_names(
     return target_names, column
 
 
-def _extract_target_value(
-    results_df: pd.DataFrame, target_names: list[str], column: bool, min_or_max: str
-) -> float:
+def _extract_target_value(results_df: pd.DataFrame, target_names: list[str], column: bool) -> float:
     """
     Extract the target value from a single-chemical-potential-point solve
     ``DataFrame`` (as output by ``FermiSolver._solve``), given resolved
-    ``target_names`` and ``column`` from ``_resolve_target_names``: the
-    (min/max) value of the target column, or the summed concentration of the
-    target defect(s).
-    """
-    if column:
-        series = results_df[target_names[0]]
-        return float(series.min() if "min" in min_or_max else series.max())
+    ``target_names`` and ``column`` from ``_resolve_target_names``.
 
-    matching = _get_defect_names(results_df).isin(target_names)
+    The value of the target column (a per-solve quantity -- Fermi level,
+    carrier concentrations, chemical potentials... -- constant across the
+    defect/charge-state rows), or the summed concentration of the target
+    defect(s).
+    """
+    if column:  # per-solve quantity, constant across the defect rows (validated once in ``optimise``)
+        return float(results_df[target_names[0]].iloc[0])
+
+    matching = _target_rows_mask(results_df, target_names)
     return float(results_df.loc[matching, "Concentration (cm^-3)"].sum())
 
 

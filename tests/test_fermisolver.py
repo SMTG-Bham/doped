@@ -35,13 +35,36 @@ from doped.chemical_potentials import ChemicalPotentialGrid
 from doped.thermodynamics import (
     DefectThermodynamics,
     FermiSolver,
+    _extract_target_value,
     _get_py_sc_fermi_dos_from_fermi_dos,
+    _get_species_names_from_df,
+    _resolve_target_names,
+    _target_rows_mask,
     get_fermi_dos,
     get_interpolated_chempots,
 )
+from doped.utils._optimise import _landscape_smoothness_scale
 from doped.utils.plotting import format_defect_name, get_defect_colors_and_linestyles
 
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
+
+
+def _target_extremum(results_df: pd.DataFrame, target: str, min_or_max: str) -> float:
+    """
+    Extremum of an ``optimise`` ``target`` over a (multi-point) concentrations
+    ``DataFrame`` (e.g. a ``scan_chemical_potential_grid`` output): the min/max
+    of a target column, or of the per-chemical-potential-point summed
+    concentration of the target defect(s) -- the brute-force counterpart of
+    ``optimise``.
+    """
+    target_names, column = _resolve_target_names(results_df, target, min_or_max)
+    if column:
+        series = results_df[target_names[0]]
+    else:
+        chempot_cols = [col for col in results_df.columns if col.startswith("μ_")]
+        rows = results_df[_target_rows_mask(results_df, target_names)]
+        series = rows.groupby(chempot_cols)["Concentration (cm^-3)"].sum()
+    return float(series.min() if min_or_max == "min" else series.max())
 
 
 def _optimise_speed_kwargs(backend: str) -> dict:
@@ -424,8 +447,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             defect_thermodynamics=self.CdTe_thermo, backend="py-sc-fermi"
         )
         self.solver_doped = FermiSolver(defect_thermodynamics=self.CdTe_thermo, backend="doped")
-        # Mock the _DOS attribute for py-sc-fermi backend if needed
-        self.solver_py_sc_fermi._DOS = MagicMock()
 
     def test_default_initialization(self):
         """
@@ -534,6 +555,46 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         finally:
             self.CdTe_thermo.vbm = original_vbm
 
+    @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
+    def test_py_sc_fermi_dos_tracks_bulk_dos(self):
+        """
+        Test that ``FermiSolver.py_sc_fermi_dos`` (and ``volume``) track
+        ``defect_thermodynamics.bulk_dos``, being re-derived when it is
+        reassigned after initialisation (rather than silently using the initial
+        DOS with the ``py-sc-fermi`` backend).
+        """
+        solver = FermiSolver(self.CdTe_thermo, backend="py-sc-fermi")
+        k18_dos = solver.py_sc_fermi_dos
+        assert solver.py_sc_fermi_dos is k18_dos  # cached, not re-derived on repeated access
+        assert solver.volume == self.CdTe_fermi_dos.volume
+
+        k10_path = os.path.join(data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
+        solver.defect_thermodynamics.bulk_dos = k10_path  # parsed by the ``DefectThermodynamics`` setter
+        assert self.CdTe_thermo.bulk_dos is self.CdTe_fermi_dos  # user's thermo untouched (shallow copy)
+        k10_dos = solver.py_sc_fermi_dos
+        assert k10_dos is not k18_dos
+        assert k10_dos.edos.shape != k18_dos.edos.shape or not np.allclose(k10_dos.dos, k18_dos.dos)
+        assert solver.volume == solver.defect_thermodynamics.bulk_dos.volume
+        assert solver.py_sc_fermi_dos is k10_dos  # cached again
+
+        copied = deepcopy(solver)  # source identity preserved through (memoised) deep copies:
+        assert copied._py_sc_fermi_dos_source is copied.defect_thermodynamics.bulk_dos
+        assert copied.py_sc_fermi_dos is copied._py_sc_fermi_dos  # not re-derived
+
+        # end-to-end: same results as a solver initialised with the k10 DOS directly:
+        fresh_solver = FermiSolver(self.CdTe_thermo, bulk_dos=k10_path, backend="py-sc-fermi")
+        solve_kwargs = {
+            "single_chempot_dict": self.CdTe_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"],
+            "annealing_temperature": 900,
+            "delta_VBM": 0.05,  # 0.1 eV gap shrinkage; exercises the temporary scissored-DOS override
+            "delta_CBM": -0.05,
+        }
+        pd.testing.assert_frame_equal(
+            solver._pseudo_equilibrium_solve(**solve_kwargs),
+            fresh_solver._pseudo_equilibrium_solve(**solve_kwargs),
+        )
+        assert solver.py_sc_fermi_dos is k10_dos  # restored after the scissored-DOS override
+
     def test_missing_bulk_dos(self):
         """
         Test initialization failure due to missing bulk_dos.
@@ -634,9 +695,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         ):
             from py_sc_fermi.dos import DOS
 
-            with patch("doped.thermodynamics._get_py_sc_fermi_dos_from_fermi_dos", return_value=DOS()):
-                # Set non-integer volume scaling
-                self.solver_py_sc_fermi.volume = 100.0
+            with (
+                patch("doped.thermodynamics._get_py_sc_fermi_dos_from_fermi_dos", return_value=DOS()),
+                patch.object(  # set non-integer volume scaling; ``solver.volume`` tracks the DOS volume
+                    self.solver_py_sc_fermi.defect_thermodynamics.bulk_dos, "volume", 100.0
+                ),
+            ):
                 first_defect_entry = next(iter(self.CdTe_thermo.defect_entries.values()))
 
                 # Patch the volume property
@@ -1263,7 +1327,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert not np.allclose(unconstrained.loc["inter_1_F", "Concentration (cm^-3)"], 1e18)
 
         # 1e18 F_i is enough to strongly compensate the (p-type) host, dropping the quenched Fermi
-        # level by ~0.25 eV and raising the hole concentration by ~4 orders of magnitude:
+        # level by ~0.25 eV and raising the hole concentration by ~4 orders of magnitude. Note that the
+        # unconstrained pins are ``py-sc-fermi``-specific: ``doped`` gives E_F = 0.686 eV / 1.31e8 cm^-3
+        # holes here, as ``py-sc-fermi`` currently keeps only the lowest-energy configuration per charge
+        # state of each amalgamated defect (see ``_generate_defect_system``), lowering the annealed
+        # (frozen) totals of the many multi-configuration interstitials here by up to ~3x. (Site
+        # competition, currently absent in ``py-sc-fermi``, rescales the Se-site defects by ~1.5x but
+        # shifts E_F by only ~0.3 meV.)
         for df, e_f, holes in [(unconstrained, 0.674, 2.05e8), (constrained, 0.426, 3.02e12)]:
             at_800K = df[df["Annealing Temperature (K)"] == 800].iloc[0]
             assert np.isclose(at_800K["Fermi Level (eV wrt VBM)"], e_f, atol=1e-3)
@@ -1607,8 +1677,11 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     def test_scan_dopant_concentration_free_defects_fix_charge_states(self):
         """
         Test ``scan_dopant_concentration`` with the ``free_defects`` and
-        ``fix_charge_states`` constraints (currently only supported by the
-        ``py-sc-fermi`` backend), under pseudo-equilibrium for CdTe.
+        ``fix_charge_states`` constraints, under pseudo-equilibrium for CdTe.
+        These are currently only supported by the ``py-sc-fermi`` backend, so
+        here we use the (default) ``doped`` backend to also test the automatic
+        activation of ``py-sc-fermi`` internals when these constraints are
+        requested.
 
         ``free_defects`` releases a defect from the frozen-defect approximation
         (allowing it to re-equilibrate on quenching), while
@@ -1617,7 +1690,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         temperature. Generates a 3-panel plot comparing the unconstrained scan
         against each constraint.
         """
-        solver = FermiSolver(self.CdTe_thermo, backend="py-sc-fermi")  # CdTe_thermo has bulk_dos set
+        solver = FermiSolver(self.CdTe_thermo, backend="doped")  # CdTe_thermo has bulk_dos set
         dopant_concentrations = np.geomspace(1e15, 1e18, 25)
         scan_kwargs = {
             "effective_dopant_concentration_range": dopant_concentrations,
@@ -1632,6 +1705,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         unconstrained = solver.scan_dopant_concentration(**scan_kwargs, per_charge=False)
         free = solver.scan_dopant_concentration(**scan_kwargs, per_charge=False, free_defects=["v_Cd"])
         fixed_q = solver.scan_dopant_concentration(**scan_kwargs, per_charge=False, fix_charge_states=True)
+        assert solver.backend == "doped"  # constraints activate py-sc-fermi internals, not the backend
 
         # ``free_defects=["v_Cd"]`` lets v_Cd re-equilibrate down to its lower quenched-temperature
         # equilibrium value, so its total concentration is below the frozen-defect value at every dopant
@@ -2256,6 +2330,83 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             _check_output_concentrations(solver, result)
 
     @parameterize_backend()
+    def test_optimise_charged_defect_species_target(self, backend):
+        """
+        Test ``optimise`` with a charged defect species ``target``
+        (``"v_Cd_-2"``), automatically enabling ``per_charge`` output.
+        """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        optimise_kwargs = {"min_or_max": "max", "temperature": 300, "mode": "fast", "n_points": 10}
+        with patch("builtins.print") as mock_print:
+            result = solver.optimise("v_Cd_-2", per_charge=False, **optimise_kwargs)
+        mock_print.assert_called_once_with(
+            "Searching for chemical potentials which maximise the target defect(s): ['v_Cd_-2']..."
+        )
+        assert result.index.names == ["Defect", "Charge"]  # per-charge output automatically enabled
+        per_charge_result = solver.optimise("v_Cd_-2", per_charge=True, **optimise_kwargs)
+        pd.testing.assert_frame_equal(result, per_charge_result)
+        assert np.isclose(result.iloc[0]["μ_Cd (eV)"], -1.251, atol=1e-3)  # Cd-poor limit
+
+        # charge-state-resolved target extraction (vs the total defect concentration):
+        target_names, column = _resolve_target_names(result, "v_Cd_-2", "max")
+        assert (target_names, column) == (["v_Cd_-2"], False)
+        charged_conc = _extract_target_value(result, target_names, column)
+        assert charged_conc == result.loc[("v_Cd", -2), "Concentration (cm^-3)"]
+        assert 0 < charged_conc < _extract_target_value(result, ["v_Cd"], False)  # < summed conc
+        species, charges = _get_species_names_from_df(result), result.index.get_level_values("Charge")
+        assert any(charges > 0)
+        for name, q in zip(species, charges, strict=True):
+            assert name.endswith(f"_{'+' if q > 0 else ''}{q}")
+        assert "Te_Cd_+2" in species
+
+    def test_optimise_refinement_seeds_quench_crossover_peak(self):
+        """
+        Charge-state-resolved targets under frozen-defect anneal+quench can
+        peak sharply (~10-20 meV wide) at the quench compensation crossover --
+        an intermediate / near-negative-U charge state is populated only while
+        the quenched Fermi level transits its stability window.
+
+        A first pass at the kT_anneal smoothness scale alone does not seed such
+        a peak, the opportunistic first-pass refinement toward kT_quench seeds
+        it deterministically (the random audit only probabilistically --
+        disabled here to isolate the effect).
+        """
+        for solver, target, kwargs, mu_col, peak_mu, peak_value, vertex_value in [
+            (
+                self.solver_doped,
+                "Cd_Te_+1",
+                {"annealing_temperature": 1200},
+                "μ_Cd (eV)",
+                -0.429,
+                1.44e11,
+                1.48e10,
+            ),
+            (
+                FermiSolver(self.Sb2S3_thermo, backend="doped"),
+                "Sb_S_3_+1",
+                {"annealing_temperature": 800, "effective_dopant_concentration": -1e18},
+                "μ_S (eV)",
+                -0.317,
+                8.57e13,
+                1.56e11,
+            ),
+        ]:
+            result = solver.optimise(target, "max", n_audit_points=0, **kwargs)
+            assert np.isclose(result.iloc[0][mu_col], peak_mu, atol=5e-3)  # interior crossover peak
+            assert np.isclose(_extract_target_value(result, [target], False), peak_value, rtol=0.01)
+
+            unrefined = solver.optimise(  # first pass at the kT_anneal smoothness scale only -> vertex:
+                target,
+                "max",
+                n_audit_points=0,
+                initial_grid_resolution=_landscape_smoothness_scale(
+                    300, kwargs["annealing_temperature"], 300
+                ),
+                **kwargs,
+            )
+            assert np.isclose(_extract_target_value(unrefined, [target], False), vertex_value, rtol=0.02)
+
+    @parameterize_backend()
     def test_optimise_invalid_target(self, backend):
         """
         Test ``optimise`` method error with an invalid input target.
@@ -2268,6 +2419,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "See docstring for more info."
         ) in str(exc.value)
 
+        # per-defect-row columns are not valid (scalar) targets:
+        with pytest.raises(ValueError, match="varies between the defect rows of a single solve"):
+            solver.optimise(target="Concentration (cm^-3)", mode="fast")
+
     @parameterize_backend()
     def test_optimise_multiple_column_matches(self, backend):
         """
@@ -2276,12 +2431,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         with warnings.catch_warnings(record=True) as w:
-            solver.optimise(target="cm^-3")
+            solver.optimise(target="μ_")  # matches both chemical potential columns
         _print_warning_info(w)
-        assert (
-            "Multiple columns with the name 'cm^-3' found in the results DataFrame! Choosing the first "
-            "match"
-        ) in str(w[-1].message)
+        message = "Multiple columns with the name 'μ_' found in the results DataFrame!"
+        assert sum(message in str(warning.message) for warning in w) == 1  # warned exactly once
 
     def test_get_interpolated_chempots(self):
         """
@@ -2328,7 +2481,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         # Temporarily remove chempots from defect_thermodynamics:
-        solver = deepcopy(self.solver_doped)
+        solver = deepcopy(solver)
         solver.defect_thermodynamics.chempots = None
 
         with pytest.raises(ValueError):
@@ -2854,9 +3007,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         Mirrors the direct functions test (``test_calculated_fermi_level_k10``)
         in ``test_thermodynamics``, but now with ``FermiSolver`` functions.
         """
-        solver = deepcopy(self.solver_doped if backend == "doped" else self.solver_py_sc_fermi)
-        solver.defect_thermodynamics.bulk_dos = os.path.join(
-            data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz"
+        solver = FermiSolver(
+            self.CdTe_thermo,
+            bulk_dos=os.path.join(data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz"),
+            backend=backend,
         )
 
         quenched_fermi_levels = []
@@ -2872,9 +3026,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         # (approx) same result as with k181818 NKRED=2 (0.31825 eV with this DOS)
         # remember this is LZ thermo, not FNV thermo shown in thermodynamics tutorial
-        assert np.isclose(
-            np.mean(quenched_fermi_levels[6:8]), 0.31825, atol=1e-3 if backend == "doped" else 1e-2
-        )
+        assert np.isclose(np.mean(quenched_fermi_levels[6:8]), 0.31825, atol=1e-3)
 
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations_vs_μ_Te_both_backends.png")
     @pytest.mark.filterwarnings("always::DeprecationWarning")  # deliberate (deprecated) delta_gap test
@@ -3342,8 +3494,6 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             defect_thermodynamics=self.Cu2SiSe3_thermo, backend="py-sc-fermi"
         )
         self.solver_doped = FermiSolver(defect_thermodynamics=self.Cu2SiSe3_thermo, backend="doped")
-        # Mock the _DOS attribute for py-sc-fermi backend if needed
-        self.solver_py_sc_fermi._DOS = MagicMock()
 
     @parameterize_backend()
     def test_optimise_maximize_electrons(self, backend):
@@ -3474,16 +3624,17 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
 
             # minimum lies along a shallow valley (tangent line between two limiting chemical potentials;
             # see docstring), so the exact minimising chemical potentials are degenerate -- assert on the
-            # minimised concentration:
+            # minimised concentration (to ~10x the ~1e-4 relative Nelder-Mead polish precision (``fatol``),
+            # at which level different seed sets / branch paths legitimately differ along the valley):
             minimised_conc = result.loc[
                 result.index.get_level_values("Defect") == "Int_Cu", "Concentration (cm^-3)"
             ].sum()
-            assert np.isclose(minimised_conc, 1.9348e15, rtol=1e-4)
+            assert np.isclose(minimised_conc, 1.9348e15, rtol=1e-3)
 
             _check_output_concentrations(solver, result)
 
             # test that when v_Cu is included, the extremum _is_ at a limiting chempot:
-            w_v_Cu_solver = self.solver_doped
+            w_v_Cu_solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
             for min_max in ["min", "max"]:
                 print(f"Testing {min_max}imising chemical potential...")
                 with patch("builtins.print") as mock_print:
@@ -3755,8 +3906,6 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         points), for both a carrier (max) and defect (min) target, in both
         equilibrium and anneal+quench temperature modes.
         """
-        from doped.thermodynamics import _get_min_max_target_values
-
         solver = FermiSolver(
             self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend="doped"
         )
@@ -3765,10 +3914,10 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             ("Int_Cu", "min", {"annealing_temperature": 1000}),
         ]:
             result = solver.optimise(target=target, min_or_max=min_or_max, **temp_kwargs)
-            _target_df, opt_value, _chempots = _get_min_max_target_values(result, target, min_or_max)
+            opt_value = _target_extremum(result, target, min_or_max)
 
             scan_df = solver.scan_chemical_potential_grid(n_points=2000, **temp_kwargs)
-            _target_df, brute_value, _chempots = _get_min_max_target_values(scan_df, target, min_or_max)
+            brute_value = _target_extremum(scan_df, target, min_or_max)
 
             print(f"{target} ({min_or_max}, {temp_kwargs}): optimise {opt_value}, brute {brute_value}")
             if min_or_max == "max":  # optimise should match or beat the brute-force reference,
@@ -3803,7 +3952,10 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             "n_audit_points": 50,
         }
         result = solver.optimise(**optimise_kwargs)
-        assert len(solved_points) == len(set(solved_points)), "duplicate solves -- cache not working!"
+        # the search itself never re-solves a point; the single duplicate is the final re-solve of the
+        # optimum (an already-evaluated point) for the output ``DataFrame``:
+        assert len(solved_points[:-1]) == len(set(solved_points[:-1])), "duplicate solves -- cache broken!"
+        assert solved_points[-1] in solved_points[:-1]
 
         solver._solve = original_solve
         assert result.equals(solver.optimise(**optimise_kwargs))  # deterministic (incl. random audit)
@@ -3830,7 +3982,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             min_or_max="max",  # coarse (0.172 eV) barycentric lattice + 0.1 eV cartesian overlay
             annealing_temperature=2000,
             initial_grid_resolution=0.1,
-            beam_width=1,
+            max_beam_width=1,
             n_audit_points=0,
             polish=False,
         )
@@ -3853,7 +4005,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         }
         result = solver.optimise(
             **optimise_kwargs,
-            beam_width=1,
+            max_beam_width=1,
             initial_grid_resolution=np.inf,
             n_audit_points=0,
             polish=False,
@@ -3869,19 +4021,16 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             return original_solve(*args, **kwargs)
 
         solver._solve = counting_solve
-        mode_solve_counts = []
-        for mode in ["fast", "simple", "legacy"]:  # equivalent shorthands for the above
-            n_solves.clear()
-            assert result.equals(solver.optimise(**optimise_kwargs, mode=mode))
-            mode_solve_counts.append(len(n_solves))
-        assert len(set(mode_solve_counts)) == 1  # identical search configurations -> identical costs
+        n_solves.clear()
+        assert result.equals(solver.optimise(**optimise_kwargs, mode="fast"))  # ``mode`` shorthand
+        fast_solve_count = len(n_solves)
 
         # explicitly-set search kwargs take precedence over the ``mode`` preset (a 0.2 eV first-pass
         # grid adds points, changing the solved-points pool but not the (vertex) optimum here):
         n_solves.clear()
         overridden = solver.optimise(**optimise_kwargs, mode="fast", initial_grid_resolution=0.2)
         solver._solve = original_solve
-        assert len(n_solves) > mode_solve_counts[0]  # finer first-pass grid actually altered the search
+        assert len(n_solves) > fast_solve_count  # finer first-pass grid actually altered the search
         assert overridden.iloc[0]["μ_Cu (eV)"] == result.iloc[0]["μ_Cu (eV)"]
 
         with pytest.raises(ValueError, match="Unrecognised optimise `mode`"):

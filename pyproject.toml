@@ -46,7 +46,7 @@ Repository = "https://github.com/SMTG-Bham/doped"
 tests = [
     "pytest>=8.3",
     "pytest-mpl>=0.16.1",
-    "py-sc-fermi>=2.2.0",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested, this version ensures full consistency
+    "py-sc-fermi>=2.2.0,<3",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested, this version ensures full consistency
     "pytest-split>=0.10.0",  # for test splitting
     "ase",  # ase build utilities used in some tests
 ]
@@ -61,7 +61,7 @@ docs = [
 ]
 analysis = [
     "easyunfold",
-    "py-sc-fermi>=2.2.0",
+    "py-sc-fermi>=2.2.0,<3",  # TODO: remove `<3` pin once doped py-sc-fermi interface updated for v3
     "sumo",
     "nonrad",
     #"CarrierCapture.jl"

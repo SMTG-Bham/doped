@@ -13,6 +13,7 @@ import warnings
 
 import numpy as np
 import pytest
+from scipy.spatial import cKDTree
 
 from doped.chemical_potentials import _lattice_in_hull
 from doped.utils._optimise import (
@@ -20,7 +21,6 @@ from doped.utils._optimise import (
     _default_grid_resolution,
     _landscape_smoothness_scale,
     _PolytopeInterp,
-    _roughness,
     _select_seeds,
     _typical_spacing,
     kB,
@@ -50,21 +50,8 @@ def make_grid(vertices, n_points=30, resolution=None):
     return _lattice_in_hull(vertices[:, :2], vertices[:, 2], n_points=n_points, resolution=resolution)
 
 
-def recording_grid(resolutions):
-    """
-    ``make_grid``, appending each dense-pass ``resolution`` to ``resolutions``.
-    """
-
-    def wrapped(vertices, n_points=30, resolution=None):
-        if resolution is not None and np.isfinite(resolution):  # dense first pass / densification only
-            resolutions.append(resolution)
-        return make_grid(vertices, n_points=n_points, resolution=resolution)
-
-    return wrapped
-
-
 LEGACY_CONFIG = {  # reproduces the pre-doped-v4 greedy single-branch contraction search
-    "beam_width": 1,
+    "max_beam_width": 1,
     "initial_grid_resolution": np.inf,
     "n_audit_points": 0,
     "polish": False,
@@ -86,12 +73,14 @@ class TestTwoBasinRegression:
 
     def test_polish_refines_stopping_rule_floor(self):
         # the relative-change stopping rule alone leaves a small value error; the final Nelder-Mead polish
-        # refines the returned optimum to solver precision (audit off to isolate the effect):
+        # refines the returned optimum to solver precision (audit off to isolate the effect; the kB*450
+        # ~0.04 eV first-pass spacing resolves the sigma = 0.03 narrow basin, so the stopping rule lands
+        # within 4%):
         unpolished = _beam_zoom_search(
             two_basin,
             TRIANGLE,
             make_grid=make_grid,
-            initial_grid_resolution=kB * 900,
+            initial_grid_resolution=kB * 450,
             n_audit_points=0,
             polish=False,
         )
@@ -99,7 +88,7 @@ class TestTwoBasinRegression:
             two_basin,
             TRIANGLE,
             make_grid=make_grid,
-            initial_grid_resolution=kB * 900,
+            initial_grid_resolution=kB * 450,
             n_audit_points=0,
         )
         assert 96 <= unpolished.value < polished.value
@@ -115,16 +104,15 @@ class TestTwoBasinRegression:
     def test_plateau_early_exit_fixed(self):
         # a ~0.15 eV first-pass spacing seeds the right basin but the legacy single-hit relative-change
         # rule plateau-stopped ~10% short (89.9 vs 100); the two-consecutive rule alone closes this to
-        # <0.2%, with a single beam and the audit, roughness-densification and polish layers all off,
-        # so that nothing else can mask a regression of the stopping rule (which gives 98.98 here):
+        # <0.2%, with a single beam and the audit and polish layers off, so that nothing else can mask a
+        # regression of the stopping rule (which gives ~99.83 here):
         result = _beam_zoom_search(
             two_basin,
             TRIANGLE,
             make_grid=make_grid,
-            beam_width=1,
+            max_beam_width=1,
             initial_grid_resolution=0.15,
             n_audit_points=0,
-            roughness_threshold=0,
             polish=False,
         )
         assert abs(result.value - 100) < 0.5
@@ -147,10 +135,9 @@ class TestTwoBasinRegression:
             suppressed,
             TRIANGLE,
             make_grid=make_grid,
-            beam_width=1,
+            max_beam_width=1,
             initial_grid_resolution=kB * 900,
             n_audit_points=0,
-            roughness_threshold=0,
         )
         assert abs(argmax_and_polish.value - 1.0) < 0.1  # wrong (broad) basin
 
@@ -189,7 +176,7 @@ class TestSearchMechanics:
         ]
         values[ridge] = [9.8, 9.6, 9.4, 9.2, 9.0]
 
-        seeds = _select_seeds(points, values, spacing, beam_width=3)
+        seeds = _select_seeds(points, values, spacing, max_beam_width=3)
         assert len(seeds) <= 3
         assert seeds[0] == top  # ranked by value
         assert distant in seeds
@@ -198,16 +185,47 @@ class TestSearchMechanics:
         for i, j in itertools.combinations(seeds, 2):
             assert np.max(np.abs(points[i] - points[j])) >= 3 * spacing
 
+    def test_seed_selection_mixed_spacing_grids(self):
+        """
+        Hybrid first-pass grids (coarse barycentric lattice + fine cartesian
+        overlay, with coarsely-spaced polytope boundary points) have strongly
+        non-uniform spacing; a fixed-radius neighbourhood (set from the median
+        spacing) can then leave coarse-lattice and boundary points isolated, so
+        they trivially pass as "local optima" and fill the beam with junk seeds
+        on every call.
+
+        Delaunay-graph adjacency must instead find the single optimum of a
+        smooth unimodal landscape, whatever the local spacing.
+        """
+        coarse = make_grid(TRIANGLE, resolution=0.2)[:, :2]  # coarse lattice, incl. boundary points
+        fine = make_grid(TRIANGLE, resolution=0.02)[:, :2]
+        fine = fine[np.linalg.norm(fine - [-0.5, -0.5], axis=1) < 0.3]  # fine interior overlay patch
+        points = np.vstack([coarse, fine])
+        spacing = _typical_spacing(points)  # median NN distance; set by the fine overlay
+        isolated = [len(n) == 1 for n in cKDTree(points).query_ball_point(points, r=1.55 * spacing)]
+        assert sum(isolated) > 20  # coarse points see no neighbours within a reasonable fixed radius
+        values = -np.sum((points - [-1.2, -0.3]) ** 2, axis=1)  # smooth, unimodal; optimum off-patch
+        seeds = _select_seeds(points, values, spacing, max_beam_width=5)
+        assert seeds == [int(np.argmax(values))]  # single seed; unimodal distribution
+
+        # 1D (sorted-neighbour) branch, with mixed spacing along the line:
+        line = np.sort(np.concatenate([np.linspace(0, 1, 6), np.linspace(0.4, 0.6, 21)]))[:, None]
+        spacing = _typical_spacing(line)
+        seeds = _select_seeds(line, -((line[:, 0] - 0.25) ** 2), spacing, max_beam_width=5)  # unimodal
+        assert line[seeds, 0].tolist() == [0.2]
+        seeds = _select_seeds(line, np.cos(2 * np.pi * line[:, 0]), spacing, max_beam_width=5)  # bimodal
+        assert sorted(line[seeds, 0].tolist()) == [0.0, 1.0]  # both endpoints are local maxima
+
     def test_typical_spacing_ignores_duplicates_and_rounded_vertex_twins(self):
         """
         Grids prepend exact polytope vertices alongside their 6-dp-rounded
-        lattice twins (~1e-7 apart), and densified grids can nest the coarse
-        grid exactly (e.g. halved-resolution 1D lines, >50% duplicates); either
-        would collapse the median NN distance to ~1e-7/zero -- giving
-        degenerate seed pre-contraction boxes, downstream qhull failures and
-        broken seed selection -- so ``_typical_spacing`` must merge both
-        (rounding then ``np.unique``), and report a degenerate single-point set
-        as ``inf``.
+        lattice twins (~1e-7 apart), and pooled grids can contain exact.
+
+        duplicates; either would collapse the median NN distance to ~1e-7/zero
+        -- giving degenerate seed pre-contraction boxes, downstream qhull
+        failures and broken seed selection -- so ``_typical_spacing`` must
+        merge both (rounding then ``np.unique``), and report a degenerate
+        single-point set as ``inf``.
         """
         exact = np.array([[0.0000004, 0.0], [1.0000004, 0.0], [0.0, 1.0000004], [0.5000004, 0.5]])
         points = np.vstack([exact, np.round(exact, 6)])  # every point's NN is its twin, ~4e-7 off
@@ -218,16 +236,15 @@ class TestSearchMechanics:
         assert _typical_spacing(np.zeros((5, 2))) == np.inf  # degenerate single-point case
 
     def test_audit_reseeds_spike_invisible_to_first_pass(self):
-        # a sigma = 0.02 eV spike is invisible to a deliberately coarse (0.3 eV) first pass with the
-        # roughness check disabled; the random audit (seeded rng; deterministic) must find it and re-seed a
-        # search branch which refines it to the global optimum:
+        # a sigma = 0.02 eV spike is invisible to a deliberately coarse (0.3 eV) first pass; the random
+        # audit (seeded rng; deterministic) must find it and re-seed a search branch which refines it to
+        # the global optimum:
         spike = lambda pts: two_basin(pts, centre=np.array([-0.913, -0.617]), sigma=0.02)  # noqa: E731
         result = _beam_zoom_search(
             spike,
             TRIANGLE,
             make_grid=make_grid,
             initial_grid_resolution=0.3,
-            roughness_threshold=0,
             n_audit_points=3000,
         )
         assert result.value > 99
@@ -254,27 +271,6 @@ class TestSearchMechanics:
         assert result.value > 99
         assert np.max(np.abs(result.point[:3] - centre)) < 0.02
 
-    def test_nested_densification_grids_terminate(self):
-        # regression test: a halved-resolution 1D line grid can nest the coarse grid `exactly`, giving
-        # >50% duplicate points after the roughness densification merge -- with a naive median
-        # nearest-neighbour spacing (0.0), the branch pre-contraction loop would then iterate to a
-        # floating-point fixed point 1 ulp above the seed and hang forever:
-        segment = np.array([[0.0, 5.0], [-2.0, 7.0]])
-
-        def line_grid(verts, n_points=30, resolution=None):
-            start, end = np.asarray(verts, dtype=float)
-            if resolution is not None and np.isfinite(resolution):
-                n_points = int(np.ceil(np.max(np.abs(end - start)) / resolution)) + 1
-            points = start + np.linspace(0, 1, n_points)[:, None] * (end - start)
-            points[0], points[-1] = start, end
-            return points
-
-        quasi_step = lambda pts: 10 ** (6 * np.tanh((pts[:, 0] + 0.7) / 0.001))  # noqa: E731
-        result = _beam_zoom_search(  # rough landscape -> densification fires; kB*250 nests exactly
-            quasi_step, segment, make_grid=line_grid, initial_grid_resolution=kB * 250, n_audit_points=0
-        )
-        assert result.value == pytest.approx(10**6, rel=0.01)
-
     def test_max_iterations_warning(self):
         with warnings.catch_warnings(record=True) as caught:
             _beam_zoom_search(
@@ -284,76 +280,9 @@ class TestSearchMechanics:
                 max_iterations=1,
                 n_audit_points=0,
                 polish=False,
-                roughness_threshold=0,
                 initial_grid_resolution=0.15,
             )
         assert any("max_iterations" in str(warning.message) for warning in caught)
-
-
-class TestRoughnessCheck:
-    """
-    Tests for the empirical under-resolution (roughness) detector and its one-
-    shot densification response.
-    """
-
-    # log-target ∝ tanh((x - x0)/w) with w << grid spacing (a compensation crossover-style quasi-step):
-    quasi_step = staticmethod(lambda pts: 10 ** (6 * np.tanh((pts[:, 0] + 0.7) / 0.005)))
-
-    def test_roughness_metric(self):
-        grid = make_grid(TRIANGLE, resolution=0.1)
-        spacing = _typical_spacing(grid[:, :2])
-        assert _roughness(grid[:, :2], self.quasi_step(grid), spacing) > 2
-        smooth_values = two_basin(grid, amp=0)  # broad basin only; smooth at this spacing
-        assert _roughness(grid[:, :2], smooth_values, spacing) < 2
-
-        # near-duplicate rows (exact polytope vertices + their rounded lattice copies, sharing one cached
-        # solve value) must not blind the check -- without collapsing them, each twin is the other's
-        # nearest neighbour with |Δv| = 0, hiding every feature (roughness 0.0 here):
-        line = np.linspace(0, 1, 21)[:, None]
-        kink_values = np.where(line[:, 0] < 0.024, 1e6, 1.0)  # sharp feature at the x = 0 corner
-        twinned = np.vstack([line, line + 5e-7])  # rounded lattice copy of every point, 5e-7 away
-        twinned_values = np.concatenate([kink_values, kink_values])  # twins share one cached value
-        assert _roughness(twinned, twinned_values, 0.05) == pytest.approx(
-            _roughness(line, kink_values, 0.05), rel=1e-3
-        )
-        assert _roughness(twinned, twinned_values, 0.05) > 2
-
-        # non-finite values (failed solves are mapped to -inf) must be masked without warnings:
-        with_failures = smooth_values.copy()
-        with_failures[10:20] = -np.inf
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")  # any numpy RuntimeWarning (e.g. inf - inf) -> failure
-            assert np.isfinite(_roughness(grid[:, :2], with_failures, spacing))
-
-    def test_quasi_step_triggers_single_densification_and_warning(self):
-        resolutions = []
-        with warnings.catch_warnings(record=True) as caught:
-            _beam_zoom_search(
-                self.quasi_step,
-                TRIANGLE,
-                make_grid=recording_grid(resolutions),
-                initial_grid_resolution=0.1,
-                n_audit_points=0,
-                polish=False,
-            )
-        assert resolutions == [0.1, 0.05]  # exactly one densification (at halved resolution)
-        assert any("under-resolved" in str(warning.message) for warning in caught)
-
-    def test_smooth_landscape_no_densification(self):
-        # the roughness check must not fire (and densify, doubling the first-pass cost) when the landscape
-        # is smooth at the first-pass grid spacing:
-        resolutions = []
-        with warnings.catch_warnings(record=True) as caught:
-            _beam_zoom_search(
-                lambda pts: two_basin(pts, amp=0),
-                TRIANGLE,
-                make_grid=recording_grid(resolutions),
-                initial_grid_resolution=kB * 900,
-                n_audit_points=0,
-                polish=False,
-            )
-        assert resolutions == [kB * 900]  # no densification
-        assert not any("under-resolved" in str(warning.message) for warning in caught)
 
 
 class TestFirstPassResolutionDefaults:

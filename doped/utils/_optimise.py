@@ -4,13 +4,12 @@ Pure numerical global-search engine, used by
 
 Implements a robust global optimisation strategy over convex polytopes
 (chemical potential stability regions): a dense physics-scaled first pass,
-an empirical under-resolution ('roughness') check, a beam of spatially
-separated candidate optima with an independent 'zoom' branch for each (i.e.
-beam search `after` dense initial scan, to avoid missing narrow minima), a
-final local polish per converged branch, and a random post-convergence audit
-over the full polytope with automatic re-seeding. Likely overkill in most
-cases, but far more robust and reliable in identifying unusual extrema in
-chemical potential space. See the
+a beam of spatially separated candidate optima with an independent 'zoom'
+branch for each (i.e. beam search `after` dense initial scan, to avoid missing
+narrow minima), a final local polish per converged branch, and a random
+post-convergence audit over the full polytope with automatic re-seeding.
+Overkill in most cases, but far more robust and reliable in identifying unusual
+extrema in chemical potential space. See the
 :meth:`~doped.thermodynamics.FermiSolver.optimise` docstring for the full
 algorithm description and physical reasoning.
 
@@ -26,6 +25,7 @@ performed on the preceding (independent) columns -- excluding any
 higher-is-better convention (negate the target for minimisation).
 """
 
+import itertools
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,7 +33,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.constants import value as constants_value
 from scipy.optimize import minimize
-from scipy.spatial import Delaunay, cKDTree
+from scipy.spatial import Delaunay, QhullError, cKDTree
 
 kB = constants_value("Boltzmann constant in eV/K")  # ~8.617e-5 eV/K
 
@@ -71,11 +71,11 @@ def _landscape_smoothness_scale(
     defect level inside the ``E_F`` window swept at the crossing. ``E_F`` is
     then pinned by carriers alone and ``d(ln p)/dμ`` grows as ``1/|μ - μ*|``
     near the crossover μ* (divergent). This is fine for the solve algorithm due
-    to the empirical roughness check, the random post-convergence audit (which
-    samples the full polytope, independent of grid spacing) and the per-branch
-    local polish of ``FermiSolver.optimise``, while the returned kT scale needs
-    only to resolve the smooth background landscape (and can be overridden via
-    the ``initial_grid_resolution`` argument).
+    to the random post-convergence audit (which samples the full polytope,
+    independent of grid spacing) and the per-branch local polish of
+    ``FermiSolver.optimise``, while the returned kT scale needs only to resolve
+    the smooth background landscape (and can be overridden via the
+    ``initial_grid_resolution`` argument).
 
     Args:
         temperature (float):
@@ -125,7 +125,7 @@ def _default_grid_resolution(
     a soft budget of 25% of ``max_initial_points`` -- insuring against
     smoothness-scale misclassification. Below the minimum-temperature floor,
     no grid spacing resolves anything further (sub-kT quasi-steps are the
-    roughness check's and audit's job, not the grid's).
+    audit's job, not the grid's).
 
     Deliberately independent of the search ``tolerance``: the initial
     resolution is a completeness knob (in eV of chemical potential) set by the
@@ -279,8 +279,7 @@ def _typical_spacing(points: np.ndarray) -> float:
     Median nearest-neighbour distance of a set of points (robust estimate of
     the achieved grid spacing, for any grid generation scheme).
     """
-    # round to the solve-cache resolution (6 dp) before deduplicating (densified grids can nest the coarse
-    # grid, plus prepended polytope vertices):
+    # round to the solve-cache resolution (6 dp) before deduplicating (e.g. prepended exact vertices):
     points = np.unique(np.round(np.asarray(points, dtype=float), 6), axis=0)
     if len(points) < 2:
         return np.inf
@@ -288,66 +287,67 @@ def _typical_spacing(points: np.ndarray) -> float:
     return float(np.median(distances[:, 1]))
 
 
-def _roughness(
-    points: np.ndarray, values: np.ndarray, spacing: float, log_scale: bool = True, ev_scale: float = 0.1
-) -> float:
+def _adjacent_pairs(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
-    Empirical landscape roughness: the maximum change in the target between
-    nearest-neighbour samples, in decades (for log-scale targets, e.g.
-    concentrations) or in ``ev_scale`` (eV) units (for linear targets, e.g.
-    Fermi levels), normalised per grid ``spacing``.
+    Adjacency of a set of sample points: the edges of their Delaunay graph
+    (consecutive points along the line, in 1D) -- so adjacency adapts to
+    non-uniform sample spacing (e.g. hybrid grids). Duplicate points map to a
+    single node.
 
-    Operates purely on the provided ``(points, values)``.
+    Returns:
+        tuple[np.ndarray, np.ndarray]:
+            ``nodes``: indices (into ``points``) of the unique representative
+            points, and ``pairs``: ``(E, 2)`` array of adjacent index pairs
+            (into ``points``).
     """
-    # collapse near-duplicate rows first (e.g. exact polytope vertices and their rounded lattice copies,
-    # which share one cached solve value):
-    if duplicate_pairs := cKDTree(points).query_pairs(r=spacing * 1e-3):
-        keep = np.setdiff1d(np.arange(len(points)), [max(i, j) for i, j in duplicate_pairs])
-        points, values = points[keep], values[keep]
-    if len(points) < 2:
-        return 0.0
-
-    query_distances, query_neighbours = cKDTree(points).query(points, k=2)
-    distances = np.asarray(query_distances)[:, 1]
-    neighbours = np.asarray(query_neighbours)[:, 1]
-    finite = np.isfinite(values) & np.isfinite(values[neighbours]) & (distances > 0)
-    if not finite.any():
-        return 0.0
-    if log_scale:  # floor to guard exact zeros (e.g. underflowed concentrations):
-        floor = np.abs(values[np.isfinite(values)]).max() * 1e-14 + np.finfo(float).tiny
-        v = np.log10(np.abs(values, dtype=float) + floor)
+    unique_points, nodes = np.unique(np.round(points, 6), axis=0, return_index=True)
+    n_nodes, ndim = unique_points.shape
+    if ndim == 1:  # 1D: consecutive points along the line
+        order = np.argsort(unique_points[:, 0])
+        pairs = np.column_stack([order[:-1], order[1:]])
+    elif n_nodes <= ndim + 1:  # too few points for triangulation; all mutually adjacent
+        pairs = np.array(list(itertools.combinations(range(n_nodes), 2)), dtype=int).reshape(-1, 2)
     else:
-        v = values / ev_scale
-
-    # mask before subtracting, to avoid computing (and warning on) inf - inf for failed-solve values:
-    return float(np.max(np.abs(v[finite] - v[neighbours[finite]]) / distances[finite]) * spacing)
+        try:
+            simplices = Delaunay(unique_points).simplices  # (S, ndim + 1)
+        except QhullError:  # degenerate sample (e.g. near-flat); joggle the input ("QJ") -- only as a
+            # fallback, as joggling collinear hull points can make the hull skip some, giving long sliver
+            # edges between far-apart boundary points (spurious adjacency):
+            simplices = Delaunay(unique_points, qhull_options="QJ").simplices
+        pairs = np.vstack([simplices[:, [a, b]] for a, b in itertools.combinations(range(ndim + 1), 2)])
+        pairs = np.unique(np.sort(pairs, axis=1), axis=0)
+    return nodes, nodes[pairs]
 
 
 def _select_seeds(
-    points: np.ndarray, values: np.ndarray, spacing: float, beam_width: int, separation: float = 3.0
+    points: np.ndarray, values: np.ndarray, spacing: float, max_beam_width: int, separation: float = 3.0
 ) -> list[int]:
     """
-    Select up to ``beam_width`` beam-search seed indices from sampled
+    Select up to ``max_beam_width`` beam-search seed indices from sampled
     ``(points, values)``.
 
-    Seeds are the discrete local optima of the sample (points whose value
-    is >= that of every sampled neighbour within ``1.55 * spacing``), ranked
-    by value and greedily deduplicated with a Chebyshev (∞-norm) separation
-    of ``separation * spacing``.
+    Seeds are the discrete local optima of the sample -- points whose value is
+    >= that of every adjacent sample point (see ``_adjacent_pairs``) -- ranked
+    by value and greedily deduplicated with a Chebyshev (∞-norm) separation of
+    ``separation * spacing``.
 
-    Fewer seeds than ``beam_width`` is normal (e.g. often one clear extremum in
-    simple chemical potential spaces).
+    Fewer seeds than ``max_beam_width`` is normal (typically a single seed, as
+    most chemical potential landscapes are unimodal).
     """
-    tree = cKDTree(points)
-    neighbour_lists = tree.query_ball_point(points, r=1.55 * spacing)
-    candidates = [i for i, nbrs in enumerate(neighbour_lists) if values[i] >= values[nbrs].max()]
-    candidates = sorted(candidates, key=lambda i: values[i], reverse=True)
+    nodes, pairs = _adjacent_pairs(points)
+    neighbour_max = np.full(len(points), -np.inf)  # max value over each point's adjacent points
+    np.maximum.at(neighbour_max, pairs[:, 0], values[pairs[:, 1]])
+    np.maximum.at(neighbour_max, pairs[:, 1], values[pairs[:, 0]])
+    candidates = nodes[values[nodes] >= neighbour_max[nodes]]  # discrete local maxima (deduplicated)
+    candidates = sorted(  # failed solves (-inf) are never seeds:
+        (i for i in candidates if np.isfinite(values[i])), key=lambda i: values[i], reverse=True
+    )
 
     seeds: list[int] = []
     for i in candidates:
         if all(np.max(np.abs(points[i] - points[j])) >= separation * spacing for j in seeds):
             seeds.append(i)
-            if len(seeds) == beam_width:
+            if len(seeds) == max_beam_width:
                 break
     return seeds
 
@@ -356,17 +356,15 @@ def _select_seeds(
 class _SearchResult:
     """
     Result of a ``_beam_zoom_search``: the best point/value found (in the
-    higher-is-better convention of ``evaluate``), all evaluated points and
-    values (pooled over first pass, branches, polish and audit), and per-branch
-    diagnostics (each a dict with the branch seed, converged point/value,
-    iteration count and convergence flag) -- the converged branch optima give
-    all `distinct local optima` discovered.
+    higher-is-better convention of ``evaluate``; the best over `all`
+    evaluations, pooled over first pass, branches, polish and audit), and the
+    diagnostics of each branch (a dict with the branch seed, converged
+    point/value, iteration count and convergence flag) -- the converged branch
+    optima give all `distinct local optima` discovered.
     """
 
     point: np.ndarray
     value: float
-    points: np.ndarray
-    values: np.ndarray
     branches: list[dict]
 
 
@@ -375,23 +373,21 @@ def _beam_zoom_search(
     vertices: np.ndarray,
     *,
     make_grid: Callable[..., np.ndarray],
-    beam_width: int = 5,
+    max_beam_width: int = 5,
     n_points: int = 30,
     initial_grid_resolution: float | None = None,
     tolerance: float = 0.01,
     n_audit_points: int = 200,
-    roughness_threshold: float = 2.0,
     polish: bool = True,
-    log_roughness: bool = True,
     max_iterations: int = 50,
     polytope_rows: np.ndarray | None = None,
     rng: int | np.random.Generator | None = None,
 ) -> _SearchResult:
     """
     Robust global maximisation of the ``evaluate`` function (callable) over the
-    convex polytope spanned by ``vertices``, via dense first pass + roughness
-    check + beam search with per-branch domain contraction ("zooming") + local
-    polish + random audit with re-seeding. See the
+    convex polytope spanned by ``vertices``, via dense first pass + beam search
+    with per-branch domain contraction ("zooming") + local polish + random
+    audit with re-seeding. See the
     :meth:`~doped.thermodynamics.FermiSolver.optimise` docstring for the full
     algorithm description.
 
@@ -410,37 +406,29 @@ def _beam_zoom_search(
             ``(M, k)`` array of grid points spanning the polytope of the given
             vertices; ``resolution`` (eV) takes precedence over ``n_points``
             when not ``None``.
-        beam_width (int):
-            Maximum number of independent contraction branches. Default is 5.
+        max_beam_width (int):
+            Maximum number of independent contraction branches (one per
+            distinct discrete local optimum of the first-pass sample; see
+            ``_select_seeds``). Default is 5.
         n_points (int):
             Grid size per branch per contraction iteration (the dense first
             pass instead uses ``initial_grid_resolution``, if set, otherwise
             also ``n_points``). Default is 30.
         initial_grid_resolution (float | None):
             Grid spacing (eV) for the dense first pass. ``None`` or ``inf``
-            skips the dense pass (and roughness check), using an ``n_points``
-            first-pass grid instead (fast/legacy behaviour). Default is
-            ``None``.
+            skips the dense pass, using an ``n_points`` first-pass grid instead
+            (fast/legacy behaviour). Default is ``None``.
         tolerance (float):
             Relative convergence tolerance on the target value (per-branch
             stopping and audit acceptance). Default is 0.01.
         n_audit_points (int):
             Number of uniform random audit points over the full polytope after
             all branches converge; ``0`` disables. Default is 200.
-        roughness_threshold (float):
-            Maximum tolerated first-pass roughness (in decades, or 0.1 eV units
-            for linear targets, per grid spacing; see ``_roughness``) before a
-            one-shot grid densification (and a warning if still exceeded
-            after). ``0``/``None`` disables. Default is 2.0.
         polish (bool):
             Whether to run a final Nelder-Mead local refinement from each
             converged branch optimum (recommended; the relative-change stopping
             rule alone typically leaves a few-percent value error). Default is
             ``True``.
-        log_roughness (bool):
-            Whether the target is a log-scale quantity (e.g. a concentration;
-            roughness measured in decades) rather than a linear one (e.g. Fermi
-            level; measured in 0.1 eV units). Default is ``True``.
         max_iterations (int):
             Maximum contraction iterations per branch. Default is 50.
         polytope_rows (np.ndarray | None):
@@ -454,7 +442,7 @@ def _beam_zoom_search(
 
     Returns:
         _SearchResult:
-            The best point/value and pooled evaluation record.
+            The best point/value and per-branch diagnostics.
     """
     vertices = np.asarray(vertices, dtype=float)
     rng = np.random.default_rng(0 if rng is None else rng)
@@ -473,29 +461,11 @@ def _beam_zoom_search(
 
     if initial_grid_resolution is not None and np.isfinite(initial_grid_resolution):
         first_resolution: float | None = float(initial_grid_resolution)
-    else:  # fast/legacy behaviour: plain ``n_points`` first-pass grid, no roughness check
+    else:  # fast/legacy behaviour: plain ``n_points`` first-pass grid
         first_resolution = None
     points = make_grid(vertices, resolution=first_resolution)  # dense first-pass
     values = run(points)
     spacing = _typical_spacing(geom(points))
-
-    if (  # empirical under-resolution (roughness) check; mode-agnostic safety layer:
-        first_resolution is not None
-        and roughness_threshold
-        and _roughness(geom(points), values, spacing, log_roughness) > roughness_threshold
-    ):  # densify once and drop any points already in the coarse grid
-        finer = make_grid(vertices, resolution=first_resolution / 2)  # densify
-        finer = finer[cKDTree(geom(points)).query(geom(finer))[0] > 0]  # de-dup
-        points, values = np.vstack([points, finer]), np.concatenate([values, run(finer)])
-        spacing = _typical_spacing(geom(points))
-        if _roughness(geom(points), values, spacing, log_roughness) > roughness_threshold:
-            warnings.warn(
-                "The target landscape appears under-resolved at the achievable first-pass grid density "
-                "(sharp features narrower than the grid spacing detected, e.g. possible "
-                "compensation-crossover quasi-steps); results near such features are best-effort. A finer "
-                "`initial_grid_resolution` (and/or larger `max_initial_points`) can be set if higher "
-                "confidence is required."
-            )
 
     def run_branch(seed_point: np.ndarray, seed_value: float) -> dict:
         """
@@ -513,9 +483,7 @@ def _beam_zoom_search(
 
         best_point, best_value = seed_point, seed_value
         previous_value, n_consecutive, converged = None, 0, False
-        n_iterations = 0
-        for _ in range(max_iterations):
-            n_iterations += 1
+        for n_iterations in range(1, max_iterations + 1):  # noqa: B007 (used after the loop)
             branch_vertices = (branch_vertices + best_point) / 2  # contract towards branch incumbent
             branch_points = make_grid(branch_vertices, n_points=n_points)
             branch_values = run(branch_points)
@@ -579,7 +547,7 @@ def _beam_zoom_search(
             return lifted[0], float(-result.fun)
         return best_point, best_value
 
-    seed_indices = _select_seeds(geom(points), values, spacing, max(beam_width, 1))
+    seed_indices = _select_seeds(geom(points), values, spacing, max(max_beam_width, 1))
     branches = [run_branch(points[i], float(values[i])) for i in seed_indices]
 
     def pooled_best() -> tuple[np.ndarray, float]:
@@ -607,10 +575,4 @@ def _beam_zoom_search(
             branches.append(run_branch(audit_points[best_idx], float(audit_values[best_idx])))
 
     best_point, best_value = pooled_best()
-    return _SearchResult(
-        point=best_point,
-        value=best_value,
-        points=np.vstack(all_points),
-        values=np.concatenate(all_values),
-        branches=branches,
-    )
+    return _SearchResult(point=best_point, value=best_value, branches=branches)
