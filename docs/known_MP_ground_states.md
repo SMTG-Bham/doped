@@ -8,11 +8,17 @@ in the Materials Project (MP) database, which can be used to reduce the number o
 for chemical potential (competing phase) and phase diagram calculations. Citations are given for the 
 studies where the hybrid DFT energy analyses (of candidate low-energy polymorphs) were initially performed. 
 
+> **Note:** the energy-above-hull (EaH) values quoted below correspond to the mixed GGA/GGA+U/r2SCAN 
+> MP phase diagrams (``thermo_types=['GGA_GGA+U_R2SCAN']``; the default for MP queries — including 
+> ``doped``'s ``CompetingPhases`` — since ``mp-api`` 0.46.6), as of September 2026. These mostly match 
+> the legacy GGA/GGA+U values quoted in the cited studies, with some notable differences (e.g. for K 
+> and P) mentioned below.
+
 ## Elemental Phases
 ### Chalcogens (S, Se, Te)
 #### Sulfur (S)
 - Sulfur is a solid at ambient (room) temperature and pressure, formed from packing S8 (cyclooctasulfur) 
-  molecules in a `Fddd1` spacegroup structure. This corresponds to the lowest energy sulfur phase on the 
+  molecules in a `Fddd` spacegroup structure. This corresponds to the lowest energy sulfur phase on the 
   MP database (`mp-77`; EaH = Energy above Hull = 0 eV/atom in the MP database).
 - Gas phase S8 (cyclooctasulfur), with isolated S8 molecules, corresponds to `mp-994911` 
   (EaH ~ 0.042 eV/atom in the MP database), typically being the dominant allotrope in gas/vapour phase 
@@ -38,7 +44,8 @@ https://doi.org/10.1039/C5SC03088A, https://doi.org/10.1021/acsaem.3c03208) or o
   (`mp-14`, EaH ~ 0.001 eV/atom in the MP database).
 - Under athermal conditions, both MP calculations and hybrid (HSE06+D3) DFT agree that 'red selenium' 
   (γ-monoclinic P2₁/c) is the lowest energy selenium phase (`mp-570481`; EaH = 0 eV/atom in the MP 
-  database), as discussed in https://doi.org/10.1039/D4EE04647A (Table 2 SI). This phase corresponds to a packing of Se8 molecules in a `P2₁/c` spacegroup structure, similar to the solid sulfur groundstate.
+  database), as discussed in https://doi.org/10.1039/D4EE04647A (Table 2 SI). This phase corresponds 
+  to packing Se₈ molecules in a `P2₁/c` spacegroup structure, similar to the solid sulfur ground-state.
 Citation: https://doi.org/10.1039/D4EE04647A
 
 There are several low energy allotropes of selenium on the MP database (and indeed in reality), but 
@@ -57,8 +64,8 @@ typically only this phase is relevant for competing phase calculations and chemi
 #### Lithium (Li)
 - `mp-51` is the true FCC `Fm-3m` ground-state structure of lithium at low temperatures (T ~< 70 K), 
   correctly predicted as the lowest energy lithium phase in static athermal calculations with hybrid DFT
-  (HSE w/34.5% exchange), and the 2nd-lowest Li phase on the MP database (EaH ~ 0.0025 eV/atom in the MP database).
-- `mp-136` is the BCC `Im-3m` lithium phase which is stable at higher temperatures (T ~> 70 K, and thus 
+  (HSE w/34.5% exchange), and the 2nd-lowest Li phase on the MP database (EaH ~ 0.002 eV/atom in the MP database).
+- `mp-135` is the BCC `Im-3m` lithium phase which is stable at higher temperatures (T ~> 70 K, and thus 
   room temperature); EaH ~ 0.01 eV/atom in the MP database.
 Citation: https://discovery.ucl.ac.uk/id/eprint/10186130/
 
@@ -68,14 +75,18 @@ Citation: https://discovery.ucl.ac.uk/id/eprint/10186130/
 - Hybrid (HSE06) DFT predicts the `mp-10172` `P6_3/mmc` phase as the lowest energy sodium allotrope in 
   static athermal calculations, in agreement with MP database energies (EaH ~ 0 eV/atom in the MP 
   database).
-Citation: https://doi.org/10.1038/s41467-022-32669-3r
+Citation: https://doi.org/10.1038/s41467-022-32669-3
 
 #### Potassium (K)
-- `mp-58` is the true BCC `Im-3m` ground-state structure of potassium, though with EaH ~ 0.03 eV/atom in the 
-  MP database.
+- `mp-58` is the true BCC `Im-3m` ground-state structure of potassium, though with EaH ~ 0.015 eV/atom in 
+  the MP database.
 - Hybrid DFT (HSE w/34.5% exchange) predicts the `mp-604325` `C2/c` phase as the lowest energy potassium
   allotrope in static athermal calculations (EaH ~ 0.07 eV/atom in the MP database), ~0.01 eV/atom lower energy
   than `mp-58`.
+- Note that on the mixed GGA/GGA+U/r2SCAN MP hull, _theoretical_ close-packed potassium entries 
+  (`mp-1184804` `Cmce` and `mp-2739257` `I4/mmm`; EaH ≈ 0 eV/atom) sit ~15 meV/atom _below_ experimental 
+  BCC potassium (`mp-58`) — a static-lattice artifact, as BCC potassium is vibrationally stabilised at 
+  room temperature.
 Citation: https://discovery.ucl.ac.uk/id/eprint/10186130/
 
 #### Rubidium (Rb)
@@ -93,14 +104,15 @@ Citation: https://discovery.ucl.ac.uk/id/eprint/10186130/
   lowest energy caesium phase in static athermal calculations.
 Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 
-## Pnictogens (P, As, Sb, Bi)
+### Pnictogens (P, As, Sb, Bi)
 #### Phosphorus (P)
 - `mp-157` is black phosphorus, the true orthorhombic `Cmce` ground-state structure of phosphorus, though
   with EaH ~ 0.02 eV/atom in the MP database (which does not include dispersion corrections, expected to 
   stabilise this phase).
-- `mp-1198724` is a red phosphorus type phase, being the lowest energy phosphorus phase on the MP database
-  (EaH = 0 eV/atom), and the lowest energy phase in static athermal calculations with hybrid DFT (HSE06), 
-  _without dispersion corrections_.
+- `mp-1198724` is a red phosphorus type phase (fibrous, `P-1`), being the lowest energy phase in static 
+  athermal calculations with hybrid DFT (HSE06), _without dispersion corrections_, with EaH ~ 0.002 
+  eV/atom on the mixed GGA/GGA+U/r2SCAN MP hull — where the closely-related Hittorf's (violet) phosphorus 
+  (`mp-568348`, `P2/c`) is now the lowest energy phosphorus phase on the MP database (EaH = 0 eV/atom).
 Citation: https://discovery.ucl.ac.uk/id/eprint/10186130/; https://doi.org/10.1103/PRXEnergy.2.043002
 
 #### Arsenic (As)
@@ -117,25 +129,25 @@ Citation: https://discovery.ucl.ac.uk/id/eprint/10186130/
 
 #### Bismuth (Bi)
 - `mp-23152` is the true rhombohedral (trigonal) `R-3m` ground-state structure of bismuth, which both MP
-  (GGA) database and hybrid (HSE06) DFT energies predict as the lowest energy bismuth allotrope in static
+  database and hybrid (HSE06) DFT energies predict as the lowest energy bismuth allotrope in static
   athermal calculations.
-Citation: https://doi.org/10.1038/s41467-022-32669-3r
+Citation: https://doi.org/10.1038/s41467-022-32669-3
 
-## Halogens (Br, I)
+### Halogens (Br, I)
 #### Bromine (Br)
 - `mp-23154` is the true orthorhombic `Cmce`/`Cmca` ground-state structure of bromine under ambient 
-  and low temperature conditions, which both MP (GGA) database and hybrid (HSE06) DFT energies 
+  and low temperature conditions, which both MP database and hybrid (HSE06) DFT energies 
   correctly predict in static athermal calculations.
 
 Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 
 #### Iodine (I)
-- `mp-1525634` is the true orthorhombic `Cmce` ground-state structure of iodine, correctly predicted as the 
+- `mp-23153` is the true orthorhombic `Cmce` ground-state structure of iodine, correctly predicted as the 
   lowest energy iodine phase in the MP database (EaH = 0 eV/atom) and in static athermal calculations with 
   hybrid DFT (with dispersion corrections; HSE06+D3).
 Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 
-## Miscellaneous Metals (Ag, Sn, Ti)
+### Miscellaneous Metals (Ag, Sn, Ti)
 #### Silver (Ag)
 - `mp-124` is the true FCC `Fm-3m` ground-state structure of silver, though with EaH ~ 0.002 eV/atom in the 
   MP database.
@@ -149,8 +161,11 @@ Citation: https://doi.org/10.48550/arXiv.2602.22024
   MP database (EaH = 0 eV/atom) and in static athermal calculations with hybrid DFT (with dispersion 
   corrections; HSE06+D3).
 - `mp-84` is 'white tin' or 'β-tin', the ground-state tin crystal structure at higher temperatures 
-  (T ~> 286 K), with an energy above hull (EaH) of ~0.12 eV/atom in the MP database (with static athermal 
-  GGA DFT calculations).
+  (T ~> 286 K), with an energy above hull (EaH) of ~0.12 eV/atom on the mixed MP hull. This value comes 
+  from the r2SCAN energies (used for Sn on the mixed hull), which strongly over-stabilise the covalent, 
+  tetrahedrally-coordinated ⍺-tin relative to metallic β-tin; the legacy GGA (PBE) MP hull gives 
+  ~0.036 eV/atom, closer to the small experimental 0 K enthalpy difference of ~0.02 eV/atom. β-tin is 
+  then stabilised at room temperature by its larger vibrational entropy.
 Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 
 #### Titanium (Ti)
@@ -166,7 +181,7 @@ Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 ### Oxides (TiO₂, SnO₂, WO₃)
 #### Titanium Dioxide (TiO₂)
 - `mp-2657` is the true rutile (tetragonal) `P4₂/mnm` ground-state structure of titanium dioxide, though
-  with EaH ~ 0.04 eV/atom in the MP database.
+  with EaH ~ 0.01-0.04 eV/atom in the MP database (0.01 eV/atom with r2SCAN, 0.04 eV/atom with PBE).
 - `mp-390` is the anatase (tetragonal) `I4₁/amd` polymorph, being the lowest energy titanium dioxide phase 
   on the MP database (EaH = 0 eV/atom), and typically predicted as the lowest energy polymorph with hybrid DFT.
 - `mp-1840` is the brookite (orthorhombic) `Pbca` polymorph, being the 2nd-lowest energy titanium dioxide 

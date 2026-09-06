@@ -145,4 +145,7 @@ filterwarnings = [  # later entries take precedence over earlier ones
     "error::DeprecationWarning",  # throw errors with Deprecation/Future warnings, to track
     "error::PendingDeprecationWarning",
     "error::FutureWarning",
+    # MP-served entries reference the legacy ``pymatgen.entries.mixing_scheme`` path (see
+    # ``doped.utils._ignore_pmg_warnings``); remove once MP data / ``pymatgen`` stub handling is updated upstream:
+    "ignore:MaterialsProjectDFTMixingScheme has been moved:DeprecationWarning",
 ]  # if needed to pass CI, can add warnings catch and ignore if running locally (POTCARs available), w/note to remove

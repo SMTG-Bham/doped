@@ -50,7 +50,15 @@ templates_path = ["_templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "JOSS", "Dev_ToDo.md", "Future_ToDo.md"]
+exclude_patterns = [
+    "_build",
+    "jupyter_execute",  # notebook execution output; picked up as (duplicate) source documents otherwise
+    "Thumbs.db",
+    ".DS_Store",
+    "JOSS",
+    "Dev_ToDo.md",
+    "Future_ToDo.md",
+]
 
 myst_enable_extensions = [
     "html_admonition",
@@ -127,6 +135,7 @@ nitpick_ignore_regex = [  # note: these are full-match (i.e. ``re.fullmatch``) p
     ("py:class", r".*\s.*"),  # prose type descriptions; e.g. ``3x3 matrix``, ``2D sequence``...
     ("py:class", r"(np|pd|plt|mpl|go)\..*"),  # abbreviated module names in docstring types
     ("py:class", r"pathlib\._local\..*"),  # ``pathlib.Path`` annotations, with python >= 3.13
+    ("py:class", r"doped\.[\w.]*\._\w+"),  # private ``doped`` helper classes shown as bases (e.g. mixins)
     # packages with no Sphinx inventories to link against;
     ("py:.*", r"(monty|tqdm|sympy|pydefect|vise|plotly|dscribe)\..*"),
     # ``pymatgen-analysis-defects`` (mapped above) publishes only module entries in its inventory:

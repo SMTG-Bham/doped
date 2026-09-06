@@ -36,8 +36,7 @@
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!
 
-## SK To-Do for next update:
-- Finish ``prune_to_expected_polymorphs`` testing and handling of new ``mp-api`` behaviour with default thermo types (may need to update requirement); https://github.com/materialsproject/api/issues/1104, https://github.com/materialsproject/api/pull/1087 -- drafts in SK shelved changes 
+## SK To-Do for next update: 
 - It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe. Keep old code for reference at the bottom maybe? With delta_VBM/CBM as a function example 
   - Ideally, would implement the general ``scan()`` function and then showcase it in the tutorials?
 - Tutorials general structure clean-up?

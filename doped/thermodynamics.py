@@ -5550,24 +5550,19 @@ class FermiSolver(MSONable):
                 when the reason for this difference is known/acceptable.
                 Default is ``False``.
 
-        Key attributes:
+        Key Attributes:
             defect_thermodynamics (|DefectThermodynamics|):
                 The |DefectThermodynamics| object used for the thermodynamic
                 calculations.
             backend (str):
                 The code backend used for the thermodynamic calculations
                 (``"doped"`` or ``"py-sc-fermi"``).
-            volume (float):
-                Volume of the unit cell in the bulk DOS calculation (from
-                ``self.defect_thermodynamics.bulk_dos``).
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
                 the reason for this difference is known/acceptable.
-            py_sc_fermi_dos (DOS):
-                A ``py-sc-fermi`` ``DOS`` object, derived from
-                ``self.defect_thermodynamics.bulk_dos``, for use with the
-                ``py-sc-fermi`` backend.
+
+        See also the :attr:`volume` and :attr:`py_sc_fermi_dos` properties.
         """
         # shallow copy so attribute writes here (e.g. ``_bulk_dos``, ``_chempots``) don't mutate
         # the user's original ``DefectThermodynamics`` object; shared attributes

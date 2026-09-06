@@ -63,7 +63,10 @@ def plot_chempot_heatmap_and_test_no_warnings(cpa_or_defect_thermo, **kwargs):
     Plot chemical potential heatmap from a |CompetingPhasesAnalyzer| or
     |DefectThermodynamics| object and assert no warnings are raised.
     """
+    from doped.utils import _ignore_pmg_warnings
+
     with warnings.catch_warnings(record=True) as w:
+        _ignore_pmg_warnings()  # only catch unexpected warnings here
         plot = cpa_or_defect_thermo.plot_chempot_heatmap(**kwargs)
     _print_warning_info(w)
     assert not w
