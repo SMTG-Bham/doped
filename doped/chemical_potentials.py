@@ -1135,7 +1135,14 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 relevant competing phases to additionally determine their
                 chemical potential limits within the host. Can be a single
                 element as a string (e.g. "Mg") or an iterable of element
-                strings (list, set, tuple, dict) (e.g. ["Mg", "Na"]).
+                strings (list, set, tuple, dict) (e.g. ["Mg", "Na"]). All
+                entries are taken from a single MP query over the full
+                (host + extrinsic) chemical system, so intrinsic and extrinsic
+                entries share one common energy scale; as the MP mixing-scheme
+                energy frame is chemical-system-dependent, the intrinsic
+                entries (and their energies above hull, and so which low-energy
+                polymorphs fall within ``energy_above_hull``) can then differ
+                from those of an intrinsic-only query in some cases.
             full_phase_diagram (bool):
                 If ``True``, include all phases on the MP phase diagram (with
                 energy above hull < ``energy_above_hull`` eV/atom) for the
@@ -3119,7 +3126,11 @@ def _intersect_hull_with_plane(
 ) -> np.ndarray:
     """
     Intersect the convex hull with a plane defined by a fixed value of a given
-    axis.
+    axis, returning the vertices of the (convex) intersection.
+
+    These lie on the hull edges crossing the plane (or are hull vertices on the
+    plane), so are found among the plane crossings of all vertex pairs, reduced
+    to the vertices of their convex hull (to within ``tol``).
 
     Args:
         vertices (np.ndarray):
@@ -3129,33 +3140,44 @@ def _intersect_hull_with_plane(
         value (float):
             The plane, such that ``x[axis] = value``.
         tol (float):
-            Numerical tolerance for deciding if points lie on the plane.
+            Numerical tolerance for deciding if points lie on the plane, and
+            for merging near-coincident/collinear intersection points.
 
     Returns:
         np.ndarray:
-            Coordinates of intersections between the convex hull and the plane.
+            Coordinates of the vertices of the intersection between the convex
+            hull and the plane.
     """
-    axis_min, axis_max = vertices[:, axis].min(), vertices[:, axis].max()
-    if value < axis_min - tol or value > axis_max + tol:
+    signed_dist = vertices[:, axis] - value  # signed distances from the plane along ``axis``
+    signed_dist[np.abs(signed_dist) <= tol] = 0.0  # snap vertices (within ``tol``) onto the plane
+    if signed_dist.min() > 0 or signed_dist.max() < 0:
         raise ValueError(f"The plane {axis} = {value} does not meet the hull.")
 
-    intersection_points = []
-    # for each edge, check if it crosses the plane:
-    for i, j in itertools.combinations(range(len(vertices)), 2):
-        vertex_i, vertex_j = vertices[i], vertices[j]
-        signed_dist_i = vertex_i[axis] - value  # signed distance from plane along ``axis``
-        signed_dist_j = vertex_j[axis] - value
+    i, j = np.triu_indices(len(vertices), k=1)  # all vertex pairs (a superset of the hull edges)
+    crossing = signed_dist[i] * signed_dist[j] < 0  # opposite signs -> pair crosses the plane
+    i, j = i[crossing], j[crossing]
+    frac = (signed_dist[i] / (signed_dist[i] - signed_dist[j]))[:, None]  # fraction along the pair (0, 1)
+    crossings = vertices[i] + frac * (vertices[j] - vertices[i])
+    return _hull_vertices(np.vstack([vertices[signed_dist == 0], crossings]), tol=tol)
 
-        if signed_dist_i * signed_dist_j < 0:  # opposite signs -> edge crosses the plane
-            # fraction along the edge at which the crossing occurs (0 < frac < 1):
-            frac = signed_dist_i / (signed_dist_i - signed_dist_j)
-            intersection_points.append(vertex_i + frac * (vertex_j - vertex_i))
-        else:  # edge does not cross; include any endpoint that lies on the plane:
-            for signed_dist, vertex in ((signed_dist_i, vertex_i), (signed_dist_j, vertex_j)):
-                if abs(signed_dist) <= tol:
-                    intersection_points.append(vertex)
 
-    return np.asarray(intersection_points)
+def _hull_vertices(points: np.ndarray, tol: float = 0.0) -> np.ndarray:
+    """
+    Reduce ``points`` to the vertices of their convex hull, within their affine
+    subspace (a single point, the endpoints of a line segment, or the
+    ``ConvexHull`` vertices over the independent coordinates), merging hull
+    facets within ``tol`` of each other (``qhull`` ``C-n``) so that near-
+    coincident/collinear boundary points are not returned as spurious vertices.
+    """
+    points = points[np.sort(np.unique(points, axis=0, return_index=True)[1])]  # dedupe, keep input order
+    independent = _independent_columns(points)
+    if not len(independent):  # all points identical
+        return points
+    if len(independent) == 1:  # collinear points -> the segment endpoints
+        return points[[points[:, independent[0]].argmin(), points[:, independent[0]].argmax()]]
+    qhull_options = f"C-{tol:g}" + (" Qx" if len(independent) > 4 else "")  # ``Qx``: ``scipy`` >4D default
+    hull = ConvexHull(points[:, independent], qhull_options=qhull_options)
+    return points[np.sort(hull.vertices)]  # hull vertices, in input order
 
 
 def _lattice_in_hull(
@@ -3302,8 +3324,9 @@ def _griddata_linear_in_hull(
         xi (np.ndarray):
             (L, k) float array of query points to interpolate values for.
         tol (float):
-            Tolerance for including boundary points as inside. Default is
-            1e-6.
+            Tolerance for including boundary points as inside; query points
+            within ``tol`` (in the units of ``X``) of the convex hull are kept.
+            Default is 1e-6.
         qhull_options (str):
             Options to pass to ``QHull`` via ``~scipy.spatial.Delaunay``.
             Default is "QJ Qbb Qc", where "QJ" means joggled input to avoid
@@ -3335,6 +3358,15 @@ def _griddata_linear_in_hull(
         simplex_indices = delaunay_tri.find_simplex(xi, tol=tol)  # simplex indices; (L,) -> L is len(xi)
         simplices = delaunay_tri.simplices  # (S, k+1)
         transform = delaunay_tri.transform  # (S, k+1, k)
+
+    # ``find_simplex``'s ``tol`` is barycentric, so scales with simplex size; so also require query points
+    # to be within ``tol`` (absolute) of the hull:
+    candidates = np.flatnonzero(simplex_indices >= 0)  # (N,)
+    xi_candidates = xi[candidates]  # (N, k)
+    outside = np.zeros(len(candidates), dtype=bool)
+    for equation in ConvexHull(X).equations:  # (k+1,) outward facet normal & offset; facet-by-facet, to...
+        outside |= xi_candidates @ equation[:-1] + equation[-1] > tol  # ...avoid an (N, F) temporary array
+    simplex_indices[candidates[outside]] = -1
 
     inside_hull = simplex_indices >= 0  # outside = -1; tol treats near-edge as inside; (L,)
     if not inside_hull.any():  # no query points inside the hull
