@@ -4792,7 +4792,7 @@ def plot_chempot_heatmap(
 
     If the heatmap interpolation looks odd (e.g. striation effects), generally
     this can be easily solved by setting ``n_points`` (via ``**kwargs``) to a
-    higher value (default = 1000).
+    higher value (default = 10,000 for heatmap plotting).
 
     If using the default colour map (``batlow``) in publications, please
     consider citing: https://zenodo.org/records/8409685
@@ -4879,8 +4879,9 @@ def plot_chempot_heatmap(
         **kwargs:
             Additional keyword arguments to pass to
             ``ChemicalPotentialGrid.get_grid()``, such as ``n_points``
-            (default = 1000) and ``cartesian`` (default = ``True`` for
-            heatmap plotting, to ensure smooth interpolation).
+            (default = 10,000 for heatmap plotting, rather than the
+            ``get_grid()`` default of 1000) and ``cartesian`` (default =
+            ``True`` for heatmap plotting, to ensure smooth interpolation).
 
     Returns:
         plt.Figure: The ``matplotlib`` ``Figure`` object.
@@ -4969,14 +4970,26 @@ def plot_chempot_heatmap(
 
     # Generate grid data. Use a Cartesian (uniform) grid by default: barycentric grid sampling places
     # points unevenly across narrow / elongated regions of the host stability polygon, which can cause
-    # streaking artifacts under triangle-based interpolation in ``tripcolor``:
-    grid_kwargs: dict[str, Any] = {"cartesian": True, "fixed_elements": fixed_elements}
+    # streaking artifacts under triangle-based interpolation in ``tripcolor``. Denser than the ``get_grid``
+    # default (cheap in the 2-D plotting subspace), as ``gouraud`` shading interpolates colours (not
+    # values) across each triangle, so coarse triangles give faint streaks across smooth gradients:
+    grid_kwargs: dict[str, Any] = {"cartesian": True, "fixed_elements": fixed_elements, "n_points": 10000}
     grid_kwargs.update(kwargs)
     grid_data = cpg.get_grid(**grid_kwargs)
     values_inside = grid_data[dependent_element.symbol].to_numpy()
     points_inside = grid_data.drop(  # only independent (X) points, no dependent or fixed elements
         columns=[*list(fixed_elements.keys()), dependent_element.symbol]
     ).to_numpy()
+    # densify the hull edges so that the boundary triangles stay as small as the interior grid triangles
+    # (to avoid odd colour interpolation effects at the hull edges):
+    hull = ConvexHull(points_inside)
+    edges = list(zip(hull.vertices, np.roll(hull.vertices, -1), strict=True))  # consecutive (CCW) vertices
+    points_inside = np.vstack(
+        [points_inside, *(np.linspace(points_inside[i], points_inside[j], 101)[1:-1] for i, j in edges)]
+    )
+    values_inside = np.concatenate(
+        [values_inside, *(np.linspace(values_inside[i], values_inside[j], 101)[1:-1] for i, j in edges)]
+    )
     tri = Triangulation(points_inside[:, 0], points_inside[:, 1])
 
     # Create plot
