@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from monty.serialization import dumpfn, loadfn
+from mp_api.client.core.exceptions import MPRestWarning
 from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.core.composition import Composition
 from pymatgen.core.entries import ComputedEntry
@@ -37,6 +38,7 @@ from test_utils import (
 )
 
 from doped import chemical_potentials
+from doped.utils import _ignore_pmg_warnings
 from doped.utils.parsing import _find_calc_outputs, _get_calc_files_df
 from doped.utils.symmetry import get_primitive_structure
 
@@ -106,9 +108,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
             "Zr3O",
             "Zr3O",
             "Zr2O",
-            "ZrO2",
-            "ZrO2",
             "Zr",
+            "ZrO2",
+            "ZrO2",
+            "ZrO2",
             "ZrO2",
             "ZrO2",
             "ZrO2",
@@ -132,9 +135,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert np.isclose(
                 mag, 2 if entry.name == "O2" else 0, atol=1e-3
             )  # only O2 is magnetic (triplet) here
-            if entry.name == "O2":
-                assert np.isclose(entry.data["energy_per_atom"], -4.94795546875)
-                assert np.isclose(entry.energy, -4.94795546875 * 2)
+            if entry.name == "O2":  # elemental O2 reference energy on the (served) Zr-O mixed hull:
+                assert np.isclose(entry.data["energy_per_atom"], -4.947961005)
+                assert np.isclose(entry.energy, -4.947961005 * 2)
 
         _check_entries_dict_behaviour(cp)  # test dict behaviour
 
@@ -145,6 +148,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             return entries
 
         for attr in cp_a.__dict__:
+            if attr == "api_key":  # not serialised (private MP API keys not saved to JSON)
+                continue
             val_a = getattr(cp_a, attr)
             val_b = getattr(cp_b, attr)
 
@@ -157,7 +162,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
     def _check_cp_json_roundtrip(self, cp):
         cp_dict = cp.as_dict()
+        assert cp_dict["api_key"] is None  # private MP API keys not saved to (shareable) JSONs
         cp_from_dict = chemical_potentials.CompetingPhases.from_dict(cp_dict)
+        assert cp_from_dict.api_key is None
         self._compare_cps(cp, cp_from_dict)
 
         dumpfn(cp_dict, "cp.json")
@@ -192,17 +199,19 @@ class CompetingPhasesTestCase(unittest.TestCase):
         )
         assert h2_mol.data["summary"]["total_magnetization"] == 0
 
-        # elements without tabulated diatomic bond lengths now fall back to ``ShakeNBreak``'s
-        # ``get_dimer_bond_length`` (rather than raising ``ValueError``):
-        te_mol = chemical_potentials.make_molecule_in_a_box("Te")
-        assert te_mol.num_sites == 2
-        assert np.isclose(te_mol.volume, 30**3)
-        assert 2.0 < te_mol.get_distance(0, 1) < 3.2  # reasonable Te dimer bond length
+        # Elements not in ``elemental_diatomic_bond_lengths`` (e.g. S, Te) now fall back to
+        # ``shakenbreak.distortions.get_dimer_bond_length`` rather than raising:
+        for element in ("S", "Te"):
+            structure = chemical_potentials.make_molecule_in_a_box(element)
+            assert structure.composition.reduced_formula == element
+            assert structure.num_sites == 2
+            assert np.isclose(structure.volume, 30**3)
+            assert 2.0 < structure.get_distance(0, 1) < 3.2  # bond length from ``shakenbreak``
 
     def test_init(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
 
-        assert len(cp.entries) == 13
+        assert len(cp.entries) == 14
         assert [entry.name for entry in cp.entries] == self.ZrO2_entry_list
         self._check_ZrO2_cp_init(cp)
         assert "Zr4O" not in [e.name for e in cp.entries]  # not bordering or potentially with EaH
@@ -214,7 +223,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             "ZrO2", energy_above_hull=0.03, api_key=api_key, full_phase_diagram=True
         )
 
-        assert len(cp.entries) == 14  # Zr4O now present
+        assert len(cp.entries) == 15  # Zr4O now present
         ZrO2_full_pd_entry_list = [*self.ZrO2_entry_list[:4], "Zr4O", *self.ZrO2_entry_list[4:]]
         assert [entry.name for entry in cp.entries] == ZrO2_full_pd_entry_list
         self._check_ZrO2_cp_init(cp, num_stable_entries=5)  # Zr4O is on hull
@@ -246,20 +255,20 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self._check_cp_json_roundtrip(cp)
 
     def test_init_YTOS(self):
-        # 144 phases on Y-Ti-O-S MP phase diagram
+        # 151 phases on Y-Ti-O-S MP (mixed) phase diagram
         cp = chemical_potentials.CompetingPhases("Y2Ti2S2O5", energy_above_hull=0.1, api_key=api_key)
-        assert len(cp.entries) == 113
-        self.check_O2_entry(cp)
+        assert len(cp.entries) == 114
+        self.check_O2_entry(cp, energy_per_atom=-4.947961005)  # consistent across served MP hulls
 
         cp = chemical_potentials.CompetingPhases(
             "Y2Ti2S2O5", energy_above_hull=0.1, full_phase_diagram=True, api_key=api_key
         )
-        # 149 phases on Y-Ti-O-S MP full phase diagram, 4 extra O2 phases removed
-        assert len(cp.entries) == 145
-        self.check_O2_entry(cp)
+        # 151 phases on Y-Ti-O-S MP full phase diagram, 4 extra O2 phases removed
+        assert len(cp.entries) == 147
+        self.check_O2_entry(cp, energy_per_atom=-4.947961005)  # consistent across served MP hulls
         self._check_cp_json_roundtrip(cp)
 
-    def check_O2_entry(self, cp):
+    def check_O2_entry(self, cp, energy_per_atom=None):
         # assert only one O2 phase present (molecular entry):
         result = [e for e in cp.entries if e.name == "O2"]
         assert len(result) == 1
@@ -267,7 +276,192 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert result[0].data["summary"]["total_magnetization"] == 2
         assert result[0].data["energy_above_hull"] == 0
         assert result[0].data["molecule"]
-        assert np.isclose(result[0].data["energy_per_atom"], -4.94795546875)
+        # absolute O2 reference energy is chemsys-dependent with the (default) mixed thermo type -- the
+        # MP mixing scheme anchors each queried chemical system to a GGA(+U) or r2SCAN energy frame
+        # depending on its mixing state -- so only assert an exact value where one is supplied:
+        assert np.isclose(result[0].data["energy_per_atom"], result[0].energy_per_atom)
+        if energy_per_atom is not None:
+            assert np.isclose(result[0].data["energy_per_atom"], energy_per_atom)
+
+    def test_init_Cs2TiI6_expected_polymorphs(self):
+        """
+        Live ``CompetingPhases`` test for ``Cs2TiI6`` - chemsys (Cs, Ti, I)
+        where every elemental composition appears in
+        ``known_MP_ground_states.yaml`` - exercising the
+        ``expected_polymorphs`` option end-to-end.
+        """
+        # This was also a previous failure case for the mixed MP phase diagram handling
+        cp_default = chemical_potentials.CompetingPhases("Cs2TiI6", api_key=api_key)
+        cp_pruned = chemical_potentials.CompetingPhases(
+            "Cs2TiI6", api_key=api_key, expected_polymorphs=True
+        )
+
+        known = chemical_potentials._known_MP_ground_states()
+        for formula in ("Cs", "Ti", "I"):
+            allowed_mpids = known[Composition(formula).reduced_composition]
+            default_entries = [e for e in cp_default.entries if e.composition.reduced_formula == formula]
+            pruned_entries = [e for e in cp_pruned.entries if e.composition.reduced_formula == formula]
+            assert default_entries, formula  # MP returns at least one elemental entry
+            lowest_default = min(
+                default_entries, key=lambda e: e.data.get("energy_above_hull", float("inf"))
+            )
+            allowed_kept = allowed_mpids | {lowest_default.data["material_id"]}
+            pruned_mpids = {e.data["material_id"] for e in pruned_entries}
+            assert pruned_mpids.issubset(allowed_kept), formula
+            # lowest-EaH entry for this composition is always retained:
+            assert lowest_default.data["material_id"] in pruned_mpids, formula
+            # any default entry whose mpid is in the yaml list is retained:
+            for e in default_entries:
+                if e.data["material_id"] in allowed_mpids:
+                    assert e.data["material_id"] in pruned_mpids, (formula, e.data["material_id"])
+            # for compositions where MP has multiple polymorphs in default, expect strict shrink:
+            if len(default_entries) > len(allowed_kept):
+                assert len(pruned_entries) < len(default_entries), formula
+
+        # compositions absent from the yaml (e.g. host ``Cs2TiI6`` and other multi-element competing phases
+        # here) are untouched:
+        for entry in cp_default.entries:
+            comp = entry.composition.reduced_composition
+            if comp in known:
+                continue
+            default_count = sum(1 for e in cp_default.entries if e.composition.reduced_composition == comp)
+            pruned_count = sum(1 for e in cp_pruned.entries if e.composition.reduced_composition == comp)
+            assert default_count == pruned_count, entry.composition.reduced_formula
+
+        # overall: pruned entry count is strictly smaller for this system:
+        assert len(cp_pruned.entries) < len(cp_default.entries)
+        self._check_cp_json_roundtrip(cp_pruned)
+
+    def test_init_CdTe_expected_polymorphs(self):
+        """
+        Verify ``expected_polymorphs=True`` prunes Te polymorphs to only the
+        one listed in ``known_MP_ground_states.yaml`` (``mp-19``, the
+        ``P3_121`` ground state), while leaving compositions absent from the
+        data file (``CdTe``, ``Cd``) untouched.
+        """
+        cp_default = chemical_potentials.CompetingPhases("CdTe", api_key=api_key)
+        cp_pruned = chemical_potentials.CompetingPhases("CdTe", api_key=api_key, expected_polymorphs=True)
+
+        te_default = [e for e in cp_default.entries if e.composition.reduced_formula == "Te"]
+        te_pruned = [e for e in cp_pruned.entries if e.composition.reduced_formula == "Te"]
+        assert len(te_default) > 1  # MP has multiple Te polymorphs
+        assert len(te_pruned) == 1  # pruned to single yaml-listed phase
+        assert te_pruned[0].data["material_id"] == "mp-19"
+
+        # compositions absent from the yaml are untouched:
+        for formula in ("CdTe", "Cd"):
+            default_count = sum(1 for e in cp_default.entries if e.composition.reduced_formula == formula)
+            pruned_count = sum(1 for e in cp_pruned.entries if e.composition.reduced_formula == formula)
+            assert default_count == pruned_count, formula
+
+        # total count matches default minus the dropped Te entries:
+        assert len(cp_pruned.entries) == len(cp_default.entries) - (len(te_default) - 1)
+        self._check_cp_json_roundtrip(cp_pruned)
+
+    def test_many_polymorphs_warning_Sb2S3(self):
+        """
+        Verify that ``CompetingPhases`` emits a warning when any composition
+        has more than 5 entries after pruning, pointing the user to the
+        ``chemical_potentials_tutorial`` discussion of polymorph pruning.
+
+        ``Sb2S3`` has ~20 elemental-S polymorphs on MP within the default
+        ``energy_above_hull``, so this triggers the warning; setting
+        ``expected_polymorphs=True`` prunes S to its ground state and
+        suppresses the warning.
+        """
+        _result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhases, "Sb2S3", api_key=api_key
+        )
+        many_polymorph_w = [ww for ww in w if "have more than 5 entries to consider" in str(ww.message)]
+        assert len(many_polymorph_w) == 1
+        msg = str(many_polymorph_w[0].message)
+        assert issubclass(many_polymorph_w[0].category, UserWarning)
+        # elemental S has many polymorphs on MP and must appear in the listing:
+        assert "S (" in msg
+        assert (
+            "https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html"
+            "#chemical-systems-with-many-polymorphs"
+        ) in msg
+
+        # ``expected_polymorphs=True`` prunes S to its ground state, suppressing the warning:
+        _result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhases,
+            "Sb2S3",
+            api_key=api_key,
+            expected_polymorphs=True,
+        )
+        assert not any("have more than 5 entries to consider" in str(ww.message) for ww in w)
+
+    def test_make_molecular_entry_Sb2S3_S2(self):
+        """
+        Verify that a gas-phase S2 'molecule-in-a-box' entry can be generated
+        from the elemental sulfur ground-state entry of an ``Sb2S3``
+        ``CompetingPhases`` object.
+
+        S is not in ``elemental_diatomic_bond_lengths`` so this exercises the
+        ``shakenbreak.distortions.get_dimer_bond_length`` fallback in
+        ``make_molecule_in_a_box`` (previously raised ``ValueError``).
+        """
+        cp = chemical_potentials.CompetingPhases("Sb2S3", api_key=api_key, expected_polymorphs=True)
+        s_ground_state = cp.entries_dict["S_Fddd_EaH_0"]
+        assert s_ground_state.data["material_id"] == "mp-77"
+        assert not s_ground_state.data["molecule"]
+
+        gas_phase_S2 = chemical_potentials.make_molecular_entry(s_ground_state)
+        assert gas_phase_S2.structure.composition.reduced_formula == "S"
+        assert gas_phase_S2.structure.num_sites == 2
+        assert np.isclose(gas_phase_S2.structure.volume, 30**3)
+        # bond length from ``shakenbreak`` fallback (S-S ≈ 2.06 Å):
+        s_s_dist = gas_phase_S2.structure.get_distance(0, 1)
+        assert np.isclose(s_s_dist, 2.06, atol=0.05)
+        assert gas_phase_S2.data["summary"]["total_magnetization"] == 0
+        assert gas_phase_S2.data["molecule"]
+        assert gas_phase_S2.data["energy_above_hull"] == 0.0
+        # ``data["energy_per_atom"]`` matches the input elemental S ground state
+        # (set to the hull energy in ``make_molecular_entry``):
+        assert np.isclose(gas_phase_S2.data["energy_per_atom"], s_ground_state.data["energy_per_atom"])
+
+        # append back to ``cp.entries`` and confirm it is accessible via ``entries_dict`` under the
+        # molecule-in-a-box key:
+        n_before = len(cp.entries)
+        cp.entries.append(gas_phase_S2)
+        assert len(cp.entries) == n_before + 1
+        s2_key = next((k for k, e in cp.entries_dict.items() if e is gas_phase_S2), None)
+        assert s2_key == "S_mmm_EaH_0"
+
+        # exercise input-file writing for the gas-phase S2 entry:
+        out_dir = "Sb2S3_CompetingPhases"
+        if_present_rm(out_dir)
+        try:
+            # k-point convergence: molecular phases are skipped (Γ-only, no convergence test needed):
+            kpt_sets = cp.write_kpoint_convergence_files(output_path=out_dir, potcar_spec=True)
+            assert kpt_sets
+            assert not any(s2_key in key for key in kpt_sets)
+            assert not os.path.exists(os.path.join(out_dir, s2_key))
+
+            # relaxation: molecular S2 folder is written with INCAR/KPOINTS/POSCAR:
+            relax_sets = cp.write_relaxation_files(output_path=out_dir, potcar_spec=True)
+            relax_key = f"{out_dir}/{s2_key}/Relax"
+            assert relax_key in relax_sets
+            for fname in ("INCAR", "KPOINTS", "POSCAR"):
+                assert os.path.isfile(os.path.join(relax_key, fname))
+            # Γ-only k-point sampling for the molecule-in-a-box:
+            assert relax_sets[relax_key].kpoints.kpts[0] == (1, 1, 1)
+            # POSCAR matches the molecule-in-a-box structure:
+            relax_struct = Structure.from_file(os.path.join(relax_key, "POSCAR"))
+            assert relax_struct.composition.reduced_formula == "S"
+            assert relax_struct.num_sites == 2
+            assert np.isclose(relax_struct.get_distance(0, 1), 2.06, atol=0.05)
+
+            # single-point: molecular S2 folder is written with INCAR/KPOINTS (no POSCAR by default):
+            sp_sets = cp.write_singlepoint_files(output_path=out_dir, potcar_spec=True, soc=False)
+            sp_key = f"{out_dir}/{s2_key}/SinglePoint"
+            assert sp_key in sp_sets
+            for fname in ("INCAR", "KPOINTS"):
+                assert os.path.isfile(os.path.join(sp_key, fname))
+            assert not os.path.isfile(os.path.join(sp_key, "POSCAR"))
+        finally:
+            if_present_rm(out_dir)
 
     def test_entry_naming(self):
         """
@@ -278,17 +472,15 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cdte_cp = chemical_potentials.CompetingPhases("CdTe", api_key=api_key)
         assert [entry.data["doped_name"] for entry in cdte_cp.entries] == [
             "CdTe_F-43m_EaH_0",
-            "Cd_Fm-3m_EaH_0",
+            "Cd_P6_3/mmc_EaH_0",
             "Te_P3_121_EaH_0",
-            "Te_P3_221_EaH_0",
-            "CdTe_P6_3mc_EaH_0.006",
+            "Te_P3_221_EaH_0.001",
+            "CdTe_P6_3mc_EaH_0.003",
             "CdTe_Cmc2_1_EaH_0.009",
-            "Cd_P6_3/mmc_EaH_0.014",
-            "Cd_R-3m_EaH_0.018",
-            "Cd_P6_3/mmc_EaH_0.034",
-            "Te_C2/m_EaH_0.044",
+            "Cd_P6_3/mmc_EaH_0.022",
+            "Cd_R-3m_EaH_0.024",
+            "Cd_Fm-3m_EaH_0.037",
             "Te_Pm-3m_EaH_0.047",
-            "Te_Pmma_EaH_0.047",
             "Te_Pmc2_1_EaH_0.049",
         ]
 
@@ -296,16 +488,29 @@ class CompetingPhasesTestCase(unittest.TestCase):
         # (this will be quite a rare case, as it requires two phases with the same formula, space group
         # and energy above hull to 1 meV/atom
         cds_cp = chemical_potentials.CompetingPhases("CdS", api_key=api_key)
-        assert "S_Pnnm_EaH_0.014" in [entry.data["doped_name"] for entry in cds_cp.entries]
-        new_entry = deepcopy(
-            next(entry for entry in cds_cp.entries if entry.data["doped_name"] == "S_Pnnm_EaH_0.014")
-        )  # duplicate entry to force renaming
+        s_pnnm_entry = next(
+            entry for entry in cds_cp.entries if entry.data["doped_name"].startswith("S_Pnnm")
+        )
+        eah = s_pnnm_entry.data["energy_above_hull"]
+        new_entry = deepcopy(s_pnnm_entry)  # duplicate entry to force renaming
         new_entry.data["energy_above_hull"] += 2e-4
         chemical_potentials._name_entries_and_handle_duplicates([*cds_cp.entries, new_entry])
         entry_names = [entry.data["doped_name"] for entry in [*cds_cp.entries, new_entry]]
-        assert "S_Pnnm_EaH_0.014" not in entry_names
-        assert "S_Pnnm_EaH_0.0141" in entry_names
-        assert "S_Pnnm_EaH_0.0143" in entry_names
+        assert len(set(entry_names)) == len(entry_names)  # all unique after renaming
+        assert f"S_Pnnm_EaH_{round(eah, 4)}" in entry_names  # both duplicates renamed with 4 digits
+        assert f"S_Pnnm_EaH_{round(eah + 2e-4, 4)}" in entry_names
+
+        # near-degenerate duplicates (EaH equal to >5 decimal places): names disambiguated by appending the
+        # MP material IDs instead:
+        dup_a, dup_b = deepcopy(s_pnnm_entry), deepcopy(s_pnnm_entry)
+        for entry, mpid in ((dup_a, "mp-1"), (dup_b, "mp-2")):
+            entry.data["material_id"] = mpid
+            entry.data["doped_name"] = None  # force name regeneration
+        dup_b.data["energy_above_hull"] += 2e-7  # not separable by EaH rounding (3 -> 4 -> 5 digits)
+        chemical_potentials._name_entries_and_handle_duplicates([dup_a, dup_b])
+        assert dup_a.data["doped_name"] != dup_b.data["doped_name"]
+        assert dup_a.data["doped_name"].endswith("_mp-1")
+        assert dup_b.data["doped_name"].endswith("_mp-2")
 
     def test_unstable_host(self):
         """
@@ -329,10 +534,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 cp.write_singlepoint_files(soc=False, potcar_spec=True)
             _print_warning_info(w)  # for debugging
             if cp_settings.get("full_phase_diagram"):
-                assert len(cp.entries) == 172
+                assert len(cp.entries) == 141
             else:
-                assert len(cp.entries) == 68
-            self.check_O2_entry(cp)
+                assert len(cp.entries) == 69
+            self.check_O2_entry(cp, energy_per_atom=-4.947961005)  # consistent across served MP hulls
             self._check_cp_json_roundtrip(cp)
 
     def test_unknown_host(self):
@@ -350,14 +555,17 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {kwargs}")
             potcar_spec = not _potcars_available()
             with warnings.catch_warnings(record=True) as w:
+                _ignore_pmg_warnings()  # re-apply ``doped`` noise filters, reset by ``catch_warnings``
                 cp = chemical_potentials.CompetingPhases(**kwargs)
                 cp.write_kpoint_convergence_files(potcar_spec=potcar_spec)
                 cp.write_relaxation_files(potcar_spec=potcar_spec)
                 cp.write_singlepoint_files(soc=False, potcar_spec=potcar_spec)
             _print_warning_info(w)  # for debugging
             user_warnings = [x for x in w if x.category is UserWarning]
-            assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
-                user_warnings[0].message
+            assert any(
+                "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here"
+                in str(uw.message)
+                for uw in user_warnings
             )
             no_structure_warnings = [
                 uw for uw in user_warnings if "no structure is available" in str(uw.message).lower()
@@ -479,10 +687,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets_no_write = cp.get_kpoint_convergence_sets()
         assert dict_sets_no_write
         assert not os.path.exists("CompetingPhases")
-        no_write_key = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1"
+        no_write_key = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2"
         assert no_write_key in dict_sets_no_write
         no_write_dict_set = dict_sets_no_write[no_write_key]
-        assert no_write_dict_set.kpoints.kpts[0] == (2, 1, 1)
+        assert no_write_dict_set.kpoints.kpts[0] == (1, 2, 2)
         assert no_write_dict_set.potcar_symbols[0] == "Zr_sv"
         assert no_write_dict_set.incar["GGA"] == "Ps"
         assert no_write_dict_set.incar["NSW"] == 0
@@ -497,17 +705,17 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert not os.path.exists("CompetingPhases/O2_Pmmm_EaH_0")
 
         # test if it writes out the files correctly
-        Zro2_EaH_0pt009_folder = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1/"
+        Zro2_EaH_0pt009_folder = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2/"
         assert os.path.exists(Zro2_EaH_0pt009_folder)
-        assert "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1" in dict_sets
-        dict_set = dict_sets["CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1"]
-        assert dict_set.kpoints.kpts[0] == (2, 1, 1)
+        assert "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2" in dict_sets
+        dict_set = dict_sets["CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2"]
+        assert dict_set.kpoints.kpts[0] == (1, 2, 2)
         assert dict_set.potcar_symbols[0] == "Zr_sv"
         assert dict_set.incar["GGA"] == "Ps"
         assert dict_set.incar["NSW"] == 0
         with open(f"{Zro2_EaH_0pt009_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
-            assert contents[3] == "2 1 1\n"
+            assert contents[3] == "1 2 2\n"
 
         with open(f"{Zro2_EaH_0pt009_folder}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
@@ -556,7 +764,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets = cp.write_relaxation_files(potcar_spec=True)
         assert len(dict_sets) == len(cp)  # one per entry
         assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
-        assert len(cp.nonmetallic_entries) == 6
+        assert len(cp.nonmetallic_entries) == 7
         assert len(cp.metallic_entries) == 6
         assert len(cp.molecular_entries) == 1
         assert cp.molecular_entries[0].name == "O2"
@@ -884,7 +1092,14 @@ class CompetingPhasesTestCase(unittest.TestCase):
             chemical_potentials.CompetingPhases, "ZrO2", energy_above_hull=0.03, api_key=api_key
         )
         assert not stdout
-        assert not w
+        # only the expected ``mp-api`` notices (updated default thermo type criteria & mixing scheme energy
+        # scale reconstruction) and the ``doped`` many-polymorphs info warning (7 ZrO2 entries on the mixed
+        # hull within EaH = 0.03 eV/atom) are emitted:
+        assert all(
+            issubclass(warning.category, MPRestWarning)
+            or "have more than 5 entries to consider" in str(warning.message)
+            for warning in w
+        )
 
         # SOC auto-detection prints info message (ZrO2 has Zr Z=40 >= 31)
         _result, stdout, w = _run_func_and_capture_stdout_warnings(cp.get_singlepoint_sets)
@@ -975,10 +1190,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
             (self.cu2sise4, "Cu2SiSe4_P1_EaH_0"),
         ]:
             with warnings.catch_warnings(record=True) as w:
+                _ignore_pmg_warnings()  # re-apply ``doped`` noise filters, reset by ``catch_warnings``
                 cp = chemical_potentials.CompetingPhases(
                     struct.composition.reduced_formula, api_key=api_key
                 )
             with warnings.catch_warnings(record=True) as w2:  # ensure duplicate warnings not ignored
+                _ignore_pmg_warnings()
                 cp_struct_input = chemical_potentials.CompetingPhases(struct, api_key=api_key)
 
             _check_structure_input(cp, cp_struct_input, struct, name, w + w2, api_key)
@@ -989,28 +1206,70 @@ class CompetingPhasesTestCase(unittest.TestCase):
         ``get_entries_in_chemsys`` / ``get_entries`` helpers (and onto the
         underlying ``MPRester`` query).
 
-        Here we use ``additional_criteria={"thermo_types": ["R2SCAN"]}`` to
-        restrict the MP query to R2SCAN thermo entries, and verify that the
-        resulting entries differ from the default (GGA/GGA+U/R2SCAN) query.
+        Here we use ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}``
+        to restrict the MP query to GGA/GGA+U thermo entries, and verify that
+        the resulting entries differ from the default (GGA/GGA+U/R2SCAN) query.
         """
         cp_default = chemical_potentials.CompetingPhases(  # GGA/GGA+U/R2SCAN
             "ZrO2", energy_above_hull=0.03, api_key=api_key
         )
-        cp_r2scan = chemical_potentials.CompetingPhases(
+        cp_gga = chemical_potentials.CompetingPhases(
             "ZrO2",
             energy_above_hull=0.03,
             api_key=api_key,
-            additional_criteria={"thermo_types": ["R2SCAN"]},  # R2SCAN only
+            additional_criteria={"thermo_types": ["GGA_GGA+U"]},  # GGA/GGA+U only
         )
-        assert cp_r2scan._get_entries_kwargs == {"additional_criteria": {"thermo_types": ["R2SCAN"]}}
-        # R2SCAN energies differ from default GGA(+U), so entries should differ:
-        assert len(cp_default) == 13
-        assert len(cp_r2scan) == 14  # different number of entries within EaH tolerance
+        assert cp_gga._get_entries_kwargs == {"additional_criteria": {"thermo_types": ["GGA_GGA+U"]}}
+        assert len(cp_default) == 14
+        assert len(cp_gga) == 13  # different set of ZrO2 polymorphs within 0.03 eV/atom of the GGA hull
 
-        for entry in cp_default.entries:
-            assert entry.energy_per_atom not in [
-                r2scan_ent.energy_per_atom for r2scan_ent in cp_r2scan.entries
+        def _stable_ids(cp, name):
+            return [
+                str(e.entry_id) for e in cp.entries if e.name == name and e.data["energy_above_hull"] == 0
             ]
+
+        for cp in (cp_default, cp_gga):  # same stable phases on both hulls (Zr4O doesn't border ZrO2):
+            stable = [entry.name for entry in cp.entries if entry.data["energy_above_hull"] == 0]
+            assert sorted(stable) == ["O2", "Zr", "Zr3O", "ZrO2"]
+        # but different stable Zr3O polymorphs (and GGA vs r2SCAN entries) on the two hulls:
+        assert _stable_ids(cp_default, "Zr3O") == ["mp-14024-r2SCAN"]
+        assert _stable_ids(cp_gga, "Zr3O") == ["mp-561418-GGA"]
+
+        # all GGA-query entries come from GGA/GGA+U thermo docs, while the (fully r2SCAN-covered) Zr-O
+        # mixed hull is served with r2SCAN-anchored entries -- so the entry sources clearly differ,
+        # confirming the criteria passthrough:
+        assert all(
+            str(entry.entry_id).lower().endswith(("gga", "gga+u"))
+            for entry in cp_gga.entries
+            if not entry.data.get("molecule")
+        )
+        assert all(
+            str(entry.entry_id).lower().endswith("r2scan")
+            for entry in cp_default.entries
+            if not entry.data.get("molecule")
+        )
+
+    def test_init_additional_criteria_filtering(self):
+        """
+        Under the (default) mixed thermo type, ``additional_criteria`` beyond
+        ``thermo_types`` are applied by ``mp-api`` (>= 0.46.6) as a post-hoc
+        (MP-side) filter on the common-energy-scale chemical system entries.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            entries = chemical_potentials.get_entries_in_chemsys(
+                "Zr-O", api_key=api_key, additional_criteria={"is_stable": True}
+            )
+        assert not [warning for warning in w if not issubclass(warning.category, MPRestWarning)]
+        assert sorted(entry.name for entry in entries) == ["O2", "Zr", "Zr3O", "Zr4O", "ZrO2"]
+        assert all(entry.data["energy_above_hull"] == 0 for entry in entries)  # on the served Zr-O hull
+
+        cp = chemical_potentials.CompetingPhases(
+            "ZrO2", api_key=api_key, additional_criteria={"is_stable": True}
+        )
+        assert cp._get_entries_kwargs == {
+            "additional_criteria": {"thermo_types": ["GGA_GGA+U_R2SCAN"], "is_stable": True}
+        }
+        assert {entry.name for entry in cp.entries} == {"O2", "Zr", "Zr3O", "Zr4O", "ZrO2"}  # hull only
 
     def test_single_extrinsic_phase_limits_default(self):
         """
@@ -1065,8 +1324,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             "ZrO2", MP_doc_dicts=True, energy_above_hull=0.03, api_key=api_key
         )
         assert cp.MP_doc_dicts
-        assert len(cp.MP_doc_dicts) == 12  # just missing O2
-        assert len(cp.entries) == 13
+        assert len(cp.MP_doc_dicts) == 13  # just missing O2
+        assert len(cp.entries) == 14
         assert set(cp.MP_doc_dicts.keys()) == {
             entry.data["material_id"] for entry in cp.entries if not entry.data["molecule"]
         }
@@ -1077,7 +1336,14 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
 def _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrinsic=False):
     _print_warning_info(w)  # for debugging
-    user_warnings = [warning for warning in w if warning.category is UserWarning]
+    user_warnings = [
+        warning
+        for warning in w
+        if warning.category is UserWarning
+        # expected informational warning for polymorph-rich systems (e.g. Na2FePO4F: many Na / FePO4 /
+        # Fe3O4 polymorphs); tested separately in ``test_many_polymorphs_warning_Sb2S3``:
+        and "have more than 5 entries to consider" not in str(warning.message)
+    ]
     if "Cu2SiSe4" in name:
         assert len(user_warnings) == 2
         assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4" in str(
@@ -1111,6 +1377,35 @@ def _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrin
     )
 
 
+class PruneToExpectedPolymorphsTestCase(unittest.TestCase):
+    """
+    Offline test for ``prune_to_expected_polymorphs`` (live
+    ``expected_polymorphs=True`` behaviour is covered in
+    ``CompetingPhasesTestCase``).
+    """
+
+    def test_prune_to_expected_polymorphs(self):
+        def entry(formula, mpid, eah=None):
+            data = {"material_id": mpid} | ({} if eah is None else {"energy_above_hull": eah})
+            return ComputedEntry(Composition(formula), 0.0, data=data)
+
+        entries = [
+            entry("Ti2O4", "mp-390", 0.0),  # listed (yaml "TiO2" matched via reduced composition) + lowest
+            entry("Ti2O4", "mp-2657", 0.04),  # listed
+            entry("TiO2", "mp-1840", 0.003),  # listed
+            entry("TiO2", "mp-99999", 0.02),  # unlisted -> dropped
+            entry("S", "mp-not-listed", 0.001),  # unlisted but lowest -> kept
+            entry("S", "mp-77", 0.05),  # listed
+            entry("S", "mp-no-eah"),  # missing EaH treated as inf -> dropped
+            entry("ZrO2", "mp-2858", 0.0),  # composition not in yaml -> all kept
+            entry("ZrO2", "mp-1565", 0.05),
+        ]
+        pruned = chemical_potentials.prune_to_expected_polymorphs(entries)
+        assert sorted(e.data["material_id"] for e in pruned) == sorted(  # list (not set): no duplicates
+            ["mp-390", "mp-2657", "mp-1840", "mp-not-listed", "mp-77", "mp-2858", "mp-1565"]
+        )
+
+
 class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tearDown as above
     def setUp(self):
         CompetingPhasesTestCase.setUp(self)
@@ -1123,11 +1418,11 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
 
     def test_init(self):
         assert len(self.La_ZrO2_cp.extrinsic_entries) == 3
-        assert len(self.La_ZrO2_cp.entries) == 21
+        assert len(self.La_ZrO2_cp.entries) == 20
         assert self.La_ZrO2_cp.extrinsic_entries[2].name == "La"  # definite ordering, same 1,2 as before
         assert all(entry.data["energy_above_hull"] == 0 for entry in self.La_ZrO2_cp.extrinsic_entries[:2])
         assert all(entry.data["energy_above_hull"] != 0 for entry in self.La_ZrO2_cp.extrinsic_entries[2:])
-        assert len(self.La_ZrO2_cp.intrinsic_entries) == 18
+        assert len(self.La_ZrO2_cp.intrinsic_entries) == 17
 
         ex_cp = chemical_potentials.CompetingPhases(
             "ZrO2", extrinsic="La", energy_above_hull=0, api_key=api_key
@@ -1150,10 +1445,12 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             (self.cu2sise4, "Cu2SiSe4_P1_EaH_0"),
         ]:
             with warnings.catch_warnings(record=True) as w:
+                _ignore_pmg_warnings()  # re-apply ``doped`` noise filters, reset by ``catch_warnings``
                 cp = chemical_potentials.CompetingPhases(
                     struct.composition.reduced_formula, api_key=api_key, extrinsic={"K"}
                 )
             with warnings.catch_warnings(record=True) as w2:  # ensure duplicate warnings not ignored
+                _ignore_pmg_warnings()
                 cp_struct_input = chemical_potentials.CompetingPhases(
                     struct, api_key=api_key, extrinsic={"K"}
                 )
@@ -1165,6 +1462,64 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
                 for extrinsic_entry in entries_list:
                     assert "K" in extrinsic_entry.data["doped_name"]
                     assert "K" in extrinsic_entry.name
+
+    def test_ZnSe_Cu_single_extrinsic_phase_limits_distinctions(self):
+        """
+        Verify the ``single_extrinsic_phase_limits`` behaviour distinctions at
+        both the ``CompetingPhases`` generation and ``CompetingPhasesAnalyzer``
+        parsing stages, for a host with many extrinsic-compound bordering
+        phases -- ZnSe + Cu: ``CuSe``, ``CuSe2``, ``Cu3Se2`` and several Zn-Cu
+        intermetallics all border ZnSe on the mixed GGA/GGA+U/r2SCAN hull.
+
+        (Complements the ``test_CuSe2_Ge_extrinsic_chempot_heatmap...`` tests,
+        with a richer extrinsic bordering-phase set.)
+        """
+        cp = chemical_potentials.CompetingPhases(
+            "ZnSe", energy_above_hull=0.03, extrinsic="Cu", api_key=api_key
+        )
+        cp_single = chemical_potentials.CompetingPhases(
+            "ZnSe",
+            energy_above_hull=0.03,
+            extrinsic="Cu",
+            api_key=api_key,
+            single_extrinsic_phase_limits=True,
+        )
+        assert len(cp_single.entries) < len(cp.entries)  # extrinsic candidate phases pruned
+
+        # default entries, default parsing: full set of extrinsic limits (including limits with two
+        # extrinsic-containing bordering phases, e.g. CuSe-Cu3Se2-ZnSe):
+        cpa = chemical_potentials.CompetingPhasesAnalyzer("ZnSe", cp.entries)
+        assert len(cpa.chempots_df) == 9
+        assert "CuSe-Cu3Se2-ZnSe" in cpa.chempots_df.index
+
+        # ``single_extrinsic_phase_limits=True`` at parsing (with either entry set): only limits where the
+        # host borders at most one extrinsic-containing phase:
+        for entries in (cp.entries, cp_single.entries):
+            cpa_single = chemical_potentials.CompetingPhasesAnalyzer(
+                "ZnSe", entries, single_extrinsic_phase_limits=True
+            )
+            assert len(cpa_single.chempots_df) == 2
+            assert set(cpa_single.chempots_df.index) == {"ZnSe-Zn-Zn3Cu", "ZnSe2-ZnSe-CuSe2"}
+
+        # pruned (single-extrinsic-limit candidate) entries but default parsing: intermediate case, with
+        # limits at the `intersections` of the retained extrinsic phases (e.g. CuSe2-Cu-ZnSe, not a limit
+        # of the full phase diagram above):
+        cpa_single_cp = chemical_potentials.CompetingPhasesAnalyzer("ZnSe", cp_single.entries)
+        assert len(cpa_single_cp.chempots_df) == 4
+        assert "CuSe2-Cu-ZnSe" in cpa_single_cp.chempots_df.index
+
+    def test_codoping_unknown_host(self):
+        """
+        ``codoping=True`` with a host composition not on the MP database: the
+        (placeholder) host entry must still be included in the entries and the
+        intrinsic/extrinsic classification (previously crashed on the final
+        classification consistency check).
+        """
+        cp = chemical_potentials.CompetingPhases(
+            "Cu2SiSe4", energy_above_hull=0.03, extrinsic=["K", "Na"], codoping=True, api_key=api_key
+        )
+        assert any(entry.name == "Cu2SiSe4" for entry in cp.entries)
+        assert len(cp.intrinsic_entries) + len(cp.extrinsic_entries) == len(cp.entries)
 
     def test_extrinsic_only_setup(self):
         extrinsic_folder_names = [
@@ -3482,24 +3837,115 @@ class TestSb2Si2Te6Chempots(unittest.TestCase):
 
     def test_Si_rich_limit_degeneracy(self):
         """
-        Si-rich is degenerate between ``SbTe2-SiSbTe3-Si`` and
-        ``SiSbTe3-SiTe2-Si`` (both at μ_Si = 0).
+        Si-rich is degenerate between ``SiSbTe3-Sb2Te3-Si`` and ``SiSbTe3-Si-
+        SiTe2`` (both at μ_Si = 0).
 
         The tie-break sorts the remaining bulk elements by electronegativity
         similarity to Si (χ=1.90): Sb (χ=2.05, Δ=0.15) is closer than Te
-        (χ=2.10, Δ=0.20), so Sb is considered first, and the most Sb-rich
-        tied limit (``SbTe2-SiSbTe3-Si``, μ_Sb ≈ -0.408) wins over
-        ``SiSbTe3-SiTe2-Si`` (μ_Sb ≈ -0.483).
+        (χ=2.10, Δ=0.20), so Sb is considered first, and the most Sb-rich tied
+        limit (``SiSbTe3-Sb2Te3-Si``, μ_Sb ≈ -0.398) wins over
+        ``SiSbTe3-Si-SiTe2`` (μ_Sb ≈ -0.448).
         """
         # chempots_df = pd.DataFrame.from_dict(self.chempots["limits_wrt_el_refs"], orient="index")
         # print("\nSb2Si2Te6 chempots (wrt elemental refs):")
         # print(chempots_df)  # for debugging/checking
+        limits_wrt_el_refs = self.chempots["limits_wrt_el_refs"]
+        for limit in ("SiSbTe3-Sb2Te3-Si", "SiSbTe3-Si-SiTe2"):  # both at μ_Si = 0; degenerate
+            assert np.isclose(limits_wrt_el_refs[limit]["Si"], 0, atol=1e-4)
+        assert np.isclose(limits_wrt_el_refs["SiSbTe3-Sb2Te3-Si"]["Sb"], -0.3982, atol=1e-3)
+        assert np.isclose(limits_wrt_el_refs["SiSbTe3-Si-SiTe2"]["Sb"], -0.4482, atol=1e-3)
         result, _stdout, w = _run_func_and_capture_stdout_warnings(
             chemical_potentials.get_X_rich_poor_limit, "Si-rich", self.chempots
         )
-        assert result == "SbTe2-SiSbTe3-Si"
+        assert result == "SiSbTe3-Sb2Te3-Si"
         assert len(w) == 1
         assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
+
+
+class TestChemicalPotentialGridGeometry(unittest.TestCase):
+    """
+    Synthetic higher-dimensional geometry tests without API/fixture
+    requirements.
+    """
+
+    def test_cartesian_max_points_uses_exact_mesh_size(self):
+        vertices = pd.DataFrame(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+            columns=["x", "y", "z"],
+        )
+        with warnings.catch_warnings(record=True) as caught:
+            grid_df = chemical_potentials.ChemicalPotentialGrid.from_dataframe(vertices).get_grid(
+                resolution=1 / 3.1,
+                max_points=10,
+                cartesian=True,
+                include_vertices=False,
+            )
+        assert 0 < len(grid_df) <= 10
+        assert sum("max_points" in str(warning.message) for warning in caught) == 1
+
+    def test_grid_uses_complete_affine_basis(self):
+        # rank-3 region in 5 columns: ``2u`` and ``-3u-v`` are dependent (not last), ``w`` is an
+        # independent extrinsic coordinate (last column, so must not be assumed dependent):
+        uv = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        vertices = pd.DataFrame(
+            [[u, v, 2 * u, -3 * u - v, w] for u, v in uv for w in (0.0, 1.0)],
+            columns=["u", "v", "2u", "-3u-v", "w"],
+        )
+        grid = chemical_potentials.ChemicalPotentialGrid.from_dataframe(vertices)
+        for cartesian in (False, True):
+            grid_df = grid.get_grid(n_points=20, cartesian=cartesian, decimal_places=6)
+            assert grid_df.columns.tolist() == vertices.columns.tolist()
+            assert np.ptp(grid_df["w"]) == 1
+            np.testing.assert_allclose(grid_df["2u"], 2 * grid_df["u"], atol=2e-6)
+            np.testing.assert_allclose(grid_df["-3u-v"], -3 * grid_df["u"] - grid_df["v"], atol=2e-6)
+            assert np.linalg.matrix_rank(grid_df.to_numpy(), tol=1e-4) == 3  # rank 3
+
+        # fixing a `dependent` column makes a formerly-independent one (``v``) dependent in the
+        # sub-polytope:
+        constrained = grid.get_grid(n_points=20, fixed_elements={"-3u-v": -1.5}, decimal_places=6)
+        assert np.ptp(constrained["w"]) == 1
+        centred = constrained.to_numpy() - constrained.to_numpy().mean(axis=0)
+        assert np.linalg.matrix_rank(centred, tol=1e-4) == 2  # tol above the 6-d.p. rounding noise
+        np.testing.assert_allclose(constrained["2u"], 2 * constrained["u"], atol=2e-6)
+        np.testing.assert_allclose(constrained["v"], 1.5 - 3 * constrained["u"], atol=2e-6)
+
+    def test_plane_intersection_hull_vertices(self):
+        """
+        ``_intersect_hull_with_plane`` returns only the vertices of the
+        (convex) cross-section: a unit cube cut at ``x = 0.5`` gives its 4
+        corners, not every pairwise vertex crossing (16), which otherwise
+        compound under repeated ``fixed_elements`` cuts (e.g. 67 limits ->
+        ~48,000 "vertices" for Na2FePO4F with two fixed elements, crashing the
+        heatmap triangulation).
+        """
+        cube = np.array([[x, y, z] for x in (0.0, 1.0) for y in (0.0, 1.0) for z in (0.0, 1.0)])
+        square = chemical_potentials._intersect_hull_with_plane(cube, 0, 0.5)
+        assert square.shape == (4, 3)
+        assert np.allclose(square[:, 0], 0.5)
+        assert set(map(tuple, square[:, 1:])) == {(0, 0), (0, 1), (1, 0), (1, 1)}
+        segment = chemical_potentials._intersect_hull_with_plane(square, 1, 0.5)  # second cut -> edge
+        assert set(map(tuple, segment)) == {(0.5, 0.5, 0.0), (0.5, 0.5, 1.0)}  # midpoints
+        face = chemical_potentials._intersect_hull_with_plane(cube, 0, 1 - 1e-8)  # on-plane (within tol)
+        assert set(map(tuple, face)) == {(1, 0, 0), (1, 0, 1), (1, 1, 0), (1, 1, 1)}  # vertices, once each
+        # near-coincident/collinear crossings (e.g. from rounded limits) merge to within ``tol``:
+        noisy_cube = cube + np.random.default_rng(0).uniform(-1e-6, 1e-6, cube.shape)
+        assert len(chemical_potentials._intersect_hull_with_plane(noisy_cube, 0, 0.5, tol=1e-4)) == 4
+        assert len(chemical_potentials._intersect_hull_with_plane(noisy_cube, 0, 0.5, tol=1e-9)) > 4
+        with pytest.raises(ValueError, match="does not meet the hull"):
+            chemical_potentials._intersect_hull_with_plane(cube, 0, 1.5)
+
+    def test_griddata_in_hull_absolute_tolerance(self):
+        """
+        ``_griddata_linear_in_hull`` keeps query points within ``tol``
+        (absolute) of the hull, rather than only ``find_simplex``'s barycentric
+        tolerance (which scales with simplex size, admitting points ~``tol`` x
+        simplex extent outside; vertex-order-dependently).
+        """
+        X = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
+        xi = np.array([[5.0, 5.0], [10.0 + 5e-5, 5.0], [10.0 + 5e-4, 5.0]])  # inside, within tol, outside
+        out = chemical_potentials._griddata_linear_in_hull(X, X.sum(axis=1), xi, tol=1e-4)
+        np.testing.assert_allclose(out[:, :2], xi[:2])  # (10.0005, 5) dropped; previously admitted
+        np.testing.assert_allclose(out[:, 2], out[:, :2].sum(axis=1), atol=1e-3)
 
 
 class TestChemicalPotentialGrid1D(unittest.TestCase):
