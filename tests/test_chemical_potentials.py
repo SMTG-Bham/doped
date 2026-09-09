@@ -38,7 +38,6 @@ from test_utils import (
 )
 
 from doped import chemical_potentials
-from doped.utils import _ignore_pmg_warnings
 from doped.utils.parsing import _find_calc_outputs, _get_calc_files_df
 from doped.utils.symmetry import get_primitive_structure
 
@@ -555,7 +554,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {kwargs}")
             potcar_spec = not _potcars_available()
             with warnings.catch_warnings(record=True) as w:
-                _ignore_pmg_warnings()  # re-apply ``doped`` noise filters, reset by ``catch_warnings``
                 cp = chemical_potentials.CompetingPhases(**kwargs)
                 cp.write_kpoint_convergence_files(potcar_spec=potcar_spec)
                 cp.write_relaxation_files(potcar_spec=potcar_spec)
@@ -1190,12 +1188,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
             (self.cu2sise4, "Cu2SiSe4_P1_EaH_0"),
         ]:
             with warnings.catch_warnings(record=True) as w:
-                _ignore_pmg_warnings()  # re-apply ``doped`` noise filters, reset by ``catch_warnings``
                 cp = chemical_potentials.CompetingPhases(
                     struct.composition.reduced_formula, api_key=api_key
                 )
             with warnings.catch_warnings(record=True) as w2:  # ensure duplicate warnings not ignored
-                _ignore_pmg_warnings()
                 cp_struct_input = chemical_potentials.CompetingPhases(struct, api_key=api_key)
 
             _check_structure_input(cp, cp_struct_input, struct, name, w + w2, api_key)
@@ -1445,12 +1441,10 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             (self.cu2sise4, "Cu2SiSe4_P1_EaH_0"),
         ]:
             with warnings.catch_warnings(record=True) as w:
-                _ignore_pmg_warnings()  # re-apply ``doped`` noise filters, reset by ``catch_warnings``
                 cp = chemical_potentials.CompetingPhases(
                     struct.composition.reduced_formula, api_key=api_key, extrinsic={"K"}
                 )
             with warnings.catch_warnings(record=True) as w2:  # ensure duplicate warnings not ignored
-                _ignore_pmg_warnings()
                 cp_struct_input = chemical_potentials.CompetingPhases(
                     struct, api_key=api_key, extrinsic={"K"}
                 )
@@ -1783,20 +1777,20 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         cases = [
             # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
             # default (full phase diagram) approach: no codoping entries:
-            ({}, (47, 23, 24)),
+            ({}, (51, 18, 33)),
             # single_extrinsic_phase_limits=True (PyCDT-style restriction): fewer extrinsic phases:
-            ({"single_extrinsic_phase_limits": True}, (44, 23, 21)),
+            ({"single_extrinsic_phase_limits": True}, (48, 18, 30)),
             # codoping=True: forces single_extrinsic_phase_limits=False and includes KInO2 codoping phase:
-            ({"codoping": True}, (48, 23, 25)),
+            ({"codoping": True}, (52, 18, 34)),
             # full_phase_diagram=True + single_extrinsic_phase_limits=True: all MP phases included
             # for intrinsic chemical system; single-phase restriction keeps the extrinsic system small:
-            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (58, 37, 21)),
+            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (62, 32, 30)),
             # full_phase_diagram=True (default extrinsic): extended extrinsic phase set, still
             # no codoping entries (codoping=False prunes joint K-In phases):
-            ({"full_phase_diagram": True}, (82, 37, 45)),
+            ({"full_phase_diagram": True}, (84, 32, 52)),
             # full_phase_diagram=True + codoping=True: largest case, with codoping entries
             # (e.g. ``KInO2``, ``K17In41``) and full intrinsic phase diagram:
-            ({"full_phase_diagram": True, "codoping": True}, (88, 37, 51)),
+            ({"full_phase_diagram": True, "codoping": True}, (90, 32, 58)),
         ]
         self._check_cp_to_cpa_combinations("BaSnO3", ["Ba", "Sn", "O"], ["K", "In"], cases)
 
@@ -1808,13 +1802,14 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         combinations (``codoping`` is meaningless with one extrinsic species).
         """
         cases = [
-            ({}, (41, 23, 18)),
-            ({"single_extrinsic_phase_limits": True}, (38, 23, 15)),
-            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (52, 37, 15)),
-            ({"full_phase_diagram": True}, (65, 37, 28)),
+            ({}, (40, 18, 22)),
+            ({"single_extrinsic_phase_limits": True}, (37, 18, 19)),
+            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (51, 32, 19)),
+            ({"full_phase_diagram": True}, (62, 32, 30)),
         ]
         self._check_cp_to_cpa_combinations("BaSnO3", ["Ba", "Sn", "O"], ["K"], cases)
 
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")
     def test_BaSnO3_4_extrinsic_cp_to_cpa_combinations(self):
         """
         Test ``CompetingPhases`` -> ``CompetingPhasesAnalyzer`` roundtrip for
@@ -1824,12 +1819,12 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         """
         cases = [
             # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
-            ({}, (74, 23, 51)),
-            ({"single_extrinsic_phase_limits": True}, (67, 23, 44)),
-            ({"codoping": True}, (79, 23, 56)),
-            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (81, 37, 44)),
-            ({"full_phase_diagram": True}, (145, 37, 108)),
-            ({"full_phase_diagram": True, "codoping": True}, (201, 37, 164)),
+            ({}, (77, 18, 59)),
+            ({"single_extrinsic_phase_limits": True}, (70, 18, 52)),
+            ({"codoping": True}, (82, 18, 64)),
+            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (84, 32, 52)),
+            ({"full_phase_diagram": True}, (147, 32, 115)),
+            ({"full_phase_diagram": True, "codoping": True}, (199, 32, 167)),
         ]
         self._check_cp_to_cpa_combinations("BaSnO3", ["Ba", "Sn", "O"], ["K", "In", "Na", "Mg"], cases)
 
@@ -1846,12 +1841,12 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         """
         cases = [
             # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
-            ({}, (125, 82, 43)),
-            ({"single_extrinsic_phase_limits": True}, (113, 82, 31)),
-            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (231, 200, 31)),
-            ({"full_phase_diagram": True}, (320, 200, 120)),
-            ({"codoping": True}, (133, 82, 51)),
-            ({"full_phase_diagram": True, "codoping": True}, (344, 200, 144)),
+            ({}, (139, 87, 52)),
+            ({"single_extrinsic_phase_limits": True}, (127, 87, 40)),
+            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (229, 189, 40)),
+            ({"full_phase_diagram": True}, (312, 189, 123)),
+            ({"codoping": True}, (147, 87, 60)),
+            ({"full_phase_diagram": True, "codoping": True}, (336, 189, 147)),
         ]
         self._check_cp_to_cpa_combinations("Na2FePO4F", ["Na", "Fe", "P", "O", "F"], ["K", "In"], cases)
 
@@ -3120,9 +3115,9 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             self.ZrO2_cpa.plot_chempot_heatmap()
         assert (
             "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system! You "
-            "can use ``cpd = ChemicalPotentialDiagram(cpa.entries); cpd.get_plot()`` to generate a "
-            "line plot of the chemical potentials as shown in the doped competing phases tutorial."
-            in str(exc.value)
+            "can use ``cpd = ChemicalPotentialDiagram(cpa.entries / "
+            "entries_from_chempot_limits(chempots)); cpd.get_plot()`` to generate a line plot of the "
+            "chemical potentials as shown in the doped competing phases tutorial." in str(exc.value)
         )
 
     @custom_mpl_image_compare(filename="AgSbTe2_chempot_heatmap_default.png")
@@ -3266,11 +3261,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             extrinsic=["Cs"],
         )
         cpa = chemical_potentials.CompetingPhasesAnalyzer("CdTe", cp.entries)
-        with warnings.catch_warnings(record=True) as w:
-            fig = cpa.plot_chempot_heatmap()
-        _print_warning_info(w)
-        assert not w
-        return fig
+        return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_K_fixed.png")
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap(self):
@@ -3297,16 +3288,13 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     def test_CuSe2_Ge_extrinsic_chempot_heatmap(self):
         """
         CuSe2 + Ge with the default (``single_extrinsic_phase_limits=False``
-        everywhere): gives 4 chempot limits.
+        everywhere): gives 4 chempot limits (``Cu2GeSe3`` and ``Ge4Se9`` border
+        ``CuSe2`` on the served MP mixed hull).
         """
         cpa = chemical_potentials.CompetingPhasesAnalyzer("CuSe2", self.CuSe2_Ge_cp.entries)
         assert set(cpa.chempots_df.columns) == {"Cu", "Se", "Ge"}
         assert len(cpa.chempots_df) == 4
-        with warnings.catch_warnings(record=True) as w:
-            fig = cpa.plot_chempot_heatmap()
-        _print_warning_info(w)
-        assert not w
-        return fig
+        return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic.png")
     def test_CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic(self):
@@ -3320,11 +3308,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         )
         assert set(cpa.chempots_df.columns) == {"Cu", "Se", "Ge"}
         assert len(cpa.chempots_df) == 2
-        with warnings.catch_warnings(record=True) as w:
-            fig = cpa.plot_chempot_heatmap()
-        _print_warning_info(w)
-        assert not w
-        return fig
+        return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic.png")
     def test_CuSe2_Ge_extrinsic_chempot_heatmap_cp_single(self):
@@ -3341,11 +3325,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         )
         assert set(cpa.chempots_df.columns) == {"Cu", "Se", "Ge"}
         assert len(cpa.chempots_df) == 2
-        with warnings.catch_warnings(record=True) as w:
-            fig = cpa.plot_chempot_heatmap()
-        _print_warning_info(w)
-        assert not w
-        return fig
+        return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic.png")
     def test_CuSe2_Ge_extrinsic_chempot_heatmap_cp_single_cpa_default(self):
@@ -3359,11 +3339,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         cpa = chemical_potentials.CompetingPhasesAnalyzer("CuSe2", self.CuSe2_Ge_cp_single.entries)
         assert set(cpa.chempots_df.columns) == {"Cu", "Se", "Ge"}
         assert len(cpa.chempots_df) == 3
-        with warnings.catch_warnings(record=True) as w:
-            fig = cpa.plot_chempot_heatmap()
-        _print_warning_info(w)
-        assert not w
-        return fig
+        return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_default.png")
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap_default(self):
@@ -3374,20 +3350,18 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         cpa = chemical_potentials.CompetingPhasesAnalyzer("BaSnO3", self.BaSnO3_K_In_cp.entries)
         assert set(cpa.chempots_df.columns) == {"Ba", "Sn", "O", "K", "In"}
         assert len(cpa.chempots_df) == 18
-        with warnings.catch_warnings(record=True) as w:
-            fig = cpa.plot_chempot_heatmap(fixed_elements={"In": -1})
-        _print_warning_info(w)
-        assert not w
-        return fig
+        return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"In": -1})
 
-    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_default.png")
+    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_cpa_single.png")
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap_cpa_single(self):
         """
         BaSnO3 + K, In with default ``CompetingPhases`` (no codoping) and
         ``single_extrinsic_phase_limits=True`` at ``CompetingPhasesAnalyzer``.
 
         ``μ_host`` pinned at intrinsic limits, with only single-extrinsic-phase
-        facets retained — gives fewer limits than the default-mode case.
+        facets retained — gives fewer limits than the default-mode case (and,
+        on the mixed-hull data, a slightly different plotted region to the
+        default-mode case, so a separate baseline is used).
         """
         cpa = chemical_potentials.CompetingPhasesAnalyzer(
             "BaSnO3", self.BaSnO3_K_In_cp.entries, single_extrinsic_phase_limits=True
@@ -3396,11 +3370,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         # single-phase parsing prunes joint-extrinsic facets, so fewer than the 18 default-mode limits:
         assert 1 <= len(cpa.chempots_df) < 18
         assert len(cpa.chempots_df) == 7
-        with warnings.catch_warnings(record=True) as w:
-            fig = cpa.plot_chempot_heatmap(fixed_elements={"In": -1})
-        _print_warning_info(w)
-        assert not w
-        return fig
+        return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"In": -1})
 
     @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_codoping.png")
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap_codoping(self):
@@ -3415,20 +3385,16 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         assert len(cpa.chempots_df) == 25
         # codoping-specific limits (those including ``KInO2``) only appear with codoping=True:
         assert any("KInO2" in limit for limit in cpa.chempots_df.index)
-        with warnings.catch_warnings(record=True) as w:
-            fig = cpa.plot_chempot_heatmap(fixed_elements={"In": -1})
-        _print_warning_info(w)
-        assert not w
-        return fig
+        return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"In": -1})
 
-    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_default.png")
+    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_cpa_single.png")
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap_codoping_cpa_single(self):
         """
         BaSnO3 + K, In with ``codoping=True`` at ``CompetingPhases`` and
         ``single_extrinsic_phase_limits=True`` at ``CompetingPhasesAnalyzer``.
 
         The single-phase parser prunes the joint K-In phases that codoping
-        added, so this gives the same results as
+        added, so this gives the same results (and plot/baseline) as
         ``single_extrinsic_phase_limits=True`` with no co-doping.
         """
         cpa = chemical_potentials.CompetingPhasesAnalyzer(
@@ -3440,11 +3406,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         # codoping-only facets should be pruned by single-phase parsing:
         assert not any("KInO2" in limit for limit in cpa.chempots_df.index)
         assert len(cpa.chempots_df) == 7
-        with warnings.catch_warnings(record=True) as w:
-            fig = cpa.plot_chempot_heatmap(fixed_elements={"In": -1})
-        _print_warning_info(w)
-        assert not w
-        return fig
+        return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"In": -1})
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_heatmap.png")
     def test_5D_fixed_elements_heatmap(self):

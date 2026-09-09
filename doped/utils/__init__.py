@@ -101,12 +101,6 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
     warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 
-    # Ignore because comment after 'ALGO = Normal' causes this unnecessary warning:
-    warnings.filterwarnings("ignore", message="Hybrid functionals only support")
-
-    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
-    warnings.filterwarnings("ignore", message="Use of properties is now deprecated")
-
     # avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
     # otherwise) for the bulk):
     warnings.filterwarnings("ignore", message="Not all sites have property")
@@ -121,7 +115,7 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", message="Failed to guess oxidation states")  # MP2020 corrections
 
     # ignore deprecation warning due to old mixing scheme import in served Materials Project entries:
-    # (may be removable in future)
+    # (to be removed in v2027.1)
     warnings.filterwarnings("ignore", message="MaterialsProjectDFTMixingScheme has been moved")
 
 

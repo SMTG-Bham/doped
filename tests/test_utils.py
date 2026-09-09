@@ -63,10 +63,7 @@ def plot_chempot_heatmap_and_test_no_warnings(cpa_or_defect_thermo, **kwargs):
     Plot chemical potential heatmap from a |CompetingPhasesAnalyzer| or
     |DefectThermodynamics| object and assert no warnings are raised.
     """
-    from doped.utils import _ignore_pmg_warnings
-
     with warnings.catch_warnings(record=True) as w:
-        _ignore_pmg_warnings()  # only catch unexpected warnings here
         plot = cpa_or_defect_thermo.plot_chempot_heatmap(**kwargs)
     _print_warning_info(w)
     assert not w
@@ -85,16 +82,11 @@ def if_present_rm(path):
 
 
 def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
-    from doped.utils import _ignore_pmg_warnings
-
     original_stdout = sys.stdout  # Save a reference to the original standard output
     sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
     w = None
     try:
         with warnings.catch_warnings(record=True) as w:
-            # Re-apply ``doped`` noise-suppressing warning filters, since ``pytest`` and
-            # ``catch_warnings`` can reset the filters in ``warnings.catch_warnings(record=True)``:
-            _ignore_pmg_warnings()
             result = func(*args, **kwargs)
         output = sys.stdout.getvalue()  # Return a str containing the printed output
     finally:
