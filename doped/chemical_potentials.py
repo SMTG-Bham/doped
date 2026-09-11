@@ -50,12 +50,12 @@ from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get
 from doped.utils._optimise import _independent_columns
 from doped.utils.efficiency import StructureMatcher_scan_stol
 from doped.utils.parsing import (
-    _compare_incar_tags,
-    _compare_potcar_symbols,
     _find_calc_outputs,
     _format_mismatching_incar_warning,
     _get_output_files_and_check_if_multiple,
     _multiple_files_warning,
+    compare_incar_tags,
+    compare_potcar_symbols,
     get_magnetization_from_vasprun,
     get_vasprun,
 )
@@ -3733,7 +3733,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 for entry in entries:
                     if not entry.data.get("incar"):
                         continue  # e.g. MP entries mixed with parsed calculations; nothing to compare
-                    incar_mismatches = _compare_incar_tags(
+                    incar_mismatches = compare_incar_tags(
                         entry.data["incar"],
                         incar_template_entry.data["incar"],
                         ignore_tags={"NKRED"},  # no NKRED mismatch warnings for competing phases
@@ -3741,8 +3741,6 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                     )  # warned collectively below if any mismatches
                     # ignore ISIF warnings in cases of supercell calculations (i.e. either gas calculations
                     # or bulk supercell -- assumed to be the correct volume):
-                    if isinstance(incar_mismatches, bool):  # ``True``; no mismatches -> empty list
-                        incar_mismatches = []
                     entry.data["mismatching_INCAR_tags"] = [
                         i
                         for i in incar_mismatches
@@ -3752,7 +3750,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
 
                 mismatching_INCAR_warnings = sorted(
                     [
-                        (entry.name, set(entry.data.get("mismatching_INCAR_tags")))
+                        (entry.name, tuple(entry.data.get("mismatching_INCAR_tags")))
                         for entry in entries
                         if entry.data.get("mismatching_INCAR_tags")
                     ],
@@ -3776,15 +3774,13 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 for entry in entries:
                     if not entry.data.get("potcar_symbols"):
                         continue
-                    potcar_mismatches = _compare_potcar_symbols(
+                    potcar_mismatches = compare_potcar_symbols(
                         entry.data["potcar_symbols"],
                         potcar_template_entry.data["potcar_symbols"],
                         warn=False,
                         only_matching_elements=True,
                     )  # warned collectively below if any mismatches
-                    entry.data["mismatching_POTCAR_symbols"] = (
-                        potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
-                    )
+                    entry.data["mismatching_POTCAR_symbols"] = potcar_mismatches or False
 
                 mismatching_potcars_warnings = sorted(
                     [

@@ -2778,7 +2778,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "There are mismatching INCAR tags",
             "['O2']:",
             "Where ZrO2 was used as the reference entry calculation.",
-            "[('HFSCREEN', 0.20786986, 0.2), ('LREAL', 'Auto      ! projection operators: autom', False)]",
+            "[('LREAL', 'Auto      ! projection operators: autom', False), ('HFSCREEN', 0.20786986, 0.2)]",
         ]
         assert all(any(i in str(warning.message) for warning in w) for i in expected_mismatching_info)
         self._general_cpa_check(cpa)
@@ -2895,8 +2895,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "Found the following differences:\n"
             "(in the format: 'Entries: (INCAR tag, value in entry calculation, value in reference "
             "calculation))':\n",
-            "['Ag', 'AgBr', 'Bi', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3', 'Sn']:\n[('ADDGRID', "
-            "True, False), ('HFSCREEN', 0.2, 0.207), ('LASPH', True, False)]",
+            "['Ag', 'AgBr', 'Bi', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3', 'Sn']:\n[('HFSCREEN', "
+            "0.2, 0.207), ('ADDGRID', True, False), ('LASPH', True, False)]",
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
             "In general, the same INCAR settings should be used in all final calculations for these tags "
             "which can affect energies!",

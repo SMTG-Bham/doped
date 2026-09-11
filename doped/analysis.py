@@ -41,9 +41,6 @@ from doped.utils import (
 from doped.utils.efficiency import StructureMatcher_scan_stol, _parse_site_species_str
 from doped.utils.parsing import (
     _CALC_OUTPUT_MASK,
-    _compare_incar_tags,
-    _compare_kpoints,
-    _compare_potcar_symbols,
     _create_unrelaxed_defect_structure,
     _determine_subfolder,
     _find_calc_outputs,
@@ -56,6 +53,9 @@ from doped.utils.parsing import (
     _guess_initial_defect_structure,
     _multiple_files_warning,
     _vasp_file_parsing_action_dict,
+    compare_incar_tags,
+    compare_kpoints,
+    compare_potcar_symbols,
     get_core_potentials_from_outcar,
     get_defect_type_and_site_indices,
     get_dimer_bonds,
@@ -1802,7 +1802,7 @@ def _warn_calculation_mismatches(defect_dict: dict[str, DefectEntry]) -> None:
     # and message format function:
     mismatch_dict: dict[str, dict] = {
         "mismatching_INCAR_tags": {
-            "transform": set,
+            "transform": tuple,
             "message": lambda lst: (
                 "'Defects: (INCAR tag, value in defect calculation, value in bulk calculation))':\n"
                 f"{_format_mismatching_incar_warning(lst)}\n"
@@ -2825,29 +2825,23 @@ class DefectParser:
             "bulk_vasprun_dict": _get_vr_dict_without_proj_eigenvalues(self.bulk_vr),
         }
 
-        incar_mismatches = _compare_incar_tags(
+        incar_mismatches = compare_incar_tags(
             run_metadata["defect_incar"],
             run_metadata["bulk_incar"],
         )
-        self.defect_entry.calculation_metadata["mismatching_INCAR_tags"] = (
-            incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
-        )
-        potcar_mismatches = _compare_potcar_symbols(
+        self.defect_entry.calculation_metadata["mismatching_INCAR_tags"] = incar_mismatches or False
+        potcar_mismatches = compare_potcar_symbols(
             run_metadata["defect_potcar_symbols"],
             run_metadata["bulk_potcar_symbols"],
         )
-        self.defect_entry.calculation_metadata["mismatching_POTCAR_symbols"] = (
-            potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
+        self.defect_entry.calculation_metadata["mismatching_POTCAR_symbols"] = potcar_mismatches or False
+        kpoint_mismatches = compare_kpoints(
+            actual_kpoints_1=run_metadata["defect_actual_kpoints"],
+            actual_kpoints_2=run_metadata["bulk_actual_kpoints"],
+            kpoints_1=run_metadata["defect_kpoints"],
+            kpoints_2=run_metadata["bulk_kpoints"],
         )
-        kpoint_mismatches = _compare_kpoints(
-            run_metadata["defect_actual_kpoints"],
-            run_metadata["bulk_actual_kpoints"],
-            run_metadata["defect_kpoints"],
-            run_metadata["bulk_kpoints"],
-        )
-        self.defect_entry.calculation_metadata["mismatching_KPOINTS"] = (
-            kpoint_mismatches if not (isinstance(kpoint_mismatches, bool)) else False
-        )
+        self.defect_entry.calculation_metadata["mismatching_KPOINTS"] = kpoint_mismatches or False
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
 
         # check if the bulk and defect supercells are the same size:

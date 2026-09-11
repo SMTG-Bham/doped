@@ -778,7 +778,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -918,7 +918,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -977,7 +977,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1020,7 +1020,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1102,7 +1102,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1163,7 +1163,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1217,7 +1217,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1279,7 +1279,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1333,7 +1333,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1434,7 +1434,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1554,7 +1554,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1681,7 +1681,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1813,7 +1813,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -1980,7 +1980,7 @@ class DefectRelaxSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**
@@ -2543,7 +2543,7 @@ class DefectsSet(MSONable):
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
         settings, and ``PotcarSet.yaml`` for the default ``POTCAR`` settings.
-        **These are reasonable defaults that `roughly` match the typical values
+        **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
         and NCORE / KPAR matching your HPC setup.**

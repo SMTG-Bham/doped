@@ -17,6 +17,7 @@ import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.electronic_structure.dos import FermiDos
+from pymatgen.io.vasp.inputs import Kpoints
 from test_utils import (
     EXAMPLE_DIR,
     _print_warning_info,
@@ -43,6 +44,9 @@ from doped.utils.parsing import (
     _create_unrelaxed_defect_structure,
     _num_electrons_from_charge_state,
     _simple_spin_degeneracy_from_num_electrons,
+    compare_incar_tags,
+    compare_kpoints,
+    compare_potcar_symbols,
     get_defect_type_and_composition_diff,
     get_defect_type_and_site_indices,
     get_magnetization_from_vasprun,
@@ -3421,7 +3425,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 i in str(w[-1].message)
                 for i in [
                     "There are mismatching INCAR tags for your defect and bulk calculations",
-                    "[('ADDGRID', False, True), ('ENCUT', 500.0, 450.0)]",
+                    "[('ENCUT', 500.0, 450.0), ('ADDGRID', False, True)]",
                 ]
             )
 
@@ -3513,6 +3517,66 @@ class DefectsParsingTestCase(unittest.TestCase):
                 "The defect and bulk supercells are not the same size, having volumes of 513790.5 and "
                 "2241.3 Å^3 respectively." in str(warning.message)
                 for warning in w
+            )
+
+    def test_calculation_comparison_functions(self):
+        """
+        Test the public ``compare_incar_tags``, ``compare_kpoints`` and
+        ``compare_potcar_symbols`` functions in ``doped.utils.parsing``.
+        """
+        # ``compare_incar_tags`` compares in both directions, taking the VASP default for missing tags:
+        assert compare_incar_tags({"ENCUT": 500, "LHFCALC": True}, {"ENCUT": 500}, warn=False) == [
+            ("LHFCALC", True, False)
+        ]
+        assert compare_incar_tags({"ENCUT": 500}, {"ENCUT": 500, "LHFCALC": True}, warn=False) == [
+            ("LHFCALC", False, True)
+        ]
+        # and is order-independent for mixed string/numeric values:
+        assert compare_incar_tags({"ENCUT": "500"}, {"ENCUT": 500}) == []
+        assert compare_incar_tags({"ENCUT": 500}, {"ENCUT": "500"}) == []
+        # trailing ``INCAR`` comments (which ``VASP`` writes into the ``vasprun.xml`` value) are ignored:
+        assert compare_incar_tags({"PREC": "Accurate  ! precision level"}, {"PREC": "Accurate"}) == []
+        # ``VASP`` leading-character abbreviations are resolved where unambiguous:
+        assert compare_incar_tags({"PREC": "A"}, {"PREC": "Accurate"}) == []
+        assert compare_incar_tags({"LREAL": "A"}, {"LREAL": "Auto"}) == []
+        assert compare_incar_tags({"PRECFOCK": "N"}, {"PRECFOCK": "Normal"}) == []
+        # but not for tags where this would be ambiguous (e.g. ``GGA``: ``LI``/``LIBXC``):
+        assert compare_incar_tags({"GGA": "LI"}, {"GGA": "LIBXC"}, warn=False) == [("GGA", "LI", "LIBXC")]
+
+        # ``compare_kpoints`` is insensitive to k-point ordering within each list, and to arg order:
+        kpts = [[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]]
+        diff_kpts = [[0.0, 0.0, 0.0], [0.25, 0.25, 0.25]]
+        assert compare_kpoints(kpts, kpts[::-1]) == []
+        assert compare_kpoints(kpts, diff_kpts, warn=False)
+        assert compare_kpoints(diff_kpts, kpts, warn=False)
+        # matching input ``KPOINTS`` objects are taken to match, even if the k-point lists differ
+        # (e.g. due to different ``ISYM``):
+        gamma_2x2x2 = Kpoints.gamma_automatic((2, 2, 2))
+        assert compare_kpoints(kpts, diff_kpts, kpoints_1=gamma_2x2x2, kpoints_2=gamma_2x2x2) == []
+
+        # ``compare_potcar_symbols`` is one-way; extra elements in the superset are not flagged...
+        # (e.g. extrinsic species in defect supercells):
+        bulk_symbols = [{"titel": "PAW_PBE Zn 06Sep2000"}, {"titel": "PAW_PBE S 08Apr2002"}]
+        defect_symbols = [*bulk_symbols, {"titel": "PAW_PBE Al 08Apr2002"}]
+        assert compare_potcar_symbols(defect_symbols, bulk_symbols) == []
+        assert compare_potcar_symbols(bulk_symbols, defect_symbols, warn=False) == [
+            bulk_symbols,
+            defect_symbols,
+        ]
+        # ...unless ``symbols_1_is_superset = False``, when the check is performed in both directions:
+        assert compare_potcar_symbols(
+            defect_symbols, bulk_symbols, warn=False, symbols_1_is_superset=False
+        ) == [defect_symbols, bulk_symbols]  # returned lists still in (1, 2) order
+        # which makes no difference with ``only_matching_elements`` (unshared elements skipped anyway):
+        for symbols_1_is_superset in [True, False]:
+            assert (
+                compare_potcar_symbols(
+                    defect_symbols,
+                    bulk_symbols,
+                    only_matching_elements=True,
+                    symbols_1_is_superset=symbols_1_is_superset,
+                )
+                == []
             )
 
     def test_checking_defect_bulk_cell_definitions(self):

@@ -49,10 +49,10 @@ from doped.utils._optimise import (
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
 from doped.utils.parsing import (
-    _compare_incar_tags,
-    _compare_kpoints,
-    _compare_potcar_symbols,
     _get_bulk_supercell,
+    compare_incar_tags,
+    compare_kpoints,
+    compare_potcar_symbols,
     get_nelect_from_vasprun,
     get_vasprun,
 )
@@ -1602,34 +1602,34 @@ class DefectThermodynamics(MSONable):
             with warnings.catch_warnings(record=True) as captured_warnings:
                 run_metadata = defect_entry.calculation_metadata["run_metadata"]
                 # compare defect and bulk:
-                _compare_incar_tags(run_metadata["defect_incar"], run_metadata["bulk_incar"])
-                _compare_potcar_symbols(
+                compare_incar_tags(run_metadata["defect_incar"], run_metadata["bulk_incar"])
+                compare_potcar_symbols(
                     run_metadata["defect_potcar_symbols"], run_metadata["bulk_potcar_symbols"]
                 )
-                _compare_kpoints(
-                    run_metadata["defect_actual_kpoints"],
-                    run_metadata["bulk_actual_kpoints"],
-                    run_metadata["defect_kpoints"],
-                    run_metadata["bulk_kpoints"],
+                compare_kpoints(
+                    actual_kpoints_1=run_metadata["defect_actual_kpoints"],
+                    actual_kpoints_2=run_metadata["bulk_actual_kpoints"],
+                    kpoints_1=run_metadata["defect_kpoints"],
+                    kpoints_2=run_metadata["bulk_kpoints"],
                 )
 
                 # compare bulk and reference bulk:
-                _compare_incar_tags(
+                compare_incar_tags(
                     run_metadata["bulk_incar"],
                     reference_run_metadata["bulk_incar"],
-                    defect_name=f"other bulk (for {reference_defect_entry.name})",
+                    name_1=f"other bulk (for {reference_defect_entry.name})",
                 )
-                _compare_potcar_symbols(
+                compare_potcar_symbols(
                     run_metadata["bulk_potcar_symbols"],
                     reference_run_metadata["bulk_potcar_symbols"],
-                    defect_name=f"other bulk (for {reference_defect_entry.name})",
+                    name_1=f"other bulk (for {reference_defect_entry.name})",
                 )
-                _compare_kpoints(
-                    run_metadata["defect_actual_kpoints"],
-                    reference_run_metadata["bulk_actual_kpoints"],
-                    run_metadata["defect_kpoints"],
-                    reference_run_metadata["bulk_kpoints"],
-                    defect_name=f"other bulk (for {reference_defect_entry.name})",
+                compare_kpoints(
+                    actual_kpoints_1=run_metadata["bulk_actual_kpoints"],
+                    actual_kpoints_2=reference_run_metadata["bulk_actual_kpoints"],
+                    kpoints_1=run_metadata["bulk_kpoints"],
+                    kpoints_2=reference_run_metadata["bulk_kpoints"],
+                    name_1=f"other bulk (for {reference_defect_entry.name})",
                 )
 
             if captured_warnings:
