@@ -617,7 +617,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             kpt_dir = os.path.dirname(kpt_incars[0])
             with open(kpt_incars[0], encoding="utf-8") as f:
                 incar_k_lines = f.readlines()
-            assert any(line == "GGA = Ps\n" for line in incar_k_lines)
+            assert not any(line.startswith("GGA") for line in incar_k_lines)  # VASP default (PBE)
             assert any(line == "NSW = 0\n" for line in incar_k_lines)
             assert any(line == "ISMEAR = 0\n" for line in incar_k_lines)
             _check_potcar(kpt_dir)
@@ -690,7 +690,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         no_write_dict_set = dict_sets_no_write[no_write_key]
         assert no_write_dict_set.kpoints.kpts[0] == (1, 2, 2)
         assert no_write_dict_set.potcar_symbols[0] == "Zr_sv"
-        assert no_write_dict_set.incar["GGA"] == "Ps"
+        assert "GGA" not in no_write_dict_set.incar  # VASP default (PBE) used
         assert no_write_dict_set.incar["NSW"] == 0
 
         dict_sets = cp.write_kpoint_convergence_files(potcar_spec=True)
@@ -709,7 +709,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_set = dict_sets["CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2"]
         assert dict_set.kpoints.kpts[0] == (1, 2, 2)
         assert dict_set.potcar_symbols[0] == "Zr_sv"
-        assert dict_set.incar["GGA"] == "Ps"
+        assert "GGA" not in dict_set.incar  # VASP default (PBE) used
         assert dict_set.incar["NSW"] == 0
         with open(f"{Zro2_EaH_0pt009_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
@@ -721,7 +721,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         with open(f"{Zro2_EaH_0pt009_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
-            assert any(line == "GGA = Ps\n" for line in contents)
+            assert not any(line.startswith("GGA") for line in contents)  # VASP default (PBE)
             assert any(line == "NSW = 0\n" for line in contents)
 
         # existing folders should warn and be overwritten with new settings (one ``UserWarning`` per

@@ -38,20 +38,19 @@ loaded as :data:`~doped.vasp.default_defect_set` (and merged in :data:`~doped.va
 ``SinglePointSet.yaml``
 -------------------------------------------------
 ``INCAR`` setting overrides for single-point (static) calculations, applied on top of the relaxation
-settings; loaded as :data:`~doped.vasp.singlepoint_incar_settings`. ``null`` values remove that tag
-from the ``INCAR``.
+settings; loaded as :data:`~doped.vasp.singlepoint_incar_settings`.
 
 .. literalinclude:: ../doped/VASP_sets/SinglePointSet.yaml
    :language: yaml
 
-.. _PBEsol_ConvergenceSet.yaml:
+.. _ConvergenceSet.yaml:
 
-``PBEsol_ConvergenceSet.yaml``
+``ConvergenceSet.yaml``
 -------------------------------------------------
-``INCAR`` settings for the PBEsol ``k``-point convergence calculations of competing phases; loaded as
-:data:`~doped.chemical_potentials.pbesol_convergence_set`.
+``INCAR`` settings for the GGA DFT ``k``-point convergence calculations of competing phases; loaded as
+:data:`~doped.chemical_potentials.convergence_set`.
 
-.. literalinclude:: ../doped/VASP_sets/PBEsol_ConvergenceSet.yaml
+.. literalinclude:: ../doped/VASP_sets/ConvergenceSet.yaml
    :language: yaml
 
 .. _PotcarSet.yaml:

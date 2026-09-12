@@ -211,7 +211,10 @@ class DopedDictSet(VaspInputSet):
                 ediff = scaled_ediff(
                     len(structure),
                     ediff_per_atom=ediff_per_atom,
-                    max_ediff=np.inf,  # use whatever user has set
+                    # only cap ``EDIFF`` when using the default ``EDIFF_PER_ATOM``; otherwise user setting:
+                    max_ediff=(
+                        1e-4 if ediff_per_atom == default_relax_set["INCAR"]["EDIFF_PER_ATOM"] else np.inf
+                    ),
                 )
                 if ediff > 1e-3:
                     warnings.warn(

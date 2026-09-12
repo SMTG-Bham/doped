@@ -72,10 +72,10 @@ from doped.vasp import (
 # globally ignore:
 _ignore_pmg_warnings()
 
-pbesol_convergence_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))
+convergence_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/ConvergenceSet.yaml"))
 """
-``INCAR`` settings used for the PBEsol ``k``-point convergence calculations of
-competing phases, from |PBEsol_ConvergenceSet.yaml|.
+``INCAR`` settings used for the ``k``-point convergence calculations of
+competing phases, from |ConvergenceSet.yaml|.
 """
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
@@ -1673,7 +1673,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
         r"""
         Generates a dictionary of ``DopedDictSet``\s (subclasses of
         |VaspInputSet|) for k-point convergence testing of competing phases,
-        using PBEsol (GGA) DFT by default.
+        using GGA DFT by default.
 
         Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic)
         or 0 if not.
@@ -1698,7 +1698,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
                 any non-numerical or non-``True``/``False`` flags need to be
                 input as strings with quotation marks. See
-                |PBEsol_ConvergenceSet.yaml| for the default settings.
+                |ConvergenceSet.yaml| for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
@@ -1720,7 +1720,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 (subclasses of |VaspInputSet|).
         """
         user_incar_settings = user_incar_settings or {}
-        base_incar_settings = copy.deepcopy(pbesol_convergence_set["INCAR"])
+        base_incar_settings = copy.deepcopy(convergence_set["INCAR"])
         base_incar_settings.update(user_incar_settings)
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
         dict_sets: dict[str, DopedDictSet] = {}
@@ -1790,7 +1790,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
     ) -> dict[str, DopedDictSet]:
         r"""
         Generates and writes VASP input files for k-point convergence testing
-        of competing phases, using PBEsol (GGA) DFT by default.
+        of competing phases, using GGA DFT by default.
 
         Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
         if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
@@ -1817,7 +1817,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
                 any non-numerical or non-``True``/``False`` flags need to be
                 input as strings with quotation marks. See
-                |PBEsol_ConvergenceSet.yaml| for the default settings.
+                |ConvergenceSet.yaml| for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".

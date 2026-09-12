@@ -35,7 +35,7 @@ from scipy.constants import value as constants_value
 from scipy.optimize import minimize
 from scipy.spatial import Delaunay, QhullError, cKDTree
 
-kB = constants_value("Boltzmann constant in eV/K")  # ~8.617e-5 eV/K
+_kB = constants_value("Boltzmann constant in eV/K")  # ~8.617e-5 eV/K
 
 
 def _landscape_smoothness_scale(
@@ -99,12 +99,12 @@ def _landscape_smoothness_scale(
             The landscape smoothness scale in eV.
     """
     if annealing_temperature is None:
-        return kB * temperature  # full equilibrium; target log-slopes scale as 1/kT
+        return _kB * temperature  # full equilibrium; target log-slopes scale as 1/kT
 
     if free_defects:  # re-equilibrate against the reservoir at T_quench; respond down to kT_quench
-        return kB * min(annealing_temperature, quenched_temperature)
+        return _kB * min(annealing_temperature, quenched_temperature)
 
-    return kB * annealing_temperature  # frozen totals (± frozen charge states); c(μ) ~ exp(-ΔH/kT_anneal)
+    return _kB * annealing_temperature  # frozen totals (± frozen charge states); c(μ) ~ exp(-ΔH/kT_anneal)
 
 
 def _independent_columns(rows: np.ndarray, tol: float = 2e-3) -> np.ndarray:
@@ -205,7 +205,7 @@ def _default_grid_resolution(
             free_defects,
         )
     )
-    floor = kB * (  # kB * min(all temperatures in the solve protocol):
+    floor = _kB * (  # kB * min(all temperatures in the solve protocol):
         min(annealing_temperature, quenched_temperature)
         if annealing_temperature is not None
         else temperature

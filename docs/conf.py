@@ -219,6 +219,6 @@ rst_prolog = """
 .. |DefectSet.yaml| replace:: :ref:`DefectSet.yaml <DefectSet.yaml>`
 .. |HSESet.yaml| replace:: :ref:`HSESet.yaml <HSESet.yaml>`
 .. |SinglePointSet.yaml| replace:: :ref:`SinglePointSet.yaml <SinglePointSet.yaml>`
-.. |PBEsol_ConvergenceSet.yaml| replace:: :ref:`PBEsol_ConvergenceSet.yaml <PBEsol_ConvergenceSet.yaml>`
+.. |ConvergenceSet.yaml| replace:: :ref:`ConvergenceSet.yaml <ConvergenceSet.yaml>`
 .. |PotcarSet.yaml| replace:: :ref:`PotcarSet.yaml <PotcarSet.yaml>`
 """
