@@ -43,21 +43,35 @@ recognised_pre_vacancy_strings = sorted(
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which precede the element symbol in vacancy defect names.
+"""
 recognised_post_vacancy_strings = sorted(
     ["_v", "v", "_vac", "_Vac", "vac", "Vac", "va", "Va", "_va", "_Va"],
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which follow the element symbol in vacancy defect names.
+"""
 recognised_pre_interstitial_strings = sorted(
     ["i", "i_", "Int", "int", "Int_", "int_", "Inter", "inter", "Inter_", "inter_"],
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which precede the element symbol in interstitial defect
+names.
+"""
 recognised_post_interstitial_strings = sorted(
     ["_i", "_int", "_Int", "int", "Int", "inter", "Inter", "_inter", "_Inter"],
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which follow the element symbol in interstitial defect
+names.
+"""
 # _trimmable_defect_type_strings is the subset of the above strings which are trimmed from defect names
 # when identifying the constituent elements, removing marker letters which could otherwise be misread as
 # element symbols (e.g. "V" / "I" / "In" in "Vac" / "Int"). Strings starting/ending with a lowercase "i"
@@ -307,6 +321,16 @@ PETROFF10_EXTENDED_40 = [
     "#187582", "#beceb2", "#be968a", "#5dbadb", "#c28639",
     "#597d35", "#006939", "#c6d26d", "#7d96b2", "#59796d",
 ]  # fmt: skip
+"""
+Qualitative colour palette; the 10-colour Petroff scheme extended to 40
+maximally-distinct colours (within muted lightness/chroma bounds, for visual
+harmony with the base palette and to avoid pale colours that are hard to see as
+thin lines on white backgrounds) via the Glasbey et al.
+
+(2007) method, as
+implemented in https://github.com/lmcinnes/glasbey, registered as the
+``petroff10_extended_40`` ``matplotlib`` colormap with ``doped``.
+"""
 with contextlib.suppress(ValueError):  # already registered (e.g. re-import)
     colormaps.register(ListedColormap(PETROFF10_EXTENDED_40, name="petroff10_extended_40"))
 
@@ -346,7 +370,10 @@ def get_colors(colormap: str | Colormap | None, num_colors: int) -> np.ndarray:
     return cmap(np.linspace(0, 1, num_colors))
 
 
-VARIANT_LINESTYLES = ("-", "--", ":", "-.")  # linestyle cycle for variants of the same plot group
+VARIANT_LINESTYLES = ("-", "--", ":", "-.")
+"""
+Linestyle cycle for variants of the same plot group.
+"""
 
 
 def _fade_variant_color(color, index: int, num_variants: int) -> tuple[float, ...]:

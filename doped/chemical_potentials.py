@@ -62,7 +62,7 @@ from doped.utils.parsing import (
 from doped.utils.plotting import doped_plot_style, get_colormap
 from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
 from doped.vasp import (
-    MODULE_DIR,
+    _MODULE_DIR,
     DopedDictSet,
     default_HSE_set,
     default_relax_set,
@@ -72,9 +72,17 @@ from doped.vasp import (
 # globally ignore:
 _ignore_pmg_warnings()
 
-pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
+pbesol_convergence_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))
+"""
+``INCAR`` settings used for the PBEsol ``k``-point convergence calculations of
+competing phases, from |PBEsol_ConvergenceSet.yaml|.
+"""
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
+"""
+Equilibrium bond lengths (in Å) of the diatomic gaseous elements, used when
+generating molecule-in-a-box structures.
+"""
 
 # TODO: Update chemical potentials tutorial notebook for new code/function names. Show example of
 #  combining entries from a previously parsed CPA with a new one (i.e. similar functionality to previous
@@ -85,7 +93,7 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 # Show example of generating `NKRED` folders for competing phases, and mention in docstrings.
 # TODO: Use Codex and Claude to review the full new module
 
-MPRESTER_PROPERTY_DATA = (  # properties to pull for Materials Project entries
+MPRESTER_PROPERTY_DATA = (
     "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
     "formula_pretty",
     "energy_above_hull",
@@ -96,6 +104,10 @@ MPRESTER_PROPERTY_DATA = (  # properties to pull for Materials Project entries
     "nelements",
     "elements",
 )
+"""
+Entry properties to request from the Materials Project API, populated in
+``entry.data``.
+"""
 MPRESTER_SUMMARY_DATA = (
     "material_id",  # required so we can map docs back to entries via MPID
     "band_gap",
@@ -103,8 +115,16 @@ MPRESTER_SUMMARY_DATA = (
     "theoretical",
     "database_IDs",  # dict, possibly with an "icsd" key with list of ICSD entry codes
 )
+"""
+Fields to request from the Materials Project summary documents, attached to
+``entry.data["summary"]``.
+"""
 
 default_get_entries_kwargs: dict[str, Any] = {"property_data": list(MPRESTER_PROPERTY_DATA)}
+"""
+Default keyword arguments for Materials Project entry queries; any user-
+supplied ``kwargs`` take precedence over these.
+"""
 
 
 def _attach_summary_data_to_entries(
@@ -1678,15 +1698,13 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
                 any non-numerical or non-``True``/``False`` flags need to be
                 input as strings with quotation marks. See
-                ``doped/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the default
-                settings.
+                |PBEsol_ConvergenceSet.yaml| for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                |PotcarSet.yaml| for the default ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -1702,7 +1720,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 (subclasses of |VaspInputSet|).
         """
         user_incar_settings = user_incar_settings or {}
-        base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
+        base_incar_settings = copy.deepcopy(pbesol_convergence_set["INCAR"])
         base_incar_settings.update(user_incar_settings)
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
         dict_sets: dict[str, DopedDictSet] = {}
@@ -1799,15 +1817,13 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
                 any non-numerical or non-``True``/``False`` flags need to be
                 input as strings with quotation marks. See
-                ``doped/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the default
-                settings.
+                |PBEsol_ConvergenceSet.yaml| for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                |PotcarSet.yaml| for the default ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -1909,15 +1925,13 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
-                the default settings.
+                See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                |PotcarSet.yaml| for the default ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -2051,15 +2065,13 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
-                the default settings.
+                See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                |PotcarSet.yaml| for the default ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -2209,15 +2221,13 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
-                the default settings.
+                See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                |PotcarSet.yaml| for the default ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
@@ -2380,15 +2390,13 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
-                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
-                the default settings.
+                See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                |PotcarSet.yaml| for the default ``POTCAR`` set.
             extrinsic_only (bool):
                 If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an

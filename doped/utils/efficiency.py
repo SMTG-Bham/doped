@@ -159,6 +159,10 @@ def _Composition__eq__(self, other):
 
 
 class Hashabledict(dict):
+    """
+    Hashable ``dict`` subclass, allowing dictionaries to be used as cache keys.
+    """
+
     def __hash__(self):
         """
         Make the dictionary hashable by recursively "freezing" into only

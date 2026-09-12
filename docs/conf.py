@@ -215,4 +215,10 @@ rst_prolog = """
 .. |FermiSolver tutorial| replace:: :doc:`FermiSolver tutorial <fermisolver_tutorial>`
 .. |chempot limits tutorial| replace:: :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`
 .. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.1038/s41578-025-00879-y>`__
+.. |RelaxSet.yaml| replace:: :ref:`RelaxSet.yaml <RelaxSet.yaml>`
+.. |DefectSet.yaml| replace:: :ref:`DefectSet.yaml <DefectSet.yaml>`
+.. |HSESet.yaml| replace:: :ref:`HSESet.yaml <HSESet.yaml>`
+.. |SinglePointSet.yaml| replace:: :ref:`SinglePointSet.yaml <SinglePointSet.yaml>`
+.. |PBEsol_ConvergenceSet.yaml| replace:: :ref:`PBEsol_ConvergenceSet.yaml <PBEsol_ConvergenceSet.yaml>`
+.. |PotcarSet.yaml| replace:: :ref:`PotcarSet.yaml <PotcarSet.yaml>`
 """

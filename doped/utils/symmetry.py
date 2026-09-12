@@ -542,7 +542,13 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
 
 
 LinkageMethod = Literal["single", "complete", "average", "weighted", "centroid", "median", "ward"]
+"""
+Allowed ``method`` values for ``scipy``'s hierarchical ``linkage``.
+"""
 FclusterCriterion = Literal["inconsistent", "distance", "maxclust", "monocrit", "maxclust_monocrit"]
+"""
+Allowed ``criterion`` values for ``scipy``'s ``fcluster``.
+"""
 
 
 def cluster_coords(
@@ -4136,6 +4142,9 @@ _PTG_IDS = [  # the space group number here is the first space group with that p
 _SCH_to_HERM = {t[0]: t[1] for t in _PTG_IDS}
 _HERM_to_SCH = {t[1]: t[0] for t in _PTG_IDS}
 sch_symbols = list(_SCH_to_HERM.keys())
+"""
+Schoenflies point group symbols (e.g. ``C1``, ``D4h``).
+"""
 
 
 def schoenflies_from_spacegroup_number(sg_number: int) -> str:

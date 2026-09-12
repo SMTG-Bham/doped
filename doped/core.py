@@ -48,7 +48,7 @@ from doped.utils.parsing import (
     spin_degeneracy_from_vasprun,
 )
 
-kB = constants_value("Boltzmann constant in eV/K")  # ~8.617e-5 eV/K
+_kB = constants_value("Boltzmann constant in eV/K")
 
 if TYPE_CHECKING:
     import matplotlib as mpl
@@ -57,7 +57,7 @@ if TYPE_CHECKING:
     from pydefect.analyzer.band_edge_states import BandEdgeStates
 
 
-mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
+_mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
 
 
 _falling_back_to_common_oxi_states_warning = (
@@ -1281,7 +1281,7 @@ class DefectEntry(thermo.DefectEntry):
         """
         # Note: Could in future operate in logspace (logsumexp), as in py-sc-fermi, but so far unnecessary
         with np.errstate(over="ignore"):
-            exp_factor = np.exp(-formation_energy / (kB * temperature))
+            exp_factor = np.exp(-formation_energy / (_kB * temperature))
             return np.maximum(exp_factor * degeneracy_factor, 1e-150)
 
     def equilibrium_concentration(
@@ -2005,13 +2005,13 @@ def guess_and_set_oxi_states_with_timeout(
 
     if (  # if BVAnalyzer failed and cost estimate is high, break early:
         (
-            break_early_if_expensive or mp.current_process().daemon
+            break_early_if_expensive or _mp.current_process().daemon
         )  # if in a daemon process, can't spawn new `Process`s
         and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1e6
     ):
         structure_with_oxi = False
 
-    if mp.current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
+    if _mp.current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
         structure_with_oxi = _guess_and_set_struct_oxi_states_icsd_prob(structure)
 
     else:
@@ -2146,9 +2146,9 @@ def _guess_and_set_oxi_states_with_timeout_icsd_prob(
             The structure with oxidation states guessed and set, or ``False``
             if oxidation states could not be guessed.
     """
-    queue = mp.SimpleQueue()
+    queue = _mp.SimpleQueue()
 
-    guess_oxi_process_wout_max_sites = mp.Process(
+    guess_oxi_process_wout_max_sites = _mp.Process(
         target=_guess_and_set_struct_oxi_states_icsd_prob_process, args=(structure, queue, True)
     )  # try without max sites first, if fails, try with max sites
     guess_oxi_process_wout_max_sites.start()
@@ -2158,7 +2158,7 @@ def _guess_and_set_oxi_states_with_timeout_icsd_prob(
         guess_oxi_process_wout_max_sites.terminate()
         guess_oxi_process_wout_max_sites.join()
 
-        guess_oxi_process = mp.Process(
+        guess_oxi_process = _mp.Process(
             target=_guess_and_set_struct_oxi_states_icsd_prob_process,
             args=(structure, queue, False),
         )

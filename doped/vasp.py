@@ -56,23 +56,40 @@ def deep_dict_update(d: dict, u: dict) -> dict:
     return d
 
 
-MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PotcarSet.yaml"))["POTCAR"]
-default_relax_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/RelaxSet.yaml"))
-default_HSE_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/HSESet.yaml"))
-default_defect_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/DefectSet.yaml"))
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+default_potcar_dict = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/PotcarSet.yaml"))["POTCAR"]
+"""
+Default ``POTCAR`` symbol for each element, from |PotcarSet.yaml|.
+"""
+default_relax_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/RelaxSet.yaml"))
+"""
+Default ``INCAR`` and ``KPOINTS`` settings for geometry relaxations, from
+|RelaxSet.yaml|.
+"""
+default_HSE_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/HSESet.yaml"))
+"""
+``INCAR`` settings for hybrid DFT calculations (HSE06 by default), from
+|HSESet.yaml|.
+"""
+default_defect_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/DefectSet.yaml"))
+"""
+``INCAR`` settings specific to defect supercell calculations, from
+|DefectSet.yaml|.
+"""
 default_defect_relax_set = copy.deepcopy(default_relax_set)
 default_defect_relax_set = deep_dict_update(
     default_defect_relax_set, default_defect_set
 )  # defect set is just INCAR settings
+"""
+Default ``INCAR`` and ``KPOINTS`` settings for defect supercell relaxations;
+``default_relax_set`` updated with ``default_defect_set``.
+"""
 _ = default_defect_relax_set["INCAR"].pop("EDIFF_PER_ATOM")  # remove EDIFF_PER_ATOM and use defect EDIFF
-singlepoint_incar_settings = {
-    "EDIFF": 1e-6,  # tight EDIFF for final energy and converged DOS
-    "EDIFFG": None,  # no ionic relaxation, remove to avoid confusion
-    "IBRION": -1,  # no ionic relaxation
-    "NSW": 0,  # no ionic relaxation
-    "POTIM": None,  # no ionic relaxation, remove to avoid confusion
-}
+singlepoint_incar_settings = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/SinglePointSet.yaml"))["INCAR"]
+"""
+``INCAR`` setting overrides for single-point (static) calculations, applied on
+top of the relaxation settings, from |SinglePointSet.yaml|.
+"""
 
 
 def _test_potcar_functional_choice(potcar_functional: str = "PBE", symbols: list | None = None):
@@ -188,8 +205,7 @@ class DopedDictSet(VaspInputSet):
                 fails, tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default ``POTCAR``\s, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
+                |PotcarSet.yaml| for the default ``POTCAR`` set.
             auto_kpar (bool):
                 If ``True``, and ``KPAR`` is not set in
                 ``user_incar_settings``, attempts to set ``KPAR`` to a
@@ -597,8 +613,7 @@ class DefectDictSet(DopedDictSet):
                 fails, tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default ``POTCAR``\s, e.g. ``{"Li": "Li_sv"}``.
-                See ``doped/VASP_sets/PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
+                See |PotcarSet.yaml| for the default ``POTCAR`` set.
             poscar_comment (str):
                 Comment line to use for ``POSCAR`` files. Default is defect
                 name, fractional coordinates of initial site and charge state.
@@ -823,8 +838,7 @@ class DefectRelaxSet(MSONable):
                 fails, tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default ``POTCAR``\s, e.g. ``{"Li": "Li_sv"}``.
-                See ``doped/VASP_sets/PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
+                See |PotcarSet.yaml| for the default ``POTCAR`` set.
             **kwargs: Additional kwargs to pass to ``DefectDictSet``.
 
         Key Attributes:
@@ -2242,8 +2256,7 @@ class DefectsSet(MSONable):
                 fails, tries "PBE_52", then "PBE_54".
             user_potcar_settings (dict):
                 Override the default ``POTCAR``\s, e.g. ``{"Li": "Li_sv"}``.
-                See ``doped/VASP_sets/PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
+                See |PotcarSet.yaml| for the default ``POTCAR`` set.
             **kwargs: Additional kwargs to pass to each ``DefectRelaxSet()``.
 
         Key Attributes:
