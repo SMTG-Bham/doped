@@ -2,6 +2,7 @@
 Tests for the ``doped.utils.configurations`` module.
 """
 
+import contextlib
 import os
 import tempfile
 import unittest
@@ -1013,31 +1014,24 @@ class TestWritePathStructures(TestGetPathStructures):
         The default output directory is ``"NEB"`` for NEB mode, and
         ``"Configuration_Coordinate"`` for CC mode.
         """
-        original_cwd = os.getcwd()
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                os.chdir(tmpdir)
-                neb_result = write_path_structures(
-                    self.V_Se_m1_supercell, self.V_Se_m2_like_m1, n_images=2
-                )
-                assert os.path.isdir("NEB")
-                # NEB mode returns a single dict:
-                assert isinstance(neb_result, dict)
-                assert list(neb_result) == ["00", "01", "02"]
+        with tempfile.TemporaryDirectory() as tmpdir, contextlib.chdir(tmpdir):
+            neb_result = write_path_structures(self.V_Se_m1_supercell, self.V_Se_m2_like_m1, n_images=2)
+            assert os.path.isdir("NEB")
+            # NEB mode returns a single dict:
+            assert isinstance(neb_result, dict)
+            assert list(neb_result) == ["00", "01", "02"]
 
-                cc_result = write_path_structures(
-                    self.V_Se_m1_supercell,
-                    self.V_Se_m2_like_m1,
-                    displacements=[0.0, 1.0],
-                )
-                assert os.path.isdir("Configuration_Coordinate")
-                # CC mode returns a tuple of two dicts:
-                assert isinstance(cc_result, tuple)
-                assert len(cc_result) == 2
-                assert list(cc_result[0]) == ["delQ_0.0", "delQ_1.0"]
-                assert list(cc_result[1]) == ["delQ_0.0", "delQ_1.0"]
-        finally:
-            os.chdir(original_cwd)
+            cc_result = write_path_structures(
+                self.V_Se_m1_supercell,
+                self.V_Se_m2_like_m1,
+                displacements=[0.0, 1.0],
+            )
+            assert os.path.isdir("Configuration_Coordinate")
+            # CC mode returns a tuple of two dicts:
+            assert isinstance(cc_result, tuple)
+            assert len(cc_result) == 2
+            assert list(cc_result[0]) == ["delQ_0.0", "delQ_1.0"]
+            assert list(cc_result[1]) == ["delQ_0.0", "delQ_1.0"]
 
 
 class TestSmartRound(unittest.TestCase):

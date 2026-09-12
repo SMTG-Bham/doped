@@ -142,36 +142,12 @@ def _get_potcar(potcar_symbols, potcar_functional) -> Potcar:
     return copy.copy(_cached_potcar(potcar_symbols, potcar_functional))
 
 
-class DopedKpoints(Kpoints):
-    """
-    Custom implementation of ``Kpoints`` to handle encoding errors that can
-    happen on some old HPCs/Linux systems.
-
-    If an encoding error occurs upon file writing, then changes Γ to Gamma and
-    Å to Angstrom in the ``KPOINTS`` comment.
-    """
-
-    def __repr__(self):
-        """
-        Returns a string representation of the Kpoints object, with encoding
-        error handling.
-        """
-        try:
-            with open(os.devnull, "w") as f:  # os.devnull for cross-platform null device
-                f.write(self.comment)  # breaks if encoding error will occur, so we rewrite
-            return super().__repr__()
-
-        except UnicodeEncodeError:
-            self.comment = self.comment.replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
-            return super().__repr__()
-
-
 class DopedDictSet(VaspInputSet):
     """
     Modified version of ``pymatgen`` |VaspInputSet|, to have more robust
     ``POTCAR`` handling, expedited I/O (particularly for ``POTCAR`` generation,
     which can be slow when generating many folders), ensure ``POSCAR`` atom
-    sorting, avoid encoding issues with ``KPOINTS`` comments etc.
+    sorting etc.
     """
 
     def __init__(
@@ -364,8 +340,7 @@ class DopedDictSet(VaspInputSet):
         """
         Return ``kpoints`` object with comment.
         """
-        pmg_kpoints = super().kpoints
-        doped_kpoints = DopedKpoints.from_dict(pmg_kpoints.as_dict())
+        doped_kpoints = super().kpoints  # new object each access, so safe to set comment in place
         kpt_density = self.config_dict.get("KPOINTS", {}).get("reciprocal_density", False)
         if (
             isinstance(self.user_kpoints_settings, dict)
@@ -1528,7 +1503,7 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) or "."
             self._write_vasp_xxx_files(
                 f"{output_path}/{formula}_bulk",
                 subfolder,
@@ -1651,7 +1626,7 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) or "."
             self._write_vasp_xxx_files(
                 f"{output_path}/{formula}_bulk",
                 subfolder,
@@ -1784,7 +1759,7 @@ class DefectRelaxSet(MSONable):
                 return
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) or "."
             self._write_vasp_xxx_files(
                 f"{output_path}/{formula}_bulk",
                 subfolder,
@@ -1919,7 +1894,7 @@ class DefectRelaxSet(MSONable):
 
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             # get output dir: (folder above defect_dir if defect_dir is a subfolder)
-            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) or "."
             self._write_vasp_xxx_files(
                 f"{output_path}/{formula}_bulk",
                 subfolder,

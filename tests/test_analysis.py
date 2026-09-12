@@ -205,7 +205,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             raise  # tearDownClass skipped if setUpClass fails; but we still want to (attempt) clean up
 
     def setUp(self):
-        self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
+        self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk", "vasp_ncl")
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
         self.CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
 
@@ -376,7 +376,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                     for i in [
                         "Multiple `OUTCAR` files",
                         "(directory: chosen file for parsing):",
-                        f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl: OUTCAR.gz",
+                        f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl')}: OUTCAR.gz",
                         "OUTCAR files are used to",
                         "parse core levels and compute the Kumagai (eFNV) image charge correction.",
                     ]
@@ -671,8 +671,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         assert (
             f"No files with any of ('vasprun.xml', 'vasprun.xml.gz') in names found under "
-            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk (subfolder vasp_std). Please ensure bulk supercell "
-            f"calculation files are present and/or specify `bulk_path` manually."
+            f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'CdTe_bulk')} (subfolder vasp_std). Please ensure "
+            f"bulk supercell calculation files are present and/or specify `bulk_path` manually."
         ) in str(exc.value)
 
     def test_DefectsParser_CdTe_skip_corrections(self):
@@ -717,7 +717,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             "which corresponds to using the effective isotropic average of the supplied "
             "anisotropic dielectric. This could lead to significant errors for very anisotropic "
             "systems and/or relatively small supercells!",
-            f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect subfolders)",
+            f"(using bulk path {self.CdTe_BULK_DATA_DIR} and vasp_ncl defect subfolders)",
         ]:
             assert any(i in str(warn.message) for warn in w)
 
@@ -733,8 +733,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                     "which corresponds to using the effective isotropic average of the supplied "
                     "anisotropic dielectric. This could lead to significant errors for very anisotropic "
                     "systems and/or relatively small supercells!",
-                    f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect "
-                    f"subfolders)",
+                    f"(using bulk path {self.CdTe_BULK_DATA_DIR} and vasp_ncl defect subfolders)",
                 ]
             )
             for warn in w
@@ -895,10 +894,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=self.Sb2Se3_dielectric,
             )
         assert (  # bulk in separate folder so fails
-            f"Could not determine bulk supercell calculation folder in {self.Sb2Se3_DATA_DIR}/defect, "
-            f"found 0 folders containing any of ('vasprun.xml', 'vasprun.xml.gz') in filenames (in "
-            f"subfolders) and 'bulk' in the folder name. Please specify `bulk_path` manually."
-            in str(exc.value)
+            f"Could not determine bulk supercell calculation folder in "
+            f"{os.path.join(self.Sb2Se3_DATA_DIR, 'defect')}, found 0 folders containing any of "
+            f"('vasprun.xml', 'vasprun.xml.gz') in filenames (in subfolders) and 'bulk' in the "
+            f"folder name. Please specify `bulk_path` manually." in str(exc.value)
         )
 
         Sb2Se3_O_dp, w = _create_dp_and_capture_warnings(
@@ -1535,7 +1534,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert any("('NKRED', 2, 1)" in str(warn.message) for warn in w)
             if outcar_vr_mismatch:  # warning about our artificially shifted vasprun energy:
                 assert any(
-                    "sub_1_O_on_Se_1/vasp_std:\nThe total energies of the provided (bulk) `OUTCAR` "
+                    f"{os.path.join('sub_1_O_on_Se_1', 'vasp_std')}:\nThe total energies of the "
+                    "provided (bulk) `OUTCAR` "
                     "(-381.559 eV), used to obtain the atomic core potentials for the eFNV correction, "
                     "and the `vasprun.xml` (-381.729eV, -363.622 eV; final energy & last electronic step "
                     "energy), used for" in str(warn.message)
@@ -1777,8 +1777,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             ).defect_entry
             assert (
                 f"Multiple `OUTCAR` files found in defect directory: "
-                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using OUTCAR.gz to parse core levels and "
-                f"compute the Kumagai (eFNV) image charge correction." in str(w[0].message)
+                f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl')}. Using OUTCAR.gz to "
+                f"parse core levels and compute the Kumagai (eFNV) image charge correction."
+                in str(w[0].message)
             )
             assert (
                 f"Estimated error in the Kumagai (eFNV) charge correction for defect "
@@ -1933,10 +1934,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert (  # different warning start depending on whether isotropic or anisotropic dielectric
             f"in the defect or bulk folder were unable to be parsed, giving the following error message:\n"
             f"Unable to parse atomic core potentials from defect `OUTCAR` at "
-            f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR_no_core_levels.gz. This can happen if "
-            f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, the calculation was finished "
-            f"prematurely with a `STOPCAR`, or the calculation crashed. The Kumagai (eFNV) charge "
-            f"correction cannot be computed without this data!\n{action}" in str(warnings[0].message)
+            f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl', 'OUTCAR_no_core_levels.gz')}"
+            f". This can happen if `ICORELEVEL` was not set to 0 (= default) in the `INCAR`, the "
+            f"calculation was finished prematurely with a `STOPCAR`, or the calculation crashed. The "
+            f"Kumagai (eFNV) charge correction cannot be computed without this data!\n{action}"
+            in str(warnings[0].message)
         )
 
         return result
@@ -1972,7 +1974,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             assert (
                 f"Multiple `OUTCAR` files found in defect directory: "
-                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using "
+                f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl')}. Using "
                 f"OUTCAR.gz to parse core levels and compute the Kumagai (eFNV) image charge "
                 f"correction." in str(w[1].message)
             )
@@ -1982,7 +1984,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 3)
 
     def test_multiple_locpots(self):
-        defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
+        defect_path = os.path.join(self.CdTe_EXAMPLE_DIR, "v_Cd_-2", "vasp_ncl")
 
         shutil.copyfile(f"{defect_path}/LOCPOT.gz", f"{defect_path}/another_LOCPOT.gz")
         shutil.copyfile(
@@ -2012,7 +2014,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
     def test_multiple_vaspruns(self):
-        defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
+        defect_path = os.path.join(self.CdTe_EXAMPLE_DIR, "v_Cd_-2", "vasp_ncl")
 
         shutil.copyfile(f"{defect_path}/vasprun.xml.gz", f"{defect_path}/another_vasprun.xml.gz")
         shutil.copyfile(

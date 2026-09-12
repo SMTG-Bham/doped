@@ -579,7 +579,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             bulk_ph = [e for e in cp.entries if e.name == "Cu2SiSe4" and not hasattr(e, "structure")]
             assert len(bulk_ph) == 1
             assert os.path.isdir("CompetingPhases")
-            cu2sise4_folder = "CompetingPhases/Cu2SiSe4_NA_EaH_0"
+            cu2sise4_folder = os.path.join("CompetingPhases", "Cu2SiSe4_NA_EaH_0")
             assert os.path.isdir(cu2sise4_folder)
 
             def _check_potcar(directory, potcar_spec=potcar_spec):
@@ -3259,6 +3259,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             "CdTe ",
             energy_above_hull=0,
             extrinsic=["Cs"],
+            api_key=api_key,
         )
         cpa = chemical_potentials.CompetingPhasesAnalyzer("CdTe", cp.entries)
         return plot_chempot_heatmap_and_test_no_warnings(cpa)

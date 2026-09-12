@@ -35,7 +35,6 @@ from doped.vasp import (
     DefectRelaxSet,
     DefectsSet,
     DopedDictSet,
-    DopedKpoints,
     default_defect_relax_set,
     default_potcar_dict,
     singlepoint_incar_settings,
@@ -57,12 +56,6 @@ def _check_potcar_dir_not_setup_warning_error(dds, message, poscar=True):
 
 def _check_no_potcar_available_warning_error(message):
     return "Set PMG_VASP_PSP_DIR=<directory-path> in .pmgrc.yaml (needed to find POTCARs)" in str(message)
-
-
-def _check_nelect_nupdown_error(message):
-    return "NELECT (i.e. supercell charge) and NUPDOWN (i.e. spin state) INCAR flags cannot be set" in str(
-        message
-    )
 
 
 def _check_nelect_structure_charge_error(message):
@@ -141,7 +134,7 @@ class DefectDictSetTest(unittest.TestCase):
             if dds.charge_state != 0:
                 with pytest.raises(ValueError) as e:
                     _test_pop = dds.incar
-                assert _check_nelect_nupdown_error(e.value)
+                assert _check_nelect_structure_charge_error(e.value)
             else:
                 self._check_dds_incar_and_writing_warnings(dds)
         assert dds.structure == struct
@@ -263,7 +256,7 @@ class DefectDictSetTest(unittest.TestCase):
                     self._general_defect_dict_set_check(  # also tests dds.charge_state
                         dds, struct, incar_check=kwargs.pop("incar_check", True), **kwargs
                     )
-                _check_nelect_nupdown_error(e.value)
+                assert _check_nelect_structure_charge_error(e.value)
             self._general_defect_dict_set_check(  # also tests dds.charge_state
                 dds, struct, incar_check=kwargs.pop("incar_check", False), **kwargs
             )
@@ -374,7 +367,7 @@ class DefectDictSetTest(unittest.TestCase):
                 if k not in ["LHFCALC", "GGA"]:
                     assert k not in gga_dds.incar
 
-            assert gga_dds.incar["GGA"] == "Ps"  # GGA functional set to Ps (PBEsol) by default
+            assert "GGA" not in gga_dds.incar  # no GGA tag set; VASP default (PBE) used
 
     def test_bad_incar_setting(self):
         with warnings.catch_warnings(record=True) as w:
@@ -566,7 +559,7 @@ class DefectDictSetTest(unittest.TestCase):
             assert not os.path.exists(f"{output_path}/POTCAR")
 
         written_kpoints = Kpoints.from_file(f"{output_path}/KPOINTS")  # comment not parsed by pymatgen
-        with open(f"{output_path}/KPOINTS") as f:
+        with open(f"{output_path}/KPOINTS", encoding="utf-8") as f:
             comment = f.readlines()[0].replace("\n", "")
         if isinstance(dds.user_kpoints_settings, dict) and dds.user_kpoints_settings.get(
             "reciprocal_density", False
@@ -581,7 +574,7 @@ class DefectDictSetTest(unittest.TestCase):
 
         for k in written_kpoints.as_dict():
             if k not in ["comment", "usershift", "@module", "@class"]:
-                # user shift can be tuple or list and causes failure, and we use DopedKpoints not Kpoints
+                # user shift can be tuple or list, which causes failure
                 assert written_kpoints.as_dict()[k] == dds.kpoints.as_dict()[k]
 
         if kwargs.get("poscar", True):
@@ -673,16 +666,8 @@ class DefectRelaxSetTest(unittest.TestCase):
                 child_dds.user_potcar_functional[:3]
             )  # if PBE_52 set but not available, defaults to PBE
             assert parent_drs.user_potcar_settings == child_dds.user_potcar_settings
-            if isinstance(child_dds.user_kpoints_settings, DopedKpoints | Kpoints):
-                assert child_dds.user_kpoints_settings.as_dict() in [
-                    DopedKpoints()
-                    .from_dict(
-                        {
-                            "comment": "Γ-only KPOINTS from doped",
-                            "generation_style": "Gamma",
-                        }
-                    )
-                    .as_dict(),
+            if isinstance(child_dds.user_kpoints_settings, Kpoints):
+                assert child_dds.user_kpoints_settings.as_dict() == (
                     Kpoints()
                     .from_dict(
                         {
@@ -690,8 +675,8 @@ class DefectRelaxSetTest(unittest.TestCase):
                             "generation_style": "Gamma",
                         }
                     )
-                    .as_dict(),
-                ]
+                    .as_dict()
+                )
             else:
                 assert child_dds.user_kpoints_settings in [
                     parent_drs.user_kpoints_settings,
@@ -1057,7 +1042,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                 mgo_defect_gen,
                 user_incar_settings={
                     "ENCUT": 450,
-                    "GGA": "PS",  # Functional (PBEsol for this tutorial)
+                    "GGA": "PS",
                     "LHFCALC": False,  # Disable Hybrid functional
                     "NCORE": 8,
                 },
@@ -1101,7 +1086,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                 mgo_defect_gen,
                 user_incar_settings={
                     "ENCUT": 450,
-                    "GGA": "PS",  # Functional (PBEsol for this tutorial)
+                    "GGA": "PS",
                     "LHFCALC": False,  # Disable Hybrid functional
                     "NCORE": 8,
                 },
@@ -1243,7 +1228,6 @@ class DefectsSetTest(unittest.TestCase):
         check_incar=None,
         single_defect_dir=False,
         bulk=True,
-        ascii_encoding=False,
     ):
         if data_dir is None:
             data_dir = self.CdTe_data_dir
@@ -1295,17 +1279,12 @@ class DefectsSetTest(unittest.TestCase):
                     if "Se" in folder:
                         assert contents[2] in ["Se", "Se\n"]
 
-            with open(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS") as f:
+            with open(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS", encoding="utf-8") as f:
                 print(f.read())  # for debugging
-            with open(f"{data_dir}/{folder}/{vasp_type}/KPOINTS") as f:
+            with open(f"{data_dir}/{folder}/{vasp_type}/KPOINTS", encoding="utf-8") as f:
                 print(f.read())  # for debugging
             test_kpoints = Kpoints.from_file(f"{data_dir}/{folder}/{vasp_type}/KPOINTS")
             kpoints = Kpoints.from_file(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS")
-            if ascii_encoding:
-                test_kpoints.comment = test_kpoints.comment.replace("Å⁻³", "Angstrom^(-3)").replace(
-                    "Γ", "Gamma"
-                )
-
             assert test_kpoints.as_dict() == kpoints.as_dict()
 
     def _general_defects_set_check(self, defects_set, **kwargs):
@@ -1499,10 +1478,11 @@ class DefectsSetTest(unittest.TestCase):
 
     def test_write_files_ASCII_encoding(self):
         """
-        Test writing VASP input files for a system that's not on UTF-8
-        encoding.
+        Test that writing VASP input files is unaffected by a non-UTF-8 locale
+        (as on some old HPCs, and on Windows).
 
-        Weirdly seems to be the case on some old HPCs/Windows systems.
+        ``pymatgen`` writes these files with an explicit UTF-8 encoding, so the
+        generated files should match the references regardless of ``locale``.
         """
         with contextlib.suppress(locale.Error):  # not supported on GH Actions
             # Temporarily set the locale to ASCII/latin encoding (doesn't support emojis or "Γ"):
@@ -1522,7 +1502,6 @@ class DefectsSetTest(unittest.TestCase):
                 data_dir=f"{self.CdTe_data_dir}/Cd_i_C3v_+2",
                 check_potcar_spec=True,
                 single_defect_dir=True,
-                ascii_encoding=True,
             )
             self.check_generated_vasp_inputs(  # vasp_std
                 generated_dir="Cd_i_C3v_+2",
@@ -1531,7 +1510,6 @@ class DefectsSetTest(unittest.TestCase):
                 check_poscar=True,
                 check_potcar_spec=True,
                 single_defect_dir=True,
-                ascii_encoding=True,
             )
             self.check_generated_vasp_inputs(  # vasp_ncl
                 generated_dir="Cd_i_C3v_+2",
@@ -1540,7 +1518,6 @@ class DefectsSetTest(unittest.TestCase):
                 check_poscar=True,
                 check_potcar_spec=True,
                 single_defect_dir=True,
-                ascii_encoding=True,
             )
 
             # assert only +2 directory written:

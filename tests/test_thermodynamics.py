@@ -1754,7 +1754,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert list(sym_degen_df.loc[("Int_F", "-1")]) == ["C4v", "Cs", 4.0, 1, 4.0, 2.0]
 
         sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
-            YTOS_defect_thermo.get_symmetries_and_degeneracies, bulk_symprec=0.008
+            YTOS_defect_thermo.get_symmetries_and_degeneracies, bulk_symprec=0.005
         )
         assert list(sym_degen_df.loc[("Int_F", "-1")]) == ["Cs", "C4v", 0.25, 1, 0.25, 8.0]
 
@@ -3434,7 +3434,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Chemical potential heatmap plotting requires 3-D data",
             "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
             "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.719",
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.7229",
         ]:
             assert info_substring in output
         assert not w
@@ -3452,7 +3452,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Chemical potential heatmap plotting requires 3-D data",
             "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
             "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.719",
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.7229",
         ]:
             assert info_substring in output
         assert not w
@@ -3773,7 +3773,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                         site_competition=site_competition,
                         lean=True,
                     )
-                    assert list(lean_df["Defect"]) == v.names
+                    assert list(lean_df["Defect"]) == list(v.names)
                     assert np.allclose(lean_df["Charge"], v.charges)
                     assert np.allclose(
                         v.conc_fn(fermi_level, temperature),

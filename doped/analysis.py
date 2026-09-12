@@ -1658,11 +1658,8 @@ def _get_defect_folder(entry: DefectEntry, subfolder: str = ".") -> str:
         str:
             The defect folder name.
     """
-    return (
-        entry.calculation_metadata["defect_path"]
-        .replace("/.", "")
-        .split("/")[-1 if subfolder == "." else -2]
-    )
+    defect_path = os.path.normpath(entry.calculation_metadata["defect_path"])  # native separators
+    return os.path.basename(defect_path if subfolder == "." else os.path.dirname(defect_path))
 
 
 def _get_total_energies(computed_entry=None, vr=None):
@@ -2412,11 +2409,10 @@ class DefectParser:
         parse_projected_eigen = defect_procar is not None or defect_vr.projected_eigenvalues is not None
 
         # parse (possible) defect name and charge state
-        possible_defect_name = os.path.basename(
-            defect_path.rstrip("/.").rstrip("/")  # remove any trailing slashes to ensure correct name
-        )  # set equal to folder name
+        norm_defect_path = os.path.normpath(defect_path)  # strip trailing separators / "."
+        possible_defect_name = os.path.basename(norm_defect_path)  # set equal to folder name
         if "vasp" in possible_defect_name:  # get parent directory name:
-            possible_defect_name = os.path.basename(os.path.dirname(defect_path))
+            possible_defect_name = os.path.basename(os.path.dirname(norm_defect_path))
 
         charge_state = _parse_charge_state(defect_vr, possible_defect_name, charge_state)
 

@@ -113,7 +113,7 @@ def _potcars_available() -> bool:
     try:
         _test_potcar_functional_choice("PBE")
         return True
-    except ValueError:
+    except (ValueError, OSError):  # OSError (FileNotFoundError) if PMG_VASP_PSP_DIR unset/empty
         return False
 
 
