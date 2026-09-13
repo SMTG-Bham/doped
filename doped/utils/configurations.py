@@ -456,9 +456,6 @@ def orient_s2_like_s1(
     return struct2_really_like_struct1
 
 
-get_s2_like_s1 = orient_s2_like_s1  # alias similar to pymatgen's get_s2_like_s1
-
-
 def get_dQ(
     struct1: Structure,
     struct2: Structure,

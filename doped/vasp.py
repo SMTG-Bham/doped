@@ -35,6 +35,7 @@ from doped.utils import (
     _signed_charge,
     get_mp_context,
     pool_manager,
+    warn_once,
 )
 from doped.utils.parsing import (
     _get_bulk_supercell,
@@ -92,44 +93,55 @@ top of the relaxation settings, from |SinglePointSet.yaml|.
 """
 
 
+_PBE_POTCAR_FUNCTIONALS = ("PBE_64", "PBE_54", "PBE_52", "PBE")  # newest first; VASP recommends latest
+
+
+def _first_available_potcar_functional(symbols: tuple, functionals: list[str]) -> str | None:
+    r"""
+    Return the first functional in ``functionals`` for which ``POTCAR``\s can
+    be generated for ``symbols``, or ``None`` if none of them work.
+    """
+    for functional in functionals:
+        with contextlib.suppress(OSError):  # ``FileNotFoundError`` if library/symbol unavailable
+            _get_potcar(symbols, potcar_functional=functional)
+            return functional
+
+    return None
+
+
 def _test_potcar_functional_choice(potcar_functional: str = "PBE", symbols: list | None = None):
     """
-    Check if the potcar functional choice needs to be changed to match those
-    available.
+    Check if the ``POTCAR`` functional choice needs to be changed to match
+    those available.
+
+    ``"PBE"`` (the ``doped`` default) chooses whichever ``PBE`` ``POTCAR``
+    library is installed, and is resolved newest-first (``PBE_64`` ->
+    ``PBE_54`` -> ``PBE_52`` -> ``PBE``).
     """
-    test_potcar = None
-    if symbols is None:
-        symbols = ["Mg"]
-    try:
-        test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
-    except (OSError, RuntimeError) as e:  # updated to RuntimeError in pymatgen 2024.5.1
-        if not potcar_functional.startswith("PBE"):
-            raise e
+    symbol_tuple = tuple(symbols or ["Mg"])  # hashable, for ``_get_potcar`` caching
+    if potcar_functional == "PBE":  # the default; resolve newest-first rather than taking it literally
+        candidates = list(_PBE_POTCAR_FUNCTIONALS)
+    elif potcar_functional.startswith("PBE"):  # requested choice first, then the other PBE libraries
+        candidates = list(dict.fromkeys([potcar_functional, *_PBE_POTCAR_FUNCTIONALS]))
+    else:  # no PBE fallbacks for non-PBE choices (e.g. ``LDA``), to avoid silently switching functional
+        candidates = [potcar_functional]
 
-        test_pbe_potcar_strings = ["PBE", "PBE_52", "PBE_54", "PBE_64", potcar_functional]
-        # user potcar functional tested last so error message matches this
-        for pbe_potcar_string in test_pbe_potcar_strings:  # try other functional choices
-            with contextlib.suppress(OSError, RuntimeError):
-                potcar_functional = pbe_potcar_string
-                test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
-                break
+    if (functional := _first_available_potcar_functional(symbol_tuple, candidates)) is not None:
+        if functional != potcar_functional != "PBE":
+            warn_once(
+                f"The requested ``POTCAR`` functional ({potcar_functional}) was not found in your VASP "
+                f"pseudopotential directory, so {functional} is being used instead. Note that ``POTCAR`` "
+                f"choices should be consistent between all calculations being compared.",
+                key=(potcar_functional, functional),
+            )
+        return functional
 
-        if test_potcar is None:
-            # issue might be with just one of the symbols, so loop through and find the first one that
-            # breaks for all, to ensure informative error message
-            for symbol in symbols:
-                for i, pbe_potcar_string in enumerate(test_pbe_potcar_strings):
-                    try:
-                        potcar_functional = pbe_potcar_string
-                        test_potcar = _get_potcar((symbol,), potcar_functional=potcar_functional)
-                        break
-                    except (OSError, RuntimeError) as single_pot_exc:
-                        if i + 1 == len(test_pbe_potcar_strings):  # failed with all
-                            raise single_pot_exc
+    # none worked; the issue may be with just one symbol, so re-test individually and raise for the failure
+    for symbol in symbol_tuple:
+        if _first_available_potcar_functional((symbol,), candidates) is None:
+            return _get_potcar((symbol,), potcar_functional=potcar_functional)  # raises
 
-            raise e  # should already have been raised at this point
-
-    return potcar_functional
+    return _get_potcar(symbol_tuple, potcar_functional=potcar_functional)  # raises
 
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up POTCAR writing
@@ -962,9 +974,9 @@ class DefectRelaxSet(MSONable):
     def vasp_std(self) -> DefectDictSet | None:
         """
         ``DefectDictSet`` for a VASP defect supercell relaxation using
-        ``vasp_std`` (i.e. with a non-Γ-only kpoint mesh). Returns ``None`` and
-        a warning if the input kpoint settings correspond to a Γ-only kpoint
-        mesh (in which case ``vasp_gam`` should be used).
+        ``vasp_std`` (i.e. with a non-Γ-only kpoint mesh). Returns ``None``
+        and a warning if the input kpoint settings correspond to a Γ-only
+        kpoint mesh (in which case ``vasp_gam`` should be used).
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
@@ -1138,19 +1150,20 @@ class DefectRelaxSet(MSONable):
     @property
     def bulk_vasp_gam(self) -> DefectDictSet | None:
         """
-        ``DefectDictSet`` for a VASP `bulk` Γ-point-only (``vasp_gam``) single-
-        point (static) supercell calculation. Often not used, as the bulk
-        supercell only needs to be calculated once with the same settings as
-        the final defect calculations, which is ``vasp_std`` if we have a non-
-        Γ-only final k-point mesh, or ``vasp_ncl`` if SOC effects are being
-        included. If the final converged k-point mesh is Γ-only, then this
-        ``DefectDictSet`` should be used to calculate the single-point (static)
-        bulk supercell reference energy. Can also sometimes be useful for the
-        purpose of calculating defect formation energies at early stages of the
-        typical ``vasp_gam`` -> ``vasp_nkred_std`` (if hybrid & non-Γ-only
-        k-points) -> ``vasp_std`` (if non-Γ-only k-points) -> ``vasp_ncl`` (if
-        SOC included) workflow, to obtain rough formation energy estimates and
-        flag any potential issues with defect calculations early on.
+        ``DefectDictSet`` for a VASP `bulk` Γ-point-only (``vasp_gam``)
+        single- point (static) supercell calculation. Often not used, as the
+        bulk supercell only needs to be calculated once with the same settings
+        as the final defect calculations, which is ``vasp_std`` if we have a
+        non- Γ-only final k-point mesh, or ``vasp_ncl`` if SOC effects are
+        being included. If the final converged k-point mesh is Γ-only, then
+        this ``DefectDictSet`` should be used to calculate the single-point
+        (static) bulk supercell reference energy. Can also sometimes be useful
+        for the purpose of calculating defect formation energies at early
+        stages of the typical ``vasp_gam`` -> ``vasp_nkred_std`` (if hybrid &
+        non-Γ-only k-points) -> ``vasp_std`` (if non-Γ-only k-points) ->
+        ``vasp_ncl`` (if SOC included) workflow, to obtain rough formation
+        energy estimates and flag any potential issues with defect calculations
+        early on.
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``

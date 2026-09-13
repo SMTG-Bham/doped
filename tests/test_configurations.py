@@ -21,7 +21,6 @@ from doped.utils.configurations import (
     apply_s2_to_s1_transformation,
     get_dQ,
     get_path_structures,
-    get_s2_like_s1,
     get_transformation_from_s2_to_s1,
     orient_s2_like_s1,
     write_path_structures,
@@ -167,7 +166,7 @@ class TestGetDQ(ConfigurationsTestCase):
 
 class TestOrientS2LikeS1(ConfigurationsTestCase):
     """
-    Tests for ``orient_s2_like_s1`` / ``get_s2_like_s1``.
+    Tests for ``orient_s2_like_s1``.
     """
 
     def test_reorientation_reduces_dQ(self):
@@ -200,12 +199,6 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
             self.V_Se_m2_supercell
         )
         assert np.isclose(min_dist(V_Se_m2_like_m1), min_dist(self.V_Se_m2_supercell), atol=1e-3)
-
-    def test_get_s2_like_s1_alias(self):
-        """
-        ``get_s2_like_s1`` is just an alias for ``orient_s2_like_s1``.
-        """
-        assert get_s2_like_s1 is orient_s2_like_s1
 
     def test_verbose_prints_dQ_info(self):
         """

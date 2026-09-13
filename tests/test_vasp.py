@@ -101,7 +101,7 @@ class DefectDictSetTest(unittest.TestCase):
             "PRECFOCK": "Fast",
             "GGA": "Pe",  # gets changed from PE to Pe in DictSet initialisation
             "AEXX": 0.25,  # changed for HSE(a); HSE06 assumed by default
-            "HFSCREEN": 0.208,  # # correct HSE screening parameter; changed for PBE0
+            "HFSCREEN": 0.2,  # HSE06 screening parameter; changed for PBE0
         }
         self.doped_std_kpoint_comment = "KPOINTS from doped, with reciprocal_density = 100/Å⁻³"
         self.doped_gam_kpoint_comment = "Γ-only KPOINTS from doped"
@@ -1628,7 +1628,7 @@ class DefectsSetTest(unittest.TestCase):
 
             if _potcars_available():  # otherwise INCARs not written for charged defects
                 with open(f"{folder_name}/INCAR", encoding="utf-8") as f:
-                    assert "HFSCREEN = 0.208\n" in f.readlines()
+                    assert "HFSCREEN = 0.2\n" in f.readlines()
 
             if kwargs.get("poscar", True):
                 struct = Structure.from_file(f"{folder_name}/POSCAR")
@@ -1851,7 +1851,7 @@ class DefectsSetTest(unittest.TestCase):
         assert sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"] == ds["Ag_Sb_Cs_Te2.90_-2"].defect_entry  # __getitem__
         assert isinstance(ds["Ag_Sb_Cs_Te2.90_-2"], DefectRelaxSet)  # __getitem__
         if _potcars_available():
-            assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.208  # __getitem__
+            assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.2  # __getitem__
 
         new_drs = DefectRelaxSet(sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"])
         ds["Ag_Sb_Cs_Te2.90_-1"] = new_drs
