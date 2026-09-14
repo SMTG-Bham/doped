@@ -125,6 +125,9 @@ class DefectEntry(thermo.DefectEntry):
                 supercell.
             sc_defect_frac_coords:
                 The fractional coordinates of the defect in the supercell.
+                For substitutions and interstitials this is the `relaxed` site
+                of the substituting/interstitial atom, while for vacancies it
+                is the vacated site from the (unrelaxed) `bulk` supercell.
             bulk_entry:
                 ``pymatgen`` |ComputedEntry| for the bulk supercell
                 reference. Required for calculating defect formation energy.
@@ -1745,7 +1748,7 @@ def template_defect_entry_from_structures(
             structure=bulk_supercell,
             energy=0.0,  # needs to be set, so set to 0.0
         ),
-        sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
+        sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ site (except for vacancies)
         bulk_entry=None,
         # doped attributes:
         name="Partial Defect Entry",

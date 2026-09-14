@@ -48,6 +48,7 @@ from doped.utils.parsing import (
     _get_bulk_locpot_dict,
     _get_bulk_site_potentials,
     _get_calc_files_df,
+    _get_closest_coords,
     _get_defect_supercell_frac_coords,
     _get_output_files_and_check_if_multiple,
     _guess_initial_defect_structure,
@@ -732,10 +733,11 @@ def guess_defect_position(
 
     if bulk_supercell is not None:  # compare each defect-supercell site to its nearest bulk site
         bulk_desc = _get_soap_vecs(bulk_supercell)
-        all_dists = bulk_supercell.lattice.get_all_distances(  # (n_defect, n_bulk), PBC-aware
-            defect_supercell.frac_coords, bulk_supercell.frac_coords
-        )  # duplicate site matches allowed (and expected in most cases, with defect != bulk composition)
-        ref_soap_vecs = bulk_desc[np.argmin(all_dists, axis=1)]  # nearest bulk site for each defect site
+        # duplicate site matches allowed (and expected in most cases, with defect != bulk composition).
+        _dists, matches = _get_closest_coords(  # PBC-aware; ``KDTree``-accelerated for larger supercells
+            defect_supercell.frac_coords, bulk_supercell.frac_coords, lattice=bulk_supercell.lattice
+        )
+        ref_soap_vecs = bulk_desc[matches]  # nearest bulk site for each defect site
     else:
         elt_median_soap_vec_dict = {  # median SOAP vector for each element in the defect supercell
             elt.symbol: np.median(
@@ -2458,7 +2460,7 @@ class DefectParser:
             defect=defect,  # this corresponds to _unrelaxed_ defect
             charge_state=charge_state,
             sc_entry=sc_entry,
-            sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
+            sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ site (except for vacancies)
             bulk_entry=bulk_entry,
             # doped attributes:
             name=possible_defect_name,  # auto-determined in ``__init__`` if not set; set to avoid guessing

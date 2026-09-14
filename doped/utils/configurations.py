@@ -11,10 +11,18 @@ from collections.abc import Sequence
 from functools import lru_cache
 
 import numpy as np
+from numpy.typing import ArrayLike
+from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.util.coord import lattice_points_in_supercell
 from pymatgen.util.typing import PathLike
 
-from doped.utils.efficiency import StructureMatcher_scan_stol, get_element_min_max_bond_length_dict
+from doped.utils.efficiency import (
+    StructureMatcher_scan_stol,
+    _structure_from_sites_and_coords,
+    _to_unit_cell,
+    get_element_min_max_bond_length_dict,
+)
 from doped.utils.parsing import check_atom_mapping_far_from_defect
 
 
@@ -77,6 +85,28 @@ def _cache_ready_get_transformation_from_s2_to_s1(
     sm_kwargs["primitive_cell"] = False
 
     return StructureMatcher_scan_stol(struct1, struct2, func_name="get_transformation", **sm_kwargs)
+
+
+def _supercell_frac_coords(
+    sites: list[PeriodicSite], lattice: Lattice, supercell_matrix: ArrayLike
+) -> tuple[Lattice, np.ndarray, int]:
+    """
+    Returns the supercell lattice, (supercell) unit-cell-folded fractional
+    coordinates and number of periodic images for ``sites``, matching
+    ``Structure.make_supercell`` but without building any ``pymatgen`` site
+    objects (which dominate its cost).
+
+    Coordinates are ordered site-major over the images (i.e. each image of site
+    in ``sites`` grouped together), as in ``IStructure.__mul__``.
+    """
+    scale_matrix = np.array(supercell_matrix, int)
+    if scale_matrix.shape != (3, 3):
+        scale_matrix = scale_matrix * np.eye(3, dtype=int)
+    supercell_lattice = Lattice(np.dot(scale_matrix, lattice.matrix), pbc=lattice.pbc)
+    images = supercell_lattice.get_cartesian_coords(lattice_points_in_supercell(scale_matrix))
+    cart_coords = np.array([site.coords for site in sites])[:, None, :] + images[None]
+    frac_coords = supercell_lattice.get_fractional_coords(cart_coords.reshape(-1, 3))
+    return supercell_lattice, _to_unit_cell(supercell_lattice, frac_coords), len(images)
 
 
 def apply_s2_to_s1_transformation(
@@ -154,40 +184,41 @@ def apply_s2_to_s1_transformation(
         Structure:
             ``struct2`` transformed to ``struct1`` as closely as possible.
     """
-    ignored_set = set(ignored_species) if ignored_species else None
-    if ignored_set:  # equivalent but more efficient version of code in ``get_s2_like_s1``
-        kept_sites: list[PeriodicSite] = []
-        ignored_sites: list[PeriodicSite] = []
-        for site in struct2:  # only one pass over ``struct2``, and compare based on species not sites
-            (kept_sites if site.specie.symbol not in ignored_set else ignored_sites).append(site)
-        temp = Structure.from_sites(kept_sites + ignored_sites)  # ignored species at end
-    else:
-        temp = struct2.copy()
-
-    temp.make_supercell(supercell_matrix)  # make supercell
-    temp.translate_sites(list(range(len(temp))), trans_vector)  # translate by fractional vector
+    # the supercell, translation and re-ordering below are all done on coordinate `arrays`, only building
+    # the (expensive) |Structure| objects at the end; this function is applied to large super-supercells in
+    # the stenciling workflow, where ``pymatgen`` site-object init otherwise dominates its cost.
+    ignored_set = set(ignored_species) if ignored_species else set()
+    # sort with ignored species at the end (``sorted`` is stable), as in ``get_s2_like_s1``:
+    s2_sites = sorted(struct2.sites, key=lambda site: site.specie.symbol in ignored_set)
+    supercell_lattice, frac_coords, n_images = _supercell_frac_coords(
+        s2_sites, struct2.lattice, supercell_matrix
+    )
+    sites = [site for site in s2_sites for _ in range(n_images)]  # matching site-major image ordering
+    frac_coords = _to_unit_cell(supercell_lattice, frac_coords + trans_vector)  # translate by frac vector
 
     s1 = struct1.copy().remove_species(ignored_species) if ignored_species else struct1  # ignore ignored
 
     # translate sites to the correct unit cell (only integer translations)
     for ii, jj in enumerate(mapping[: len(s1)]):
         if jj is not None:
-            vec = np.round(s1[ii].frac_coords - temp[jj].frac_coords)  # round to nearest integer
-            temp.translate_sites(jj, vec, to_unit_cell=False)  # translate to correct unit cell
+            frac_coords[jj] += np.round(s1[ii].frac_coords - frac_coords[jj])  # round to nearest integer
 
-    # avoid ~1e-16 float-arithmetic noise from ``make_supercell`` / ``translate_sites``:
-    for site, fc in zip(temp.sites, np.round(temp.frac_coords, 8), strict=True):
-        site.frac_coords = fc
+    # avoid ~1e-16 float-arithmetic noise from the supercell / translation operations above:
+    frac_coords = np.round(frac_coords, 8)
 
-    sites = [temp.sites[i] for i in mapping if i is not None]  # get sites in correct order (from mapping)
+    order = [i for i in mapping if i is not None]  # get sites in correct order (from mapping)
 
     if include_ignored_species:  # add back in ignored species / any sites not in ``mapping``
         # note that this differs slightly from the ``pymatgen`` |StructureMatcher| implementation, which
         # assumes that any sites not in ``mapping`` are ignored species (not the case when using a subset
         # of sites to determine the transformation matrix and translation vector, as in stenciling)
-        sites.extend([temp.sites[i] for i in range(len(temp)) if i not in mapping])
+        mapped = set(mapping)
+        order.extend([i for i in range(len(sites)) if i not in mapped])
 
-    trans_struct = Structure.from_sites(sites)
+    sites, frac_coords = [sites[i] for i in order], frac_coords[order]
+    trans_struct = _structure_from_sites_and_coords(
+        supercell_lattice, sites, frac_coords, keep_labels=True
+    )
 
     # get new_lattice choice:
     from doped.utils.symmetry import are_equivalent_lattices  # avoid circular import
@@ -240,19 +271,9 @@ def apply_s2_to_s1_transformation(
             f"``'struct2'``, or ``'s2_like_s1'``."
         )
 
-    trans_struct_w_lattice_choice = Structure.from_sites(
-        [  # sometimes this get_s2_like_s1 doesn't fully work as desired, giving different (but equivalent)
-            PeriodicSite(  # lattice vectors (e.g. a=(010) instead of (100) etc.), so we redefine with the
-                site.species,  # chosen lattice to be sure
-                site.frac_coords,
-                lattice,
-                properties=site.properties,
-                to_unit_cell=False,
-                skip_checks=True,
-            )
-            for site in trans_struct.sites
-        ]
-    )
+    # sometimes ``get_s2_like_s1`` doesn't fully work as desired, giving different (but equivalent) lattice
+    # vectors (e.g. a=(010) instead of (100) etc.), so we redefine with the chosen lattice to be sure:
+    trans_struct_w_lattice_choice = _structure_from_sites_and_coords(lattice, sites, frac_coords)
 
     # in some cases, if the match between structures isn't perfect, then swapping the lattices here can
     # lead to a structural change, which is not desired. So here we test this by looking at the min/max

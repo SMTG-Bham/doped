@@ -29,6 +29,7 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vas
 from pymatgen.optimization.neighbors import find_points_in_spheres
 from pymatgen.util.coord import all_distances
 from pymatgen.util.typing import PathLike, SpeciesLike
+from scipy.spatial import KDTree
 
 from doped.utils import _warn_parameter_order
 from doped.utils.efficiency import _parse_site_species_str
@@ -1391,6 +1392,62 @@ def _get_site_mapping_from_coords_and_indices(
     return site_mapping
 
 
+def _get_closest_coords(
+    coords1: ArrayLike, coords2: ArrayLike, lattice: Lattice | None = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Get the distance to, and index of, the closest entry in ``coords2`` for
+    each entry in ``coords1``, using a ``KDTree`` (much faster than computing
+    the full distance matrix, for larger structures).
+
+    Args:
+        coords1 (ArrayLike):
+            Coordinates to get the closest ``coords2`` entries for.
+        coords2 (ArrayLike):
+            Coordinates to match ``coords1`` against.
+        lattice (|Lattice| | None):
+            If provided, ``coords1``/``coords2`` are taken as `fractional`
+            coordinates in this lattice, and minimum-image (PBC) distances
+            returned -- by including the neighbouring periodic images of
+            ``coords2`` in the search, which is exact whenever the closest
+            image is nearer than half the shortest lattice vector (and we fall
+            back to the full distance matrix if it is not). Default is
+            ``None``; Cartesian coordinates without PBC.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]:
+            The distances to, and indices of, the closest ``coords2`` entries.
+    """
+    coords1, coords2 = np.asarray(coords1), np.asarray(coords2)
+    if lattice is None:
+        distances, matches = KDTree(coords2).query(coords1)
+        return np.asarray(distances), np.asarray(matches)
+
+    # ``pymatgen``'s (Cython) minimum-image routine is faster below this size, and only above it does
+    # avoiding its N x M temporary array matter (which is the main gain here; ~50x less peak memory):
+    use_distance_matrix = len(coords1) * len(coords2) < 1e5
+    if not use_distance_matrix:
+        # the +/-1 image search is only reliable in a reduced basis -- in a skewed (non-reduced) cell it
+        # could return a non-minimum-image match -- so work in the LLL-reduced lattice:
+        reduced = lattice.get_lll_reduced_lattice()
+        to_reduced = lattice.matrix @ np.linalg.inv(reduced.matrix)
+        lattice_vectors = np.array(list(itertools.product((-1, 0, 1), repeat=3))) @ reduced.matrix
+        image_coords = (np.mod(coords2 @ to_reduced, 1) @ reduced.matrix)[None] + lattice_vectors[:, None]
+        distances, matches = KDTree(image_coords.reshape(-1, 3)).query(
+            np.mod(coords1 @ to_reduced, 1) @ reduced.matrix
+        )
+        # validation; fall back to the exact calculation if any match is too far away for the image search
+        # to be guaranteed minimum-image:
+        vector_lengths = np.linalg.norm(lattice_vectors, axis=1)
+        use_distance_matrix = np.max(distances) >= 0.5 * vector_lengths[vector_lengths > 0].min()
+
+    if use_distance_matrix:
+        distance_matrix = np.asarray(lattice.get_all_distances(coords1, coords2))
+        return distance_matrix.min(axis=1), distance_matrix.argmin(axis=1)
+
+    return np.asarray(distances), np.asarray(matches) % len(coords2)
+
+
 def get_site_mappings(
     struct1: Structure,
     struct2: Structure,
@@ -1489,21 +1546,19 @@ def get_site_mappings(
             continue
 
         # mapping entries are (dist, species-local struct1 index, species-local struct2 index):
+        lattice = struct1.lattice if frac_coords else None
         if allow_duplicates:  # each input independently picks its closest template
-            dmat = (
-                struct1.lattice.get_all_distances(s1_coords, s2_coords)
-                if frac_coords
-                else all_distances(s1_coords, s2_coords)
-            )
+            dists, matches = _get_closest_coords(s1_coords, s2_coords, lattice)
             mapping: list[tuple[float | None, int | None, int | None]] = [
-                (float(row.min()), i, int(row.argmin())) for i, row in enumerate(dmat)
+                (float(dist), i, int(match))
+                for i, (dist, match) in enumerate(zip(dists, matches, strict=True))
             ]
 
         else:  # linear assignment, for order-independent optimal matching
             mapping = _get_site_mapping_from_coords_and_indices(
                 s1_coords,
                 s2_coords,
-                lattice=struct1.lattice if frac_coords else None,
+                lattice=lattice,
                 rms=rms,
             )
 
