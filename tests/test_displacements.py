@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 import pytest
+from pymatgen.core.structure import Structure
 from test_utils import STYLE, custom_mpl_image_compare, data_dir
 
 from doped.core import DefectEntry
@@ -18,6 +19,7 @@ from doped.utils.displacements import (
     plot_displacements_ellipsoid,
     plot_site_displacements,
 )
+from doped.utils.symmetry import remove_translation_drift, translate_structure
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -38,11 +40,15 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             print(f"Testing calc_site_displacements with relaxed_distances={relaxed_distances}")
             defect_entry = self.v_Cd_0_defect_entry  # Neutral Cd vacancy
             disp_df = calc_site_displacements(defect_entry, relaxed_distances=relaxed_distances)
-            for i, disp in [
-                (0, [0.0572041, 0.00036486, -0.01794981]),
-                (15, [0.11715445, -0.03659073, 0.01312027]),
-            ]:
-                np.allclose(disp_df["Displacement"].iloc[i], np.array(disp))
+            disp_vec_tuples = [
+                (0, [0.0, 0.0, 0.0]),  # the vacancy site itself; zero displacement by construction
+            ] + (  # rows are sorted by distance to defect, so index 15 is a different site in each case:
+                [(15, [-0.00113, 0.00022, -0.14417])]
+                if relaxed_distances
+                else [(15, [-0.00116, 0.00114, -0.14415])]
+            )
+            for i, disp in disp_vec_tuples:
+                assert np.allclose(disp_df["Displacement vector"].iloc[i], np.array(disp), atol=1e-5)
             # Check distance
             for i, dist in [
                 (0, 0.0),
@@ -51,11 +57,13 @@ class DefectDisplacementsTestCase(unittest.TestCase):
                 assert np.isclose(disp_df["Distance to defect"].iloc[i], dist, atol=2e-2)
             # Test displacements added to defect_entry:
             disp_metadata = defect_entry.calculation_metadata["site_displacements"]
-            for i, disp in [
-                (0, [0.0572041, 0.00036486, -0.01794981]),
-                (15, [0.11715445, -0.03659073, 0.01312027]),
-            ]:
-                np.allclose(disp_metadata["displacements"][i], np.array(disp))
+            assert np.allclose(  # the vacancy site is row 0; sorted by distance, checked as 0.0 above
+                np.array(disp_metadata["displacements"]),
+                np.stack(list(disp_df["Displacement vector"]))[1:],
+            )
+            assert np.allclose(
+                np.array(disp_metadata["distances"]), disp_df["Distance to defect"].to_numpy()[1:]
+            )
             # Test displacement of vacancy removed before adding to calculation_metadata
             assert len(disp_metadata["distances"]) == 63  # Cd Vacancy so 63 sites
             # Test relative displacements from defect
@@ -66,11 +74,11 @@ class DefectDisplacementsTestCase(unittest.TestCase):
                 (0, 0.0),
             ] + (
                 [
-                    (1, -0.1166),
+                    (1, -0.0768),
                 ]
                 if relaxed_distances
                 else [
-                    (4, -0.0796),
+                    (4, -0.0783),
                 ]
             )
             for i, disp in disp_tuples:
@@ -82,13 +90,13 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             )
             if relaxed_distances:
                 disp_tuples = [
-                    (32, 2.177851642, 0.980779911),  # index, distance, displacement
-                    (33, 2.234858368, -0.892888144),
+                    (32, 2.203030, 0.939950),  # index, distance, displacement
+                    (33, 2.209070, -0.933720),
                 ]
             else:
                 disp_tuples = [
-                    (32, 2.83337, 0.980779911),  # index, distance, displacement
-                    (33, 2.83337, -0.892888144),
+                    (32, 2.83337, 0.939950),  # index, distance, displacement
+                    (33, 2.83337, -0.933720),
                 ]
             for i, dist, disp in disp_tuples:
                 assert np.isclose(disp_df["Displacement projected along vector"].iloc[i], disp, atol=1e-3)
@@ -129,20 +137,92 @@ class DefectDisplacementsTestCase(unittest.TestCase):
                     atol=1e-2,
                 )
 
-            # Substitution:
-            disp_df = calc_site_displacements(self.Te_Cd_1_defect_entry)
-            for i, disp in [
-                (0, [0.00820645, 0.00821417, -0.00815738]),
-                (15, [-0.00639524, 0.00639969, -0.01407927]),
-            ]:
-                np.allclose(disp_df["Displacement"].iloc[i], np.array(disp), atol=1e-3)
-            # Interstitial:
-            disp_df = calc_site_displacements(self.Te_i_1_defect_entry)
-            for i, disp in [
-                (0, [-0.03931121, 0.01800569, 0.04547194]),
-                (15, [-0.04850126, -0.01378455, 0.05439607]),
-            ]:
-                np.allclose(disp_df["Displacement"].iloc[i], np.array(disp), atol=1e-3)
+        # substitution and interstitial cases; with the default ``relaxed_distances``, so outside the loop
+        # above (which only affects the tabulated distances, and so the row ordering):
+        for defect_entry, disp_vec_tuples in [
+            (
+                self.Te_Cd_1_defect_entry,
+                [(0, [-0.0624, -0.06237, 0.01063]), (15, [0.0036, 0.0182, -0.00363])],
+            ),
+            (
+                self.Te_i_1_defect_entry,
+                [(0, [-0.23097, -0.32803, 0.23296]), (15, [-0.05906, 0.0545, -0.0305])],
+            ),
+        ]:
+            disp_df = calc_site_displacements(defect_entry)
+            for i, disp in disp_vec_tuples:
+                assert np.allclose(disp_df["Displacement vector"].iloc[i], np.array(disp), atol=1e-4)
+
+    def test_remove_translation_drift(self):
+        """
+        Test ``remove_translation_drift``, which should recover a rigid
+        translation of the defect supercell exactly for an unrelaxed defect
+        (where the mean host atom displacement `is` the translation), including
+        for defects with contested bulk sites -- an antisite (whose substituent
+        has no bulk site of its own, so claims that of a host atom) and a split
+        interstitial (whose two halves claim the same bulk site) -- which must
+        be excluded from the drift estimate.
+
+        Also that it gives the same result from translated and untranslated
+        inputs for real (relaxed) entries.
+        """
+        bulk_supercell = self.v_Cd_0_defect_entry.bulk_supercell
+        cd_index, te_index = (bulk_supercell.indices_from_symbol(symbol)[0] for symbol in ("Cd", "Te"))
+        cd_frac_coords, te_frac_coords = (bulk_supercell[i].frac_coords for i in (cd_index, te_index))
+        shift = np.array([0.004, -0.006, 0.009])  # fractional; ~0.05-0.12 Å in this 13 Å supercell
+
+        def _max_min_image_diff(frac_coords_a, frac_coords_b):
+            diff = np.asarray(frac_coords_a) - np.asarray(frac_coords_b)
+            return np.abs(diff - np.round(diff)).max()
+
+        vacancy = bulk_supercell.copy()
+        vacancy.remove_sites([cd_index])  # first Cd index
+        antisite = bulk_supercell.copy()
+        antisite.replace(cd_index, "Te")
+        split_interstitial = bulk_supercell.copy()
+        split_interstitial.remove_sites([te_index])
+        for sign in (1, -1):  # Te-Te dumbbell centred on the bulk Te site, ~1.2 Å long
+            split_interstitial.append("Te", te_frac_coords + sign * np.array([0.045, 0, 0]))
+
+        for defect_supercell, defect_frac_coords in [
+            (vacancy, cd_frac_coords),
+            (antisite, cd_frac_coords),
+            (split_interstitial, te_frac_coords),
+        ]:
+            unshifted_supercell, unshifted_frac_coords = remove_translation_drift(
+                translate_structure(defect_supercell, shift, frac_coords=True),
+                bulk_supercell,
+                defect_frac_coords + shift,
+            )
+            assert (
+                _max_min_image_diff(unshifted_supercell.frac_coords, defect_supercell.frac_coords) < 1e-8
+            )
+            # the returned coords always follow the atoms; a _vacancy_ site is defined in the bulk frame
+            # instead, so its caller keeps its own input coords (see ``get_defect_in_supercell``):
+            assert _max_min_image_diff(unshifted_frac_coords, defect_frac_coords) < 1e-8
+
+        # supercells with no species in common give an informative error, not an ``IndexError``:
+        with pytest.raises(ValueError, match="No host atoms could be matched"):
+            remove_translation_drift(
+                Structure(bulk_supercell.lattice, ["Ar"], [[0, 0, 0]]), bulk_supercell, [0, 0, 0]
+            )
+
+        for defect_entry in [
+            self.v_Cd_0_defect_entry,
+            self.Te_Cd_1_defect_entry,
+            self.Te_i_1_defect_entry,
+        ]:
+            frac_coords = np.array(defect_entry.sc_defect_frac_coords)
+            reference = remove_translation_drift(
+                defect_entry.defect_supercell, defect_entry.bulk_supercell, frac_coords
+            )
+            shifted = remove_translation_drift(
+                translate_structure(defect_entry.defect_supercell, shift, frac_coords=True),
+                defect_entry.bulk_supercell,
+                frac_coords + shift,
+            )
+            assert _max_min_image_diff(shifted[0].frac_coords, reference[0].frac_coords) < 1e-8
+            assert _max_min_image_diff(shifted[1], reference[1]) < 1e-8
 
     def test_plot_site_displacements_error(self):
         # Check ValueError raised if user sets both separated_by_direction and vector_to_project_on
@@ -168,12 +248,12 @@ class DefectDisplacementsTestCase(unittest.TestCase):
     def test_calc_displacements_ellipsoid(self):
         # Vacancy:
         # These benchmarks are for the displacement ellipsoid of V_Cd^0 in CdTe at quantile=0.8:
-        ellipsoid_center_V_Cd_0 = [7.13105322, 6.00301352, 7.01083535]
-        ellipsoid_radii_V_Cd_0 = [4.93846557, 5.13530794, 7.24309775]
+        ellipsoid_center_V_Cd_0 = [6.92183865, 6.16328614, 5.12604008]
+        ellipsoid_radii_V_Cd_0 = [3.88736226, 4.79169454, 5.65805019]
         ellipsoid_rotation_V_Cd_0 = [
-            [-0.6268144, 0.6346784, 0.45198123],
-            [0.71042757, 0.70376392, -0.0030035],
-            [0.31999434, -0.31921729, 0.89202239],
+            [-0.63676437, 0.63729803, 0.43403037],
+            [0.30650482, -0.30730649, 0.90089817],
+            [0.70752098, 0.70669226, 0.0003469],
         ]
 
         # Substitution:
@@ -188,12 +268,12 @@ class DefectDisplacementsTestCase(unittest.TestCase):
 
         # Interstitial:
         # These benchmarks are for the displacement ellipsoid of Int_Te_3_1 in CdTe at quantile=0.8:
-        ellipsoid_center_Te_i_1 = [6.09363088, 7.49090509, 6.25422689]
-        ellipsoid_radii_Te_i_1 = [3.55290552, 5.58410512, 6.92612648]
+        ellipsoid_center_Te_i_1 = [7.48324291, 6.98981838, 5.60624404]
+        ellipsoid_radii_Te_i_1 = [2.98045949, 4.35544932, 8.89576523]
         ellipsoid_rotation_Te_i_1 = [
-            [0.44059141, 0.59640957, 0.6709507],
-            [0.38012734, 0.80103898, 0.46242811],
-            [0.81325421, 0.05130485, 0.57964248],
+            [0.70693397, -0.0003162, 0.70727948],
+            [2.9e-06, 0.9999999, 0.00044417],
+            [0.70727955, 0.00031195, -0.7069339],
         ]
 
         for entry, ellipsoid_center_benchmark, ellipsoid_radii_benchmark, ellipsoid_rotation_benchmark in [

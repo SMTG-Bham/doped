@@ -8,6 +8,7 @@ import gzip
 import locale
 import os
 import random
+import tempfile
 import unittest
 import warnings
 from copy import deepcopy
@@ -35,6 +36,7 @@ from doped.vasp import (
     DefectRelaxSet,
     DefectsSet,
     DopedDictSet,
+    _kspacing_kpts,
     default_defect_relax_set,
     default_potcar_dict,
     singlepoint_incar_settings,
@@ -417,6 +419,37 @@ class DefectDictSetTest(unittest.TestCase):
             user_incar_settings={"EDIFF_PER_ATOM": 1e-2},
         )
         assert np.isclose(dds.incar["EDIFF"], 1e-2 * len(self.prim_cdte))
+
+    def test_kspacing_setting(self):
+        """
+        Test handling of a user ``KSPACING`` ``INCAR`` setting, for which
+        ``VASP`` needs no ``KPOINTS`` file and ``pymatgen`` generates none --
+        so the mesh ``VASP`` will generate is predicted (``_kspacing_kpts``) in
+        order to keep setting/checking ``KPAR``.
+        """
+        dds = DopedDictSet(self.prim_cdte.copy(), user_incar_settings={"KSPACING": 0.3, "KPAR": 2})
+        assert dds.kpoints is None
+        assert dds.incar["KSPACING"] == 0.3
+        assert dds.incar["KPAR"] == 2  # retained
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dds.write_input(tmp_dir, potcar_spec=True)
+            assert not os.path.exists(os.path.join(tmp_dir, "KPOINTS"))
+            assert os.path.exists(os.path.join(tmp_dir, "INCAR"))
+
+        # ``VASP``'s formula: N_i = max(1, ceil(|b_i|/KSPACING)); |b| = 1.664 Å⁻¹ for primitive CdTe
+        assert _kspacing_kpts(self.prim_cdte, 0.3) == (6, 6, 6)
+        assert _kspacing_kpts(self.prim_cdte, 5) == (1, 1, 1)  # never less than Γ-only
+        assert _kspacing_kpts(self.prim_cdte, "auto") is None  # unresolved; no mesh known
+
+        supercell = self.prim_cdte * 3  # ~13 Å supercell; |b| = 0.555 Å⁻¹
+        assert _kspacing_kpts(supercell, 0.5) == (2, 2, 2)
+        # the predicted mesh drives ``KPAR`` exactly as an explicit ``KPOINTS`` mesh does:
+        assert DopedDictSet(supercell, user_incar_settings={"KSPACING": 0.5}).incar["KPAR"] == 4
+        with warnings.catch_warnings(record=True) as w:
+            incar = DopedDictSet(supercell, user_incar_settings={"KSPACING": 0.6, "KPAR": 2}).incar
+        assert incar["KPAR"] == 1  # 0.6 Å⁻¹ > |b|, so the predicted mesh is Γ-only
+        assert any("Γ-only (i.e. only one kpoint), so KPAR is being set to 1" in str(i.message) for i in w)
 
     def test_initialisation_for_all_structs(self):
         """

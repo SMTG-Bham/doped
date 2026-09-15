@@ -3,6 +3,7 @@ Tests for the ``doped.utils.stenciling`` module.
 """
 
 import os
+import random
 import unittest
 import warnings
 from copy import deepcopy
@@ -27,9 +28,14 @@ from doped.utils.efficiency import (
     StructureMatcher_scan_stol,
     get_element_min_max_bond_length_dict,
 )
-from doped.utils.parsing import check_atom_mapping_far_from_defect, get_defect_type_and_composition_diff
+from doped.utils.parsing import (
+    check_atom_mapping_far_from_defect,
+    get_defect_type_and_composition_diff,
+    get_site_mappings,
+)
 from doped.utils.stenciling import get_defect_in_supercell
 from doped.utils.supercells import min_dist
+from doped.utils.symmetry import apply_symm_op_to_struct, get_sga, remove_translation_drift
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -163,8 +169,12 @@ def _validate_stenciled_supercell(
             supercell. Default = ``False``.
     """
     orig_supercell = defect_entry.defect_supercell
-    orig_defect_frac_coords = defect_entry.sc_defect_frac_coords
     bulk_min_bond_length = min_dist(defect_entry.bulk_supercell)
+    orig_supercell, _shifted_defect_frac_coords = remove_translation_drift(  # coords unused; the defect
+        orig_supercell,  # site is re-derived from the drift-corrected structures for both cells below
+        defect_entry.bulk_supercell,
+        np.array(defect_entry.sc_defect_frac_coords),
+    )
     bulk_min_dist_tol = bulk_min_bond_length * min_dist_tol_factor
 
     # 1. Lattice check: stenciled supercell lattice matches target
@@ -211,7 +221,15 @@ def _validate_stenciled_supercell(
     # 5. Defect nearest-neighbour distances preserved:
     # Find the actual defect position in the stenciled supercell by comparing with the corresponding
     # bulk supercell:
-    orig_nn_dists = _get_sorted_nn_distances(orig_supercell, orig_defect_frac_coords)
+    # the defect site is determined here with the same function used for the stenciled supercell above,
+    # rather than from the stored ``sc_defect_frac_coords``, so that the two sides make the same choice
+    # (e.g. for a `split` defect -- whose two halves are equally valid defect sites -- likely
+    # unnecessary when defect complex support added):
+    orig_defect_site = defect_site_from_structures(
+        orig_supercell, defect_entry.bulk_supercell, _parameter_order_warn=False
+    )
+    assert isinstance(orig_defect_site, PeriodicSite)  # typing
+    orig_nn_dists = _get_sorted_nn_distances(orig_supercell, orig_defect_site.frac_coords)
     stenciled_nn_dists = _get_sorted_nn_distances(stenciled_supercell, stenciled_defect_frac_coords)
     # The first few NN (=12 by default here) distances from the defect site should be preserved,
     # as this local geometry should be effectively fixed (assuming sufficiently large target supercell)
@@ -454,48 +472,49 @@ class DefectStencilingTest(unittest.TestCase):
         234-atom supercell was generated from
         ``DefectsGenerator(prim_Se, supercell_gen_kwargs={"min_dist":20})``.
         """
-        for name, defect_entry in (
-            self.Se_intrinsic_thermo.defect_entries | self.Se_extrinsic_thermo.defect_entries
-        ).items():
-            if name == "Se_i_C2_-2":
-                with pytest.raises(ValueError) as exc:
-                    expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
-                        defect_entry, self.Se_20A_bulk_supercell, edge_tol_range=0.001
-                    )
-                assert "Amounts in Composition cannot be negative!" in str(exc.value)
+        defect_entry = self.Se_intrinsic_thermo.defect_entries["Se_i_C2_-2"]
+        expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
+            defect_entry, self.Se_20A_bulk_supercell, edge_tol_range=0.001
+        )  # tight edge_tol_range, still fine here
+        _validate_stenciled_supercell(
+            expanded_defect_supercell,
+            defect_entry,
+            self.Se_20A_bulk_supercell,
+            corresponding_bulk,
+            check_exact_bulk_match=True,
+        )
 
-                with pytest.raises(RuntimeError) as exc:
-                    expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
-                        defect_entry, self.Se_20A_bulk_supercell, min_dist_tol_factor_range=0.99
-                    )
-                assert (
-                    "Minimum interatomic distance (2.09 Å) near the edge (within 3.80 Å) of "
-                    "the target cell is less than the minimum distance tolerance (2.34 Å), "
-                    "indicating a fatal issue with the stenciling process. Aborting" in str(exc.value)
-                )
-                # the successful stenciling of this defect entry is tested in ``test_Se_20_A_supercell``
+        with pytest.raises(RuntimeError) as exc:
+            expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
+                defect_entry, self.Se_20A_bulk_supercell, min_dist_tol_factor_range=0.99
+            )
+        assert (
+            "Minimum interatomic distance (2.11 Å) near the edge (within 3.80 Å) of the target cell is "
+            "less than the minimum distance tolerance (2.34 Å), indicating a fatal issue with the "
+            "stenciling process. Aborting" in str(exc.value)
+        )
+        # the successful stenciling of this defect entry is tested in ``test_Se_20_A_supercell``
 
-                with warnings.catch_warnings(record=True) as w:
-                    expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
-                        defect_entry, self.Se_20A_bulk_supercell, min_dist_warning_tol_factor=0.99
-                    )
-                _print_warning_info(w)
-                assert any(
-                    "Note that the generated stenciled structure has a minimum interatomic distance of "
-                    "2.13 Å near the cell edge (within 2.36 Å), smaller than the warning threshold (0.99 "
-                    "of the bulk minimum interatomic distance (2.36 Å) = 2.34 Å). Some remnant "
-                    "structural noise is of course expected when stenciling with relatively small "
-                    "original/target supercells, so consider if this is reasonable for your system!"
-                    in str(warning.message)
-                    for warning in w
-                )
-                _validate_stenciled_supercell(
-                    expanded_defect_supercell,
-                    defect_entry,
-                    self.Se_20A_bulk_supercell,
-                    corresponding_bulk,
-                    check_exact_bulk_match=True,  # we now get tiling match with latest stenciling code
-                )
+        with warnings.catch_warnings(record=True) as w:
+            expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
+                defect_entry, self.Se_20A_bulk_supercell, min_dist_warning_tol_factor=0.99
+            )
+        _print_warning_info(w)
+        assert any(
+            "Note that the generated stenciled structure has a minimum interatomic distance of 2.26 Å "
+            "near the cell edge (within 2.36 Å), smaller than the warning threshold (0.99 of the bulk "
+            "minimum interatomic distance (2.36 Å) = 2.34 Å). Some remnant structural noise is of course "
+            "expected when stenciling with relatively small original/target supercells, so consider if "
+            "this is reasonable for your system!" in str(warning.message)
+            for warning in w
+        )
+        _validate_stenciled_supercell(
+            expanded_defect_supercell,
+            defect_entry,
+            self.Se_20A_bulk_supercell,
+            corresponding_bulk,
+            check_exact_bulk_match=True,  # we now get tiling match with latest stenciling code
+        )
 
     def test_orientation_template_radii_range(self):
         """
@@ -652,6 +671,62 @@ class DefectStencilingTest(unittest.TestCase):
             self.single_MgO_dp.defect_entry, stenciled_supercell, corresponding_bulk
         )
         return plot_stenciled_vs_original_displacements(stenciled_entry, self.single_MgO_dp.defect_entry)
+
+    def test_orientation_orbit_invariance(self):
+        """
+        Test that the stenciled output is invariant to which member of the host
+        point group orbit the preemptive orientation matching in
+        ``get_defect_in_supercell`` lands on.
+        """
+        from doped.generation import get_ideal_supercell_matrix
+
+        prim_MgO = Structure.from_file(os.path.join(EXAMPLE_DIR, "MgO/Input_files/prim_struc_POSCAR"))
+        target_supercell = prim_MgO * get_ideal_supercell_matrix(structure=prim_MgO, min_image_distance=10)
+        defect_entry = self.single_MgO_dp.defect_entry
+
+        def _sorted_displacements(stenciled_supercell, corresponding_bulk):
+            return np.sort(
+                [
+                    dist
+                    for dist, _i, _j in get_site_mappings(
+                        stenciled_supercell, corresponding_bulk, allow_duplicates=True, threshold=np.inf
+                    )
+                    if dist is not None
+                ]
+            )
+
+        ref_stenciled_supercell, ref_bulk = get_defect_in_supercell(defect_entry, target_supercell)
+        ref_displacements = _sorted_displacements(ref_stenciled_supercell, ref_bulk)
+        assert ref_displacements[-1] > 0.05  # some relaxation is retained; i.e. the test is not vacuous
+
+        # space group operations of the bulk supercell in its fractional basis (integer rotations, so can
+        # be applied without changing the lattice); excluding the pure translations, which don't re-orient
+        # (and the identity is the reference above):
+        symm_ops = [
+            symm_op
+            for symm_op in get_sga(defect_entry.bulk_supercell).get_symmetry_operations()
+            if not np.allclose(symm_op.rotation_matrix, np.eye(3))
+        ]
+        for symm_op in random.Random(42).sample(symm_ops, 4):  # seeded, for reproducible failures
+            rotated_defect_supercell, rotated_bulk_supercell = (
+                apply_symm_op_to_struct(symm_op, struct, fractional=True, rotate_lattice=False)
+                for struct in (defect_entry.defect_supercell, defect_entry.bulk_supercell)
+            )
+            stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
+                (
+                    rotated_defect_supercell,
+                    rotated_bulk_supercell,
+                    symm_op.operate(defect_entry.sc_defect_frac_coords),
+                ),
+                target_supercell,
+            )
+            assert len(stenciled_supercell) == len(ref_stenciled_supercell)
+            np.testing.assert_allclose(
+                _sorted_displacements(stenciled_supercell, corresponding_bulk),
+                ref_displacements,
+                atol=1e-6,
+            )  # retained relaxation independent of initial orientations (as we scan over all candidate
+            # orientations in ``_get_max_retained_relaxation_symm_op``
 
     def test_new_lattice_apply_s2_to_s1_transformation(self):
         """

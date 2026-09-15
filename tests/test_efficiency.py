@@ -12,6 +12,8 @@ definition site and not asserted here.
 """
 
 import copy
+import subprocess
+import sys
 import warnings
 
 import numpy as np
@@ -23,6 +25,7 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 import doped.utils.efficiency  # noqa: F401  (applies the ``pymatgen`` patches)
 from doped.core import DefectEntry, Vacancy
+from doped.utils.parsing import _get_closest_coords
 from doped.utils.symmetry import get_all_equiv_sites, get_distance_matrix, get_primitive_structure, get_sga
 
 CUBIC_LATTICE = Lattice.cubic(5.0)
@@ -474,3 +477,72 @@ class TestMoleculeHashEq:
         stretched_water = Molecule(["O", "H", "H"], np.array(coords) * 1.5)
         assert water != stretched_water
         assert len({water, stretched_water}) == 2
+
+
+@pytest.mark.parametrize("pbc", [(True, True, True), (True, True, False)])
+@pytest.mark.parametrize("clustered", [False, True])
+def test_get_closest_coords(pbc, clustered):
+    """
+    Test that ``_get_closest_coords`` matches the exact ``pymatgen`` distance
+    matrix above its 1e5-pair ``KDTree`` threshold.
+
+    Covers the two cases where its periodic-image search is not sufficient on
+    its own, and so must defer to the exact calculation: matches too far away
+    to be guaranteed minimum-image (``clustered``, where the target coordinates
+    are confined to one corner of the cell), and lattices which are not
+    periodic along every axis (``pbc``, e.g. slabs).
+    """
+    lattice = Lattice(np.array([[20.0, 0.0, 0.0], [2.0, 21.0, 0.0], [0.0, 1.5, 22.0]]), pbc=pbc)
+    rng = np.random.default_rng(42)
+    coords1 = rng.random((400, 3))  # 400 x 400 = 1.6e5 pairs; above the ``KDTree`` threshold
+    coords2 = rng.random((400, 3)) * (0.08 if clustered else 1.0)
+
+    distances, matches = _get_closest_coords(coords1, coords2, lattice=lattice)
+    distance_matrix = np.asarray(lattice.get_all_distances(coords1, coords2))
+    assert np.allclose(distances, distance_matrix.min(axis=1))
+    # the returned index must give that distance (equidistant entries may be broken either way):
+    assert np.allclose(distance_matrix[np.arange(len(coords1)), matches], distances)
+    if clustered:  # check the case is as intended; i.e. matches beyond the image-search guarantee
+        assert distances.max() > 0.5 * min(lattice.abc)
+
+
+def test_pymatgen_patches_are_reload_safe():
+    """
+    Test that reloading ``doped.utils.efficiency`` (e.g. with
+    ``importlib.reload``, or ``%autoreload`` in Jupyter) does not leave its
+    ``pymatgen`` patches delegating to themselves, which would give a
+    ``RecursionError``.
+    """
+    # run in a subprocess, as reloading re-applies the patches and resets the module caches:
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import importlib
+import numpy as np
+from pymatgen.core import Lattice, Structure
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from doped.utils import efficiency
+
+for _ in range(2):
+    importlib.reload(efficiency)
+    structure = Structure(Lattice.cubic(5.0), ["Na", "Cl"], [[0, 0, 0], [0.5, 0.5, 0.5]])  # __setattr__
+    assert str(structure[0].specie) == "Na"  # ``Species.__str__``
+    distances = structure.lattice.get_all_distances(structure.frac_coords, structure.frac_coords)
+    assert np.isclose(distances.max(), 5.0 * np.sqrt(3) / 2)  # ``Lattice.get_all_distances``
+    # a fresh ``SpacegroupAnalyzer`` each time, so the per-instance memo always misses and delegates:
+    assert len(SpacegroupAnalyzer(structure).get_symmetry_operations()) == 48  # Pm-3m
+
+# the captured originals must still be ``pymatgen``'s own methods, not the patches themselves (the
+# only check for ``_get_symmetry``, which delegates on its magnetic-cell path only):
+assert efficiency._orig_site__setattr__ is not efficiency._fast_site__setattr__
+assert efficiency._orig_species__str__ is not efficiency._species__str__
+assert efficiency._orig_lattice_get_all_distances is not efficiency.get_all_distances
+assert efficiency._original_get_symmetry is not efficiency._get_symmetry
+assert efficiency._original_get_symmetry_operations is not efficiency._get_symmetry_operations
+""",
+        ],
+        check=True,
+        capture_output=True,
+    )

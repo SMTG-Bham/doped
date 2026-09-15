@@ -501,6 +501,17 @@ class TestGetTransformationAndApply(ConfigurationsTestCase):
         # future):
         assert np.allclose(out_s2_like_s1.lattice.matrix, rotated_V_Se_m2.lattice.matrix)
 
+        out_lattice = apply_s2_to_s1_transformation(  # a |Lattice| can also be given directly
+            self.V_Se_m1_supercell,
+            rotated_V_Se_m2,
+            supercell_matrix,
+            trans_vector,
+            mapping,
+            new_lattice=self.V_Se_m1_supercell.lattice,
+        )
+        np.testing.assert_allclose(out_lattice.lattice.matrix, out_struct1.lattice.matrix, atol=1e-6)
+        np.testing.assert_allclose(out_lattice.frac_coords, out_struct1.frac_coords, atol=1e-6)
+
         # all three output structures should have the same composition and be
         # symmetry-equivalent (same point group and min distance):
         for out in (out_struct1, out_struct2, out_s2_like_s1):
