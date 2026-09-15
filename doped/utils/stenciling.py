@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from itertools import combinations, product
 
 import numpy as np
-from pymatgen.util.coord import pbc_diff
+from pymatgen.util.coord import pbc_diff, pbc_shortest_vectors
 from tqdm import tqdm
 
 from doped.analysis import defect_site_from_structures
@@ -1228,10 +1228,23 @@ def _get_matching_sites_from_s1_then_s2(
             The stenciled structure.
     """
     num_super_supercells = len(struct1_pool) // len(template_struct)  # both also have X
-    single_defect_subcell_sites = []
+
+    # the defect relaxation field is periodic with ``template_struct``, so each of its sites has one copy
+    # per tile in ``struct1_pool``; we take the copy `closest` to the defect (at the template centre here),
+    # rather than the copy in the defect's `own tile` -- which may sit further from the defect than the
+    # nearest image, in non-orthogonal cells, and which would carry a displacement dominated by a
+    # `neighbouring` defect image rather than the stenciled centre (likely pointing in the wrong direction)
+    # Thus we take the minimum-image copies (i.e. Wigner-Seitz region) about the defect:
+    min_image_template = Structure(
+        struct1_pool.lattice,
+        template_struct.species,
+        template_struct.lattice.get_cartesian_coords([0.5, 0.5, 0.5])
+        + pbc_shortest_vectors(template_struct.lattice, [0.5, 0.5, 0.5], template_struct.frac_coords)[0],
+        coords_are_cartesian=True,  # Cartesian coordinates, in Wigner-Seitz region around centre
+    )
 
     # Uses linear assignment per species for unambiguous optimal matching, for template_struct sites
-    mapping = get_site_mappings(template_struct, struct1_pool, frac_coords=False, threshold=np.inf)
+    mapping = get_site_mappings(min_image_template, struct1_pool, threshold=np.inf)
     pool1_indices = [  # mapping entries are (dist, template_idx, pool_idx)
         pool_idx
         for _, template_idx, pool_idx in mapping

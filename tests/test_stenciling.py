@@ -92,6 +92,31 @@ def plot_stenciled_vs_original_displacements(stenciled_entry: DefectEntry, origi
     return fig
 
 
+def _site_matching_input_entry(defect_entry, stenciled_supercell, defect_site):
+    """
+    Re-pick ``defect_site`` in ``stenciled_supercell`` to be the candidate
+    matching ``defect_entry``'s own defect site.
+
+    For a `split` defect -- whose halves are equally valid defect sites --
+    ``defect_site_from_structures`` can pick a different half for the stenciled
+    cell than the input entry did, which shifts the whole distance-to-defect
+    axis by the split separation (2.3 Å for ``Se_i_C2``) and makes the two
+    less comparable (e.g. when analysing displacement fields). Here we
+    distinguish by their sorted neighbour distances, and choose that which best
+    matches the original defect site choice.
+    """
+    # This will likely become unnecessary when defect complexes support is added
+    input_nn_dists = _get_sorted_nn_distances(
+        defect_entry.defect_supercell, defect_entry.sc_defect_frac_coords
+    )
+    return min(  # ``defect_site`` is only in the sphere if an atom sits there (i.e. not for a vacancy)
+        [defect_site, *stenciled_supercell.get_sites_in_sphere(defect_site.coords, 3.0)],
+        key=lambda site: np.abs(
+            _get_sorted_nn_distances(stenciled_supercell, site.frac_coords) - input_nn_dists
+        ).sum(),
+    )
+
+
 def _make_stenciled_defect_entry(
     defect_entry: DefectEntry, stenciled_supercell: Structure, corresponding_bulk: Structure
 ) -> DefectEntry:
@@ -126,6 +151,7 @@ def _make_stenciled_defect_entry(
     ) = defect_site_from_structures(
         stenciled_supercell, corresponding_bulk, return_all_info=True, _parameter_order_warn=False
     )
+    defect_site = _site_matching_input_entry(defect_entry, stenciled_supercell, defect_site)
     stenciled_entry.defect_supercell_site = defect_site
     stenciled_entry.sc_defect_frac_coords = defect_site.frac_coords
     # pop any previously-calculated site displacement data:
@@ -489,7 +515,7 @@ class DefectStencilingTest(unittest.TestCase):
                 defect_entry, self.Se_20A_bulk_supercell, min_dist_tol_factor_range=0.99
             )
         assert (
-            "Minimum interatomic distance (2.11 Å) near the edge (within 3.80 Å) of the target cell is "
+            "Minimum interatomic distance (2.24 Å) near the edge (within 3.80 Å) of the target cell is "
             "less than the minimum distance tolerance (2.34 Å), indicating a fatal issue with the "
             "stenciling process. Aborting" in str(exc.value)
         )
@@ -501,7 +527,7 @@ class DefectStencilingTest(unittest.TestCase):
             )
         _print_warning_info(w)
         assert any(
-            "Note that the generated stenciled structure has a minimum interatomic distance of 2.26 Å "
+            "Note that the generated stenciled structure has a minimum interatomic distance of 2.15 Å "
             "near the cell edge (within 2.36 Å), smaller than the warning threshold (0.99 of the bulk "
             "minimum interatomic distance (2.36 Å) = 2.34 Å). Some remnant structural noise is of course "
             "expected when stenciling with relatively small original/target supercells, so consider if "
