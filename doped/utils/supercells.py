@@ -1170,7 +1170,7 @@ def _get_min_complex_target_size(
     return int(np.ceil(max(min_dist_volume, two_sphere_volume) / abs(np.linalg.det(cell))))
 
 
-def _get_optimal_complex_P(P_arrays: np.ndarray, cell: np.ndarray) -> np.ndarray:
+def _get_optimal_complex_P(P_arrays: np.ndarray, cell: np.ndarray, clean: bool = True) -> np.ndarray:
     """
     Get a clean, best supercell transformation for a complex, from a set which
     have the same complex minimum image distance. Candidates are ranked by
@@ -1180,6 +1180,10 @@ def _get_optimal_complex_P(P_arrays: np.ndarray, cell: np.ndarray) -> np.ndarray
         P_arrays (np.ndarray):
             ``(n, 3, 3)`` array of candidate supercell matrices.
         cell (np.ndarray): Unit cell matrix which these transform.
+        clean (bool):
+            Whether to tidy the chosen matrix with ``_clean_P_matrix``
+            e.g. to avoid wasted computation if only the distance is
+            needed. (Default: True)
 
     Returns:
         np.ndarray: The best supercell transformation matrix.
@@ -1195,11 +1199,15 @@ def _get_optimal_complex_P(P_arrays: np.ndarray, cell: np.ndarray) -> np.ndarray
         ),
     )
 
-    return _clean_P_matrix(best_P, cell)  # clean
+    return _clean_P_matrix(best_P, cell) if clean else best_P
 
 
 def _get_cubic_complex_P(
-    cell: np.ndarray, cart_coords: np.ndarray, target_size: int, force_diagonal: bool = False
+    cell: np.ndarray,
+    cart_coords: np.ndarray,
+    target_size: int,
+    force_diagonal: bool = False,
+    clean: bool = True,
 ) -> tuple[np.ndarray, float]:
     """
     Get the most cubic supercell transformation (P) matrix of the given
@@ -1218,6 +1226,10 @@ def _get_cubic_complex_P(
         force_diagonal (bool):
             Whether to only consider diagonal transformation matrices.
             (Default = False)
+        clean (bool):
+            Whether to tidy the chosen matrix with ``_clean_P_matrix``.
+            Ignored if ``force_diagonal`` (which must stay diagonal).
+            (Default: True)
 
     Returns:
         tuple[np.ndarray, float]:
@@ -1260,7 +1272,10 @@ def _get_cubic_complex_P(
 
     optimal_P = np.round(cell_matrices[dists.argmax()] @ np.linalg.inv(cell)).astype(int)
 
-    return (optimal_P if force_diagonal else _clean_P_matrix(optimal_P, cell)), float(dists.max())
+    if not force_diagonal and clean:
+        optimal_P = _clean_P_matrix(optimal_P, cell)
+
+    return optimal_P, float(dists.max())
 
 
 def find_ideal_complex_supercell(
@@ -1270,6 +1285,7 @@ def find_ideal_complex_supercell(
     return_min_dist: bool = False,
     force_cubic: bool = False,
     force_diagonal: bool = False,
+    clean: bool = True,
     verbose: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, float]:
     r"""
@@ -1300,6 +1316,9 @@ def find_ideal_complex_supercell(
         force_diagonal (bool):
             As ``force_cubic``, but additionally only considering diagonal
             transformation matrices. (Default = False)
+        clean (bool):
+            Whether to clean the returned matrix with ``_clean_P_matrix``.
+            (Default: True)
         verbose (bool):
             Whether to print out extra information about the supercell search.
             (Default = False)
@@ -1311,12 +1330,12 @@ def find_ideal_complex_supercell(
     """
     num_best = 1
     if force_cubic or force_diagonal:
-        optimal_P, best_dist = _get_cubic_complex_P(cell, cart_coords, target_size, force_diagonal)
+        optimal_P, best_dist = _get_cubic_complex_P(cell, cart_coords, target_size, force_diagonal, clean)
     else:
         best_dist, P_arrays = _complex_P_arrays(
             cell, [[[cart_coords]]], [-np.inf], target_size, maximise=True
         )[0]
-        optimal_P = _get_optimal_complex_P(P_arrays, cell)
+        optimal_P = _get_optimal_complex_P(P_arrays, cell, clean)
         num_best = len(P_arrays)
 
     if verbose:
