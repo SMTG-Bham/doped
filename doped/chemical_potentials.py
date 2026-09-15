@@ -1700,8 +1700,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 input as strings with quotation marks. See
                 |ConvergenceSet.yaml| for the default settings.
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 |PotcarSet.yaml| for the default ``POTCAR`` set.
@@ -1819,8 +1822,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 input as strings with quotation marks. See
                 |ConvergenceSet.yaml| for the default settings.
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 |PotcarSet.yaml| for the default ``POTCAR`` set.
@@ -1927,8 +1933,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 |PotcarSet.yaml| for the default ``POTCAR`` set.
@@ -2067,8 +2076,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 |PotcarSet.yaml| for the default ``POTCAR`` set.
@@ -2223,8 +2235,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 |PotcarSet.yaml| for the default ``POTCAR`` set.
@@ -2392,8 +2407,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
             user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 |PotcarSet.yaml| for the default ``POTCAR`` set.

@@ -23,7 +23,7 @@ from pymatgen.core.structure_matcher import ElementComparator
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.symmetry.groups import PointGroup
 from pymatgen.transformations.standard_transformations import SupercellTransformation
-from pymatgen.util.coord import is_coord_subset_pbc, lattice_points_in_supercell
+from pymatgen.util.coord import is_coord_subset_pbc, lattice_points_in_supercell, pbc_diff
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial import KDTree
 from scipy.spatial.distance import squareform
@@ -46,7 +46,7 @@ from doped.utils.parsing import (
     _get_site_mapping_from_coords_and_indices,
     get_site_mappings,
 )
-from doped.utils.supercells import get_min_image_distance, min_dist
+from doped.utils.supercells import get_min_image_distance
 
 
 @lru_cache(maxsize=int(1e5))
@@ -413,13 +413,7 @@ def apply_symm_op_to_site(
         new_coords = symm_op.operate(site.coords)
 
     if just_unit_cell_frac_coords:
-        rotated_frac_coords = rotated_lattice.get_fractional_coords(new_coords)
-        return np.array(
-            [
-                np.mod(f, 1) if p else f
-                for p, f in zip(rotated_lattice.pbc, rotated_frac_coords, strict=False)
-            ]
-        )
+        return _to_unit_cell(rotated_lattice, rotated_lattice.get_fractional_coords(new_coords))
 
     return PeriodicSite(
         site.species,
@@ -1725,7 +1719,7 @@ def translate_structure(
     )
 
 
-def _remove_translation_drift(
+def remove_translation_drift(
     defect_supercell: Structure, bulk_supercell: Structure, defect_frac_coords: ArrayLike
 ) -> tuple[Structure, np.ndarray]:
     """
@@ -1748,6 +1742,20 @@ def _remove_translation_drift(
     substitutions; for interstitials it carries a residual bias of
     ``-(interstitial displacement)/N_host``, as the interstitial has no bulk
     counterpart and so contributes no displacement to the sum.
+
+    Args:
+        defect_supercell (|Structure|):
+            The relaxed defect supercell.
+        bulk_supercell (|Structure|):
+            The bulk (reference) supercell.
+        defect_frac_coords (ArrayLike):
+            Fractional coordinates of the defect site in the defect supercell,
+            used to determine the drift-removed defect site coordinates.
+
+    Returns:
+        tuple[|Structure|, np.ndarray]:
+            The drift-removed defect supercell, and the defect site fractional
+            coordinates in its frame.
     """
     frac_coords, bulk_frac_coords = defect_supercell.frac_coords, bulk_supercell.frac_coords
     bulk_matches: dict[int, list[tuple[float, int]]] = {}  # bulk site -> [(distance, defect site), ...]
@@ -1766,13 +1774,18 @@ def _remove_translation_drift(
     pair_indices = np.array(
         [(c[0][1], b) for b, c in bulk_matches.items() if len(c) == 1 or 2 * c[0][0] <= c[1][0]]
     )
-    disps = frac_coords[pair_indices[:, 0]] - bulk_frac_coords[pair_indices[:, 1]]
-    drift = (disps - np.round(disps)).mean(axis=0)  # minimum image
+    if not len(pair_indices):  # no usable host site pairs; e.g. no species in common (mismatched inputs)
+        raise ValueError(
+            "No host atoms could be matched between the defect and bulk supercells, so the translation "
+            "drift between them cannot be determined! Are these matching defect/bulk supercells?"
+        )
 
-    defect_fcoords = np.array(defect_frac_coords)
-    site_dists = defect_supercell.lattice.get_all_distances(defect_fcoords, frac_coords)
-    if site_dists.min() < min_dist(bulk_supercell) / 2:  # an atom at the defect site (i.e. not a vacancy)
-        defect_fcoords = defect_fcoords - drift  # -> get translated defect frac coords
+    drift = pbc_diff(  # minimum image
+        frac_coords[pair_indices[:, 0]], bulk_frac_coords[pair_indices[:, 1]]
+    ).mean(axis=0)
+    defect_fcoords = np.array(defect_frac_coords) - drift  # follows the atoms; note that a _vacancy_
+    # site is defined in the bulk frame instead, so callers should keep their input coords in that case
+
     return translate_structure(defect_supercell, -drift, frac_coords=True), defect_fcoords
 
 

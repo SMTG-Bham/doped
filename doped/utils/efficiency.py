@@ -294,10 +294,23 @@ def _parse_species_str(sp_el: Species | Element, wout_charge: bool = False) -> s
     return species_string.translate(_TRANSLATE_REMOVE_CHARGE) if wout_charge else species_string
 
 
+def _patch_method(cls, name, patch):
+    """
+    Set ``cls.name`` to ``patch``, returning the method it replaces (which the
+    patches here delegate to).
+
+    The replaced method is also recorded on the patch, and taken from there if
+    present, so that re-importing this module (e.g. ``importlib.reload``,
+    ``%autoreload``) returns ``pymatgen``'s original rather than the previous
+    patch -- which would then delegate to itself, and recurse infinitely.
+    """
+    method = getattr(cls, name)
+    patch._doped_replaced = original = getattr(method, "_doped_replaced", method)
+    setattr(cls, name, patch)
+    return original
+
+
 # Species overrides:
-_orig_species__str__ = Species.__str__
-
-
 def _species__str__(self):
     """
     Memoized ``Species.__str__`` (immutable objects); avoids heavy string
@@ -316,7 +329,7 @@ def _species__str__(self):
         return string
 
 
-Species.__str__ = _species__str__
+_orig_species__str__ = _patch_method(Species, "__str__", _species__str__)
 
 
 def _noise_rounded_bytes(arr) -> bytes:
@@ -460,8 +473,7 @@ def _structure_from_sites_and_coords(
     species and site properties from ``sites``.
 
     One construction, rather than the site-by-site rebuild of
-    ``Structure.from_sites`` -- ~10x faster for large supercells, where
-    ``PeriodicSite``/``Site`` init dominates structure manipulation cost.
+    ``Structure.from_sites`` (faster).
     """
     property_keys = dict.fromkeys(key for site in sites for key in site.properties)
     return Structure(
@@ -476,7 +488,6 @@ def _structure_from_sites_and_coords(
     )
 
 
-_orig_site__setattr__ = Site.__setattr__
 _direct_site_attrs = frozenset({"_lattice", "_frac_coords", "_species", "_coords", "properties", "_label"})
 
 
@@ -505,15 +516,12 @@ def _fast_site__setattr__(self, attr: str, value):
 PeriodicSite.__eq__ = cache_ready_Site__eq__
 Site.__eq__ = cache_ready_Site__eq__
 PeriodicSite.__hash__ = _periodic_site__hash__
-Site.__setattr__ = _fast_site__setattr__
+_orig_site__setattr__ = _patch_method(Site, "__setattr__", _fast_site__setattr__)
 
 
 # Lattice overrides:
 # (note: memoizing ``Lattice.__hash__`` was tested and found to give negligible speedup (~0.1% of
 # ``DefectsGenerator`` runtime), as ``pymatgen`` already caches the lengths/angles used in its hash)
-_orig_lattice_get_all_distances = Lattice.get_all_distances
-
-
 @lru_cache(maxsize=int(1e4))  # maxsize on the order of 20 Mb for typical use cases
 def _cached_get_all_distances(self: Lattice, frac_coords1: tuple, frac_coords2: tuple):
     return _orig_lattice_get_all_distances(self, np.array(frac_coords1), np.array(frac_coords2))
@@ -545,11 +553,10 @@ def get_all_distances(
     ).copy()
 
 
-Lattice.get_all_distances = get_all_distances
+_orig_lattice_get_all_distances = _patch_method(Lattice, "get_all_distances", get_all_distances)
+
 
 # Structure overrides:
-
-
 def _structure__hash__(self):
     """
     Custom ``__hash__`` method for |Structure| instances; deliberately finer
@@ -695,9 +702,6 @@ def _sga__hash__(self):
     return hash((self._cell, self._symprec, self._angle_tol))
 
 
-_original_get_symmetry = SpacegroupAnalyzer._get_symmetry
-
-
 def _get_symmetry(self) -> tuple[NDArray, NDArray]:
     """
     Get the symmetry operations associated with the structure, memoised per-
@@ -730,9 +734,6 @@ def _get_symmetry(self) -> tuple[NDArray, NDArray]:
         return self._doped_symmetry
 
 
-_original_get_symmetry_operations = SpacegroupAnalyzer.get_symmetry_operations
-
-
 def _get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
     """
     Get the symmetry operations associated with the structure, memoised per-
@@ -749,8 +750,10 @@ def _get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
 
 
 SpacegroupAnalyzer.__hash__ = _sga__hash__
-SpacegroupAnalyzer._get_symmetry = _get_symmetry
-SpacegroupAnalyzer.get_symmetry_operations = _get_symmetry_operations
+_original_get_symmetry = _patch_method(SpacegroupAnalyzer, "_get_symmetry", _get_symmetry)
+_original_get_symmetry_operations = _patch_method(
+    SpacegroupAnalyzer, "get_symmetry_operations", _get_symmetry_operations
+)
 
 
 def _get_symbol(element: Element | Species, comparator: AbstractComparator | None = None) -> str:

@@ -325,9 +325,7 @@ PETROFF10_EXTENDED_40 = [
 Qualitative colour palette; the 10-colour Petroff scheme extended to 40
 maximally-distinct colours (within muted lightness/chroma bounds, for visual
 harmony with the base palette and to avoid pale colours that are hard to see as
-thin lines on white backgrounds) via the Glasbey et al.
-
-(2007) method, as
+thin lines on white backgrounds) via the Glasbey et al (2007) method, as
 implemented in https://github.com/lmcinnes/glasbey, registered as the
 ``petroff10_extended_40`` ``matplotlib`` colormap with ``doped``.
 """

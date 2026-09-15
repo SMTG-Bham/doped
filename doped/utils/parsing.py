@@ -1410,42 +1410,50 @@ def _get_closest_coords(
             coordinates in this lattice, and minimum-image (PBC) distances
             returned -- by including the neighbouring periodic images of
             ``coords2`` in the search, which is exact whenever the closest
-            image is nearer than half the shortest lattice vector (and we fall
-            back to the full distance matrix if it is not). Default is
-            ``None``; Cartesian coordinates without PBC.
+            image is nearer than half the shortest lattice vector (any entries
+            for which it is not are recomputed exactly). Default is ``None``;
+            Cartesian coordinates without PBC.
 
     Returns:
         tuple[np.ndarray, np.ndarray]:
             The distances to, and indices of, the closest ``coords2`` entries.
     """
     coords1, coords2 = np.asarray(coords1), np.asarray(coords2)
-    if lattice is None:
+    if lattice is None:  # ``np.asarray``s: ``KDTree.query`` is typed as returning scalars or arrays
         distances, matches = KDTree(coords2).query(coords1)
         return np.asarray(distances), np.asarray(matches)
 
     # ``pymatgen``'s (Cython) minimum-image routine is faster below this size, and only above it does
-    # avoiding its N x M temporary array matter (which is the main gain here; ~50x less peak memory):
-    use_distance_matrix = len(coords1) * len(coords2) < 1e5
-    if not use_distance_matrix:
-        # the +/-1 image search is only reliable in a reduced basis -- in a skewed (non-reduced) cell it
-        # could return a non-minimum-image match -- so work in the LLL-reduced lattice:
-        reduced = lattice.get_lll_reduced_lattice()
-        to_reduced = lattice.matrix @ np.linalg.inv(reduced.matrix)
-        lattice_vectors = np.array(list(itertools.product((-1, 0, 1), repeat=3))) @ reduced.matrix
-        image_coords = (np.mod(coords2 @ to_reduced, 1) @ reduced.matrix)[None] + lattice_vectors[:, None]
-        distances, matches = KDTree(image_coords.reshape(-1, 3)).query(
-            np.mod(coords1 @ to_reduced, 1) @ reduced.matrix
-        )
-        # validation; fall back to the exact calculation if any match is too far away for the image search
-        # to be guaranteed minimum-image:
-        vector_lengths = np.linalg.norm(lattice_vectors, axis=1)
-        use_distance_matrix = np.max(distances) >= 0.5 * vector_lengths[vector_lengths > 0].min()
-
-    if use_distance_matrix:
-        distance_matrix = np.asarray(lattice.get_all_distances(coords1, coords2))
+    # avoiding its N x M temporary array matter (which is the main gain here; ~50x less peak memory). The
+    # ``KDTree`` is built over 27 x ``len(coords2)`` image points, so only pays off above ~300 ``coords1``,
+    # unless the distance matrix would itself be large. It is also used for non-fully-periodic lattices
+    # (e.g. slabs), where the image search would be invalid:
+    num_pairs = len(coords1) * len(coords2)
+    if num_pairs < 1e5 or (len(coords1) < 300 and num_pairs < 1e7) or not all(lattice.pbc):
+        distance_matrix = lattice.get_all_distances(coords1, coords2)
         return distance_matrix.min(axis=1), distance_matrix.argmin(axis=1)
 
-    return np.asarray(distances), np.asarray(matches) % len(coords2)
+    # the +/-1 image search is only reliable in a reduced basis -- in a skewed (non-reduced) cell it
+    # could return a non-minimum-image match -- so work in the LLL-reduced lattice:
+    reduced = lattice.get_lll_reduced_lattice()
+    to_reduced = lattice.matrix @ np.linalg.inv(reduced.matrix)
+    lattice_vectors = np.array(list(itertools.product((-1, 0, 1), repeat=3))) @ reduced.matrix
+    image_coords = (np.mod(coords2 @ to_reduced, 1) @ reduced.matrix)[None] + lattice_vectors[:, None]
+    distances, matches = KDTree(image_coords.reshape(-1, 3)).query(
+        np.mod(coords1 @ to_reduced, 1) @ reduced.matrix
+    )
+    distances, matches = np.asarray(distances), np.asarray(matches) % len(coords2)
+
+    # a match at least half the shortest (reduced) lattice vector away is not guaranteed to be the minimum
+    # image, so recompute just those entries exactly:
+    vector_lengths = np.linalg.norm(lattice_vectors, axis=1)
+    unreliable = distances >= 0.5 * vector_lengths[vector_lengths > 0].min()
+    if unreliable.any():
+        distance_matrix = lattice.get_all_distances(coords1[unreliable], coords2)
+        distances[unreliable] = distance_matrix.min(axis=1)
+        matches[unreliable] = distance_matrix.argmin(axis=1)
+
+    return distances, matches
 
 
 def get_site_mappings(

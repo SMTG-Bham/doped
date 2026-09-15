@@ -24,7 +24,7 @@ from doped.utils.parsing import (
     get_site_mappings,
 )
 from doped.utils.plotting import doped_plot_style
-from doped.utils.symmetry import _remove_translation_drift, _round_floats
+from doped.utils.symmetry import _round_floats, remove_translation_drift
 
 try:
     import plotly.colors as pc
@@ -1143,7 +1143,7 @@ def _get_bulk_struct_with_defect(defect_entry: DefectEntry) -> tuple:
 
     # remove any rigid translation drift (e.g. due to rattling), placing the relaxed supercell and defect
     # site in the same frame as the bulk supercell -- otherwise it spuriously adds to every displacement:
-    defect_sc, shifted_frac_coords = _remove_translation_drift(
+    defect_sc, shifted_frac_coords = remove_translation_drift(
         _get_defect_supercell(defect_entry), bulk_sc, relaxed_frac_coords
     )
     if defect_type == "Vacancy":  # add the vacancy site to the defect structure; vacancy site defined...

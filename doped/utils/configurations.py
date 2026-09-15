@@ -117,7 +117,7 @@ def apply_s2_to_s1_transformation(
     mapping: list[int | None],
     include_ignored_species: bool = True,
     ignored_species: list[str] | None = None,
-    new_lattice: str | None = None,
+    new_lattice: str | Lattice | None = None,
 ) -> Structure:
     """
     Apply a transformation (e.g. as determined by
@@ -165,7 +165,7 @@ def apply_s2_to_s1_transformation(
             match that used for ``get_transformation_from_s2_to_s1`` (if used
             to generate the transformation mapping).
             Default: ``None``
-        new_lattice (str | None):
+        new_lattice (str | |Lattice| | None):
             If ``"struct1"``, then the lattice of ``struct1`` is used for the
             re-oriented structure, if ``"struct2"``, then the lattice of
             ``struct2`` is used, or if ``"s2_like_s1"``, then the output
@@ -178,7 +178,8 @@ def apply_s2_to_s1_transformation(
             or ``"s2_like_s1"`` otherwise.
             If ``new_lattice`` is explicitly set to ``"struct1"`` and this
             causes an inequivalent structure to be returned, a warning will be
-            raised.
+            raised. A |Lattice| can also be given directly, in which case it is
+            used as given, without any checks.
 
     Returns:
         Structure:
@@ -243,27 +244,16 @@ def apply_s2_to_s1_transformation(
     if not new_lattice:
         return trans_struct
 
-    # Note: ``get_element_min_max_bond_length_dict`` can take a bit of time when run repeatedly with large
-    # structures (due to the expensive O(N^2) distance matrix calculation). For large structures (N>50), we
-    # therefore only use a subset of sites for this check (not all sites are required)
-    if len(trans_struct) > 50:  # take a subset of the structure to get the min/max bond lengths
-        sampled_indices = np.random.choice(len(trans_struct), size=50, replace=False)
-        test_trans_struct = Structure.from_sites([trans_struct.sites[i] for i in sampled_indices])
-    else:
-        test_trans_struct = trans_struct
-
-    orig_min_max_bond_lengths = get_element_min_max_bond_length_dict(test_trans_struct)
-
     lattice = (
-        struct1.lattice
+        new_lattice
+        if isinstance(new_lattice, Lattice)
+        else struct1.lattice
         if new_lattice == "struct1"
-        else (
-            trans_struct.lattice
-            if new_lattice == "s2_like_s1"
-            else struct2.lattice
-            if new_lattice == "struct2"
-            else None
-        )
+        else trans_struct.lattice
+        if new_lattice == "s2_like_s1"
+        else struct2.lattice
+        if new_lattice == "struct2"
+        else None
     )
     if lattice is None:
         raise ValueError(
@@ -274,6 +264,21 @@ def apply_s2_to_s1_transformation(
     # sometimes ``get_s2_like_s1`` doesn't fully work as desired, giving different (but equivalent) lattice
     # vectors (e.g. a=(010) instead of (100) etc.), so we redefine with the chosen lattice to be sure:
     trans_struct_w_lattice_choice = _structure_from_sites_and_coords(lattice, sites, frac_coords)
+
+    if isinstance(new_lattice, Lattice):  # explicit Lattice choice, skip min-dist check
+        return trans_struct_w_lattice_choice
+
+    # Check interatomic distances in new (vs original) structure:
+    # Note: ``get_element_min_max_bond_length_dict`` can take a bit of time when run repeatedly with large
+    # structures (due to the expensive O(N^2) distance matrix calculation). For large structures (N>50), we
+    # therefore only use a subset of sites for this check (not all sites are required)
+    if len(trans_struct) > 50:  # take a subset of the structure to get the min/max bond lengths
+        sampled_indices = np.random.choice(len(trans_struct), size=50, replace=False)
+        test_trans_struct = Structure.from_sites([trans_struct.sites[i] for i in sampled_indices])
+    else:
+        test_trans_struct = trans_struct
+
+    orig_min_max_bond_lengths = get_element_min_max_bond_length_dict(test_trans_struct)
 
     # in some cases, if the match between structures isn't perfect, then swapping the lattices here can
     # lead to a structural change, which is not desired. So here we test this by looking at the min/max
