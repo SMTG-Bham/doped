@@ -662,11 +662,9 @@ class DefectRelaxSetTest(unittest.TestCase):
         dds_bulk_test_list = [
             (defect_relax_set.bulk_vasp_gam, "bulk_vasp_gam"),
             (defect_relax_set.bulk_vasp_std, "bulk_vasp_std"),
+            (defect_relax_set.bulk_vasp_nkred_std, "bulk_vasp_nkred_std"),
             (defect_relax_set.bulk_vasp_ncl, "bulk_vasp_ncl"),
         ]
-        if _potcars_available():  # needed because bulk NKRED pulls NKRED values from defect nkred
-            # std INCAR to be more computationally efficient
-            dds_bulk_test_list.append((defect_relax_set.bulk_vasp_nkred_std, "bulk_vasp_nkred_std"))
 
         def _check_drs_dds_attribute_transfer(parent_drs, child_dds):
             child_incar_settings = child_dds.user_incar_settings.copy()
@@ -922,6 +920,14 @@ class DefectRelaxSetTest(unittest.TestCase):
         defect_gen_test_list = [
             (self.CdTe_defect_gen, "CdTe defect_gen"),
         ]
+        _vasp_attrs_no_gam = (
+            "vasp_std",
+            "bulk_vasp_std",
+            "vasp_nkred_std",
+            "bulk_vasp_nkred_std",
+            "vasp_ncl",
+            "bulk_vasp_ncl",
+        )
         for defect_gen_name in [
             "ytos_defect_gen",
             "lmno_defect_gen",
@@ -940,35 +946,13 @@ class DefectRelaxSetTest(unittest.TestCase):
             for defect_entry in defect_entries:
                 print(f"Randomly testing {defect_entry.name}")
                 drs = DefectRelaxSet(defect_entry)
-                if defect_gen_name in [
-                    "CdTe defect_gen",
-                    "ytos_defect_gen",
-                    "agcu_defect_gen",
-                    "cd_i_supercell_defect_gen",
-                ]:
-                    assert drs.vasp_std
-                    assert drs.bulk_vasp_std
-                    assert drs.vasp_nkred_std
-
-                    if (
-                        _potcars_available()
-                    ):  # needed because bulk NKRED pulls NKRED values from defect nkred std INCAR to be
-                        # more computationally efficient
-                        assert drs.bulk_vasp_nkred_std
-
-                    assert drs.vasp_ncl
-                    assert drs.bulk_vasp_ncl
-
-                else:  # no SOC for LMNO  # vasp_gam test
-                    assert drs.vasp_std
-                    assert drs.bulk_vasp_std
-                    assert drs.vasp_nkred_std
-
-                    if _potcars_available():
-                        assert drs.bulk_vasp_nkred_std
-
-                    assert not drs.vasp_ncl
-                    assert not drs.bulk_vasp_ncl
+                for attr in _vasp_attrs_no_gam:  # all VASP DefectRelaxSet attrs defined, except gam
+                    if defect_gen_name == "lmno_defect_gen" and "ncl" in attr:
+                        assert getattr(drs, attr) is None, attr  # no SOC for LMNO
+                    else:
+                        assert getattr(drs, attr) is not None, attr
+                assert drs.vasp_gam is None
+                assert drs.bulk_vasp_gam is None
 
         # Test manually turning off SOC and making vasp_gam converged:
         defect_entries = random.sample(list(self.CdTe_defect_gen.values()), 5)
@@ -976,18 +960,10 @@ class DefectRelaxSetTest(unittest.TestCase):
         for defect_entry in defect_entries:
             print(f"Randomly testing {defect_entry.name}")
             drs = DefectRelaxSet(defect_entry, soc=False, user_kpoints_settings={"reciprocal_density": 50})
-            assert not drs.vasp_std
-            assert not drs.bulk_vasp_std
-            assert not drs.vasp_nkred_std
-
-            if (
-                _potcars_available()
-            ):  # needed because bulk NKRED pulls NKRED values from defect nkred std INCAR to be more
-                # computationally efficient
-                assert not drs.bulk_vasp_nkred_std
-
-            assert not drs.vasp_ncl
-            assert not drs.bulk_vasp_ncl
+            for attr in _vasp_attrs_no_gam:
+                assert getattr(drs, attr) is None, attr  # Gamma only here
+            assert drs.vasp_gam is not None
+            assert drs.bulk_vasp_gam is not None
 
         # Test manually turning _on_ SOC and making vasp_gam _not_ converged:
         defect_gen = DefectsGenerator.from_json(f"{data_dir}/lmno_defect_gen.json")
@@ -996,18 +972,10 @@ class DefectRelaxSetTest(unittest.TestCase):
         for defect_entry in defect_entries:
             print(f"Randomly testing {defect_entry.name}")
             drs = DefectRelaxSet(defect_entry, soc=True, user_kpoints_settings={"reciprocal_density": 200})
-            assert drs.vasp_std
-            assert drs.bulk_vasp_std
-            assert drs.vasp_nkred_std
-
-            if (
-                _potcars_available()
-            ):  # needed because bulk NKRED pulls NKRED values from defect nkred std INCAR to be more
-                # computationally efficient
-                assert drs.bulk_vasp_nkred_std
-
-            assert drs.vasp_ncl
-            assert drs.bulk_vasp_ncl
+            for attr in _vasp_attrs_no_gam:
+                assert getattr(drs, attr) is not None, attr  # all std and ncl
+            assert drs.vasp_gam is None
+            assert drs.bulk_vasp_gam is None
 
     def test_file_folder_overwriting(self):
         """
@@ -1213,6 +1181,26 @@ class DefectRelaxSetTest(unittest.TestCase):
         # no DefectEntry json written for Structure input:
         assert not any(f.endswith(".json.gz") for f in os.listdir(f"{dirname}/vasp_gam"))
         if_present_rm(dirname)
+
+    def test_write_rattle_stdev_d_min_kwargs(self):
+        """
+        Test ``stdev``/``d_min`` as kwargs with the ``write_...()`` methods.
+        """
+        drs = DefectRelaxSet(self.CdTe_defect_gen["v_Cd_0"])
+        with warnings.catch_warnings():
+            drs.write_gam("test_dir", potcar_spec=True)  # poscar & rattle True by default
+            default_rattled = Structure.from_file("test_dir/vasp_gam/POSCAR")
+
+            drs.write_gam("test_dir", potcar_spec=True, stdev=0.5, d_min=1.0)
+            custom_rattled = Structure.from_file("test_dir/vasp_gam/POSCAR")
+
+            drs.write_gam("test_dir", potcar_spec=True, rattle=False)
+            unperturbed = Structure.from_file("test_dir/vasp_gam/POSCAR")
+
+        def _mean_disp(structure):
+            return np.mean(np.linalg.norm(structure.cart_coords - unperturbed.cart_coords, axis=1))
+
+        assert _mean_disp(custom_rattled) > _mean_disp(default_rattled) > 0  # stdev = 0.5 >> default
 
 
 class DefectsSetTest(unittest.TestCase):
