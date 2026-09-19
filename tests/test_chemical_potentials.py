@@ -1878,8 +1878,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self.La_ZrO2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.La_ZrO2_path)
 
         self.ZrO2_parsed_chempots = loadfn(f"{self.ZrO2_path}/ZrO2_chempots.json")
-        self.La_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_la_chempots.json")
-        self.y_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_y_chempots.json")
+        self.La_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_La_chempots.json")
+        self.y_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_Y_chempots.json")
 
         self.ZrO2_entry_list = [  # for testing ordering
             "ZrO2",
