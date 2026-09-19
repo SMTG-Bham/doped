@@ -94,6 +94,11 @@ top of the relaxation settings, from |SinglePointSet.yaml|.
 """
 
 
+_potcar_setup_warning = (  # appended to with ", so ..." by the callers
+    "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
+    "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting this up). "
+    "This is required to generate `POTCAR` files and set the `NELECT` and `NUPDOWN` `INCAR` tags"
+)
 _PBE_POTCAR_FUNCTIONALS = ("PBE_64", "PBE_54", "PBE_52", "PBE")  # newest first; VASP recommends latest
 
 
@@ -566,26 +571,19 @@ class DopedDictSet(VaspInputSet):
         """
         potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
         if not potcars:
-            potcar_warning_string = (
-                "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
-                "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
-                "this up). This is required to generate `POTCAR` files and set the `NELECT` and "
-                "`NUPDOWN` `INCAR` tags"
-            )
             if poscar:
                 if self.charge_state != 0:
-                    warnings.warn(  # snb is hidden flag for ShakeNBreak (as the POSCARs aren't
-                        # unperturbed in that case)
-                        f"{potcar_warning_string}, so only {'' if snb else '(unperturbed) '}`POSCAR` and "
+                    warnings.warn(  # snb -> ShakeNBreak hidden flag (POSCARs aren't unperturbed for it)
+                        f"{_potcar_setup_warning}, so only {'' if snb else '(unperturbed) '}`POSCAR` and "
                         f"`KPOINTS` files will be generated."
                     )
                     return False
 
             elif self.charge_state != 0:  # only KPOINTS can be written so no good
-                raise ValueError(f"{potcar_warning_string}, so no input files will be generated.")
+                raise ValueError(f"{_potcar_setup_warning}, so no input files will be generated.")
 
             # if at this point, means charge_state == 0, so neutral INCAR can be generated
-            warnings.warn(f"{potcar_warning_string}, so `POTCAR` files will not be generated.")
+            warnings.warn(f"{_potcar_setup_warning}, so `POTCAR` files will not be generated.")
 
             return False
 
@@ -2672,8 +2670,29 @@ class DefectsSet(MSONable):
             **kwargs:
                 Keyword arguments to pass to ``DefectDictSet.write_input()``.
         """
-        # TODO: If POTCARs not setup, warn and only write neutral defect folders, with INCAR, KPOINTS and
-        #  (if poscar) POSCAR? And bulk
+        defect_sets = self.defect_sets
+        if not any("VASP_PSP_DIR" in i for i in SETTINGS) and (  # no `NELECT` for charged defects
+            charged := [name for name, drs in defect_sets.items() if drs.charge_state != 0]
+        ):
+            if not poscar:
+                defect_sets = {k: v for k, v in defect_sets.items() if k not in charged}
+                if not defect_sets:  # only charged defects, so nothing writable
+                    raise ValueError(
+                        f"{_potcar_setup_warning}, so no input files will be generated (all defects in "
+                        f"this `DefectsSet` are charged). Set `poscar=True` to write their `POSCAR` and "
+                        f"`KPOINTS` files."
+                    )
+
+            warnings.warn(
+                f"{_potcar_setup_warning}, so the `INCAR`s for the {len(charged)} charged defects "
+                + (
+                    "cannot be written; only `POSCAR` and `KPOINTS` files will be generated for these "
+                    "folders."
+                    if poscar
+                    else "cannot be written; these folders will be skipped (set `poscar=True` to write "
+                    "their `POSCAR` and `KPOINTS` files)."
+                )
+            )
 
         args_list = [
             (
@@ -2683,10 +2702,10 @@ class DefectsSet(MSONable):
                 poscar,
                 rattle,
                 vasp_gam,
-                bulk if i == len(self.defect_sets) - 1 else False,  # write bulk folder(s) for last defect
+                bulk if i == len(defect_sets) - 1 else False,  # write bulk folder(s) for last defect
                 kwargs,
             )
-            for i, (defect_species, defect_relax_set) in enumerate(self.defect_sets.items())
+            for i, (defect_species, defect_relax_set) in enumerate(defect_sets.items())
         ]
         if processes is None:  # best setting for number of processes, from testing
             mp = get_mp_context()

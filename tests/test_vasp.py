@@ -60,6 +60,30 @@ def _check_no_potcar_available_warning_error(message):
     return "Set PMG_VASP_PSP_DIR=<directory-path> in .pmgrc.yaml (needed to find POTCARs)" in str(message)
 
 
+def _check_only_neutral_and_bulk_folders_written(path="."):
+    r"""
+    Check that only neutral defect (and bulk) folders have been written, as
+    expected from ``DefectsSet.write_files(poscar=False)`` when ``POTCAR``\s
+    are not available (e.g. on ``GitHub Actions``).
+    """
+    written = [
+        folder
+        for folder in os.listdir(path)
+        if os.path.isdir(f"{path}/{folder}")
+        and any(sub.startswith("vasp_") for sub in os.listdir(f"{path}/{folder}"))
+    ]
+    assert written
+    assert all(folder.endswith(("_0", "_bulk")) for folder in written), written
+    bulk_subfolder = next(  # bulk supercell folder still written, with all input files:
+        f"{path}/{folder}/{sub}"
+        for folder in written
+        if folder.endswith("_bulk")
+        for sub in os.listdir(f"{path}/{folder}")
+        if sub.startswith("vasp_")
+    )
+    assert {"INCAR", "KPOINTS", "POSCAR"}.issubset(os.listdir(bulk_subfolder))
+
+
 def _check_nelect_structure_charge_error(message):
     return "NELECT (i.e. structure charge) INCAR flag cannot be set" in str(message)
 
@@ -951,8 +975,6 @@ class DefectRelaxSetTest(unittest.TestCase):
                         assert getattr(drs, attr) is None, attr  # no SOC for LMNO
                     else:
                         assert getattr(drs, attr) is not None, attr
-                assert drs.vasp_gam is None
-                assert drs.bulk_vasp_gam is None
 
         # Test manually turning off SOC and making vasp_gam converged:
         defect_entries = random.sample(list(self.CdTe_defect_gen.values()), 5)
@@ -962,8 +984,6 @@ class DefectRelaxSetTest(unittest.TestCase):
             drs = DefectRelaxSet(defect_entry, soc=False, user_kpoints_settings={"reciprocal_density": 50})
             for attr in _vasp_attrs_no_gam:
                 assert getattr(drs, attr) is None, attr  # Gamma only here
-            assert drs.vasp_gam is not None
-            assert drs.bulk_vasp_gam is not None
 
         # Test manually turning _on_ SOC and making vasp_gam _not_ converged:
         defect_gen = DefectsGenerator.from_json(f"{data_dir}/lmno_defect_gen.json")
@@ -974,8 +994,6 @@ class DefectRelaxSetTest(unittest.TestCase):
             drs = DefectRelaxSet(defect_entry, soc=True, user_kpoints_settings={"reciprocal_density": 200})
             for attr in _vasp_attrs_no_gam:
                 assert getattr(drs, attr) is not None, attr  # all std and ncl
-            assert drs.vasp_gam is None
-            assert drs.bulk_vasp_gam is None
 
     def test_file_folder_overwriting(self):
         """
@@ -1349,12 +1367,10 @@ class DefectsSetTest(unittest.TestCase):
                         if "vasp" in subfolder:
                             assert not os.path.exists(f"{folder}/{subfolder}/POSCAR")
 
-        else:
-            with pytest.raises(ValueError):
-                defects_set.write_files(
-                    potcar_spec=True
-                )  # INCAR ValueError for charged defects if POTCARs not
-                # available and poscar=False
+        else:  # charged defect folders skipped (INCARs can't be written) if POTCARs not available:
+            with pytest.warns(UserWarning, match="POTCAR directory not set up with pymatgen"):
+                defects_set.write_files(potcar_spec=True)  # poscar=False by default
+            _check_only_neutral_and_bulk_folders_written()
             defects_set.write_files(potcar_spec=True, poscar=True)
 
         # test no vasp_gam files written:
@@ -1438,10 +1454,10 @@ class DefectsSetTest(unittest.TestCase):
 
         if _potcars_available():
             defects_set.write_files(potcar_spec=True, vasp_gam=True)  # vasp_gam to test POTCAR.spec
-        else:
-            with pytest.raises(ValueError):
-                defects_set.write_files(potcar_spec=True, vasp_gam=True)  # INCAR ValueError for charged
-                # defects if POTCARs not available and poscar=False
+        else:  # charged defect folders skipped (INCARs can't be written) if POTCARs not available:
+            with pytest.warns(UserWarning, match="POTCAR directory not set up with pymatgen"):
+                defects_set.write_files(potcar_spec=True, vasp_gam=True)
+            _check_only_neutral_and_bulk_folders_written()
             defects_set.write_files(potcar_spec=True, vasp_gam=True, poscar=True)
 
         for folder in os.listdir("."):
@@ -1557,10 +1573,10 @@ class DefectsSetTest(unittest.TestCase):
 
         if _potcars_available():
             defects_set.write_files(potcar_spec=True)  # poscar=False by default
-        else:
-            with pytest.raises(ValueError):
-                defects_set.write_files(potcar_spec=True)  # INCAR ValueError for charged defects if
-                # POTCARs not available and poscar=False
+        else:  # charged defect folders skipped (INCARs can't be written) if POTCARs not available:
+            with pytest.warns(UserWarning, match="POTCAR directory not set up with pymatgen"):
+                defects_set.write_files(potcar_spec=True)  # poscar=False by default
+            _check_only_neutral_and_bulk_folders_written()
             defects_set.write_files(potcar_spec=True, poscar=True, rattle=False)
 
         for defect_entry in defect_entry_list:
@@ -1584,12 +1600,9 @@ class DefectsSetTest(unittest.TestCase):
             print(f"Initialising and testing: {defect_gen_json}")
             defect_gen = DefectsGenerator.from_json(f"{data_dir}/{defect_gen_json}.json")
             defects_set = DefectsSet(defect_gen)
-            if _potcars_available():
-                defects_set.write_files()
-            else:
-                with pytest.raises(ValueError):
-                    defects_set.write_files()  # INCAR ValueError for charged defects if POTCARs not
-                    # available
+            defects_set.write_files()
+            if not _potcars_available():  # only neutral defect (and bulk) folders written
+                _check_only_neutral_and_bulk_folders_written()
                 defects_set.write_files(poscar=True)
 
             del defects_set  # delete python objects to ensure memory released
