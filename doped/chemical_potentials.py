@@ -1675,8 +1675,29 @@ class CompetingPhases(_EntriesMixin, MSONable):
         |VaspInputSet|) for k-point convergence testing of competing phases,
         using GGA DFT by default.
 
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic)
-        or 0 if not.
+        Automatically sets the smearing method (``ISMEAR`` ``INCAR`` tag in
+        ``VASP``) to 2 (Methfessel-Paxton)(if metallic) or 0 (Gaussian) if not,
+        matching the geometry relaxation (:meth:`get_relaxation_sets`)
+        defaults. Note that the `final` single-point calculations
+        (:meth:`get_singlepoint_sets`) use tetrahedron smearing by default
+        (``ISMEAR = -5`` in ``VASP``), which typically converges at lower
+        `k`-point densities (particularly for metals). Thus for phases
+        requiring high `k`-point densities (e.g. metals), which can become very
+        computationally expensive with e.g. hybrid DFT and/or non-collinear
+        magnetisation / spin-orbit coupling (removing spin-rotational
+        `k`-point symmetries), it can be worth also running their `k`-point
+        convergence tests with tetrahedron smearing (e.g.
+        ``user_incar_settings={"ISMEAR": -5}`` with ``VASP``)  to determine if
+        reduced `k`-point densities are sufficiently converged for their
+        single-point calculations (tetrahedron smearing is non-variational for
+        metals, and so cannot be used with geometry relaxations). ``ISMEAR`` is
+        automatically reverted to 2 (if metallic) or 0 (otherwise) when there
+        are too few `k`-points (<4) for the tetrahedron method.
+        One can typically also use down-sampling in the Fock exchange `q`-point
+        grid (i.e. ``NKRED`` in ``VASP``) for phases requiring high `k`-point
+        densities, to further reduce computational costs without significant
+        loss of accuracy; see |Competing Phases Tips|.
+
 
         Args:
             kpoints_metals (tuple[float, float, float]):
@@ -1795,10 +1816,33 @@ class CompetingPhases(_EntriesMixin, MSONable):
         Generates and writes VASP input files for k-point convergence testing
         of competing phases, using GGA DFT by default.
 
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
-        Returns the corresponding dictionary of ``DopedDictSet`` objects
-        (subclasses of |VaspInputSet|) which contain the input file settings.
+        Automatically sets the smearing method (``ISMEAR`` ``INCAR`` tag in
+        ``VASP``) to 2 (Methfessel-Paxton)(if metallic) or 0 (Gaussian) if not,
+        matching the geometry relaxation (:meth:`get_relaxation_sets`)
+        defaults. Note that the `final` single-point calculations
+        (:meth:`get_singlepoint_sets`) use tetrahedron smearing by default
+        (``ISMEAR = -5`` in ``VASP``), which typically converges at lower
+        `k`-point densities (particularly for metals). Thus for phases
+        requiring high `k`-point densities (e.g. metals), which can become very
+        computationally expensive with e.g. hybrid DFT and/or non-collinear
+        magnetisation / spin-orbit coupling (removing spin-rotational
+        `k`-point symmetries), it can be worth also running their `k`-point
+        convergence tests with tetrahedron smearing (e.g.
+        ``user_incar_settings={"ISMEAR": -5}`` with ``VASP``)  to determine if
+        reduced `k`-point densities are sufficiently converged for their
+        single-point calculations (tetrahedron smearing is non-variational for
+        metals, and so cannot be used with geometry relaxations). ``ISMEAR`` is
+        automatically reverted to 2 (if metallic) or 0 (otherwise) when there
+        are too few `k`-points (<4) for the tetrahedron method.
+        One can typically also use down-sampling in the Fock exchange `q`-point
+        grid (i.e. ``NKRED`` in ``VASP``) for phases requiring high `k`-point
+        densities, to further reduce computational costs without significant
+        loss of accuracy; see |Competing Phases Tips|.
+
+        https://github.com/kavanase/vaspup2.0 can be useful in automatically
+        running and parsing these ``VASP`` convergence calculations. Returns
+        the corresponding dictionary of ``DopedDictSet`` objects (subclasses of
+        |VaspInputSet|) which contain the input file settings.
 
         Args:
             kpoints_metals (tuple[float, float, float]):
@@ -1992,6 +2036,9 @@ class CompetingPhases(_EntriesMixin, MSONable):
             if category == "molecules":
                 incar_settings["ISIF"] = 2  # don't change the volume
                 incar_settings["KPAR"] = 1  # don't use k-point parallelization, gamma only
+                if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing needs >1 kpoint:
+                    incar_settings["ISMEAR"] = 0
+
             self._set_spin_polarisation(incar_settings, user_incar_settings, entry)
             if category == "metals":
                 self._set_default_metal_smearing(incar_settings, user_incar_settings)
@@ -2006,6 +2053,10 @@ class CompetingPhases(_EntriesMixin, MSONable):
                     user_potcar_functional=user_potcar_functional,
                     force_gamma=True,
                 )
+                if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing; needs >= 4 k-points
+                    kpts = dict_set.kpoints.kpts[0] if dict_set.kpoints is not None else None
+                    if kpts and np.prod(kpts) < 4:  # ``pymatgen`` would revert to ISMEAR = 0 for all
+                        dict_set.user_incar_settings["ISMEAR"] = 2 if category == "metals" else 0
 
                 fname = f"{output_path}/{_get_competing_phase_folder_name(entry)}/{subfolder}"
                 dict_sets[fname] = dict_set
@@ -2180,24 +2231,33 @@ class CompetingPhases(_EntriesMixin, MSONable):
         off symmetry for SOC calculations here -- note that the electronic band
         structure from these calculations is thus unreliable.
 
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Note that any changes to the default ``INCAR``/``POTCAR``
-        settings should be consistent with those used for the defect supercell
-        calculations.
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to -5 (tetrahedron
+        smearing) for all solid phases, or 0 (Gaussian) for molecules (Γ-only
+        `k`-point sampling). Note that any changes to the default ``INCAR`` /
+        ``POTCAR`` settings should be consistent with those used for the defect
+        supercell calculations.
 
-        For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
-        default here) is well-suited to the geometry relaxations, tetrahedron
-        smearing (``ISMEAR = -5``) typically gives more accurate total energies
-        for these final single-point calculations with modest k-point
-        densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
-        Often this requires a lower `k`-point density than Methfessel-Paxton
-        smearing, and so it can be worth re-running k-point convergence testing
-        (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
-        check for cheaper converged `k`-point densities for these final
-        single-point calculations -- particularly useful if e.g. performing
-        hybrid DFT SOC calculations. See the |Competing Phases Tips| tips
-        section for further tips on boosting the efficiency of competing phases
-        calculations.
+        While Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and
+        ``2``; the defaults for the geometry relaxations) are well-suited to
+        geometry relaxations, tetrahedron smearing (``ISMEAR = -5``; default
+        here) typically gives more accurate total energies for these final
+        single-point calculations at modest `k`-point densities -- particularly
+        for metals. Set e.g. ``user_incar_settings={"ISMEAR": 0}`` to override.
+        ``ISMEAR`` is automatically reverted to 2 (if metallic) or 0
+        (otherwise) when there are too few `k`-points (<4) for the tetrahedron
+        method. Tetrahedron smearing often requires a lower `k`-point density
+        than Methfessel-Paxton/Gaussian smearing for convergence, and so it can
+        be worth re-running k-point convergence tests (with
+        :meth:`get_kpoint_convergence_sets`, using
+        ``user_incar_settings={"ISMEAR": -5}``) for particularly expensive
+        phases, to check for cheaper converged `k`-point densities for these
+        final single-point calculations -- particularly useful if e.g. using
+        hybrid DFT and/or SOC. One can typically also use down-sampling in the
+        Fock exchange `q`-point grid (i.e. ``NKRED`` in ``VASP``) for phases
+        requiring high `k`-point densities, to further reduce computational
+        costs without significant loss of accuracy. See the
+        |Competing Phases Tips| tips section for further tips on boosting the
+        efficiency of competing phases calculations.
 
         Note that this function uses a single kpoint density setting each for
         metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
@@ -2282,8 +2342,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
 
         # build merged INCAR settings: singlepoint tags + SOC on top of user settings
         sp_incar_settings = copy.deepcopy(singlepoint_incar_settings)
-        # TODO: Set ISMEAR to -5 for singlepoint calculations if sufficient KPOINT density? And for defect
-        # calcs? Tools for handling this in ``pymatgen``?
+        # tetrahedron smearing by default, to maximise k-point sampling accuracy; reverted to 0 for
+        sp_incar_settings["ISMEAR"] = -5  # molecules and 2/0 for phases with < 4 k-points
         if soc:
             sp_incar_settings["LSORBIT"] = True
         sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
@@ -2352,24 +2412,33 @@ class CompetingPhases(_EntriesMixin, MSONable):
         off symmetry for SOC calculations here -- note that the electronic band
         structure from these calculations is thus unreliable.
 
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Note that any changes to the default ``INCAR``/``POTCAR``
-        settings should be consistent with those used for the defect supercell
-        calculations.
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to -5 (tetrahedron
+        smearing) for all solid phases, or 0 (Gaussian) for molecules (Γ-only
+        `k`-point sampling). Note that any changes to the default ``INCAR`` /
+        ``POTCAR`` settings should be consistent with those used for the defect
+        supercell calculations.
 
-        For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
-        default here) is well-suited to the geometry relaxations, tetrahedron
-        smearing (``ISMEAR = -5``) typically gives more accurate total energies
-        for these final single-point calculations with modest k-point
-        densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
-        Often this requires a lower `k`-point density than Methfessel-Paxton
-        smearing, and so it can be worth re-running k-point convergence testing
-        (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
-        check for cheaper converged `k`-point densities for these final
-        single-point calculations -- particularly useful if e.g. performing
-        hybrid DFT SOC calculations. See the |Competing Phases Tips| tips
-        section for further tips on boosting the efficiency of competing phases
-        calculations.
+        While Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and
+        ``2``; the defaults for the geometry relaxations) are well-suited to
+        geometry relaxations, tetrahedron smearing (``ISMEAR = -5``; default
+        here) typically gives more accurate total energies for these final
+        single-point calculations at modest `k`-point densities -- particularly
+        for metals. Set e.g. ``user_incar_settings={"ISMEAR": 0}`` to override.
+        ``ISMEAR`` is automatically reverted to 2 (if metallic) or 0
+        (otherwise) when there are too few `k`-points (<4) for the tetrahedron
+        method. Tetrahedron smearing often requires a lower `k`-point density
+        than Methfessel-Paxton/Gaussian smearing for convergence, and so it can
+        be worth re-running k-point convergence tests (with
+        :meth:`get_kpoint_convergence_sets`, using
+        ``user_incar_settings={"ISMEAR": -5}``) for particularly expensive
+        phases, to check for cheaper converged `k`-point densities for these
+        final single-point calculations -- particularly useful if e.g. using
+        hybrid DFT and/or SOC. One can typically also use down-sampling in the
+        Fock exchange `q`-point grid (i.e. ``NKRED`` in ``VASP``) for phases
+        requiring high `k`-point densities, to further reduce computational
+        costs without significant loss of accuracy. See the
+        |Competing Phases Tips| tips section for further tips on boosting the
+        efficiency of competing phases calculations.
 
         Note that this function uses a single kpoint density setting each for
         metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and

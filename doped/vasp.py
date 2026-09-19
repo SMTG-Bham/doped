@@ -2765,3 +2765,5 @@ class DefectsSet(MSONable):
 #  to `.defect_sets` etc?
 # TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
 #  and the structures don't match (otherwise overwrite)
+# TODO: (Likely with IO refactor); should rename similar to chemical_potentials.py, as "pre-relax", "relax"
+#  and "singlepoint" or similar, rather than "vasp_gam", "vasp_std" etc, to be code agnostic

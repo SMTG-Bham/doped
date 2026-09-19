@@ -188,15 +188,17 @@ particularly for metals, which are often the most expensive competing phases -- 
   calculations, and then only perform the (expensive) SOC calculations on the ground-state polymorph of 
   each competing phase.
 
-- **Smearing:** Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and ``2``) are the ``doped`` 
-  default settings for insulators and metals for geometry relaxations, but tetrahedron smearing 
-  (``ISMEAR = -5``) typically gives more accurate total energies for the `final` single-point calculation 
-  and converges at lower `k`-point densities. This can be particularly useful for metallic competing 
+- **Smearing:** Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and ``2``) are the ``doped`` default 
+  settings for insulators and metals for geometry relaxations (and `k`-point convergence testing), but 
+  tetrahedron smearing (``ISMEAR = -5``) typically gives more accurate total energies for the `final` 
+  single-point calculation and converges at lower `k`-point densities, and so is used by default for all solid 
+  phases with :meth:`~doped.chemical_potentials.CompetingPhases.write_singlepoint_files` (set 
+  ``user_incar_settings={"ISMEAR": 0}`` to override). This is particularly useful for metallic competing 
   phases, which require high `k`-point densities and thus can be very expensive, particularly if also using 
   hybrid DFT and/or including spin-orbit coupling (SOC). It can be worth re-running k-point convergence 
   testing (with :meth:`~doped.chemical_potentials.CompetingPhases.write_kpoint_convergence_files`) using 
-  ``ISMEAR = -5`` to check for cheaper converged `k`-point densities for these final single-point 
-  calculations.
+  ``user_incar_settings={"ISMEAR": -5}`` to check for cheaper converged `k`-point densities for these final 
+  single-point calculations.
 
 - **``NKRED`` with hybrid DFT:** The Fock exchange contribution in hybrid DFT typically converges at lower 
   `k`-point densities than the other DFT energy terms, so the

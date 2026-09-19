@@ -764,6 +764,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
         assert len(cp.nonmetallic_entries) == 7
         assert len(cp.metallic_entries) == 6
+        # metals use Methfessel-Paxton smearing for relaxations (ISMEAR = 2), non-metals Gaussian (0):
+        assert sum(ds.incar["ISMEAR"] == 2 for ds in dict_sets.values()) == len(cp.metallic_entries)
         assert len(cp.molecular_entries) == 1
         assert cp.molecular_entries[0].name == "O2"
         assert cp.molecular_entries[0].data["summary"]["total_magnetization"] == 2
@@ -957,6 +959,21 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_set = dict_sets["CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl"]
         assert dict_set.incar["LSORBIT"] is True
         assert dict_set.incar["NSW"] == 0
+        assert dict_set.incar["ISMEAR"] == -5  # tetrahedron smearing for single-point energies
+        # all solid phases use tetrahedron smearing; molecules are Γ-only so revert to ISMEAR = 0:
+        assert sum(ds.incar["ISMEAR"] == -5 for ds in dict_sets.values()) == len(cp) - len(
+            cp.molecular_entries
+        )
+        assert dict_sets["CompetingPhases/O2_mmm_EaH_0/vasp_ncl"].incar["ISMEAR"] == 0
+
+        # k-mesh too sparse for tetrahedron smearing -> Methfessel-Paxton for metals, Gaussian otherwise
+        # (handled before ``pymatgen``'s blanket ISMEAR = 0 revert, so no warning):
+        sparse_sets, _stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.get_singlepoint_sets, kpoints_metals=0.1, kpoints_nonmetals=0.1
+        )
+        assert sum(ds.incar["ISMEAR"] == 2 for ds in sparse_sets.values()) == len(cp.metallic_entries)
+        assert not any(ds.incar["ISMEAR"] == -5 for ds in sparse_sets.values())
+        assert not any("tetrahedron" in str(ww.message) for ww in w)
 
         with open(f"{ZrO2_ncl_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
