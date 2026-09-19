@@ -825,8 +825,8 @@ stages of the defect workflow, ``doped`` objects have been made fully serializab
 easily saved and (re-)loaded from compact, lightweight ``.json`` files. As demonstrated at
 various stages in the tutorials, this can be achieved using the ``dumpfn``/``loadfn`` functions from
 ``monty.serialization``, or with the :meth:`~doped.core.Defect.to_json()`/
-:meth:`~doped.core.Defect.from_json()` methods provided for the |Defect|, |DefectEntry|, |DefectsGenerator| 
-and |DefectThermodynamics| classes:
+:meth:`~doped.core.Defect.from_json()` methods provided for the |Defect|, |DefectEntry|, |DefectsGenerator|,
+|DefectThermodynamics|, |DefectsSet| and :class:`~doped.vasp.DefectRelaxSet` classes:
 
 .. code-block:: python
 
@@ -856,13 +856,15 @@ and |DefectThermodynamics| classes:
 In the typical defect calculation workflow with ``doped`` (exemplified in the tutorials), the following
 ``JSON`` files are automatically written to file:
 
-- The |DefectsGenerator| object or ``defect_entries`` dictionary that is input to
-  :class:`~doped.vasp.DefectsSet`, when writing ``VASP`` input files with
-  :class:`~doped.vasp.DefectsSet` :meth:`~doped.vasp.DefectsSet.write_files()` -- written to
-  ``output_path``. Additionally, for each calculation directory generated, the corresponding
-  |DefectEntry| object is written to a ``{DefectEntry.name}.json`` file in the directory 
-  so that all information on the generated defect structure, charge state etc. is preserved in the 
-  calculation directory.
+- |DefectsSet|, when writing ``VASP`` input files with :meth:`~doped.vasp.DefectsSet.write_files()`
+  -- written to a ``{Host Chemical Formula}_DefectsSet.json.gz`` file in ``output_path``, preserving both
+  the input |DefectsGenerator| object (or ``defect_entries`` dictionary) and the ``VASP`` input settings used.
+  Additionally, for each defect folder generated, the corresponding |DefectEntry| object is written to a
+  ``{DefectEntry.name}_DefectEntry.json.gz`` file in that folder by default, so that all information on the
+  generated defect structure, charge state etc. is preserved alongside the calculation inputs.
+    - With ``relax_set_json = True``, the corresponding :class:`~doped.vasp.DefectRelaxSet` object is also
+      written to a ``{DefectEntry.name}_DefectRelaxSet.json.gz`` file in each defect folder, preserving the full
+      ``VASP`` input settings used.
 - The parsed defect entries dict (:attr:`~doped.analysis.DefectsParser.defect_dict`) when defect
   calculations are parsed with |DefectsParser| -- written to ``output_path``. The 
   JSON filename can be set with e.g. ``DefectsParser(json_filename="custom_name.json")``, but the default 

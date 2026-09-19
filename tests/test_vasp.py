@@ -4,7 +4,6 @@ Tests for the `doped.vasp` module.
 
 import contextlib
 import filecmp
-import gzip
 import locale
 import os
 import random
@@ -674,7 +673,9 @@ class DefectRelaxSetTest(unittest.TestCase):
             ):
                 if_present_rm(i)
 
-        if_present_rm("MgO_defects_generator.json.gz")
+        for file in os.listdir():
+            if file.endswith(".json.gz"):
+                if_present_rm(file)
 
     def _general_defect_relax_set_check(self, defect_relax_set, **kwargs):
         dds_test_list = [
@@ -1197,7 +1198,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert os.path.exists(f"{dirname}/vasp_nkred_std/INCAR")
             assert os.path.exists(f"{dirname}/vasp_ncl/INCAR")
         # no DefectEntry json written for Structure input:
-        assert not any(f.endswith(".json.gz") for f in os.listdir(f"{dirname}/vasp_gam"))
+        assert not any(f.endswith(".json.gz") for f in os.listdir(dirname))
         if_present_rm(dirname)
 
     def test_write_rattle_stdev_d_min_kwargs(self):
@@ -1219,6 +1220,32 @@ class DefectRelaxSetTest(unittest.TestCase):
             return np.mean(np.linalg.norm(structure.cart_coords - unperturbed.cart_coords, axis=1))
 
         assert _mean_disp(custom_rattled) > _mean_disp(default_rattled) > 0  # stdev = 0.5 >> default
+
+    def test_to_from_json(self):
+        """
+        Test ``DefectRelaxSet`` ``to_json()``/``from_json()`` round-tripping,
+        and the ``relax_set_json`` option of ``write_all()``.
+        """
+        drs = DefectRelaxSet(
+            self.CdTe_defect_gen["v_Cd_-2"], user_incar_settings={"ENCUT": 350}, validate_magmom=False
+        )
+        drs.to_json()  # test default filename
+        reloaded = DefectRelaxSet.from_json("v_Cd_-2_DefectRelaxSet.json.gz")
+        assert reloaded.user_incar_settings == {"ENCUT": 350}
+        assert reloaded.kwargs == {"validate_magmom": False}  # ``DefectDictSet`` kwargs retained
+        assert reloaded.charge_state == -2
+        assert reloaded.defect_entry.name == drs.defect_entry.name
+
+        drs.write_all("test_dir", poscar=True, potcar_spec=True, relax_set_json=True)
+        drs_json = "test_dir/v_Cd_-2_DefectRelaxSet.json.gz"  # named as for the ``to_json()`` default
+        assert DefectRelaxSet.from_json(drs_json).charge_state == -2
+        assert os.path.exists(
+            "test_dir/v_Cd_-2_DefectEntry.json.gz"
+        )  # ``DefectEntry`` json in the defect folder
+
+        # a ``defect_dir`` containing "bulk" is not a bulk supercell folder, so json still written:
+        drs.write_all("test_dir/my_bulk_runs", poscar=True, potcar_spec=True)
+        assert os.path.exists("test_dir/my_bulk_runs/v_Cd_-2_DefectEntry.json.gz")
 
 
 class DefectsSetTest(unittest.TestCase):
@@ -1249,12 +1276,7 @@ class DefectsSetTest(unittest.TestCase):
                 # generated output files
                 if_present_rm(folder)
 
-        for i in [
-            "test_pop",
-            "AgSbTe2_test",
-            "CdTe_defects_generator.json",
-            "test_CdTe_defects_generator.json",
-        ]:
+        for i in ["test_pop", "AgSbTe2_test"]:
             if_present_rm(i)
 
     def check_generated_vasp_inputs(
@@ -1386,14 +1408,9 @@ class DefectsSetTest(unittest.TestCase):
             func_name="fit",
         )
         # check_generated_vasp_inputs also checks bulk folders
-        assert os.path.exists("CdTe_defects_generator.json.gz")
-        CdTe_se_defect_gen.to_json("test_CdTe_defects_generator.json")
-        with (
-            gzip.open("CdTe_defects_generator.json.gz", "rt") as f,
-            open("CdTe_defects_generator.json", "w") as f_out,
-        ):
-            f_out.write(f.read())
-        assert filecmp.cmp("CdTe_defects_generator.json", "test_CdTe_defects_generator.json")
+        assert os.path.exists("CdTe_DefectsSet.json.gz")
+        # the input ``DefectsGenerator`` is retained in the written ``DefectsSet`` json:
+        _compare_attributes(DefectsSet.from_json("CdTe_DefectsSet.json.gz").json_obj, CdTe_se_defect_gen)
 
         # assert that the same folders in self.CdTe_data_dir are present in the current directory
         print("Checking vasp_gam files")
@@ -1590,6 +1607,33 @@ class DefectsSetTest(unittest.TestCase):
                     check_potcar_spec=True,
                 )
 
+    def test_to_from_json(self):
+        """
+        Test ``DefectsSet`` ``to_json()``/``from_json()`` round-tripping, and
+        the ``relax_set_json`` option of ``write_files()``.
+        """
+        defects_set = DefectsSet(
+            {name: self.CdTe_defect_gen[name] for name in ["v_Cd_0", "v_Cd_-2"]}, validate_magmom=False
+        )
+        assert defects_set.json_name == "CdTe_DefectsSet.json.gz"  # formula-prefixed for dict input
+        defects_set.to_json()  # test default filename
+        reloaded = DefectsSet.from_json("CdTe_DefectsSet.json.gz")
+        assert reloaded.kwargs == {"validate_magmom": False}  # ``DefectDictSet`` kwargs retained
+        assert list(reloaded.defect_entries) == list(defects_set.defect_entries)
+        assert reloaded.json_name == defects_set.json_name
+
+        reloaded.write_files(poscar=True, potcar_spec=True, relax_set_json=True)
+        for name, defect_entry in defects_set.defect_entries.items():
+            drs = DefectRelaxSet.from_json(f"{name}/{name}_DefectRelaxSet.json.gz")
+            assert drs.charge_state == defect_entry.charge_state
+            assert drs.kwargs == {"validate_magmom": False}
+
+        # ``DefectsGenerator`` input is retained upon serialisation (not just the ``DefectEntry``\s):
+        DefectsSet(self.CdTe_defect_gen).to_json()
+        reloaded_gen = DefectsSet.from_json("CdTe_DefectsSet.json.gz").json_obj
+        assert isinstance(reloaded_gen, DefectsGenerator)
+        assert np.allclose(reloaded_gen.supercell_matrix, self.CdTe_defect_gen.supercell_matrix)
+
     def test_initialise_and_write_all_defect_gens(self):
         """
         Test initialising DefectsSet with our generation-tests materials, and
@@ -1717,7 +1761,7 @@ class DefectsSetTest(unittest.TestCase):
             _compare_attributes(reloaded_defect_entry, ref_defect_entry)
 
         _check_reloaded_defect_entry(
-            "Ag_Sb_Cs_Te2.90_-2/vasp_std/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+            "Ag_Sb_Cs_Te2.90_-2/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry
         )
 
         if _potcars_available():
@@ -1732,7 +1776,7 @@ class DefectsSetTest(unittest.TestCase):
         drs.write_nkred_std(poscar=True)
         _check_agsbte2_vasp_folder("Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std", defect_entry.defect_supercell)
         _check_reloaded_defect_entry(
-            "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+            "Ag_Sb_Cs_Te2.90_-2/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry
         )
 
         assert not any(i in os.listdir("Ag_Sb_Cs_Te2.90_-2") for i in ["vasp_gam", "vasp_ncl"])
@@ -1743,7 +1787,7 @@ class DefectsSetTest(unittest.TestCase):
             "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
         )  # poscar True by default when write_gam called directly
         _check_reloaded_defect_entry(
-            "Ag_Sb_Cs_Te2.90_-2/vasp_gam/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+            "Ag_Sb_Cs_Te2.90_-2/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry
         )
 
         if _potcars_available():
@@ -1753,7 +1797,7 @@ class DefectsSetTest(unittest.TestCase):
                 "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
             )
             _check_reloaded_defect_entry(
-                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+                "Ag_Sb_Cs_Te2.90_-2/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry
             )
             assert "bulk" not in os.listdir()  # no bulk folders written yet
 
@@ -1766,9 +1810,9 @@ class DefectsSetTest(unittest.TestCase):
                 _check_agsbte2_vasp_folder(
                     f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=False
                 )
-                _check_reloaded_defect_entry(
-                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-                )
+            _check_reloaded_defect_entry(
+                "Ag_Sb_Cs_Te2.90_-2/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry
+            )
 
         if _potcars_available():
             drs.write_all(vasp_gam=True)
@@ -1781,9 +1825,9 @@ class DefectsSetTest(unittest.TestCase):
             _check_agsbte2_vasp_folder(
                 f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
             )
-            _check_reloaded_defect_entry(
-                f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-            )
+        _check_reloaded_defect_entry(
+            "Ag_Sb_Cs_Te2.90_-2/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry
+        )
         assert "bulk" not in os.listdir()  # no bulk folders written by default
 
         if _potcars_available():
@@ -1793,9 +1837,9 @@ class DefectsSetTest(unittest.TestCase):
                 _check_agsbte2_vasp_folder(
                     f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
                 )
-                _check_reloaded_defect_entry(
-                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-                )
+            _check_reloaded_defect_entry(
+                "Ag_Sb_Cs_Te2.90_-2/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry
+            )
             _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
             assert all(i not in os.listdir("AgSbTe2_bulk") for i in ["vasp_gam", "vasp_std"])
 
@@ -1806,10 +1850,10 @@ class DefectsSetTest(unittest.TestCase):
                 _check_agsbte2_vasp_folder(
                     f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=False
                 )
-                _check_reloaded_defect_entry(
-                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-                )
                 _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
+            _check_reloaded_defect_entry(
+                "Ag_Sb_Cs_Te2.90_-2/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry
+            )
             drs.write_all(bulk="all", vasp_gam=True)
             _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_gam", defect_entry.bulk_supercell, poscar=True)
 
@@ -1843,7 +1887,7 @@ class DefectsSetTest(unittest.TestCase):
         drs.write_all("test_pop", poscar=True)
         for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
             _check_agsbte2_vasp_folder(f"test_pop/{i}", defect_entry.defect_supercell, poscar=True)
-            _check_reloaded_defect_entry(f"test_pop/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry)
+        _check_reloaded_defect_entry("test_pop/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry)
 
         if_present_rm("Ag_Sb_Cs_Te2.90_-2")
         if_present_rm("AgSbTe2_bulk")
@@ -1869,11 +1913,10 @@ class DefectsSetTest(unittest.TestCase):
             _check_agsbte2_vasp_folder(
                 f"Ag_Sb_Cs_Te2.90_0/{i}", defect_entry.defect_supercell, poscar=True
             )
-            _check_reloaded_defect_entry(
-                f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-            )
             _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
-            _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
+        _check_reloaded_defect_entry(
+            "Ag_Sb_Cs_Te2.90_-2/Ag_Sb_Cs_Te2.90_-2_DefectEntry.json.gz", defect_entry
+        )
 
         # test convenience methods for ``DefectsSet``, where dict methods are passed to
         # ``self.defect_sets``:
@@ -1918,7 +1961,7 @@ class DefectsSetTest(unittest.TestCase):
             bulk_supercell, self.CdTe_defect_gen.bulk_supercell, func_name="fit"
         )
         # check_generated_vasp_inputs also checks bulk folders
-        assert os.path.exists("CdTe_defects_generator.json.gz")
+        assert os.path.exists("CdTe_DefectsSet.json.gz")
 
         # assert that the same folders in self.CdTe_data_dir are present in the current directory
         print("Checking vasp_gam files")

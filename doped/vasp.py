@@ -783,6 +783,7 @@ class DefectRelaxSet(MSONable):
         user_kpoints_settings: dict | Kpoints | None = None,
         user_potcar_functional: str = "PBE",
         user_potcar_settings: dict | None = None,
+        poscar_comment: str | None = None,
         **kwargs,
     ):
         r"""
@@ -881,6 +882,12 @@ class DefectRelaxSet(MSONable):
             user_potcar_settings (dict):
                 Override the default ``POTCAR``\s, e.g. ``{"Li": "Li_sv"}``.
                 See |PotcarSet.yaml| for the default ``POTCAR`` set.
+            poscar_comment (str):
+                Comment to write at the top of the ``POSCAR`` files. Default is
+                the defect entry name, defect frac coords and charge state (if
+                inputting a |DefectEntry| object), or the formula of the input
+                structure and charge state (if inputting a |Structure| object).
+                For the bulk supercell, it's ``"{formula} -- Bulk"``.
             **kwargs: Additional kwargs to pass to ``DefectDictSet``.
 
         Key Attributes:
@@ -896,13 +903,6 @@ class DefectRelaxSet(MSONable):
                 defined), otherwise from ``defect_entry.bulk_entry.structure``
                 if inputting a |DefectEntry| object, or ``None`` if inputting
                 a |Structure| object.
-            poscar_comment (str):
-                Comment to write at the top of the ``POSCAR`` files. Default is
-                the defect entry name, defect frac coords and charge state (if
-                inputting a |DefectEntry| object), or the formula of the
-                input structure and charge state (if inputting a |Structure|
-                object), for defects. For the bulk supercell, it's
-                ``"{formula} - Bulk"``.
             Input parameters are also set as attributes.
         """
         if not isinstance(defect_entry, DefectEntry | Structure):
@@ -915,11 +915,11 @@ class DefectRelaxSet(MSONable):
         self.user_kpoints_settings = user_kpoints_settings or {}
         self.user_potcar_functional = user_potcar_functional
         self.user_potcar_settings = user_potcar_settings or {}
-        self.dict_set_kwargs = kwargs or {}
+        self.kwargs = kwargs or {}
 
         if isinstance(self.defect_entry, Structure):
             self.defect_supercell = self.defect_entry
-            self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
+            self.poscar_comment = poscar_comment or (
                 f"{self.defect_supercell.formula} {_signed_charge(self.charge_state)}"
             )
             self.bulk_supercell = None
@@ -948,7 +948,7 @@ class DefectRelaxSet(MSONable):
             else:
                 name = self.defect_supercell.formula
 
-            self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
+            self.poscar_comment = poscar_comment or (
                 f"{name} {approx_coords} {_signed_charge(self.charge_state)}"
             )
 
@@ -994,7 +994,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=self.poscar_comment,
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     def _check_vstd_kpoints(
@@ -1060,7 +1060,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=self.poscar_comment,
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     @property
@@ -1147,7 +1147,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=self.poscar_comment,
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     @property
@@ -1191,7 +1191,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=self.poscar_comment,
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     def _check_bulk_supercell_and_warn(self):
@@ -1253,7 +1253,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=f"{bulk_supercell.formula} -- Bulk",
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     @property
@@ -1309,7 +1309,7 @@ class DefectRelaxSet(MSONable):
                 user_potcar_functional=self.user_potcar_functional,
                 user_potcar_settings=self.user_potcar_settings,
                 poscar_comment=f"{bulk_supercell.formula} -- Bulk",
-                **self.dict_set_kwargs,
+                **self.kwargs,
             )
         )
 
@@ -1377,7 +1377,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=f"{bulk_supercell.formula} -- Bulk",
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     @property
@@ -1424,7 +1424,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=f"{bulk_supercell.formula} -- Bulk",
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     def _get_output_path(self, defect_dir: PathLike | None = None, subfolder: PathLike | None = None):
@@ -1470,9 +1470,9 @@ class DefectRelaxSet(MSONable):
             **kwargs,  # kwargs to allow POTCAR testing on GH Actions
         )
 
-        if "bulk" not in defect_dir and isinstance(self.defect_entry, DefectEntry):
-            # not a bulk supercell, and DefectEntry provenance to write:
-            self.defect_entry.to_json(f"{output_path}/{self.defect_entry.name}.json.gz")
+        if not str(defect_dir).endswith("_bulk") and isinstance(self.defect_entry, DefectEntry):
+            # not a bulk supercell folder, and DefectEntry provenance to write (to the defect folder):
+            self.defect_entry.to_json(f"{defect_dir}/{self.defect_entry.name}_DefectEntry.json.gz")
 
     def _write_bulk_files(self, defect_dir, subfolder, vasp_xxx_attribute, **kwargs):
         """
@@ -1582,7 +1582,9 @@ class DefectRelaxSet(MSONable):
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         if defect_dir is None:
             defect_dir = self._get_output_path()  # handles Structure input & unset DefectEntry.name
@@ -1691,7 +1693,9 @@ class DefectRelaxSet(MSONable):
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         if self.vasp_std is None:  # warns user if vasp_std is None
             return
@@ -1808,7 +1812,9 @@ class DefectRelaxSet(MSONable):
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         if self.vasp_nkred_std is None:  # warn user if vasp_nkred_std is None
             warnings.warn(
@@ -1931,7 +1937,9 @@ class DefectRelaxSet(MSONable):
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         if self.vasp_ncl is None:
             warnings.warn(
@@ -1962,6 +1970,7 @@ class DefectRelaxSet(MSONable):
         rattle: bool = True,
         vasp_gam: bool | None = None,
         bulk: bool | str = False,
+        relax_set_json: bool = False,
         **kwargs,
     ):
         r"""
@@ -2098,10 +2107,16 @@ class DefectRelaxSet(MSONable):
                 ``bulk = "all"`` then the input files for all ``VASP``
                 calculations in the workflow (``vasp_gam``, ``vasp_nkred_std``,
                 ``vasp_std``, ``vasp_ncl`` (if applicable)) are written to the
-                bulk supercell folder.
-                (Default: False)
+                bulk supercell folder. Default is ``False``.
+            relax_set_json (bool):
+                If ``True``, the ``DefectRelaxSet`` object is also written to a
+                ``{defect name}_DefectRelaxSet.json.gz`` file in the defect
+                folder, for calculation provenance (reloadable with
+                ``DefectRelaxSet.from_json()``). Default is ``False``.
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         # check `bulk` input:
         bulk_vasp = []
@@ -2163,6 +2178,44 @@ class DefectRelaxSet(MSONable):
                 bulk=any("vasp_ncl" in vasp_type for vasp_type in bulk_vasp),
                 **kwargs,
             )
+
+        if relax_set_json:  # write this ``DefectRelaxSet`` to json in the defect folder, for provenance
+            name = self._get_output_path()  # defect name, or formula & charge for ``Structure`` input
+            defect_dir = self._get_output_path(defect_dir)
+            # folder already created by the ``write_...()`` calls above, unless none were written (i.e.
+            # Γ-only with ``soc=False`` and ``vasp_gam=False``):
+            os.makedirs(defect_dir, exist_ok=True)
+            self.to_json(f"{defect_dir}/{name}_DefectRelaxSet.json.gz")
+
+    def to_json(self, filename: PathLike | None = None):
+        """
+        Save the ``DefectRelaxSet`` object to a json file, which can be
+        reloaded with ``DefectRelaxSet.from_json()`` (or ``loadfn()`` from
+        ``monty.serialization``).
+
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
+        Args:
+            filename (PathLike):
+                Filename to save ``json`` file as. If ``None``, set as
+                ``{defect name}_DefectRelaxSet.json.gz``.
+        """
+        dumpfn(self, filename or f"{self._get_output_path()}_DefectRelaxSet.json.gz")
+
+    @classmethod
+    def from_json(cls, filename: PathLike) -> "DefectRelaxSet":
+        """
+        Load a ``DefectRelaxSet`` object from a ``json(.gz)`` file.
+
+        Args:
+            filename (PathLike):
+                Filename of json file to load a ``DefectRelaxSet`` object from.
+
+        Returns:
+            ``DefectRelaxSet`` object
+        """
+        return loadfn(filename)
 
     def __repr__(self):
         """
@@ -2329,11 +2382,14 @@ class DefectsSet(MSONable):
             json_obj (dict | |DefectsGenerator|):
                 Either the |DefectsGenerator| object if input
                 ``defect_entries`` is a |DefectsGenerator| object, otherwise
-                the ``defect_entries`` dictionary, which will be written to
-                file when ``write_files()`` is called, to aid calculation
-                provenance.
+                the ``defect_entries`` dictionary. Used in place of
+                ``defect_entries`` when serialising (``as_dict()`` /
+                ``to_json()``), so that defect generation provenance is
+                retained where possible.
             json_name (PathLike):
-                Name of the ``JSON`` file to save the ``json_obj`` to.
+                Default filename for saving this |DefectsSet| to ``JSON``
+                (i.e. ``{Chemical Formula}_DefectsSet.json.gz``), used by
+                ``to_json()`` and ``write_files()``.
 
             Input parameters are also set as attributes.
         """
@@ -2429,16 +2485,9 @@ class DefectsSet(MSONable):
                 attribute is set, otherwise generated according to the
                 ``doped`` convention (see ``doped.generation``).
         """
-        json_filename = "defect_entries.json.gz"  # global statement in case, but should be skipped
-        json_obj = defect_entries
+        json_obj = defect_entries  # DefectsGenerator, or (below) formatted defect entries dict
         if type(defect_entries).__name__ == "DefectsGenerator":
-            defect_entries = cast("DefectsGenerator", defect_entries)
-            formula = defect_entries.primitive_structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
-            json_filename = f"{formula}_defects_generator.json.gz"
-            json_obj = defect_entries
-            defect_entries = defect_entries.defect_entries
+            defect_entries = cast("DefectsGenerator", defect_entries).defect_entries
 
         elif isinstance(defect_entries, DefectEntry):
             defect_entries = [defect_entries]
@@ -2471,10 +2520,6 @@ class DefectsSet(MSONable):
                 )
 
             defect_entries = {defect_entry.name: defect_entry for defect_entry in defect_entry_list}
-            formula = defect_entry_list[0].defect.structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
-            json_filename = f"{formula}_defect_entries.json.gz"
             json_obj = defect_entries
 
         # check correct format:
@@ -2492,6 +2537,13 @@ class DefectsSet(MSONable):
                 f"type {type(defect_entries)} instead."
             )
 
+        json_filename = "DefectsSet.json.gz"  # host formula prefix added below, if determinable
+        if defect_entries:
+            formula = next(
+                iter(defect_entries.values())
+            ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            json_filename = f"{formula}_DefectsSet.json.gz"
+
         # ``defect_entries`` validated as a ``{name: DefectEntry}`` dict above:
         return cast(
             "tuple[dict[str, DefectEntry], str, dict[str, DefectEntry] | DefectsGenerator]",
@@ -2500,7 +2552,17 @@ class DefectsSet(MSONable):
 
     @staticmethod
     def _write_defect(args):
-        defect_species, defect_relax_set, output_path, poscar, rattle, vasp_gam, bulk, kwargs = args
+        (
+            defect_species,
+            defect_relax_set,
+            output_path,
+            poscar,
+            rattle,
+            vasp_gam,
+            bulk,
+            relax_set_json,
+            kwargs,
+        ) = args
         defect_dir = os.path.join(output_path, defect_species)
         defect_relax_set.write_all(
             defect_dir=defect_dir,
@@ -2508,6 +2570,7 @@ class DefectsSet(MSONable):
             rattle=rattle,
             vasp_gam=vasp_gam,
             bulk=bulk,
+            relax_set_json=relax_set_json,
             **kwargs,
         )
 
@@ -2519,6 +2582,7 @@ class DefectsSet(MSONable):
         vasp_gam: bool | None = None,
         bulk: bool | str = True,
         processes: int | None = None,
+        relax_set_json: bool = False,
         **kwargs,
     ):
         r"""
@@ -2579,12 +2643,12 @@ class DefectsSet(MSONable):
         (gam/std/ncl) are written to the bulk supercell folder, or if
         ``bulk = False``, then no bulk folder is created.
 
-        The |DefectEntry| objects are also written to ``json.gz`` files in
-        the defect folders, as well as ``self.defect_entries``
-        (``self.json_obj``) in the top folder, to aid calculation provenance
-        -- these can be reloaded directly with ``loadfn()`` from
-        ``monty.serialization``, or individually with
-        ``DefectEntry.from_json()``.
+        The |DefectEntry| objects are also written to ``json.gz`` files in the
+        defect folders, as well as this |DefectsSet| object itself to a
+        ``{Chemical Formula}_DefectsSet.json.gz`` file in the top folder, to
+        aid calculation provenance -- these can be reloaded directly with
+        ``loadfn()`` from ``monty.serialization``, or individually with
+        ``DefectsSet.from_json()``/``DefectEntry.from_json()``.
 
         See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
         default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
@@ -2667,8 +2731,15 @@ class DefectsSet(MSONable):
                 writing. If ``None`` (default), then is dynamically set to the
                 optimal value for the number of folders to write.
                 (Default: None)
+            relax_set_json (bool):
+                If ``True``, the ``DefectRelaxSet`` object for each defect is
+                also written to a ``{defect name}_DefectRelaxSet.json.gz`` file
+                in its defect folder, for calculation provenance (reloadable
+                with ``DefectRelaxSet.from_json()``). Default is ``False``.
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         defect_sets = self.defect_sets
         if not any("VASP_PSP_DIR" in i for i in SETTINGS) and (  # no `NELECT` for charged defects
@@ -2703,6 +2774,7 @@ class DefectsSet(MSONable):
                 rattle,
                 vasp_gam,
                 bulk if i == len(defect_sets) - 1 else False,  # write bulk folder(s) for last defect
+                relax_set_json,
                 kwargs,
             )
             for i, (defect_species, defect_relax_set) in enumerate(defect_sets.items())
@@ -2723,7 +2795,53 @@ class DefectsSet(MSONable):
             for args in tqdm(args_list, desc="Generating and writing input files"):
                 self._write_defect(args)
 
-        dumpfn(self.json_obj, os.path.join(output_path, self.json_name))
+        self.to_json(os.path.join(output_path, self.json_name))
+
+    def as_dict(self) -> dict:
+        """
+        Get a JSON-serializable dict representation of the |DefectsSet|.
+
+        ``self.json_obj`` is serialised in place of ``self.defect_entries``, so
+        that defect generation information is retained if a |DefectsGenerator|
+        was input.
+        """
+        dict_repr = super().as_dict()
+        if not isinstance(self.json_obj, dict):  # ``DefectsGenerator`` input
+            dict_repr["defect_entries"] = self.json_obj.as_dict()
+
+        return dict_repr
+
+    def to_json(self, filename: PathLike | None = None):
+        """
+        Save the |DefectsSet| object as a json file, which can be reloaded with
+        ``DefectsSet.from_json()`` (or ``loadfn()`` from
+        ``monty.serialization``).
+
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
+        Args:
+            filename (PathLike):
+                Filename to save ``json`` file as. If ``None``, the filename
+                will be set to ``{Chemical Formula}_DefectsSet.json.gz`` where
+                {Chemical Formula} is the chemical formula of the host
+                material.
+        """
+        dumpfn(self, filename or self.json_name)
+
+    @classmethod
+    def from_json(cls, filename: PathLike) -> "DefectsSet":
+        """
+        Load a |DefectsSet| object from a ``json(.gz)`` file.
+
+        Args:
+            filename (PathLike):
+                Filename of json file to load the |DefectsSet| object from.
+
+        Returns:
+            |DefectsSet| object
+        """
+        return loadfn(filename)
 
     def __repr__(self):
         """
@@ -2814,11 +2932,5 @@ class DefectsSet(MSONable):
         return iter(self.defect_sets)
 
 
-# TODO: Have optional parameter to output DefectRelaxSet jsons to written folders as well (but off by
-#  default)?
-# TODO: Likewise, add same to/from json etc. functions for DefectRelaxSet. __Dict__ methods apply
-#  to `.defect_sets` etc?
-# TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
-#  and the structures don't match (otherwise overwrite)
 # TODO: (Likely with IO refactor); should rename similar to chemical_potentials.py, as "pre-relax", "relax"
 #  and "singlepoint" or similar, rather than "vasp_gam", "vasp_std" etc, to be code agnostic

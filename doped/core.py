@@ -254,13 +254,13 @@ class DefectEntry(thermo.DefectEntry):
         Args:
             filename (PathLike):
                 Filename to save json file as. If None, the filename will
-                be set as ``{DefectEntry.name}.json.gz``.
+                be set as ``{DefectEntry.name}_DefectEntry.json.gz``.
         """
         # ignore warning about oxidation states not summing to Structure charge:
         warnings.filterwarnings("ignore", message=".*unset_charge.*")
 
         if filename is None:
-            filename = f"{self.name}.json.gz"
+            filename = f"{self.name}_DefectEntry.json.gz"
 
         dumpfn(self, filename)
 
@@ -2655,10 +2655,10 @@ class Defect(core.Defect):
         Args:
             filename (PathLike):
                 Filename to save json file as. If None, the filename will
-                be set as "{Defect.name}.json.gz".
+                be set as ``{Defect.name}_Defect.json.gz``.
         """
         if filename is None:
-            filename = f"{self.name}.json.gz"
+            filename = f"{self.name}_Defect.json.gz"
 
         dumpfn(self, filename)
 
