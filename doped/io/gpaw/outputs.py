@@ -1,37 +1,44 @@
 """
 Parsing of GPAW defect / bulk supercell calculation outputs.
 
-GPAW support is experimental. Not implemented, and so unavailable with GPAW:
+GPAW support is experimental, but implements the core of the ``doped.io``
+backend protocol, so GPAW calculations can be parsed with ``doped``'s generic
+machinery -- ``DefectsParser(..., calculator="gpaw")`` -- as well as with the
+GPAW-specific :class:`GPAWDefectsParser` here. The generic route is preferred:
+it also gives structure-derived defect naming, symmetry & degeneracy
+provenance, and the calculation metadata the rest of ``doped`` expects.
 
-- ``get_calculation_outputs()`` / ``CALC_OUTPUT_MASK``: the calculator-
-  agnostic parsing entry point, and thus ``DefectsParser``/``DefectParser``.
-- ``get_planar_averaged_potentials()`` / ``get_site_potentials()``: lazy
-  loading of charge-correction data for the generic parsing machinery. The
-  potentials are instead all parsed up-front, into
-  ``DefectEntry.calculation_metadata``, and :func:`get_potentials_from_input`
-  serves them to the FNV/eFNV corrections.
-- ``check_run_compatibility()``: bulk/defect calculation settings
-  compatibility checks.
-- ``load_eigenvalue_outputs()``: eigenvalue analysis of band-edge & in-gap
-  states (``DefectEntry.get_eigenvalue_analysis()``), for shallow-defect
-  identification.
+Not implemented, and so unavailable with GPAW:
+
+- ``projected_eigenvalues``, and thus ``load_eigenvalue_outputs()`` and
+  eigenvalue analysis of band-edge & in-gap states
+  (``DefectEntry.get_eigenvalue_analysis()``). GPAW's PAW projections are in
+  the ``.gpw`` files, but are not yet mapped to ``pymatgen``'s format.
 - ``get_fermi_dos()``: bulk DOS parsing, for Fermi level / carrier
   concentration analysis (``FermiSolver``).
 - ``get_competing_phase_entry()``: competing phase parsing, for chemical
   potential analysis (``CompetingPhasesAnalyzer``).
+- Occupation-based band edges, see
+  :func:`_get_eigenvalue_properties_from_calc`.
 
 See the GPAW tracking issue.
 """
 
+import contextlib
 import os
+import warnings
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
+from pymatgen.core.structure import Structure
+from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.ase import AseAtomsAdaptor
+from pymatgen.util.typing import PathLike
 
 from doped.core import Defect, DefectEntry
+from doped.io.outputs import CalculationOutputs
 from doped.parsing import defect_from_structures
 
 # ``doped`` accesses these ``doped.io`` backend-protocol names directly (rather than probing with
@@ -42,12 +49,8 @@ from doped.parsing import defect_from_structures
 # ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
 # ``AttributeError``, so that those features degrade gracefully as intended:
 _UNIMPLEMENTED_BACKEND_ATTRS = (
-    "CALC_OUTPUT_MASK",
-    "get_calculation_outputs",
     "get_competing_phase_entry",
     "get_fermi_dos",
-    "get_planar_averaged_potentials",
-    "get_site_potentials",
 )
 
 
@@ -137,6 +140,62 @@ def _get_site_potentials_from_calc(calc) -> np.ndarray:
         np.ndarray: Atomic site potentials (in eV), one per atom.
     """
     return -1.0 * np.array(calc.get_atomic_electrostatic_potentials())
+
+
+def _structure_from_calc(calc) -> Structure:
+    """
+    Get the calculation structure from a ``GPAW`` calculator, as a ``pymatgen``
+    ``Structure``.
+
+    The ``ase`` ``Atoms`` returned by ``GPAW`` still hold the live calculator,
+    and a ``Structure`` converted from them keeps a reference to it -- making
+    the ``Structure`` (and any ``DefectEntry`` built from it) unpicklable
+    ("cannot pickle 'MPI' object" / "Can't get local object
+    'GridRedistributor...'"), which breaks ``doped``'s multiprocessed parsing
+    and ``copy.deepcopy``. The calculator is therefore detached before
+    converting, and the final magnetic moments re-attached as a site property,
+    as ``ase`` drops calculated results along with the calculator.
+
+    Args:
+        calc (GPAW): ``GPAW`` calculator object.
+
+    Returns:
+        Structure: The calculation structure.
+    """
+    atoms = calc.get_atoms().copy()  # ``copy()`` drops the attached calculator
+    atoms.calc = None
+    structure = AseAtomsAdaptor.get_structure(atoms)
+    with contextlib.suppress(Exception):  # not available for non-spin-polarised calculations
+        structure.add_site_property("final_magmom", list(calc.get_magnetic_moments()))
+
+    return structure
+
+
+def _get_eigenvalue_properties_from_calc(calc) -> tuple[float, float, float, float]:
+    """
+    Get ``(band_gap, cbm, vbm, efermi)`` (eV) from a ``GPAW`` calculator.
+    """
+    # TODO: Band edges are taken purely from the Fermi level here (VBM = highest eigenvalue at or below
+    # E_F, CBM = lowest above it), with no reference to occupations. That is only safe for a gapped
+    # bulk with E_F in the gap: it gives meaningless edges for a metallic or heavily-smeared bulk, and
+    # silently returns ``efermi`` for both edges (i.e. a zero gap) if no eigenvalue falls on one side.
+    # It is also outright wrong for charged defect supercells, where a partially-occupied in-gap state
+    # would be reported as a band edge -- so ``get_calculation_outputs`` only takes the band edges from
+    # the bulk. Replace with an occupation-based determination, as done for VASP in
+    # ``doped.utils.eigenvalues.band_edge_properties_from_outputs``; the occupations are available from
+    # ``calc.get_occupation_numbers()``. See the GPAW tracking issue.
+    efermi = calc.get_fermi_level()
+    energies: list[float] = []
+    for spin in range(calc.get_number_of_spins()):
+        for kpt in range(len(calc.get_ibz_k_points())):
+            energies.extend(calc.get_eigenvalues(kpt=kpt, spin=spin))
+
+    below = [energy for energy in energies if energy <= efermi]
+    above = [energy for energy in energies if energy > efermi]
+    vbm = max(below) if below else efermi
+    cbm = min(above) if above else efermi
+
+    return cbm - vbm, cbm, vbm, efermi
 
 
 def _get_planar_averaged_potential_from_calc(calc) -> dict[str, np.ndarray]:
@@ -252,6 +311,249 @@ def get_potentials_from_input(
     return potentials_input
 
 
+CALC_OUTPUT_MASK = (".gpw",)
+"""
+Filename patterns identifying ``GPAW`` calculation output files, used for
+calculation folder discovery.
+
+Part of the ``doped.io`` backend protocol.
+"""
+
+FILE_PARSING_ACTIONS = {
+    ".gpw": (
+        "parse the calculation energy, metadata and electrostatic potentials (planar-averaged and "
+        "atomic-site), and compute the charged-defect finite-size corrections."
+    ),
+}
+"""
+The ``GPAW`` calculation output file types parsed by ``doped``, and what they
+are used for (for informative warning messages).
+
+Part of the ``doped.io`` backend protocol.
+"""
+
+
+def get_calculation_outputs(
+    path: PathLike,
+    label: str = "calculation",
+    parse_projected_eigen: bool | None = None,
+    subfolder: PathLike | None = None,
+    **kwargs,
+) -> CalculationOutputs:
+    """
+    Parse the outputs of a ``GPAW`` supercell calculation in ``path`` to a
+    (calculator-agnostic) :class:`~doped.io.outputs.CalculationOutputs` object.
+
+    This is the entry point which lets ``GPAW`` calculations be parsed with
+    ``doped``'s generic machinery, i.e.
+    ``DefectsParser(..., calculator="gpaw")`` /
+    ``DefectParser.from_paths(..., calculator="gpaw")``, rather than with the
+    ``GPAW``-specific :class:`GPAWDefectsParser`.
+
+    Both potential types are parsed up-front (they come from the same ``.gpw``
+    file as everything else, so there is nothing to save by deferring them),
+    and the band edges are taken from the Fermi level -- see
+    :func:`_get_eigenvalue_properties_from_calc`, which is only reliable for a
+    gapped bulk, so they are omitted for charged supercells.
+
+    Part of the ``doped.io`` backend protocol.
+
+    Args:
+        path (PathLike):
+            Path to the calculation directory, or directly to a ``.gpw`` file.
+        label (str):
+            Label for the type of calculation being parsed (e.g. ``"bulk"``,
+            ``"defect"``), for informative warnings. Default is
+            ``"calculation"``.
+        parse_projected_eigen (bool):
+            Accepted for backend-protocol compatibility and otherwise
+            **unused**: mapping ``GPAW``'s PAW projections to ``pymatgen``'s
+            ``projected_eigenvalues`` format is not yet implemented, so
+            eigenvalue analysis is unavailable with ``GPAW``. Default is
+            ``None``.
+        subfolder (PathLike):
+            Optional subfolder within ``path`` containing the ``.gpw`` file.
+            Default is ``None``.
+        **kwargs:
+            Ignored (accepted for compatibility with the generic backend
+            calling convention).
+
+    Returns:
+        CalculationOutputs: The parsed calculation outputs.
+    """
+    from gpaw import GPAW
+
+    gpw_file = _find_gpaw_output(path, subfolder)
+    calc = GPAW(gpw_file, txt=None)
+    try:
+        charge = calc.parameters.get("charge") or 0
+        band_gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
+        eigenvalues = {}
+        for spin_index, spin in enumerate((Spin.up, Spin.down)[: calc.get_number_of_spins()]):
+            eigenvalues[spin] = np.array(
+                [  # (n_kpoints, n_bands, 2); energy and occupancy, as ``pymatgen`` expects
+                    np.stack(
+                        [
+                            calc.get_eigenvalues(kpt=kpt, spin=spin_index),
+                            calc.get_occupation_numbers(kpt=kpt, spin=spin_index),
+                        ],
+                        axis=-1,
+                    )
+                    for kpt in range(len(calc.get_ibz_k_points()))
+                ]
+            )
+
+        return CalculationOutputs(
+            structure=_structure_from_calc(calc),
+            energy=calc.get_potential_energy(),
+            calculator="gpaw",
+            directory=str(path),
+            converged_electronic=bool(getattr(calc.scf, "converged", True)),
+            # a ``.gpw`` restart file holds the final state only, with no ionic-step history to check:
+            converged_ionic=None,
+            efermi=efermi,
+            eigenvalues=eigenvalues,
+            kpoint_coords=calc.get_ibz_k_points(),
+            kpoint_weights=calc.get_k_point_weights(),
+            nelect=calc.get_number_of_electrons(),
+            charge=charge,
+            magnetization=calc.get_magnetic_moment(),
+            # the Fermi-level band edges are only meaningful for a gapped, neutral bulk:
+            vbm=vbm if not charge else None,
+            cbm=cbm if not charge else None,
+            band_gap=band_gap if not charge else None,
+            planar_averaged_potentials={
+                int(axis): potentials
+                for axis, potentials in _get_planar_averaged_potential_from_calc(calc).items()
+            },
+            site_potentials=_get_site_potentials_from_calc(calc),
+            run_metadata={"gpaw_parameters": dict(calc.parameters)},
+        )
+    finally:
+        if hasattr(calc, "close"):
+            calc.close()
+        if getattr(calc, "atoms", None) is not None:
+            calc.atoms.calc = None
+
+
+_COMPATIBILITY_PARAMETERS = ("mode", "xc", "kpts", "setups", "spinpol", "convergence")
+"""
+The ``GPAW`` calculation parameters which must match between the bulk and
+defect supercell calculations for their energies to be comparable (``charge``
+is excluded, as it is expected to differ).
+"""
+
+
+def check_run_compatibility(
+    defect_outputs: CalculationOutputs,
+    bulk_outputs: CalculationOutputs,
+    warn: bool = True,
+) -> dict:
+    """
+    Check that the defect and bulk ``GPAW`` calculations used compatible
+    settings, and collect their parameters for
+    ``DefectEntry.calculation_metadata``.
+
+    Part of the ``doped.io`` backend protocol. Only the parameters in
+    :data:`_COMPATIBILITY_PARAMETERS` are compared; ``GPAW``'s full parameter
+    dictionaries are returned either way.
+
+    Args:
+        defect_outputs (CalculationOutputs): The parsed defect supercell outputs.
+        bulk_outputs (CalculationOutputs): The parsed bulk supercell outputs.
+        warn (bool):
+            Whether to warn about mismatched parameters. Default is ``True``.
+
+    Returns:
+        dict: ``"run_metadata"`` (both parameter sets) and
+        ``"mismatching_gpaw_parameters"`` (a ``{parameter: (defect, bulk)}``
+        dict, or ``False`` if they match).
+    """
+    run_metadata = {
+        f"{label}_gpaw_parameters": (outputs.run_metadata or {}).get("gpaw_parameters", {})
+        for label, outputs in (("defect", defect_outputs), ("bulk", bulk_outputs))
+    }
+    defect_parameters = run_metadata["defect_gpaw_parameters"]
+    bulk_parameters = run_metadata["bulk_gpaw_parameters"]
+    mismatches = {
+        parameter: (defect_parameters.get(parameter), bulk_parameters.get(parameter))
+        for parameter in _COMPATIBILITY_PARAMETERS
+        if defect_parameters.get(parameter) != bulk_parameters.get(parameter)
+    }
+    if mismatches and warn:
+        mismatch_info = "\n".join(
+            f"{parameter}: {defect!r} (defect) vs {bulk!r} (bulk)"
+            for parameter, (defect, bulk) in mismatches.items()
+        )
+        warnings.warn(
+            f"There are mismatching GPAW parameters between your bulk and defect calculations, which "
+            f"may mean your energies are not comparable:\n{mismatch_info}"
+        )
+
+    return {"mismatching_gpaw_parameters": mismatches or False, "run_metadata": run_metadata}
+
+
+def get_planar_averaged_potentials(
+    path: PathLike, dir_type: str = "bulk", quiet: bool = False
+) -> dict[str, np.ndarray]:
+    """
+    Get the planar-averaged electrostatic potentials from the ``GPAW``
+    calculation in ``path``, for the Freysoldt (FNV) charge correction.
+
+    Part of the ``doped.io`` backend protocol; note that
+    :func:`get_calculation_outputs` already parses these, so ``doped`` only
+    calls this when they were not parsed up-front.
+
+    Args:
+        path (PathLike): Path to the calculation directory or ``.gpw`` file.
+        dir_type (str): The type of directory being parsed (``"bulk"`` or
+            ``"defect"``), for informative errors. Default is ``"bulk"``.
+        quiet (bool): Accepted for backend-protocol compatibility and
+            otherwise unused (nothing is printed here). Default is ``False``.
+
+    Returns:
+        dict[str, np.ndarray]: The planar-averaged potentials, keyed by axis.
+    """
+    return get_gpaw_planar_averaged_potential(path)
+
+
+def get_site_potentials(
+    path: PathLike,
+    dir_type: str = "bulk",
+    quiet: bool = False,
+    outputs: CalculationOutputs | None = None,
+    total_energy: list | float | None = None,
+) -> np.ndarray:
+    """
+    Get the atomic-site electrostatic potentials from the ``GPAW`` calculation
+    in ``path``, for the Kumagai (eFNV) charge correction.
+
+    Part of the ``doped.io`` backend protocol; note that
+    :func:`get_calculation_outputs` already parses these, so ``doped`` only
+    calls this when they were not parsed up-front.
+
+    Args:
+        path (PathLike): Path to the calculation directory or ``.gpw`` file.
+        dir_type (str): The type of directory being parsed (``"bulk"`` or
+            ``"defect"``), for informative errors. Default is ``"bulk"``.
+        quiet (bool): Accepted for backend-protocol compatibility and
+            otherwise unused. Default is ``False``.
+        outputs (CalculationOutputs): Already-parsed outputs, whose site
+            potentials are used if present. Default is ``None``.
+        total_energy (list | float): Accepted for backend-protocol
+            compatibility and otherwise **unused**; ``GPAW`` writes the
+            potentials and the total energy to the same ``.gpw`` file, so
+            there is no separate calculation to cross-check against (unlike
+            ``VASP``'s ``OUTCAR``). Default is ``None``.
+
+    Returns:
+        np.ndarray: The atomic-site potentials (eV), one per site.
+    """
+    if outputs is not None and outputs.site_potentials is not None:
+        return np.asarray(outputs.site_potentials)
+    return get_gpaw_site_potentials(path)
+
+
 class GPAWParser:
     """
     Parser for GPAW calculations to interface with doped.
@@ -277,7 +579,7 @@ class GPAWParser:
         self.gpw_file = _find_gpaw_output(gpw_file)
         self.calc = GPAW(self.gpw_file)
         self.atoms = self.calc.get_atoms()
-        self.structure = AseAtomsAdaptor.get_structure(self.atoms)
+        self.structure = _structure_from_calc(self.calc)
         self.energy = self.calc.get_potential_energy()
 
         # Pull charge directly from calculation parameters
@@ -314,31 +616,7 @@ class GPAWParser:
         """
         Returns (band_gap, cbm, vbm, efermi).
         """
-        # TODO: Band edges are taken purely from the Fermi level here (VBM = highest eigenvalue at or below
-        # E_F, CBM = lowest above it), with no reference to occupations. That is only safe for a gapped
-        # bulk with E_F in the gap, which is all this is currently used for (see ``_get_gpaw_bulk_data``):
-        # it gives meaningless edges for a metallic or heavily-smeared bulk, and silently returns
-        # ``efermi`` for both edges (i.e. a zero gap) if no eigenvalue falls on one side. It would also be
-        # outright wrong if applied to charged defect supercells, where a partially-occupied in-gap state
-        # would be reported as a band edge. Replace with an occupation-based determination, as done for
-        # VASP in ``doped.utils.eigenvalues.band_edge_properties_from_outputs``. See the GPAW tracking
-        # issue.
-        # Basic implementation
-        efermi = self.calc.get_fermi_level()
-        # GPAW can give eigenvalues for each k-point and spin
-        # This is a simplification to get VBM/CBM
-        energies = []
-        for s in range(self.calc.get_number_of_spins()):
-            for k in range(len(self.calc.get_ibz_k_points())):
-                energies.extend(self.calc.get_eigenvalues(kpt=k, spin=s))
-
-        energies = sorted(energies)
-        # Identify VBM and CBM based on efermi
-        vbm = max([e for e in energies if e <= efermi]) if any(e <= efermi for e in energies) else efermi
-        cbm = min([e for e in energies if e > efermi]) if any(e > efermi for e in energies) else efermi
-        band_gap = cbm - vbm
-
-        return band_gap, cbm, vbm, efermi
+        return _get_eigenvalue_properties_from_calc(self.calc)
 
     def close(self):
         """

@@ -175,7 +175,7 @@ class GPAWTest(unittest.TestCase):
             )
 
         # --- Explicitly Test the Unrelaxed Mg_O +1 State ---
-        mg_o_unrelaxed_dir = os.path.join(gpaw_mgo_dir, "Mg_O_+1_unrelaxed")
+        mg_o_unrelaxed_dir = os.path.join(gpaw_mgo_dir, "Mg_O_unrelaxed")
         assert os.path.exists(mg_o_unrelaxed_dir), "Unrelaxed Mg_O +1 test directory missing!"
 
         bulk_parser = GPAWParser(os.path.join(gpaw_bulk_dir, "relaxed.gpw"))
@@ -280,6 +280,89 @@ class GPAWTest(unittest.TestCase):
         assert get_potentials_from_input(planar_potentials) is planar_potentials
         with pytest.raises(TypeError, match=r"bulk potentials input must be either a path"):
             get_potentials_from_input(12345, dir_type="bulk")
+
+    def test_gpaw_calculation_outputs(self):
+        """
+        Test the ``doped.io`` backend protocol entry point,
+        ``get_calculation_outputs()``, which is what lets GPAW calculations be
+        parsed with ``doped``'s generic machinery.
+        """
+        pytest.importorskip("gpaw")
+        from doped.io import get_calculation_outputs
+
+        gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
+        bulk_outputs = get_calculation_outputs(
+            os.path.join(gpaw_mgo_dir, "bulk"), calculator="gpaw", label="bulk"
+        )
+        assert bulk_outputs.calculator == "gpaw"
+        assert bulk_outputs.charge == 0
+        assert len(bulk_outputs.structure) == len(bulk_outputs.site_potentials)
+        assert set(bulk_outputs.planar_averaged_potentials) == {0, 1, 2}
+        assert bulk_outputs.converged_electronic
+        assert bulk_outputs.nelect > 0
+        assert bulk_outputs.band_gap > 0  # band edges are only taken for the (neutral) bulk
+        assert bulk_outputs.vbm < bulk_outputs.efermi < bulk_outputs.cbm
+        assert "gpaw_parameters" in bulk_outputs.run_metadata
+        # eigenvalues are (n_kpoints, n_bands, 2), i.e. energy and occupancy, as pymatgen expects:
+        assert all(eigs.ndim == 3 and eigs.shape[-1] == 2 for eigs in bulk_outputs.eigenvalues.values())
+        assert len(bulk_outputs.kpoint_weights) == len(bulk_outputs.kpoint_coords)
+
+        defect_outputs = get_calculation_outputs(
+            os.path.join(gpaw_mgo_dir, "v_Mg_-2"), calculator="gpaw", label="defect"
+        )
+        assert defect_outputs.charge == -2
+        assert defect_outputs.band_gap is None  # Fermi-level band edges are meaningless when charged
+        assert len(defect_outputs.structure) == len(bulk_outputs.structure) - 1  # a vacancy
+
+    # ``DefectsParser`` runs the dimer-bond analysis, which imports ``shakenbreak.analysis``, which
+    # still imports ``get_outcar`` from the dissolved ``doped.utils.parsing`` -- a pre-existing
+    # ``IO_refactor`` blocker unrelated to GPAW (see the tracking issue); remove once ShakeNBreak is
+    # updated:
+    @pytest.mark.filterwarnings("ignore:get_outcar has moved:DeprecationWarning")
+    def test_gpaw_generic_defects_parser(self):
+        """
+        Test that ``doped``'s calculator-agnostic ``DefectsParser`` gives the
+        same corrections for GPAW calculations as the GPAW-specific
+        ``GPAWDefectsParser``, with the structure-derived naming and the fuller
+        calculation metadata that the generic machinery provides.
+        """
+        pytest.importorskip("gpaw")
+        from doped.parsing import DefectsParser
+
+        gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
+        dp = DefectsParser(  # default ``processes``, so this also covers the multiprocessing path
+            output_path=gpaw_mgo_dir,
+            bulk_path=os.path.join(gpaw_mgo_dir, "bulk"),
+            dielectric=8.8963,
+            calculator="gpaw",
+            json_filename=False,  # don't write a parsed-dict JSON into the test data directory
+        )
+
+        # names come from structure analysis, so the unrelaxed folder no longer collides:
+        assert set(dp.defect_dict) == {"v_Mg_+1", "v_Mg_-2", "Mg_O_+1", "Mg_O_unrelaxed_+1"}
+
+        expected_corrections = {  # identical to the GPAWDefectsParser values
+            "v_Mg_+1": -0.05491517,
+            "v_Mg_-2": 1.20301268,
+            "Mg_O_+1": 0.36016471,
+            "Mg_O_unrelaxed_+1": 0.39874916,
+        }
+        for name, expected_energy in expected_corrections.items():
+            entry = dp.defect_dict[name]
+            np.testing.assert_allclose(
+                float(entry.corrections["kumagai_charge_correction"]),
+                expected_energy,
+                atol=1e-3,
+                err_msg=f"eFNV value mismatch for {name}!",
+            )
+            assert entry.calculation_metadata["calculator"] == "gpaw"
+            # metadata the GPAW-specific parser does not provide:
+            run_metadata = entry.calculation_metadata["run_metadata"]
+            assert run_metadata["defect_gpaw_parameters"]["mode"]["name"] == "pw"
+            assert run_metadata["bulk_gpaw_parameters"]["charge"] == 0
+            # the bulk & defect calculations here differ only in charge, which is excluded:
+            assert entry.calculation_metadata["mismatching_gpaw_parameters"] is False
+            assert entry.calculation_metadata["relaxed point symmetry"]
 
     def test_gpaw_graphene_2d_handling(self):
         """

@@ -2,9 +2,11 @@
 GPAW calculation input file generation (``doped.io.gpaw.inputs``) and output
 parsing (``doped.io.gpaw.outputs``) for ``doped``.
 
-GPAW support is currently **experimental**. The submodule docstrings list what
-this means in practice, and the protocol entry points which ``doped`` requires
-raise ``NotImplementedError``. See the GPAW tracking issue.
+GPAW support is currently **experimental**, but implements the core of the
+``doped.io`` backend protocol, so GPAW calculations can be parsed with
+``DefectsParser(..., calculator="gpaw")``. The submodule docstrings list what
+is still missing; those entry points raise ``NotImplementedError``. See the
+GPAW tracking issue.
 
 Submodule attributes can be accessed directly from this package (e.g.
 ``from doped.io.gpaw import GPAWDefectsParser``); they are imported lazily to
