@@ -123,16 +123,21 @@ stores the parsed entries in ``defect_dict``:
 
 When a dielectric constant is supplied, the Kumagai (eFNV) finite-size charge
 correction is applied by default. The Freysoldt (FNV) correction is also
-supported using the parsed planar-averaged potentials. To compare it for a
-particular entry, first remove the existing eFNV correction to avoid counting
-both corrections:
+supported. To compare it for a particular entry, first remove the existing eFNV
+correction to avoid counting both corrections, then pass the bulk and defect
+calculation directories, from which the planar-averaged potentials are loaded
+(they are not kept in ``calculation_metadata`` when the eFNV correction has
+been applied):
 
 .. code-block:: python
 
    entry = defect_dict["v_Mg_+1"]
    entry.corrections.pop("kumagai_charge_correction", None)
    entry.corrections_metadata.pop("kumagai_charge_correction", None)
-   entry.get_freysoldt_correction()
+   entry.get_freysoldt_correction(
+       defect_planar_averaged_potentials="v_Mg_+1",  # the calculation directories
+       bulk_planar_averaged_potentials="bulk",
+   )
 
 Chemical potentials and formation energies
 ------------------------------------------
