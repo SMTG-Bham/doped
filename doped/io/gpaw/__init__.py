@@ -2,16 +2,9 @@
 GPAW calculation input file generation (``doped.io.gpaw.inputs``) and output
 parsing (``doped.io.gpaw.outputs``) for ``doped``.
 
-GPAW support is **experimental**. Unlike the reference ``doped.io.vasp``
-backend, it is not yet wired into ``doped``'s calculator-agnostic backend
-protocol (see the "Adding Support for a New Calculator" docs page), so GPAW
-calculations are generated and parsed with the GPAW-specific classes here
-rather than with :class:`~doped.parsing.DefectsParser` /
-:class:`~doped.io.vasp.inputs.DefectsSet`. The submodule docstrings list what
-this means in practice, and the protocol entry points which ``doped``
-requires raise ``NotImplementedError`` rather than failing obscurely (the
-optional ones are simply absent, so those features degrade gracefully). See
-the GPAW tracking issue.
+GPAW support is currently **experimental**. The submodule docstrings list what
+this means in practice, and the protocol entry points which ``doped`` requires
+raise ``NotImplementedError``. See the GPAW tracking issue.
 
 Submodule attributes can be accessed directly from this package (e.g.
 ``from doped.io.gpaw import GPAWDefectsParser``); they are imported lazily to

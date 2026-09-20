@@ -1,9 +1,7 @@
 """
 Code to generate GPAW defect calculation input files.
 
-GPAW support is experimental. Unlike ``doped.io.vasp.inputs``, this module
-does not yet implement the ``doped.io`` backend protocol (see the "Adding
-Support for a New Calculator" docs page). Not implemented, and so
+GPAW support is experimental. Features which are not implemented, and so
 unavailable with GPAW:
 
 - :class:`GPAWDefectRelaxSet` is a standalone class, rather than a

@@ -1,22 +1,15 @@
 """
 Parsing of GPAW defect / bulk supercell calculation outputs.
 
-GPAW support is experimental. Unlike ``doped.io.vasp.outputs``, this module
-does not yet implement the ``doped.io`` backend protocol (see the "Adding
-Support for a New Calculator" docs page), so GPAW calculations are parsed
-with the GPAW-specific :class:`GPAWDefectsParser` / :class:`GPAWParser`
-classes here, rather than with the calculator-agnostic
-:class:`~doped.parsing.DefectsParser`. Not implemented, and so unavailable
-with GPAW:
+GPAW support is experimental. Not implemented, and so unavailable with GPAW:
 
 - ``get_calculation_outputs()`` / ``CALC_OUTPUT_MASK``: the calculator-
   agnostic parsing entry point, and thus ``DefectsParser``/``DefectParser``.
 - ``get_planar_averaged_potentials()`` / ``get_site_potentials()``: lazy
   loading of charge-correction data for the generic parsing machinery. The
   potentials are instead all parsed up-front, into
-  ``DefectEntry.calculation_metadata``, and
-  :func:`get_potentials_from_input` (which `is` implemented) serves them to
-  the FNV/eFNV corrections.
+  ``DefectEntry.calculation_metadata``, and :func:`get_potentials_from_input`
+  serves them to the FNV/eFNV corrections.
 - ``check_run_compatibility()``: bulk/defect calculation settings
   compatibility checks.
 - ``load_eigenvalue_outputs()``: eigenvalue analysis of band-edge & in-gap
@@ -150,11 +143,7 @@ def _get_planar_averaged_potential_from_calc(calc) -> dict[str, np.ndarray]:
     """
     Helper to extract planar-averaged potentials from a GPAW calculator.
     """
-    # note that the FNV correction requires the bulk and defect potentials to be on the same grid, which
-    # is not checked here. Unless ``gpts``/``h`` are set explicitly, GPAW derives the grid from the cell
-    # and the plane-wave cutoff (``h = pi/sqrt(4*ecut)``), rounded up to an efficient FFT size which
-    # depends on the cell symmetry (``gpaw.utilities.gpts.get_number_of_grid_points``) -- so a defect
-    # supercell can differ from its bulk even at matched cell and settings. See the GPAW tracking issue:
+    # note that the FNV correction requires the bulk and defect potentials to be on the same grid
     v_ext = calc.get_electrostatic_potential()
     planar_averages = {}
     for i in range(3):
@@ -214,14 +203,13 @@ def get_potentials_from_input(
     """
     Get planar-averaged (``potential_type="planar"``) or atomic-site
     (``"site"``) electrostatic potentials from calculator-native inputs, for
-    finite-size charge corrections; the GPAW analogue of
-    :func:`doped.io.vasp.outputs.get_potentials_from_input`.
+    finite-size charge corrections.
 
-    Accepts a path to a ``.gpw`` file (or to a calculation directory
-    containing one), or already-parsed potentials (dict/list/array), which
-    are returned as-is. ``GPAWDefectsParser`` parses both potential types
-    up-front into ``DefectEntry.calculation_metadata``, so the already-parsed
-    case is the usual one here.
+    Accepts a path to a ``.gpw`` file (or to a calculation directory containing
+    one), or already-parsed potentials (dict/list/array), which are returned
+    as-is. ``GPAWDefectsParser`` parses both potential types into
+    ``DefectEntry.calculation_metadata``, so the already-parsed case is the
+    usual one here.
 
     Part of the ``doped.io`` backend protocol.
 
@@ -417,12 +405,6 @@ def _get_gpaw_defect_entry_from_parsers(
         defect_supercell=defect_parser.structure,
         bulk_supercell=bulk_parser.structure,
         defect_supercell_site=defect_site,
-        # ``"calculator"`` routes ``doped``'s later backend lookups (charge-correction potentials,
-        # eigenvalue analysis) here rather than to the VASP backend they would otherwise default to.
-        # ``doped``'s generic parsing additionally sets ``"run_metadata"`` (bulk/defect settings-mismatch
-        # checks; also used by eigenvalue analysis), which is not available here -- unlike the site
-        # symmetries and structure metadata, which ``DefectEntry`` recomputes on demand when absent
-        # (``doped.core``). See the GPAW tracking issue:
         calculation_metadata={
             "calculator": "gpaw",
             "bulk_path": bulk_data["bulk_path"],
