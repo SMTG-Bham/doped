@@ -132,10 +132,7 @@ both corrections:
    entry = defect_dict["v_Mg_+1"]
    entry.corrections.pop("kumagai_charge_correction", None)
    entry.corrections_metadata.pop("kumagai_charge_correction", None)
-   entry.get_freysoldt_correction(
-       defect_planar_averaged_potentials="v_Mg_+1",  # the calculation directories
-       bulk_planar_averaged_potentials="bulk",
-   )
+   entry.get_freysoldt_correction()
 
 Chemical potentials and formation energies
 ------------------------------------------

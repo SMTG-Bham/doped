@@ -17,10 +17,6 @@ from doped.io.gpaw.outputs import _find_gpaw_output
 from doped.parsing import DefectParser, DefectsParser
 
 
-# ``DefectsParser`` runs the dimer-bond analysis, which imports ``shakenbreak.analysis``, which still
-# imports ``get_outcar`` from the dissolved ``doped.utils.parsing`` -- a pre-existing ``IO_refactor``
-# blocker unrelated to GPAW (see the GPAW tracking issue); remove once ShakeNBreak is updated:
-@pytest.mark.filterwarnings("ignore:get_outcar has moved:DeprecationWarning")
 class GPAWTest(unittest.TestCase):
     def setUp(self):
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")

@@ -144,11 +144,9 @@ def _structure_from_calc(calc) -> Structure:
     The ``ase`` ``Atoms`` returned by ``GPAW`` still hold the live calculator,
     and a ``Structure`` converted from them keeps a reference to it -- making
     the ``Structure`` (and any ``DefectEntry`` built from it) unpicklable
-    ("cannot pickle 'MPI' object" / "Can't get local object
-    'GridRedistributor...'"), which breaks ``doped``'s multiprocessed parsing
-    and ``copy.deepcopy``. The calculator is therefore detached before
-    converting, and the final magnetic moments re-attached as a site property,
-    as ``ase`` drops calculated results along with the calculator.
+    (breaking multiprocessed parsing and ``copy.deepcopy``). The calculator is
+    therefore detached before converting, and the final magnetic moments
+    re-attached as a site property.
 
     Args:
         calc (GPAW): ``GPAW`` calculator object.
@@ -264,8 +262,6 @@ def get_potentials_from_input(
     ``DefectEntry.calculation_metadata``, so the already-parsed case is the
     usual one here.
 
-    Part of the ``doped.io`` backend protocol.
-
     Args:
         potentials_input (PathLike | dict | list | np.ndarray):
             The calculator-native potentials input (see above).
@@ -309,8 +305,6 @@ CALC_OUTPUT_MASK = (".gpw",)
 """
 Filename patterns identifying ``GPAW`` calculation output files, used for
 calculation folder discovery.
-
-Part of the ``doped.io`` backend protocol.
 """
 
 FILE_PARSING_ACTIONS = {
@@ -322,8 +316,6 @@ FILE_PARSING_ACTIONS = {
 """
 The ``GPAW`` calculation output file types parsed by ``doped``, and what they
 are used for (for informative warning messages).
-
-Part of the ``doped.io`` backend protocol.
 """
 
 
@@ -337,19 +329,6 @@ def get_calculation_outputs(
     """
     Parse the outputs of a ``GPAW`` supercell calculation in ``path`` to a
     (calculator-agnostic) :class:`~doped.io.outputs.CalculationOutputs` object.
-
-    This is the entry point which lets ``GPAW`` calculations be parsed with
-    ``doped``'s generic machinery, i.e.
-    ``DefectsParser(..., calculator="gpaw")`` and
-    ``DefectParser.from_paths(..., calculator="gpaw")``.
-
-    Both potential types are parsed up-front (they come from the same ``.gpw``
-    file as everything else, so there is nothing to save by deferring them),
-    and the band edges are taken from the Fermi level -- see
-    :func:`_get_eigenvalue_properties_from_calc`, which is only reliable for a
-    gapped bulk, so they are omitted for charged supercells.
-
-    Part of the ``doped.io`` backend protocol.
 
     Args:
         path (PathLike):
@@ -432,8 +411,7 @@ def get_calculation_outputs(
 _COMPATIBILITY_PARAMETERS = ("mode", "xc", "kpts", "setups", "spinpol", "convergence")
 """
 The ``GPAW`` calculation parameters which must match between the bulk and
-defect supercell calculations for their energies to be comparable (``charge``
-is excluded, as it is expected to differ).
+defect supercell calculations for their energies to be comparable.
 """
 
 
@@ -447,9 +425,8 @@ def check_run_compatibility(
     settings, and collect their parameters for
     ``DefectEntry.calculation_metadata``.
 
-    Part of the ``doped.io`` backend protocol. Only the parameters in
-    :data:`_COMPATIBILITY_PARAMETERS` are compared; ``GPAW``'s full parameter
-    dictionaries are returned either way.
+    Only the parameters in :data:`_COMPATIBILITY_PARAMETERS` are compared;
+    ``GPAW``'s full parameter dictionaries are returned either way.
 
     Args:
         defect_outputs (CalculationOutputs): The parsed defect supercell outputs.
@@ -493,9 +470,8 @@ def get_planar_averaged_potentials(
     Get the planar-averaged electrostatic potentials from the ``GPAW``
     calculation in ``path``, for the Freysoldt (FNV) charge correction.
 
-    Part of the ``doped.io`` backend protocol; note that
-    :func:`get_calculation_outputs` already parses these, so ``doped`` only
-    calls this when they were not parsed up-front.
+    Note that :func:`get_calculation_outputs` already parses these, so
+    ``doped`` only calls this when they were not parsed up-front.
 
     Args:
         path (PathLike): Path to the calculation directory or ``.gpw`` file.
@@ -521,9 +497,8 @@ def get_site_potentials(
     Get the atomic-site electrostatic potentials from the ``GPAW`` calculation
     in ``path``, for the Kumagai (eFNV) charge correction.
 
-    Part of the ``doped.io`` backend protocol; note that
-    :func:`get_calculation_outputs` already parses these, so ``doped`` only
-    calls this when they were not parsed up-front.
+    Note that :func:`get_calculation_outputs` already parses these, so
+    ``doped`` only calls this when they were not parsed up-front.
 
     Args:
         path (PathLike): Path to the calculation directory or ``.gpw`` file.
