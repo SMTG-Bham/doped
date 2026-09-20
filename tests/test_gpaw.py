@@ -246,6 +246,41 @@ class GPAWTest(unittest.TestCase):
                 err_msg=f"FNV value mismatch for {defect_name}!",
             )
 
+    def test_gpaw_calculator_metadata_and_potentials_from_input(self):
+        """
+        Test that parsed GPAW entries record ``calculation_metadata
+        ["calculator"] = "gpaw"``, so that ``doped``'s backend lookups (e.g.
+        for the charge-correction potentials) dispatch to
+        ``doped.io.gpaw.outputs`` rather than defaulting to VASP, and that the
+        corresponding ``get_potentials_from_input()`` gives the same potentials
+        as those parsed up-front.
+        """
+        pytest.importorskip("gpaw")
+        from doped.io.gpaw.outputs import get_potentials_from_input
+
+        gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
+        gpaw_bulk_dir = os.path.join(gpaw_mgo_dir, "bulk")
+        dp_gpaw = GPAWDefectsParser(output_path=gpaw_mgo_dir, bulk_path=gpaw_bulk_dir, dielectric=8.8963)
+
+        for defect_entry in dp_gpaw.defect_dict.values():
+            assert defect_entry.calculation_metadata["calculator"] == "gpaw"
+
+        # re-loading from the calculation directory reproduces the up-front parse:
+        entry = dp_gpaw.defect_dict["v_Mg_-2"]
+        site_potentials = get_potentials_from_input(gpaw_bulk_dir, potential_type="site", dir_type="bulk")
+        np.testing.assert_allclose(site_potentials, entry.calculation_metadata["bulk_site_potentials"])
+        planar_potentials = get_potentials_from_input(
+            gpaw_bulk_dir, potential_type="planar", dir_type="bulk"
+        )
+        assert planar_potentials.keys() == entry.calculation_metadata["bulk_locpot_dict"].keys()
+        for axis, potentials in planar_potentials.items():
+            np.testing.assert_allclose(potentials, entry.calculation_metadata["bulk_locpot_dict"][axis])
+
+        # already-parsed potentials are returned as-is, and anything else is rejected:
+        assert get_potentials_from_input(planar_potentials) is planar_potentials
+        with pytest.raises(TypeError, match=r"bulk potentials input must be either a path"):
+            get_potentials_from_input(12345, dir_type="bulk")
+
     def test_gpaw_graphene_2d_handling(self):
         """
         Test that the GPAW parser handles highly anisotropic 2D supercells

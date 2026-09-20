@@ -11,10 +11,12 @@ with GPAW:
 
 - ``get_calculation_outputs()`` / ``CALC_OUTPUT_MASK``: the calculator-
   agnostic parsing entry point, and thus ``DefectsParser``/``DefectParser``.
-- ``get_planar_averaged_potentials()`` / ``get_site_potentials()`` /
-  ``get_potentials_from_input()``: lazy (re)loading of charge-correction
-  data from file. The potentials are instead all parsed up-front, into
-  ``DefectEntry.calculation_metadata``.
+- ``get_planar_averaged_potentials()`` / ``get_site_potentials()``: lazy
+  loading of charge-correction data for the generic parsing machinery. The
+  potentials are instead all parsed up-front, into
+  ``DefectEntry.calculation_metadata``, and
+  :func:`get_potentials_from_input` (which `is` implemented) serves them to
+  the FNV/eFNV corrections.
 - ``check_run_compatibility()``: bulk/defect calculation settings
   compatibility checks.
 - ``load_eigenvalue_outputs()``: eigenvalue analysis of band-edge & in-gap
@@ -52,7 +54,6 @@ _UNIMPLEMENTED_BACKEND_ATTRS = (
     "get_competing_phase_entry",
     "get_fermi_dos",
     "get_planar_averaged_potentials",
-    "get_potentials_from_input",
     "get_site_potentials",
 )
 
@@ -201,6 +202,66 @@ def get_gpaw_planar_averaged_potential(
         calc.close()
 
     return planar_averages
+
+
+def get_potentials_from_input(
+    potentials_input: str | os.PathLike | dict | list | np.ndarray,
+    potential_type: str = "planar",
+    dir_type: str = "",
+    entry_energy: float | None = None,
+    run_metadata: dict | None = None,
+):
+    """
+    Get planar-averaged (``potential_type="planar"``) or atomic-site
+    (``"site"``) electrostatic potentials from calculator-native inputs, for
+    finite-size charge corrections; the GPAW analogue of
+    :func:`doped.io.vasp.outputs.get_potentials_from_input`.
+
+    Accepts a path to a ``.gpw`` file (or to a calculation directory
+    containing one), or already-parsed potentials (dict/list/array), which
+    are returned as-is. ``GPAWDefectsParser`` parses both potential types
+    up-front into ``DefectEntry.calculation_metadata``, so the already-parsed
+    case is the usual one here.
+
+    Part of the ``doped.io`` backend protocol.
+
+    Args:
+        potentials_input (PathLike | dict | list | np.ndarray):
+            The calculator-native potentials input (see above).
+        potential_type (str):
+            ``"planar"`` for planar-averaged potentials (Freysoldt/FNV
+            correction) or ``"site"`` for atomic-site potentials
+            (Kumagai/eFNV correction). Default is ``"planar"``.
+        dir_type (str):
+            The type of directory being parsed (e.g. ``"bulk"`` or
+            ``"defect"``), for informative errors.
+        entry_energy (float):
+            Accepted for backend-protocol compatibility and otherwise
+            unused; ``GPAW`` writes the potentials and the total energy to
+            the same ``.gpw`` file, so there is no separate calculation to
+            cross-check against (unlike ``VASP``'s ``OUTCAR``). Default is
+            ``None``.
+        run_metadata (dict):
+            Accepted for backend-protocol compatibility and otherwise
+            unused, as for ``entry_energy``. Default is ``None``.
+
+    Returns:
+        The planar-averaged potentials (dict of ``{axis: potentials}``) or
+        the atomic-site potentials (array), depending on ``potential_type``.
+    """
+    if isinstance(potentials_input, str | os.PathLike):
+        if potential_type == "planar":
+            return get_gpaw_planar_averaged_potential(potentials_input)
+        return get_gpaw_site_potentials(potentials_input)
+
+    if not isinstance(potentials_input, dict | list | np.ndarray):
+        raise TypeError(
+            f"{dir_type or 'GPAW'} potentials input must be either a path to a '.gpw' file (or a "
+            f"directory containing one), or already-parsed potentials, but got "
+            f"{type(potentials_input)} instead."
+        )
+
+    return potentials_input
 
 
 class GPAWParser:
@@ -356,17 +417,14 @@ def _get_gpaw_defect_entry_from_parsers(
         defect_supercell=defect_parser.structure,
         bulk_supercell=bulk_parser.structure,
         defect_supercell_site=defect_site,
-        # GPAW entries carry only the keys below. ``doped``'s generic parsing also sets ``"calculator"``
-        # and ``"run_metadata"`` (bulk/defect settings-mismatch checks; also used by eigenvalue analysis),
-        # neither of which is available here -- unlike the site symmetries and structure metadata, which
-        # ``DefectEntry`` recomputes on demand when absent (``doped.core``). The missing ``"calculator"``
-        # key means ``doped`` dispatches to the VASP backend for these entries. That is harmless today --
-        # the FNV path hands its already-parsed potentials to ``doped.io.vasp.outputs``, which returns
-        # them unchanged, and eFNV reads them from here directly -- but it does mean eigenvalue analysis
-        # reports a missing ``vasprun.xml`` rather than saying GPAW is unsupported. Setting the key is
-        # deferred to the backend port: it would route the same calls to the unimplemented functions
-        # above, which would break the FNV correction. See the GPAW tracking issue:
+        # ``"calculator"`` routes ``doped``'s later backend lookups (charge-correction potentials,
+        # eigenvalue analysis) here rather than to the VASP backend they would otherwise default to.
+        # ``doped``'s generic parsing additionally sets ``"run_metadata"`` (bulk/defect settings-mismatch
+        # checks; also used by eigenvalue analysis), which is not available here -- unlike the site
+        # symmetries and structure metadata, which ``DefectEntry`` recomputes on demand when absent
+        # (``doped.core``). See the GPAW tracking issue:
         calculation_metadata={
+            "calculator": "gpaw",
             "bulk_path": bulk_data["bulk_path"],
             "defect_path": str(defect_path),
             "dielectric": dielectric,
