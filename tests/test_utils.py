@@ -20,6 +20,7 @@ api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/
 module_path = os.path.dirname(os.path.abspath(__file__))
 data_dir = os.path.join(module_path, "data")
 vasp_data_dir = os.path.join(data_dir, "vasp")
+gpaw_data_dir = os.path.join(data_dir, "gpaw")
 EXAMPLE_DIR = os.path.join(module_path, "../examples")
 # for pytest-mpl:
 BASELINE_DIR = f"{data_dir}/remote_baseline_plots"

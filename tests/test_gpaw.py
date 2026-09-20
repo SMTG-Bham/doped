@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from pymatgen.core.structure import Structure
+from test_utils import gpaw_data_dir
 
 from doped.io.gpaw.inputs import GPAWDefectRelaxSet
 from doped.io.gpaw.outputs import GPAWDefectsParser, _find_gpaw_output
@@ -137,7 +138,7 @@ class GPAWTest(unittest.TestCase):
         from doped.io.gpaw.outputs import GPAWParser, get_gpaw_defect_entry
 
         # Path to the static test data directories
-        gpaw_mgo_dir = os.path.join(self.data_dir, "gpaw_mgo_test")
+        gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         gpaw_bulk_dir = os.path.join(gpaw_mgo_dir, "bulk")
 
         assert os.path.exists(gpaw_bulk_dir), "Bulk test directory missing!"
@@ -204,7 +205,7 @@ class GPAWTest(unittest.TestCase):
         manual invocation after parsing, using the MgO test data.
         """
         pytest.importorskip("gpaw")
-        gpaw_mgo_dir = os.path.join(self.data_dir, "gpaw_mgo_test")
+        gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         gpaw_bulk_dir = os.path.join(gpaw_mgo_dir, "bulk")
 
         assert os.path.exists(gpaw_bulk_dir), "MgO bulk test directory missing!"
@@ -257,7 +258,7 @@ class GPAWTest(unittest.TestCase):
         pytest.importorskip("gpaw")
 
         # Path to the static test data directories
-        gpaw_graphene_dir = os.path.join(self.data_dir, "gpaw_graphene_test")
+        gpaw_graphene_dir = os.path.join(gpaw_data_dir, "Graphene")
         gpaw_bulk_dir = os.path.join(gpaw_graphene_dir, "bulk")
 
         assert os.path.exists(gpaw_bulk_dir), "Graphene bulk test directory missing!"
