@@ -1,11 +1,20 @@
 name: Tests
 
+# NOTE: the ``pull_request`` trigger and the narrowed ``push`` branches below are not specific to GPAW
+# support, and are intended to be cherry-picked onto ``develop`` -- fork PRs previously never ran CI at
+# all (which is why PR #149 was merged untested). Note that ``release.yml`` MUST carry the
+# same-repository guard added alongside this, or a fork PR whose head branch is named ``main`` can
+# trigger a PyPI release.
 on:
   workflow_dispatch:
 
   push:
-    branches:
-      - '*'  # all branches
+    branches:  # long-lived branches only; topic branches are covered by ``pull_request`` below, so
+      - main  # listing '*' here as well would run the (3 OS x 2 python x 10 split = 60 job) matrix twice
+      - develop
+      - IO_refactor
+
+  pull_request:
 
 jobs:
   test:
