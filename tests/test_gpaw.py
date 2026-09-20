@@ -115,6 +115,33 @@ class GPAWTest(unittest.TestCase):
         with pytest.raises(ValueError, match="one value per atom"):
             invalid_set.write_input(self.output_dir)
 
+    def test_gpaw_defects_set(self):
+        """
+        Test the generic ``DefectsSet`` workflow for GPAW: building input sets
+        for a full ``DefectsGenerator`` output and writing them to the
+        ``<defect name>/`` folder structure, as with VASP.
+        """
+        from doped.generation import DefectsGenerator
+        from doped.io.gpaw.inputs import DefectsSet
+
+        defect_gen = DefectsGenerator(self.structure)
+        defects_set = DefectsSet(defect_gen, gpaw_settings={"mode": {"name": "pw", "ecut": 500}})
+        assert len(defects_set.defect_sets) == len(defect_gen.defect_entries)
+
+        defects_set.write_files(output_path=self.output_dir, processes=1)
+        written = set(os.listdir(self.output_dir))
+        assert set(defect_gen.defect_entries) <= written  # one folder per defect, doped-named
+        assert "bulk" in written  # the neutral bulk reference, written once
+        assert any(name.endswith(".json.gz") for name in written)  # provenance
+
+        defect_species = next(iter(defect_gen.defect_entries))
+        defect_folder = os.path.join(self.output_dir, defect_species)
+        assert sorted(os.listdir(defect_folder)) == ["relax.py", "structure.cif"]
+        with open(os.path.join(defect_folder, "relax.py")) as script_file:
+            script = script_file.read()
+        assert "mode=PW(ecut=500)" in script  # settings forwarded to each defect
+        assert f"charge={defect_gen.defect_entries[defect_species].charge_state}" in script
+
     def test_find_gpaw_output(self):
         calc_dir = os.path.join(self.output_dir, "calculation")
         os.makedirs(calc_dir)

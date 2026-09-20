@@ -27,15 +27,16 @@ import os
 from typing import Any, Literal
 
 from pymatgen.core.structure import Structure
+from pymatgen.util.typing import PathLike
 
-from doped.core import DefectEntry, _get_defect_supercell
+from doped.core import DefectEntry, _get_bulk_supercell, _get_defect_supercell
+from doped.io.inputs import DefectsSetBase
 
 # ``doped`` accesses the competing phase functions below directly on this backend module, and
 # ``DefectsSet``/``write_input_sets`` are the documented protocol names a user would reach for, so all are
 # intercepted here to fail informatively -- e.g. for ``CompetingPhases(..., calculator="gpaw")`` -- rather
 # than with an obscure ``AttributeError`` (see the module docstring, and ``doped.io.gpaw.outputs``):
 _UNIMPLEMENTED_BACKEND_ATTRS = (
-    "DefectsSet",
     "get_kpoint_convergence_sets",
     "get_relaxation_sets",
     "get_singlepoint_sets",
@@ -256,3 +257,101 @@ print("Starting calculation...")
 {calculation_block}
 print(f"Final Energy: {{energy}} eV")
 """
+
+
+class DefectsSet(DefectsSetBase):
+    r"""
+    Generate GPAW calculation input files for all defect supercells in a
+    :class:`~doped.generation.DefectsGenerator` output (or any set of
+    |DefectEntry|\ s), in the ``<defect name>/`` folder structure.
+
+    The calculator-agnostic orchestration (naming, folder structure,
+    multiprocessed writing and provenance serialisation) comes from
+    :class:`~doped.io.inputs.DefectsSetBase`; this only builds and writes the
+    per-defect :class:`GPAWDefectRelaxSet`\ s.
+    """
+
+    _input_set_name = "GPAWDefectRelaxSet"
+
+    def __init__(
+        self,
+        defect_entries,
+        gpaw_settings: dict[str, Any] | None = None,
+        calculation_type: Literal["relax", "singlepoint"] = "relax",
+        **kwargs,
+    ):
+        r"""
+        Args:
+            defect_entries (|DefectsGenerator|, dict/list of |DefectEntry|\ s, or |DefectEntry|):
+                The defect entries for which to generate GPAW calculation
+                inputs; see :class:`~doped.io.inputs.DefectsSetBase`.
+            gpaw_settings (dict):
+                ``GPAW`` settings for the generated calculation scripts; see
+                :class:`GPAWDefectRelaxSet`. Default is ``None``.
+            calculation_type (str):
+                Type of calculation script to generate, ``"relax"`` (default)
+                or ``"singlepoint"``.
+            **kwargs:
+                Additional keyword arguments for :class:`GPAWDefectRelaxSet`.
+        """
+        self.gpaw_settings = gpaw_settings
+        self.calculation_type = calculation_type
+        super().__init__(defect_entries, **kwargs)
+
+    def _defect_input_set(self, defect_entry: DefectEntry) -> GPAWDefectRelaxSet:
+        """
+        Build the :class:`GPAWDefectRelaxSet` for a single defect entry.
+        """
+        return GPAWDefectRelaxSet(
+            defect_entry=defect_entry,
+            charge_state=defect_entry.charge_state,
+            gpaw_settings=self.gpaw_settings,
+            calculation_type=self.calculation_type,
+            **self.kwargs,
+        )
+
+    @staticmethod
+    def _write_defect(args: tuple) -> None:
+        """
+        Write the GPAW input files for a single defect (and, for the last
+        defect, the reference bulk supercell).
+        """
+        defect_species, defect_input_set, output_path, bulk, write_kwargs = args
+        defect_input_set.write_input(os.path.join(output_path, defect_species), **dict(write_kwargs))
+
+        if bulk:  # write the neutral bulk reference once, with the same settings
+            bulk_folder = bulk if isinstance(bulk, str) else "bulk"
+            GPAWDefectRelaxSet(
+                _get_bulk_supercell(defect_input_set.defect_entry),
+                charge_state=0,
+                gpaw_settings=defect_input_set.gpaw_settings,
+                calculation_type=defect_input_set.calculation_type,
+            ).write_input(os.path.join(output_path, bulk_folder), **dict(write_kwargs))
+
+    def write_files(  # type: ignore[override]  # narrows the base signature's ``**kwargs``
+        self,
+        output_path: PathLike = ".",
+        bulk: bool | str = True,
+        processes: int | None = None,
+        **kwargs,
+    ):
+        """
+        Write GPAW input files (a calculation script and ``structure.cif``) to
+        ``<output_path>/<defect name>/`` for every defect entry.
+
+        Args:
+            output_path (PathLike):
+                Folder in which to create the defect calculation folders.
+                Default is the current directory (".").
+            bulk (bool, str):
+                Whether to also write inputs for the reference bulk supercell
+                calculation; a string is used as the folder name (default
+                ``"bulk"``). Default is ``True``.
+            processes (int):
+                Number of processes to use for multiprocessed file writing.
+                Default (``None``) sets this automatically.
+            **kwargs:
+                Additional keyword arguments for
+                :meth:`GPAWDefectRelaxSet.write_input`.
+        """
+        super().write_files(output_path=output_path, bulk=bulk, processes=processes, **kwargs)
