@@ -42,7 +42,7 @@ class GPAWTest(unittest.TestCase):
             content = f.read()
             assert "charge=1" in content
             assert "mode=PW(ecut=400)" in content  # Default
-            assert "legacy_gpaw=True" in content
+            assert "legacy_gpaw" not in content  # GPAW's deprecated legacy calculator is not pinned
 
     def test_gpaw_defect_relax_set_custom(self):
         # Test with custom settings
@@ -50,7 +50,6 @@ class GPAWTest(unittest.TestCase):
             "mode": {"name": "pw", "ecut": 400},
             "xc": "PBE",
             "kpts": {"size": (2, 2, 2), "gamma": True},
-            "legacy_gpaw": False,
         }
         relax_set = GPAWDefectRelaxSet(self.structure, charge_state=-1, gpaw_settings=gpaw_settings)
         relax_set.write_input(self.output_dir)
@@ -60,7 +59,7 @@ class GPAWTest(unittest.TestCase):
             assert "charge=-1" in content
             assert "mode=PW(ecut=400)" in content
             assert "'size': (2, 2, 2)" in content
-            assert "legacy_gpaw=False" in content
+            assert "legacy_gpaw" not in content
             assert "from gpaw import GPAW, PW, LCAO, FD" in content
 
     def test_gpaw_defect_relax_set_lcao(self):
@@ -90,8 +89,8 @@ class GPAWTest(unittest.TestCase):
             content = file.read()
 
         assert "charge=1" in content
-        assert "legacy_gpaw=True" in content
-        assert "calc.write('singlepoint.gpw.gz')" in content
+        assert "legacy_gpaw" not in content
+        assert "calc.write('singlepoint.gpw')" in content
         assert "ase.optimize" not in content
         assert "dyn.run" not in content
 
@@ -125,7 +124,7 @@ class GPAWTest(unittest.TestCase):
         Path(custom_output).touch()
         assert _find_gpaw_output(calc_dir) == custom_output
 
-        relaxed_output = os.path.join(calc_dir, "relaxed.gpw.gz")
+        relaxed_output = os.path.join(calc_dir, "relaxed.gpw")
         Path(relaxed_output).touch()
         assert _find_gpaw_output(calc_dir) == relaxed_output
         assert _find_gpaw_output(custom_output) == custom_output
@@ -158,9 +157,9 @@ class GPAWTest(unittest.TestCase):
         # Expected Kumagai corrections mapped by DEFECT NAME
         # (to handle multiple defects with the same charge)
         expected_corrections = {
-            "v_Mg_+1": 0.21323889,
-            "v_Mg_-2": 0.52235841,
-            "Mg_O_+1": 0.13920905,
+            "v_Mg_+1": -0.05491517,
+            "v_Mg_-2": 1.20301268,
+            "Mg_O_+1": 0.36016471,
         }
         assert expected_corrections.keys() <= defect_dict.keys()
 
@@ -181,7 +180,7 @@ class GPAWTest(unittest.TestCase):
         mg_o_unrelaxed_dir = os.path.join(gpaw_mgo_dir, "Mg_O_+1_unrelaxed")
         assert os.path.exists(mg_o_unrelaxed_dir), "Unrelaxed Mg_O +1 test directory missing!"
 
-        bulk_parser = GPAWParser(os.path.join(gpaw_bulk_dir, "relaxed.gpw.gz"))
+        bulk_parser = GPAWParser(os.path.join(gpaw_bulk_dir, "relaxed.gpw"))
         mg_o_unrelaxed_entry = get_gpaw_defect_entry(
             defect_path=mg_o_unrelaxed_dir,
             bulk_path=gpaw_bulk_dir,
@@ -197,7 +196,7 @@ class GPAWTest(unittest.TestCase):
 
         np.testing.assert_allclose(
             calculated_mg_o_unrelaxed,
-            -0.03567710,
+            0.39874949,
             atol=1e-3,
             err_msg="Failed for unrelaxed Mg_O +1 state!",
         )
@@ -223,11 +222,13 @@ class GPAWTest(unittest.TestCase):
 
         print("\n--- Calculated Freysoldt (FNV) Corrections ---")
 
-        # We only keep v_Mg here because FNV requires perfectly matched grids.
-        # Mg_O triggered an (80,) vs (96,) grid mismatch with the bulk.
+        # eFNV and FNV must agree for a physically-valid case; ``v_Mg_-2`` is the only one here
+        # (``v_Mg_+1`` is 3 holes in the VB and ``Mg_O_+1`` electrons in the CB, i.e.
+        # delocalised-carrier states for which the point-charge correction model does not apply):
         expected_fnv = {
-            "v_Mg_+1": 1.11865072,
-            "v_Mg_-2": -1.25915911,
+            "v_Mg_+1": -0.10899449,
+            "v_Mg_-2": 1.27743123,
+            "Mg_O_+1": 0.12075791,
         }
         assert expected_fnv.keys() <= defect_dict.keys()
 
@@ -276,9 +277,9 @@ class GPAWTest(unittest.TestCase):
         # Expected corrections with a metallic in-plane response and vacuum-like
         # out-of-plane response. The large +4 value reflects q^2 scaling.
         expected_corrections = {
-            "v_C_+1": 1.56463945,
-            "C_i_C3v_+4": 27.89761687,
-            "N_C_-2": -2.85529189,
+            "v_C_+1": -2.92459981,
+            "C_i_C3v_+4": -46.09056677,
+            "N_C_-2": -2.31309662,
         }
 
         for defect_name, expected_energy in expected_corrections.items():
