@@ -13,7 +13,7 @@ import os
 import re
 import warnings
 from collections.abc import Iterable
-from functools import lru_cache, partialmethod
+from functools import cache, lru_cache, partialmethod
 from pathlib import Path
 from typing import Any
 from xml.etree.ElementTree import Element as XML_Element
@@ -22,10 +22,11 @@ import numpy as np
 import pandas as pd
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
+from numpy.typing import ArrayLike
 from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.electronic_structure.dos import FermiDos
-from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
+from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, Incar, Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.typing import PathLike
 
@@ -425,207 +426,393 @@ def _find_calc_outputs(
     )
 
 
-def _compare_potcar_symbols(
-    defect_potcar_symbols,
-    bulk_potcar_symbols,
-    defect_name="defect",
-    bulk_name="bulk",
-    warn=True,
-    only_matching_elements=False,
-):
+def _element_from_potcar_symbol(potcar_symbol: dict) -> str:
     """
-    Check all POTCAR symbols in the bulk are the same in the defect
-    calculation.
-
-    Returns True if the symbols match, otherwise returns a list of the symbols
-    for the bulk and defect calculations.
+    Get the element symbol from a ``POTCAR`` symbol dictionary (i.e. an entry
+    in ``Vasprun.potcar_spec``), which contains a ``"titel"`` key, e.g.
+    ``potcar_symbol["titel"] = "PAW_PBE Cd_sv 06Sep2000"`` -> ``"Cd"``.
     """
-    if only_matching_elements:
-        defect_elements = [symbol["titel"].split()[1].split("_")[0] for symbol in defect_potcar_symbols]
-        symbols_to_check = [
-            symbol
-            for symbol in bulk_potcar_symbols
-            if symbol["titel"].split()[1].split("_")[0] in defect_elements
-        ]
-    else:
-        symbols_to_check = bulk_potcar_symbols
+    return potcar_symbol["titel"].split()[1].split("_")[0]
 
-    bulk_mismatch_list = []
-    defect_mismatch_list = []
-    for symbol in symbols_to_check:
-        if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
-            if warn:
+
+def compare_potcar_symbols(
+    potcar_symbols_1: list[dict],
+    potcar_symbols_2: list[dict],
+    only_matching_elements: bool = False,
+    symbols_1_is_superset: bool = True,
+    name_1: str = "defect",
+    name_2: str = "bulk",
+    warn: bool = True,
+) -> list[list[dict]]:
+    """
+    Check all ``POTCAR`` symbols in ``potcar_symbols_2`` are also present in
+    ``potcar_symbols_1``.
+
+    Used in ``doped`` to compare ``POTCAR`` symbols in defect/bulk supercell
+    calculations, and in phase diagram / competing phases (chemical potential)
+    calculations, to test parameter consistency (and thus compatibility of DFT
+    energies).
+
+    By default this check is one-way, as ``potcar_symbols_1`` is taken to be a
+    superset of ``potcar_symbols_2`` (e.g. a defect supercell can contain
+    extrinsic species which are absent from the bulk, but not vice versa); set
+    ``symbols_1_is_superset = False`` to also flag symbols which are present in
+    ``potcar_symbols_1`` but not ``potcar_symbols_2`` (i.e. symmetric check).
+
+    Args:
+        potcar_symbols_1 (list[dict]):
+            The first list of ``POTCAR`` symbol dictionaries (i.e.
+            ``Vasprun.potcar_spec``), each with a ``"titel"`` key.
+        potcar_symbols_2 (list[dict]):
+            The second list of ``POTCAR`` symbol dictionaries, to compare
+            against ``potcar_symbols_1``.
+        only_matching_elements (bool):
+            Whether to only compare ``POTCAR`` symbols for `elements` which are
+            present in `both` sets (useful when comparing calculations of
+            different compositions, such as competing phases). Default is
+            ``False``.
+        symbols_1_is_superset (bool):
+            Whether ``potcar_symbols_1`` is expected to be a superset of
+            ``potcar_symbols_2``, in which case elements present only in
+            ``potcar_symbols_1`` are `not` flagged. If ``False``, the check is
+            also performed in the reverse direction (i.e. symmetric check).
+            This has no effect when ``only_matching_elements = True``. Default
+            is ``True``.
+        name_1 (str):
+            Name of the first calculation, used in the warning message. Default
+            is ``"defect"``.
+        name_2 (str):
+            Name of the second calculation, used in the warning message.
+            Default is ``"bulk"``.
+        warn (bool):
+            Whether to warn if mismatching ``POTCAR`` symbols are found.
+            Default is ``True``.
+
+    Returns:
+        list[list[dict]]:
+            A list of both ``POTCAR`` symbols if these mismatch, just the
+            mismatching symbols if ``only_matching_elements = True``, or an
+            empty list if they match.
+    """
+
+    def _get_symbols_missing_from_1(potcar_symbols_1, potcar_symbols_2, name_1, name_2):
+        """
+        Get the ``POTCAR`` symbols which are present in ``potcar_symbols_2``
+        but missing from ``potcar_symbols_1``, in the same output format as the
+        parent function.
+        """
+        titels_1 = [symbol["titel"] for symbol in potcar_symbols_1]
+        symbols_1_by_element = {  # reversed, so the first symbol for each element takes precedence:
+            _element_from_potcar_symbol(symbol): symbol for symbol in reversed(potcar_symbols_1)
+        }
+        if only_matching_elements:
+            symbols_to_check = [
+                symbol
+                for symbol in potcar_symbols_2
+                if _element_from_potcar_symbol(symbol) in symbols_1_by_element
+            ]
+        else:
+            symbols_to_check = potcar_symbols_2
+
+        mismatching_symbols = [symbol for symbol in symbols_to_check if symbol["titel"] not in titels_1]
+        if not mismatching_symbols:
+            return []
+        if not only_matching_elements:  # both full lists returned, so only warn about the first mismatch:
+            mismatching_symbols = mismatching_symbols[:1]
+
+        if warn:
+            for symbol in mismatching_symbols:
                 warnings.warn(
-                    f"The POTCAR symbols for your {defect_name} and {bulk_name} calculations do not "
-                    f"match, which is likely to cause severe errors in the parsed results. Found the "
-                    f"following symbol in the {bulk_name} calculation:"
-                    f"\n{symbol['titel']}\n"
-                    f"but not in the {defect_name} calculation:"
-                    f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
+                    f"The POTCAR symbols for your {name_1} and {name_2} calculations do not match, "
+                    f"which is likely to cause severe errors in the parsed results. Found the following "
+                    f"symbol in the {name_2} calculation:\n{symbol['titel']}\n"
+                    f"but not in the {name_1} calculation:\n{titels_1}\n"
                     f"The same POTCAR settings should be used for all calculations for accurate results!"
                 )
-            if not only_matching_elements:
-                return [defect_potcar_symbols, bulk_potcar_symbols]
-            bulk_mismatch_list.append(symbol)
-            defect_mismatch_list.append(
-                next(
-                    def_symbol
-                    for def_symbol in defect_potcar_symbols
-                    if def_symbol["titel"].split()[1].split("_")[0]
-                    == symbol["titel"].split()[1].split("_")[0]
-                )
-            )
 
-    if bulk_mismatch_list:
-        return [defect_mismatch_list, bulk_mismatch_list]
+        if not only_matching_elements:
+            return [potcar_symbols_1, potcar_symbols_2]
+        return [
+            [symbols_1_by_element[_element_from_potcar_symbol(symbol)] for symbol in mismatching_symbols],
+            mismatching_symbols,
+        ]
 
-    return True
+    if mismatches := _get_symbols_missing_from_1(potcar_symbols_1, potcar_symbols_2, name_1, name_2):
+        return mismatches
+    if symbols_1_is_superset:
+        return []
+
+    # also check the other direction, swapping the returned lists back to (1, 2) order:
+    reverse = _get_symbols_missing_from_1(potcar_symbols_2, potcar_symbols_1, name_2, name_1)
+    return [reverse[1], reverse[0]] if reverse else []
 
 
-def _compare_kpoints(
-    defect_actual_kpoints,
-    bulk_actual_kpoints,
-    defect_kpoints=None,
-    bulk_kpoints=None,
-    defect_name="defect",
-    bulk_name="bulk",
-    warn=True,
-):
+def compare_kpoints(
+    actual_kpoints_1: ArrayLike,
+    actual_kpoints_2: ArrayLike,
+    kpoints_1: Kpoints | None = None,
+    kpoints_2: Kpoints | None = None,
+    name_1: str = "defect",
+    name_2: str = "bulk",
+    warn: bool = True,
+) -> list[list[list[float]]]:
     """
-    Check bulk and defect KPOINTS are the same, using the
-    ``Vasprun.actual_kpoints`` lists (i.e. the VASP IBZKPTs essentially).
+    Check the ``KPOINTS`` in ``actual_kpoints_1`` are the same as
+    ``actual_kpoints_2``, using the ``Vasprun.actual_kpoints`` lists (i.e. the
+    VASP ``IBZKPT`` k-points essentially), independent of the ordering.
 
-    Returns ``True`` if the KPOINTS match, otherwise returns a list of the
-    KPOINTS for the bulk and defect calculations.
+    Used in ``doped`` to compare k-points in defect/bulk supercell
+    calculations, to test parameter consistency (and thus compatibility of DFT
+    energies).
+
+    As different symmetry settings (e.g. ``ISYM``) can give different
+    irreducible k-point sets (``actual_kpoints``) for the same input mesh, the
+    input ``KPOINTS`` objects (``kpoints_1``/``kpoints_2``) are also compared
+    if provided, and taken to match if their meshes (``kpts``) and shifts
+    (``kpts_shift``) are equal, even if ``actual_kpoints`` differ.
+
+    Args:
+        actual_kpoints_1 (ArrayLike):
+            The first list of (irreducible) k-points (i.e.
+            ``Vasprun.actual_kpoints``).
+        actual_kpoints_2 (ArrayLike):
+            The second list of (irreducible) k-points, to compare against
+            ``actual_kpoints_1``.
+        kpoints_1 (Kpoints):
+            The input ``KPOINTS`` settings for the first calculation (i.e.
+            ``Vasprun.kpoints``), used for the fallback check described above.
+            Default is ``None``.
+        kpoints_2 (Kpoints):
+            The input ``KPOINTS`` settings for the second calculation. Default
+            is ``None``.
+        name_1 (str):
+            Name of the first calculation, used in the warning message. Default
+            is ``"defect"``.
+        name_2 (str):
+            Name of the second calculation, used in the warning message.
+            Default is ``"bulk"``.
+        warn (bool):
+            Whether to warn if mismatching k-points are found. Default is
+            ``True``.
+
+    Returns:
+        list[list[list[float]]]:
+            A list of both (sorted) k-point lists if these mismatch, or an
+            empty list if they match.
     """
     # sort kpoints, in case same KPOINTS just different ordering:
-    sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
-    sorted_defect_kpoints = sorted(np.array(defect_actual_kpoints), key=tuple)
+    kpoints_list_2 = sorted(np.array(actual_kpoints_2), key=tuple)
+    kpoints_list_1 = sorted(np.array(actual_kpoints_1), key=tuple)
 
-    actual_kpoints_eq = len(sorted_bulk_kpoints) == len(sorted_defect_kpoints) and np.allclose(
-        sorted_bulk_kpoints, sorted_defect_kpoints
+    actual_kpoints_eq = len(kpoints_list_2) == len(kpoints_list_1) and np.allclose(
+        kpoints_list_2, kpoints_list_1
     )
     # if different symmetry settings used (e.g. for bulk), actual_kpoints can differ but are the same
     # input kpoints, which we assume is fine:
     kpoints_eq = (
-        (
-            bulk_kpoints.kpts == defect_kpoints.kpts
-            and np.allclose(bulk_kpoints.kpts_shift, defect_kpoints.kpts_shift)
-        )
-        if bulk_kpoints and defect_kpoints
+        (kpoints_2.kpts == kpoints_1.kpts and np.allclose(kpoints_2.kpts_shift, kpoints_1.kpts_shift))
+        if kpoints_2 and kpoints_1
         else False
     )
 
     if not (actual_kpoints_eq or kpoints_eq):
         if warn:
-            formatted_defect_kpts = [[float(kpt) for kpt in kpoints] for kpoints in sorted_defect_kpoints]
-            formatted_bulk_kpts = [[float(kpt) for kpt in kpoints] for kpoints in sorted_bulk_kpoints]
+            formatted_kpts_1 = [[float(kpt) for kpt in kpoints] for kpoints in kpoints_list_1]
+            formatted_kpts_2 = [[float(kpt) for kpt in kpoints] for kpoints in kpoints_list_2]
             warnings.warn(  # list form is more readable
-                f"The KPOINTS for your {defect_name} and {bulk_name} calculations do not match, which is "
-                f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
-                f"{defect_name} calculation:"
-                f"\n{formatted_defect_kpts}\n"
-                f"and in the {bulk_name} calculation:"
-                f"\n{formatted_bulk_kpts}\n"
+                f"The KPOINTS for your {name_1} and {name_2} calculations do not match, which is likely "
+                f"to cause errors in the parsed results. Found the following KPOINTS in the {name_1} "
+                f"calculation:\n{formatted_kpts_1}\nand in the {name_2} calculation:\n{formatted_kpts_2}\n"
                 f"In general, the same KPOINTS settings should be used for all final calculations for "
                 f"accurate results!"
             )
         return [
-            [list(kpoints) for kpoints in sorted_defect_kpoints],
-            [list(kpoints) for kpoints in sorted_bulk_kpoints],
+            [list(kpoints) for kpoints in kpoints_list_1],
+            [list(kpoints) for kpoints in kpoints_list_2],
         ]
 
-    return True
+    return []
 
 
-def _compare_incar_tags(
-    defect_incar_dict: dict[str, str | int | float],
-    bulk_incar_dict: dict[str, str | int | float],
-    fatal_incar_mismatch_tags: dict[str, str | int | float] | None = None,
+@cache
+def _prefix_matchable_incar_values(tag: str) -> tuple[str, ...]:
+    """
+    Get the allowed ``VASP`` values for an ``INCAR`` tag (lowercased), if these
+    can be safely matched on their leading characters, otherwise an empty
+    tuple.
+
+    ``VASP`` matches some string ``INCAR`` values on their leading characters
+    only, so e.g. ``PREC = A`` is equivalent to ``PREC = Accurate``. This is
+    only unambiguous if, for any two allowed values sharing a first character,
+    one is a prefix of the other -- true for e.g. ``PREC`` and ``LREAL``
+    (``A``/``Auto``), but not for ``GGA`` (``PE``/``PZ``) or ``ALGO``
+    (``Normal``/``None``), for which exact comparison is used instead.
+    """
+    allowed = [
+        val.lower()
+        for val in (Incar.INCAR_PARAMS.get(tag) or {}).get("values") or []
+        if isinstance(val, str) and val
+    ]
+    unambiguous = all(
+        val_2.startswith(val_1)
+        for val_1, val_2 in itertools.permutations(allowed, 2)
+        if val_1[0] == val_2[0] and len(val_1) <= len(val_2)
+    )
+    return tuple(allowed) if unambiguous else ()
+
+
+def _resolve_incar_str_value(tag: str, val: str | float) -> str:
+    """
+    Normalise an ``INCAR`` value to a lowercase string, dropping any trailing
+    ``INCAR`` comment (``VASP`` writes these into the ``vasprun.xml`` value,
+    e.g. ``"Accurate  !
+
+    precision level"``) and expanding ``VASP``
+    leading-character abbreviations (e.g. ``PREC = A`` -> ``"accurate"``) where
+    the allowed values for ``tag`` make this unambiguous.
+    """
+    val_str = next(iter(str(val).split()), "").lower()  # first token; drops any ``INCAR`` comment
+    allowed_values = _prefix_matchable_incar_values(tag) if val_str else ()  # "" prefixes everything
+    matches = [allowed for allowed in allowed_values if allowed.startswith(val_str)]
+    return max(matches, key=len) if matches else val_str
+
+
+default_energy_affecting_incar_tags: dict[str, str | int | float] = {
+    "AEXX": 0.25,
+    "ENCUT": 0,
+    "LREAL": False,
+    "HFSCREEN": 0,
+    "GGA": "PE",
+    "LHFCALC": False,
+    "ADDGRID": False,
+    "ISIF": 2,
+    "LASPH": False,
+    "PREC": "Normal",
+    "PRECFOCK": "Normal",
+    "LDAU": False,
+    "NKRED": 1,
+    "LSORBIT": False,
+}
+"""
+``INCAR`` tags which can affect calculated energies in ``VASP``, and so should
+match between calculations whose energies are being compared, along with their
+typical default values in ``VASP`` (used when a tag is absent from an
+``INCAR``).
+
+Used as the default ``energy_affecting_incar_tags`` in
+:func:`compare_incar_tags`.
+"""
+
+
+def compare_incar_tags(
+    incar_dict_1: dict[str, str | int | float],
+    incar_dict_2: dict[str, str | int | float],
+    energy_affecting_incar_tags: dict[str, str | int | float] | None = None,
     ignore_tags: set[str] | None = None,
-    defect_name: str = "defect",
-    bulk_name: str = "bulk",
+    rtol: float = 1e-3,
+    name_1: str = "defect",
+    name_2: str = "bulk",
     warn: bool = True,
-):
+) -> list[tuple[str, str | int | float, str | int | float]]:
     """
-    Check bulk and defect INCAR tags (that can affect energies) are the same.
+    Check that ``INCAR`` tags which can affect energies in ``incar_dict_1`` are
+    the same as ``incar_dict_2``.
 
-    Returns True if no mismatching tags are found, otherwise returns a list of
-    the mismatching tags.
+    Used in ``doped`` to compare ``INCAR`` tags in defect/bulk supercell
+    calculations, and in phase diagram / competing phases (chemical potential)
+    calculations, to test parameter consistency (and thus compatibility of DFT
+    energies).
+
+    Only the tags in ``energy_affecting_incar_tags`` are compared, in `both`
+    directions, with any missing tags assumed to adopt the VASP default value
+    (as given by ``energy_affecting_incar_tags``, which default to
+    :data:`default_energy_affecting_incar_tags`). String values are compared
+    case-insensitively, ignoring any trailing comments and expanding ``VASP``'s
+    leading-character abbreviations (e.g. ``PREC = A`` and ``PREC = Accurate``)
+    for tags whose allowed values make this unambiguous; numeric values are
+    compared within a relative tolerance of ``rtol`` (default = 1e-3).
+
+    Args:
+        incar_dict_1 (dict):
+            The first dictionary of ``INCAR`` tags and values (i.e.
+            ``Vasprun.incar``).
+        incar_dict_2 (dict):
+            The second dictionary of ``INCAR`` tags and values, to compare
+            against ``incar_dict_1``.
+        energy_affecting_incar_tags (dict):
+            Dictionary of the ``INCAR`` tags to compare, and their assumed
+            default values in ``VASP``. If ``None`` (default),
+            :data:`default_energy_affecting_incar_tags` is used.
+        ignore_tags (set):
+            Set of ``INCAR`` tags to exclude from the comparison
+            (e.g. ``{"NKRED"}``). Default is ``None``.
+        rtol (float):
+            Relative tolerance for comparing numeric ``INCAR`` values. Default
+            is 1e-3.
+        name_1 (str):
+            Name of the first calculation, used in the warning message if
+            mismatches are detected and ``warn`` is ``True``. Default is
+            ``"defect"``.
+        name_2 (str):
+            Name of the second calculation, used in the warning message if
+            mismatches are detected and ``warn`` is ``True``. Default is
+            ``"bulk"``.
+        warn (bool):
+            Whether to warn if mismatching ``INCAR`` tags are found. Default is
+            ``True``.
+
+    Returns:
+        list[tuple[str, str | int | float, str | int | float]]:
+            A list of the mismatching tags, as ``(tag, value_1, value_2)``
+            tuples, where ``value_N`` is the value in ``incar_dict_N`` or its
+            assumed ``VASP`` default if the tag is absent from it. Empty if no
+            mismatching tags are found.
     """
-    if fatal_incar_mismatch_tags is None:
-        fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults in VASP
-            "AEXX": 0.25,  # default 0.25
-            "ENCUT": 0,
-            "LREAL": False,  # default False
-            "HFSCREEN": 0,  # default 0 (None)
-            "GGA": "PE",  # default PE
-            "LHFCALC": False,  # default False
-            "ADDGRID": False,  # default False
-            "ISIF": 2,
-            "LASPH": False,  # default False
-            "PREC": "Normal",  # default Normal
-            "PRECFOCK": "Normal",  # default Normal
-            "LDAU": False,  # default False
-            "NKRED": 1,  # default 1
-            "LSORBIT": False,  # default False
-        }
+    if energy_affecting_incar_tags is None:
+        energy_affecting_incar_tags = default_energy_affecting_incar_tags
     if ignore_tags is not None:
-        fatal_incar_mismatch_tags = {
-            key: val for key, val in fatal_incar_mismatch_tags.items() if key not in ignore_tags
+        energy_affecting_incar_tags = {
+            key: val for key, val in energy_affecting_incar_tags.items() if key not in ignore_tags
         }
 
-    def _compare_incar_vals(val1, val2):
-        if isinstance(val1, str):
-            return val1.split()[0].lower() == str(val2).split()[0].lower()
+    def _compare_incar_vals(tag, val1, val2):
+        if isinstance(val1, str) or isinstance(val2, str):  # stringify both, order-independent
+            return _resolve_incar_str_value(tag, val1) == _resolve_incar_str_value(tag, val2)
         if isinstance(val1, int | float) and isinstance(val2, int | float):
-            return np.isclose(val1, val2, rtol=1e-3)
+            return np.isclose(val1, val2, rtol=rtol)
 
         return val1 == val2
 
     mismatch_list = []
-    for key, val in bulk_incar_dict.items():
-        if key in fatal_incar_mismatch_tags:
-            defect_val = defect_incar_dict.get(key, fatal_incar_mismatch_tags[key])
-            if not _compare_incar_vals(val, defect_val):
-                mismatch_list.append((key, defect_val, val))
+    for tag, default in energy_affecting_incar_tags.items():  # default assumed if tag absent from INCAR
+        val_1, val_2 = incar_dict_1.get(tag, default), incar_dict_2.get(tag, default)
+        if not _compare_incar_vals(tag, val_1, val_2):
+            mismatch_list.append((tag, val_1, val_2))
 
-    # get any missing keys:
-    defect_incar_keys_not_in_bulk = set(defect_incar_dict.keys()) - set(bulk_incar_dict.keys())
+    if mismatch_list and warn:
+        warnings.warn(
+            f"There are mismatching INCAR tags for your {name_1} and {name_2} calculations which are "
+            f"likely to cause errors in the parsed results (energies). Found the following differences:\n"
+            f"(in the format: (INCAR tag, value in {name_1} calculation, value in {name_2} calculation)):"
+            f"\n{mismatch_list}\n"
+            f"In general, the same INCAR settings should be used in all final calculations for these tags "
+            f"which can affect energies!"
+        )
 
-    for key in defect_incar_keys_not_in_bulk:
-        if key in fatal_incar_mismatch_tags and not _compare_incar_vals(
-            defect_incar_dict[key], fatal_incar_mismatch_tags[key]
-        ):
-            mismatch_list.append((key, defect_incar_dict[key], fatal_incar_mismatch_tags[key]))
-
-    if mismatch_list:
-        if warn:
-            warnings.warn(
-                f"There are mismatching INCAR tags for your {defect_name} and {bulk_name} calculations "
-                f"which are likely to cause errors in the parsed results (energies). Found the following "
-                f"differences:\n"
-                f"(in the format: (INCAR tag, value in {defect_name} calculation, value in {bulk_name} "
-                f"calculation)):"
-                f"\n{mismatch_list}\n"
-                f"In general, the same INCAR settings should be used in all final calculations for these "
-                f"tags which can affect energies!"
-            )
-        return mismatch_list
-    return True
+    return mismatch_list
 
 
-def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str, set]]) -> str:
+def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str, tuple]]) -> str:
     """
     Convenience function to generate a formatted warning string listing
     mismatching INCAR tags and their values in a clean output.
 
-    Used in ``doped.parsing`` and ``doped.chemical_potentials`` when checking
+    Used in ``doped.analysis`` and ``doped.chemical_potentials`` when checking
     calculation compatibilities.
 
     Args:
-        mismatching_INCAR_warnings (list[tuple[str, set]]):
-            A list of tuples containing the INCAR tag and the set of
+        mismatching_INCAR_warnings (list[tuple[str, tuple]]):
+            A list of tuples containing the INCAR tag and the tuple of
             mismatching values for that tag.
 
     Returns:
@@ -635,14 +822,14 @@ def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str
     """
     # group by the mismatching tags, so we can print them together:
     mismatching_tags_name_list_dict = {
-        tuple(sorted(mismatching_set)): sorted(
+        tuple(mismatching_tags): sorted(
             [
                 name
-                for name, other_mismatching_set in mismatching_INCAR_warnings
-                if other_mismatching_set == mismatching_set
+                for name, other_mismatching_tags in mismatching_INCAR_warnings
+                if other_mismatching_tags == mismatching_tags
             ]
         )  # sort for consistency
-        for mismatching_set in [mismatching for name, mismatching in mismatching_INCAR_warnings]
+        for mismatching_tags in [mismatching for name, mismatching in mismatching_INCAR_warnings]
     }
     return "\n".join(
         [
@@ -1641,7 +1828,7 @@ def check_entry_compatibility(entries, template_candidates=None) -> None:
         for entry in entries:
             if not entry.data.get("incar"):  # no settings data for this entry (e.g. a user-supplied
                 continue  # ``ComputedEntry``); skip rather than compare against nothing
-            incar_mismatches = _compare_incar_tags(
+            incar_mismatches = compare_incar_tags(
                 entry.data["incar"],
                 incar_template_entry.data["incar"],
                 ignore_tags={"NKRED"},  # no NKRED mismatch warnings for competing phases
@@ -1649,21 +1836,19 @@ def check_entry_compatibility(entries, template_candidates=None) -> None:
             )  # warned collectively below if any mismatches
             # ignore ISIF warnings in cases of supercell calculations (i.e. either gas calculations
             # or bulk supercell -- assumed to be the correct volume):
-            if not isinstance(incar_mismatches, bool):
-                incar_mismatches = [
-                    i
-                    for i in incar_mismatches
-                    if i[0] != "ISIF"
-                    or all(ent.structure.volume < 800 for ent in [incar_template_entry, entry])
-                ]
-            incar_mismatches = incar_mismatches if incar_mismatches else False
+            incar_mismatches = [
+                i
+                for i in incar_mismatches
+                if i[0] != "ISIF"
+                or all(ent.structure.volume < 800 for ent in [incar_template_entry, entry])
+            ] or False
             entry.data["mismatching_INCAR_tags"] = (
                 incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
             )
 
         mismatching_INCAR_warnings = sorted(
             [
-                (entry.name, set(entry.data.get("mismatching_INCAR_tags")))
+                (entry.name, tuple(entry.data.get("mismatching_INCAR_tags")))
                 for entry in entries
                 if entry.data.get("mismatching_INCAR_tags")
             ],
@@ -1688,15 +1873,13 @@ def check_entry_compatibility(entries, template_candidates=None) -> None:
         for entry in entries:
             if not entry.data.get("potcar_symbols"):  # no settings data for this entry; skip
                 continue
-            potcar_mismatches = _compare_potcar_symbols(
+            potcar_mismatches = compare_potcar_symbols(
                 entry.data["potcar_symbols"],
                 potcar_template_entry.data["potcar_symbols"],
                 warn=False,
                 only_matching_elements=True,
             )  # warned collectively below if any mismatches
-            entry.data["mismatching_POTCAR_symbols"] = (
-                potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
-            )
+            entry.data["mismatching_POTCAR_symbols"] = potcar_mismatches or False
 
         mismatching_potcars_warnings = sorted(
             [
@@ -1773,24 +1956,22 @@ def check_run_compatibility(
         if (vr := outputs.raw.get("vasprun")) is not None:
             run_metadata[f"{label}_vasprun_dict"] = _get_vr_dict_without_proj_eigenvalues(vr)
 
-    incar_mismatches = _compare_incar_tags(
+    incar_mismatches = compare_incar_tags(
         run_metadata["defect_incar"], run_metadata["bulk_incar"], warn=warn
     )
-    potcar_mismatches = _compare_potcar_symbols(
+    potcar_mismatches = compare_potcar_symbols(
         run_metadata["defect_potcar_symbols"], run_metadata["bulk_potcar_symbols"], warn=warn
     )
-    kpoint_mismatches = _compare_kpoints(
-        run_metadata["defect_actual_kpoints"],
-        run_metadata["bulk_actual_kpoints"],
-        run_metadata["defect_kpoints"],
-        run_metadata["bulk_kpoints"],
+    kpoint_mismatches = compare_kpoints(
+        actual_kpoints_1=run_metadata["defect_actual_kpoints"],
+        actual_kpoints_2=run_metadata["bulk_actual_kpoints"],
+        kpoints_1=run_metadata["defect_kpoints"],
+        kpoints_2=run_metadata["bulk_kpoints"],
         warn=warn,
     )
     return {
-        "mismatching_INCAR_tags": incar_mismatches if not isinstance(incar_mismatches, bool) else False,
-        "mismatching_POTCAR_symbols": (
-            potcar_mismatches if not isinstance(potcar_mismatches, bool) else False
-        ),
-        "mismatching_KPOINTS": kpoint_mismatches if not isinstance(kpoint_mismatches, bool) else False,
+        "mismatching_INCAR_tags": incar_mismatches or False,
+        "mismatching_POTCAR_symbols": potcar_mismatches or False,
+        "mismatching_KPOINTS": kpoint_mismatches or False,
         "run_metadata": run_metadata,
     }
