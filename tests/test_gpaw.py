@@ -133,7 +133,7 @@ class GPAWTest(unittest.TestCase):
         """
         Test that the GPAW parser correctly extracts electrostatic potentials
         and calculates the eFNV (Kumagai) correction for multiple charge states
-        using real static ``.gpw(.gz)`` files (both ``v_Mg`` and ``Mg_O``
+        using real static ``.gpw`` files (both ``v_Mg`` and ``Mg_O``
         defects).
         """
         pytest.importorskip("gpaw")

@@ -304,7 +304,7 @@ def get_gpaw_site_potentials(
     gpw_file: str | os.PathLike,
 ) -> np.ndarray:
     """
-    Extracts atomic site potentials from a ``GPAW`` ``.gpw(.gz)`` file.
+    Extracts atomic site potentials from a ``GPAW`` ``.gpw`` file.
     """
     from gpaw import GPAW
 
@@ -325,7 +325,7 @@ def get_gpaw_planar_averaged_potential(
     gpw_file: str | os.PathLike,
 ) -> dict[str, np.ndarray]:
     """
-    Extracts planar-averaged potential from a ``GPAW`` ``.gpw(.gz)`` file.
+    Extracts planar-averaged potential from a ``GPAW`` ``.gpw`` file.
     """
     from gpaw import GPAW
 
@@ -354,10 +354,10 @@ class GPAWParser:
     def __init__(
         self,
         gpw_file: str | os.PathLike,
-        ):
+    ):
         """
         Args:
-            gpw_file (str): Path to ``GPAW`` ``.gpw(.gz)`` file.
+            gpw_file (str): Path to ``GPAW`` ``.gpw`` file.
         """
         from gpaw import GPAW
 
@@ -401,6 +401,15 @@ class GPAWParser:
         """
         Returns (band_gap, cbm, vbm, efermi).
         """
+        # TODO: Band edges are taken purely from the Fermi level here (VBM = highest eigenvalue at or below
+        # E_F, CBM = lowest above it), with no reference to occupations. That is only safe for a gapped
+        # bulk with E_F in the gap, which is all this is currently used for (see ``_get_gpaw_bulk_data``):
+        # it gives meaningless edges for a metallic or heavily-smeared bulk, and silently returns
+        # ``efermi`` for both edges (i.e. a zero gap) if no eigenvalue falls on one side. It would also be
+        # outright wrong if applied to charged defect supercells, where a partially-occupied in-gap state
+        # would be reported as a band edge. Replace with an occupation-based determination, as done for
+        # VASP in ``doped.utils.eigenvalues.band_edge_properties_from_outputs``. See the GPAW tracking
+        # issue.
         # Basic implementation
         efermi = self.calc.get_fermi_level()
         # GPAW can give eigenvalues for each k-point and spin
@@ -542,7 +551,7 @@ class GPAWDefectsParser:
         dielectric: float | np.ndarray | None = None,
         subfolder: str | os.PathLike | None = None,
         bulk_path: str | os.PathLike | None = None,
-        ):
+    ):
         """
         Args:
             output_path (str): Path to directory containing defect folders.

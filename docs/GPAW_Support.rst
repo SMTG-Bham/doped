@@ -17,11 +17,16 @@ Install GPAW and its PAW datasets following the
 
 .. code-block:: bash
 
-   pip install gpaw
+   pip install doped[gpaw]
    gpaw install-data
 
-``pydefect``, which is used by ``doped`` for the Kumagai (eFNV) correction, is
-already a core ``doped`` dependency.
+``GPAW`` 25.7.0 or later is required. ``pydefect``, which is used by ``doped``
+for the Kumagai (eFNV) correction, is already a core ``doped`` dependency.
+
+.. note::
+
+    GPAW support is **experimental**. See the tracking issue for the features
+    that are not yet wired up for GPAW outputs.
 
 Workflow
 --------
@@ -33,8 +38,10 @@ The GPAW workflow follows the usual ``doped`` sequence:
 #. Write ``structure.cif`` and GPAW Python inputs with
    :class:`~doped.gpaw.GPAWDefectRelaxSet`.
 #. Run the GPAW calculations locally or through a scheduler.
-#. Parse the bulk and defect ``.gpw``/``.gpw.gz`` restart files with
-   :class:`~doped.gpaw.GPAWDefectsParser`.
+#. Parse the bulk and defect ``.gpw`` restart files with
+   :class:`~doped.gpaw.GPAWDefectsParser`. Note that gzipped (``.gpw.gz``)
+   outputs are not supported, as ``GPAW``'s reader requires an uncompressed
+   file on disk.
 #. Analyse the resulting :class:`~doped.core.DefectEntry` objects with
    :class:`~doped.thermodynamics.DefectThermodynamics`.
 
@@ -42,8 +49,8 @@ Input generation
 ----------------
 
 The calculator settings are supplied as a dictionary. Settings consumed by the
-input generator, such as ``optimizer``, ``fmax`` and ``legacy_gpaw``, are not
-passed on to the GPAW calculator.
+input generator, such as ``optimizer`` and ``fmax``, are not passed on to the
+GPAW calculator.
 
 .. code-block:: python
 
