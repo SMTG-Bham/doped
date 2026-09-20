@@ -1,5 +1,27 @@
 """
 Code to generate GPAW defect calculation input files.
+
+GPAW support is experimental. Unlike ``doped.io.vasp.inputs``, this module
+does not yet implement the ``doped.io`` backend protocol (see the "Adding
+Support for a New Calculator" docs page). Not implemented, and so
+unavailable with GPAW:
+
+- :class:`GPAWDefectRelaxSet` is a standalone class, rather than a
+  :class:`~doped.io.inputs.DefectsSetBase` subclass, so the ``DefectsSet``
+  workflow (per-defect input sets for a full ``DefectsGenerator`` output,
+  folder-structure writing, rattling, provenance serialisation) is
+  unavailable, as is ``DefectsGenerator``-driven input writing.
+- The competing phase input-set functions
+  (``get_kpoint_convergence_sets()``, ``get_relaxation_sets()``,
+  ``get_singlepoint_sets()``, ``write_input_sets()`` and the corresponding
+  ``write_*_files()``), so ``CompetingPhases(..., calculator="gpaw")`` is
+  not supported.
+- Default calculation parameters live hard-coded in
+  ``GPAWDefectRelaxSet._generate_script()``, rather than in data files
+  alongside this module (as with ``doped/io/vasp/VASP_sets``), so they
+  cannot be inspected or overridden as a set.
+
+See the GPAW tracking issue.
 """
 
 import copy
@@ -9,6 +31,39 @@ from typing import Any, Literal
 from pymatgen.core.structure import Structure
 
 from doped.core import DefectEntry, _get_defect_supercell
+
+# ``doped`` accesses the competing phase functions below directly on this backend module, and
+# ``DefectsSet``/``write_input_sets`` are the documented protocol names a user would reach for, so all are
+# intercepted here to fail informatively -- e.g. for ``CompetingPhases(..., calculator="gpaw")`` -- rather
+# than with an obscure ``AttributeError`` (see the module docstring, and ``doped.io.gpaw.outputs``):
+_UNIMPLEMENTED_BACKEND_ATTRS = (
+    "DefectsSet",
+    "get_kpoint_convergence_sets",
+    "get_relaxation_sets",
+    "get_singlepoint_sets",
+    "write_input_sets",
+    "write_kpoint_convergence_files",
+    "write_relaxation_files",
+    "write_singlepoint_files",
+)
+
+
+def __getattr__(name: str) -> Any:
+    """
+    Raise an informative error for the ``doped.io`` backend protocol
+    functions/classes which are not implemented for GPAW (see the module
+    docstring).
+    """
+    if name in _UNIMPLEMENTED_BACKEND_ATTRS:
+        raise NotImplementedError(
+            f"`{__name__}.{name}` is not implemented. GPAW support in `doped` is experimental, and is "
+            f"not yet wired into the calculator-agnostic `doped.io` backend protocol, so `doped`'s "
+            f"generic input-generation machinery cannot write GPAW inputs. Generate GPAW defect "
+            f"supercell inputs with `doped.io.gpaw.inputs.GPAWDefectRelaxSet`, rather than "
+            f"`DefectsSet`; competing phase inputs are not supported for GPAW. See the GPAW "
+            f"tracking issue."
+        )
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class GPAWDefectRelaxSet:
@@ -59,6 +114,8 @@ class GPAWDefectRelaxSet:
 
         self.gpaw_settings = gpaw_settings or {}
         self.calculation_type = calculation_type
+        # note that unrecognised ``**kwargs`` are silently swallowed here (only ``charge`` is consumed,
+        # above), rather than raising as ``doped``'s VASP input sets do. See the GPAW tracking issue:
         self.kwargs = kwargs
 
         if isinstance(self.defect_entry, Structure):
@@ -139,7 +196,10 @@ class GPAWDefectRelaxSet:
                 f"Unsupported optimizer {optimizer!r}. Choose one of: {sorted(supported_optimizers)}"
             )
 
-        # Prepare mode string
+        # Prepare mode string; note that the ``mode`` sub-parameters are written through unvalidated, so
+        # arguments which the GPAW mode classes do not accept give a script which fails at runtime. In
+        # particular ``LCAO(basis=...)`` raises ``TypeError`` in GPAW, so generated LCAO scripts are
+        # invalid (and ``tests/test_gpaw.py`` asserts that string). See the GPAW tracking issue:
         if isinstance(mode_params, dict):
             name = mode_params.pop("name", "pw")
             args = ", ".join([f"{k}={v!r}" for k, v in mode_params.items()])

@@ -8,9 +8,10 @@ protocol (see the "Adding Support for a New Calculator" docs page), so GPAW
 calculations are generated and parsed with the GPAW-specific classes here
 rather than with :class:`~doped.parsing.DefectsParser` /
 :class:`~doped.io.vasp.inputs.DefectsSet`. The submodule docstrings list what
-this means in practice, and the protocol entry points raise
-``NotImplementedError`` rather than failing obscurely. See the GPAW tracking
-issue.
+this means in practice, and the protocol entry points which ``doped``
+requires raise ``NotImplementedError`` rather than failing obscurely (the
+optional ones are simply absent, so those features degrade gracefully). See
+the GPAW tracking issue.
 
 Submodule attributes can be accessed directly from this package (e.g.
 ``from doped.io.gpaw import GPAWDefectsParser``); they are imported lazily to

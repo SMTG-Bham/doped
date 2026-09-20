@@ -1,5 +1,31 @@
 """
 Parsing of GPAW defect / bulk supercell calculation outputs.
+
+GPAW support is experimental. Unlike ``doped.io.vasp.outputs``, this module
+does not yet implement the ``doped.io`` backend protocol (see the "Adding
+Support for a New Calculator" docs page), so GPAW calculations are parsed
+with the GPAW-specific :class:`GPAWDefectsParser` / :class:`GPAWParser`
+classes here, rather than with the calculator-agnostic
+:class:`~doped.parsing.DefectsParser`. Not implemented, and so unavailable
+with GPAW:
+
+- ``get_calculation_outputs()`` / ``CALC_OUTPUT_MASK``: the calculator-
+  agnostic parsing entry point, and thus ``DefectsParser``/``DefectParser``.
+- ``get_planar_averaged_potentials()`` / ``get_site_potentials()`` /
+  ``get_potentials_from_input()``: lazy (re)loading of charge-correction
+  data from file. The potentials are instead all parsed up-front, into
+  ``DefectEntry.calculation_metadata``.
+- ``check_run_compatibility()``: bulk/defect calculation settings
+  compatibility checks.
+- ``load_eigenvalue_outputs()``: eigenvalue analysis of band-edge & in-gap
+  states (``DefectEntry.get_eigenvalue_analysis()``), for shallow-defect
+  identification.
+- ``get_fermi_dos()``: bulk DOS parsing, for Fermi level / carrier
+  concentration analysis (``FermiSolver``).
+- ``get_competing_phase_entry()``: competing phase parsing, for chemical
+  potential analysis (``CompetingPhasesAnalyzer``).
+
+See the GPAW tracking issue.
 """
 
 import os
@@ -12,6 +38,43 @@ from pymatgen.io.ase import AseAtomsAdaptor
 
 from doped.core import Defect, DefectEntry
 from doped.parsing import defect_from_structures
+
+# ``doped`` accesses these ``doped.io`` backend-protocol names directly (rather than probing with
+# ``getattr(backend, name, default)``), so they are intercepted here to fail informatively -- e.g. for
+# ``DefectsParser(..., calculator="gpaw")`` -- rather than with an obscure ``AttributeError``. The
+# optional, ``getattr``-probed protocol names (``SUBFOLDER_PRIORITY``, ``FILE_PARSING_ACTIONS``,
+# ``MISMATCH_WARNING_SPECS``, ``check_run_compatibility``, ``check_entry_compatibility``,
+# ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
+# ``AttributeError``, so that those features degrade gracefully as intended:
+_UNIMPLEMENTED_BACKEND_ATTRS = (
+    "CALC_OUTPUT_MASK",
+    "get_calculation_outputs",
+    "get_competing_phase_entry",
+    "get_fermi_dos",
+    "get_planar_averaged_potentials",
+    "get_potentials_from_input",
+    "get_site_potentials",
+)
+
+
+def __getattr__(name: str) -> Any:
+    """
+    Raise an informative error for the ``doped.io`` backend protocol
+    functions/constants which are not implemented for GPAW (see the module
+    docstring).
+    """
+    if name in _UNIMPLEMENTED_BACKEND_ATTRS:
+        raise NotImplementedError(
+            f"`{__name__}.{name}` is not implemented. GPAW support in `doped` is experimental, and is "
+            f"not yet wired into the calculator-agnostic `doped.io` backend protocol, so `doped`'s "
+            f"generic parsing machinery cannot read GPAW outputs. Parse GPAW defect & bulk supercells "
+            f"with `doped.io.gpaw.outputs.GPAWDefectsParser`, rather than `DefectsParser`/"
+            f"`DefectParser`; for competing phases or a bulk DOS, build the `pymatgen` "
+            f"`ComputedStructureEntry` / `FermiDos` objects yourself and pass them to "
+            f"`CompetingPhasesAnalyzer` / `DefectThermodynamics` directly. See the GPAW tracking issue."
+        )
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 _GPAW_OUTPUT_PRIORITY = (
     "relaxed.gpw",
@@ -86,6 +149,11 @@ def _get_planar_averaged_potential_from_calc(calc) -> dict[str, np.ndarray]:
     """
     Helper to extract planar-averaged potentials from a GPAW calculator.
     """
+    # note that the FNV correction requires the bulk and defect potentials to be on the same grid, which
+    # is not checked here. Unless ``gpts``/``h`` are set explicitly, GPAW derives the grid from the cell
+    # and the plane-wave cutoff (``h = pi/sqrt(4*ecut)``), rounded up to an efficient FFT size which
+    # depends on the cell symmetry (``gpaw.utilities.gpts.get_number_of_grid_points``) -- so a defect
+    # supercell can differ from its bulk even at matched cell and settings. See the GPAW tracking issue:
     v_ext = calc.get_electrostatic_potential()
     planar_averages = {}
     for i in range(3):
@@ -142,7 +210,7 @@ class GPAWParser:
     Note:
         The Kumagai (eFNV) finite-size charge correction is applied by default
         during parsing, as it is generally preferred. However, the standard
-        Freysoldt (FNV) correction is also fully supported. If preferred, users
+        Freysoldt (FNV) correction is also supported. If preferred, users
         can manually apply it to the parsed defects using:
         `defect_entry.get_freysoldt_correction()`
     """
@@ -230,7 +298,9 @@ class GPAWParser:
         if hasattr(self.calc, "close"):
             self.calc.close()
 
-        # Break reference cycle
+        # Break reference cycle; note that GPAW can still emit ``AttributeError`` tracebacks from its own
+        # ``__del__`` at interpreter shutdown ("Exception ignored in: <function GPAW.__del__>"), which
+        # this cannot prevent. See the GPAW tracking issue:
         if self.atoms:
             self.atoms.calc = None
         self.calc = None
@@ -286,6 +356,16 @@ def _get_gpaw_defect_entry_from_parsers(
         defect_supercell=defect_parser.structure,
         bulk_supercell=bulk_parser.structure,
         defect_supercell_site=defect_site,
+        # GPAW entries carry only the keys below. ``doped``'s generic parsing also sets ``"calculator"``
+        # and ``"run_metadata"`` (bulk/defect settings-mismatch checks; also used by eigenvalue analysis),
+        # neither of which is available here -- unlike the site symmetries and structure metadata, which
+        # ``DefectEntry`` recomputes on demand when absent (``doped.core``). The missing ``"calculator"``
+        # key means ``doped`` dispatches to the VASP backend for these entries. That is harmless today --
+        # the FNV path hands its already-parsed potentials to ``doped.io.vasp.outputs``, which returns
+        # them unchanged, and eFNV reads them from here directly -- but it does mean eigenvalue analysis
+        # reports a missing ``vasprun.xml`` rather than saying GPAW is unsupported. Setting the key is
+        # deferred to the backend port: it would route the same calls to the unimplemented functions
+        # above, which would break the FNV correction. See the GPAW tracking issue:
         calculation_metadata={
             "bulk_path": bulk_data["bulk_path"],
             "defect_path": str(defect_path),
@@ -441,6 +521,11 @@ class GPAWDefectsParser:
                         except Exception as exc:
                             print(f"Warning: Kumagai correction failed for {folder}: {exc}")
 
+                    # the calculation folder name is used verbatim as the entry name, with no validation,
+                    # duplicate detection or sorting -- so e.g. an ``..._unrelaxed`` test folder becomes a
+                    # separate defect species in ``DefectThermodynamics`` -- while
+                    # ``get_gpaw_defect_entry`` above leaves the name regenerated from structure analysis,
+                    # so the two disagree. See the GPAW tracking issue:
                     defect_entry.name = folder
                     defect_dict[folder] = defect_entry
                 except Exception as exc:
