@@ -34,10 +34,10 @@ The GPAW workflow follows the usual ``doped`` sequence:
 #. Generate defect supercells with
    :class:`~doped.generation.DefectsGenerator`.
 #. Write ``structure.cif`` and GPAW Python inputs with
-   :class:`~doped.io.gpaw.inputs.GPAWDefectRelaxSet`.
+   :class:`~doped.io.gpaw.inputs.DefectsSet`.
 #. Run the GPAW calculations locally or through a scheduler.
 #. Parse the bulk and defect ``.gpw`` restart files with
-   :class:`~doped.io.gpaw.outputs.GPAWDefectsParser`.
+   :class:`~doped.parsing.DefectsParser` (with ``calculator="gpaw"``).
 #. Analyse the resulting :class:`~doped.core.DefectEntry` objects with
    :class:`~doped.thermodynamics.DefectThermodynamics`.
 
@@ -104,18 +104,20 @@ chosen to demonstrate the workflow and are not universal production settings.
 Parsing and charge corrections
 ------------------------------
 
-``GPAWDefectsParser`` parses completed calculations during initialisation. It
-automatically finds recognised GPAW restart files inside each calculation
-directory and stores the parsed entries in ``defect_dict``:
+GPAW calculations are parsed with ``doped``'s usual
+:class:`~doped.parsing.DefectsParser`, by setting ``calculator="gpaw"``. It
+finds recognised GPAW restart files inside each calculation directory and
+stores the parsed entries in ``defect_dict``:
 
 .. code-block:: python
 
-   from doped.io.gpaw import GPAWDefectsParser
+   from doped.parsing import DefectsParser
 
-   parser = GPAWDefectsParser(
+   parser = DefectsParser(
        output_path=".",
        bulk_path="bulk",
        dielectric=8.8963,
+       calculator="gpaw",
    )
    defect_dict = parser.defect_dict
 
@@ -130,7 +132,10 @@ both corrections:
    entry = defect_dict["v_Mg_+1"]
    entry.corrections.pop("kumagai_charge_correction", None)
    entry.corrections_metadata.pop("kumagai_charge_correction", None)
-   entry.get_freysoldt_correction()
+   entry.get_freysoldt_correction(
+       defect_planar_averaged_potentials="v_Mg_+1",  # the calculation directories
+       bulk_planar_averaged_potentials="bulk",
+   )
 
 Chemical potentials and formation energies
 ------------------------------------------
@@ -143,12 +148,10 @@ limits:
 .. code-block:: python
 
    from doped.chemical_potentials import get_doped_chempots_from_entries
-   from doped.io.gpaw import GPAWParser
+   from doped.io import get_calculation_outputs
    from doped.thermodynamics import DefectThermodynamics
 
-   bulk_parser = GPAWParser("bulk")
-   bulk_entry = bulk_parser.get_computed_structure_entry()
-   bulk_parser.close()
+   bulk_entry = get_calculation_outputs("bulk", calculator="gpaw").get_computed_entry()
 
    # phase_entries should contain consistently calculated elemental and
    # competing-phase entries.

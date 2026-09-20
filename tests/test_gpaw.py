@@ -13,9 +13,14 @@ from pymatgen.core.structure import Structure
 from test_utils import gpaw_data_dir
 
 from doped.io.gpaw.inputs import GPAWDefectRelaxSet
-from doped.io.gpaw.outputs import GPAWDefectsParser, _find_gpaw_output
+from doped.io.gpaw.outputs import _find_gpaw_output
+from doped.parsing import DefectParser, DefectsParser
 
 
+# ``DefectsParser`` runs the dimer-bond analysis, which imports ``shakenbreak.analysis``, which still
+# imports ``get_outcar`` from the dissolved ``doped.utils.parsing`` -- a pre-existing ``IO_refactor``
+# blocker unrelated to GPAW (see the GPAW tracking issue); remove once ShakeNBreak is updated:
+@pytest.mark.filterwarnings("ignore:get_outcar has moved:DeprecationWarning")
 class GPAWTest(unittest.TestCase):
     def setUp(self):
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
@@ -162,19 +167,18 @@ class GPAWTest(unittest.TestCase):
         using real static ``.gpw`` files (both ``v_Mg`` and ``Mg_O`` defects).
         """
         pytest.importorskip("gpaw")
-        from doped.io.gpaw.outputs import GPAWParser, get_gpaw_defect_entry
-
         # Path to the static test data directories
         gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         gpaw_bulk_dir = os.path.join(gpaw_mgo_dir, "bulk")
 
         assert os.path.exists(gpaw_bulk_dir), "Bulk test directory missing!"
 
-        # Initialize the parser
-        dp_gpaw = GPAWDefectsParser(
+        dp_gpaw = DefectsParser(
             output_path=gpaw_mgo_dir,
             bulk_path=gpaw_bulk_dir,
             dielectric=8.8963,
+            calculator="gpaw",
+            json_filename=False,
         )
 
         defect_dict = dp_gpaw.defect_dict
@@ -205,15 +209,13 @@ class GPAWTest(unittest.TestCase):
         mg_o_unrelaxed_dir = os.path.join(gpaw_mgo_dir, "Mg_O_unrelaxed")
         assert os.path.exists(mg_o_unrelaxed_dir), "Unrelaxed Mg_O +1 test directory missing!"
 
-        bulk_parser = GPAWParser(os.path.join(gpaw_bulk_dir, "relaxed.gpw"))
-        mg_o_unrelaxed_entry = get_gpaw_defect_entry(
+        mg_o_unrelaxed_entry = DefectParser.from_paths(
             defect_path=mg_o_unrelaxed_dir,
             bulk_path=gpaw_bulk_dir,
             dielectric=8.8963,
             charge_state=1,
-            bulk_parser=bulk_parser,
-        )
-        bulk_parser.close()
+            calculator="gpaw",
+        ).defect_entry
         mg_o_unrelaxed_entry.get_kumagai_correction()
 
         assert "kumagai_charge_correction" in mg_o_unrelaxed_entry.corrections
@@ -237,10 +239,12 @@ class GPAWTest(unittest.TestCase):
 
         assert os.path.exists(gpaw_bulk_dir), "MgO bulk test directory missing!"
 
-        dp_gpaw = GPAWDefectsParser(
+        dp_gpaw = DefectsParser(
             output_path=gpaw_mgo_dir,
             bulk_path=gpaw_bulk_dir,
             dielectric=8.8963,
+            calculator="gpaw",
+            json_filename=False,
         )
 
         defect_dict = dp_gpaw.defect_dict
@@ -261,7 +265,12 @@ class GPAWTest(unittest.TestCase):
             defect_entry = defect_dict[defect_name]
             defect_entry.corrections.pop("kumagai_charge_correction", None)
             defect_entry.corrections_metadata.pop("kumagai_charge_correction", None)
-            defect_entry.get_freysoldt_correction()
+            # ``doped`` parses the site potentials and uses eFNV by preference, so the planar-averaged
+            # potentials are given here explicitly (loaded from the ``.gpw`` files by the GPAW backend):
+            defect_entry.get_freysoldt_correction(
+                defect_planar_averaged_potentials=defect_entry.calculation_metadata["defect_path"],
+                bulk_planar_averaged_potentials=gpaw_bulk_dir,
+            )
             calculated_energy = float(defect_entry.corrections["freysoldt_charge_correction"])
 
             print(f"{defect_name} (Charge {defect_entry.charge_state}): {calculated_energy:.4f} eV")
@@ -283,11 +292,18 @@ class GPAWTest(unittest.TestCase):
         as those parsed up-front.
         """
         pytest.importorskip("gpaw")
+        from doped.io import get_calculation_outputs
         from doped.io.gpaw.outputs import get_potentials_from_input
 
         gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         gpaw_bulk_dir = os.path.join(gpaw_mgo_dir, "bulk")
-        dp_gpaw = GPAWDefectsParser(output_path=gpaw_mgo_dir, bulk_path=gpaw_bulk_dir, dielectric=8.8963)
+        dp_gpaw = DefectsParser(
+            output_path=gpaw_mgo_dir,
+            bulk_path=gpaw_bulk_dir,
+            dielectric=8.8963,
+            calculator="gpaw",
+            json_filename=False,
+        )
 
         for defect_entry in dp_gpaw.defect_dict.values():
             assert defect_entry.calculation_metadata["calculator"] == "gpaw"
@@ -299,9 +315,11 @@ class GPAWTest(unittest.TestCase):
         planar_potentials = get_potentials_from_input(
             gpaw_bulk_dir, potential_type="planar", dir_type="bulk"
         )
-        assert planar_potentials.keys() == entry.calculation_metadata["bulk_locpot_dict"].keys()
+        bulk_outputs = get_calculation_outputs(gpaw_bulk_dir, calculator="gpaw", label="bulk")
+        # the lazy getter keys axes by string, ``CalculationOutputs`` by int, as with VASP:
+        assert {int(axis) for axis in planar_potentials} == set(bulk_outputs.planar_averaged_potentials)
         for axis, potentials in planar_potentials.items():
-            np.testing.assert_allclose(potentials, entry.calculation_metadata["bulk_locpot_dict"][axis])
+            np.testing.assert_allclose(potentials, bulk_outputs.planar_averaged_potentials[int(axis)])
 
         # already-parsed potentials are returned as-is, and anything else is rejected:
         assert get_potentials_from_input(planar_potentials) is planar_potentials
@@ -341,17 +359,11 @@ class GPAWTest(unittest.TestCase):
         assert defect_outputs.band_gap is None  # Fermi-level band edges are meaningless when charged
         assert len(defect_outputs.structure) == len(bulk_outputs.structure) - 1  # a vacancy
 
-    # ``DefectsParser`` runs the dimer-bond analysis, which imports ``shakenbreak.analysis``, which
-    # still imports ``get_outcar`` from the dissolved ``doped.utils.parsing`` -- a pre-existing
-    # ``IO_refactor`` blocker unrelated to GPAW (see the tracking issue); remove once ShakeNBreak is
-    # updated:
-    @pytest.mark.filterwarnings("ignore:get_outcar has moved:DeprecationWarning")
     def test_gpaw_generic_defects_parser(self):
         """
-        Test that ``doped``'s calculator-agnostic ``DefectsParser`` gives the
-        same corrections for GPAW calculations as the GPAW-specific
-        ``GPAWDefectsParser``, with the structure-derived naming and the fuller
-        calculation metadata that the generic machinery provides.
+        Test the structure-derived defect naming and the calculation metadata
+        that ``doped``'s calculator-agnostic ``DefectsParser`` provides for
+        GPAW calculations.
         """
         pytest.importorskip("gpaw")
         from doped.parsing import DefectsParser
@@ -368,7 +380,7 @@ class GPAWTest(unittest.TestCase):
         # names come from structure analysis, so the unrelaxed folder no longer collides:
         assert set(dp.defect_dict) == {"v_Mg_+1", "v_Mg_-2", "Mg_O_+1", "Mg_O_unrelaxed_+1"}
 
-        expected_corrections = {  # identical to the GPAWDefectsParser values
+        expected_corrections = {
             "v_Mg_+1": -0.05491517,
             "v_Mg_-2": 1.20301268,
             "Mg_O_+1": 0.36016471,
@@ -409,10 +421,12 @@ class GPAWTest(unittest.TestCase):
         assert os.path.exists(gpaw_bulk_dir), "Graphene bulk test directory missing!"
 
         # Initialize the parser
-        dp_gpaw = GPAWDefectsParser(
+        dp_gpaw = DefectsParser(
             output_path=gpaw_graphene_dir,
             bulk_path=gpaw_bulk_dir,
             dielectric=np.diag([1e6, 1e6, 1.0]),
+            calculator="gpaw",
+            json_filename=False,
         )
 
         defect_dict = dp_gpaw.defect_dict

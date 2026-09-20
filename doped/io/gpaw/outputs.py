@@ -2,11 +2,10 @@
 Parsing of GPAW defect / bulk supercell calculation outputs.
 
 GPAW support is experimental, but implements the core of the ``doped.io``
-backend protocol, so GPAW calculations can be parsed with ``doped``'s generic
-machinery -- ``DefectsParser(..., calculator="gpaw")`` -- as well as with the
-GPAW-specific :class:`GPAWDefectsParser` here. The generic route is preferred:
-it also gives structure-derived defect naming, symmetry & degeneracy
-provenance, and the calculation metadata the rest of ``doped`` expects.
+backend protocol, so GPAW calculations are parsed with ``doped``'s generic
+machinery, as for any other calculator:
+``DefectsParser(..., calculator="gpaw")`` and
+``DefectParser.from_paths(..., calculator="gpaw")``.
 
 Not implemented, and so unavailable with GPAW:
 
@@ -31,21 +30,17 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.util.typing import PathLike
 
-from doped.core import Defect, DefectEntry
 from doped.io.outputs import CalculationOutputs
-from doped.parsing import defect_from_structures
 
-# ``doped`` accesses these ``doped.io`` backend-protocol names directly (rather than probing with
-# ``getattr(backend, name, default)``), so they are intercepted here to fail informatively -- e.g. for
-# ``DefectsParser(..., calculator="gpaw")`` -- rather than with an obscure ``AttributeError``. The
-# optional, ``getattr``-probed protocol names (``SUBFOLDER_PRIORITY``, ``FILE_PARSING_ACTIONS``,
-# ``MISMATCH_WARNING_SPECS``, ``check_run_compatibility``, ``check_entry_compatibility``,
+# ``doped`` accesses these two remaining unimplemented protocol names directly (rather than probing
+# with ``getattr(backend, name, default)``), so they are intercepted here to fail informatively rather
+# than with an obscure ``AttributeError``. The optional, ``getattr``-probed protocol names
+# (``SUBFOLDER_PRIORITY``, ``MISMATCH_WARNING_SPECS``, ``check_entry_compatibility``,
 # ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
 # ``AttributeError``, so that those features degrade gracefully as intended:
 _UNIMPLEMENTED_BACKEND_ATTRS = (
@@ -62,12 +57,11 @@ def __getattr__(name: str) -> Any:
     """
     if name in _UNIMPLEMENTED_BACKEND_ATTRS:
         raise NotImplementedError(
-            f"`{__name__}.{name}` is not implemented. GPAW support in `doped` is experimental, and is "
-            f"not yet wired into the calculator-agnostic `doped.io` backend protocol, so `doped`'s "
-            f"generic parsing machinery cannot read GPAW outputs. Parse GPAW defect & bulk supercells "
-            f"with `doped.io.gpaw.outputs.GPAWDefectsParser`, rather than `DefectsParser`/"
-            f"`DefectParser`; for competing phases or a bulk DOS, build the `pymatgen` "
-            f"`ComputedStructureEntry` / `FermiDos` objects yourself and pass them to "
+            f"`{__name__}.{name}` is not implemented; GPAW support in `doped` is experimental, and "
+            f"does not yet cover competing phase or bulk DOS parsing. Defect & bulk supercells are "
+            f'parsed as usual, with `DefectsParser(..., calculator="gpaw")`. For competing phases or '
+            f"a bulk DOS, build the `pymatgen` `ComputedStructureEntry` / `FermiDos` objects yourself "
+            f'(e.g. from `get_calculation_outputs(..., calculator="gpaw")`) and pass them to '
             f"`CompetingPhasesAnalyzer` / `DefectThermodynamics` directly. See the GPAW tracking issue."
         )
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -266,7 +260,7 @@ def get_potentials_from_input(
 
     Accepts a path to a ``.gpw`` file (or to a calculation directory containing
     one), or already-parsed potentials (dict/list/array), which are returned
-    as-is. ``GPAWDefectsParser`` parses both potential types into
+    as-is. :func:`get_calculation_outputs` parses both potential types into
     ``DefectEntry.calculation_metadata``, so the already-parsed case is the
     usual one here.
 
@@ -346,9 +340,8 @@ def get_calculation_outputs(
 
     This is the entry point which lets ``GPAW`` calculations be parsed with
     ``doped``'s generic machinery, i.e.
-    ``DefectsParser(..., calculator="gpaw")`` /
-    ``DefectParser.from_paths(..., calculator="gpaw")``, rather than with the
-    ``GPAW``-specific :class:`GPAWDefectsParser`.
+    ``DefectsParser(..., calculator="gpaw")`` and
+    ``DefectParser.from_paths(..., calculator="gpaw")``.
 
     Both potential types are parsed up-front (they come from the same ``.gpw``
     file as everything else, so there is nothing to save by deferring them),
@@ -552,306 +545,3 @@ def get_site_potentials(
     if outputs is not None and outputs.site_potentials is not None:
         return np.asarray(outputs.site_potentials)
     return get_gpaw_site_potentials(path)
-
-
-class GPAWParser:
-    """
-    Parser for GPAW calculations to interface with doped.
-
-    Note:
-        The Kumagai (eFNV) finite-size charge correction is applied by default
-        during parsing, as it is generally preferred. However, the standard
-        Freysoldt (FNV) correction is also supported. If preferred, users
-        can manually apply it to the parsed defects using:
-        `defect_entry.get_freysoldt_correction()`
-    """
-
-    def __init__(
-        self,
-        gpw_file: str | os.PathLike,
-    ):
-        """
-        Args:
-            gpw_file (str): Path to ``GPAW`` ``.gpw`` file.
-        """
-        from gpaw import GPAW
-
-        self.gpw_file = _find_gpaw_output(gpw_file)
-        self.calc = GPAW(self.gpw_file)
-        self.atoms = self.calc.get_atoms()
-        self.structure = _structure_from_calc(self.calc)
-        self.energy = self.calc.get_potential_energy()
-
-        # Pull charge directly from calculation parameters
-        try:
-            self.charge = self.calc.parameters.get("charge", None)
-        except Exception:
-            self.charge = None
-
-    def get_computed_structure_entry(self) -> ComputedStructureEntry:
-        """
-        Returns a ComputedStructureEntry for the calculation.
-        """
-        return ComputedStructureEntry(self.structure, self.energy)
-
-    def get_computed_entry(self) -> ComputedEntry:
-        """
-        Returns a ComputedEntry for the calculation.
-        """
-        return ComputedEntry(self.structure.composition, self.energy)
-
-    def get_site_potentials(self) -> np.ndarray:
-        """
-        Returns atomic site potentials.
-        """
-        return _get_site_potentials_from_calc(self.calc)
-
-    def get_locpot_dict(self) -> dict[str, np.ndarray]:
-        """
-        Returns planar-averaged potential dictionary.
-        """
-        return _get_planar_averaged_potential_from_calc(self.calc)
-
-    def get_eigenvalue_properties(self) -> tuple:
-        """
-        Returns (band_gap, cbm, vbm, efermi).
-        """
-        return _get_eigenvalue_properties_from_calc(self.calc)
-
-    def close(self):
-        """
-        Closes the underlying GPAW calculator.
-        """
-        if hasattr(self.calc, "close"):
-            self.calc.close()
-
-        # Break reference cycle; note that GPAW can still emit ``AttributeError`` tracebacks from its own
-        # ``__del__`` at interpreter shutdown ("Exception ignored in: <function GPAW.__del__>"), which
-        # this cannot prevent. See the GPAW tracking issue:
-        if self.atoms:
-            self.atoms.calc = None
-        self.calc = None
-        self.atoms = None
-
-
-def _get_gpaw_bulk_data(bulk_parser: GPAWParser, bulk_path: str | os.PathLike) -> dict[str, Any]:
-    """
-    Parse reusable bulk reference data once.
-    """
-    band_gap, cbm, vbm, efermi = bulk_parser.get_eigenvalue_properties()
-    return {
-        "bulk_entry": bulk_parser.get_computed_structure_entry(),
-        "bulk_site_potentials": bulk_parser.get_site_potentials(),
-        "bulk_locpot_dict": bulk_parser.get_locpot_dict(),
-        "bulk_path": str(bulk_path),
-        "vbm": vbm,
-        "band_gap": band_gap,
-        "cbm": cbm,
-        "efermi": efermi,
-    }
-
-
-def _get_gpaw_defect_entry_from_parsers(
-    defect_parser: GPAWParser,
-    bulk_parser: GPAWParser,
-    defect_path: str | os.PathLike,
-    dielectric: float | np.ndarray | None,
-    charge_state: int,
-    bulk_data: dict[str, Any],
-) -> DefectEntry:
-    """
-    Build a defect entry from already-open GPAW parsers.
-    """
-    (
-        defect,
-        defect_site,  # _relaxed_ defect site
-        *_,
-    ) = defect_from_structures(
-        defect_supercell=defect_parser.structure,
-        bulk_supercell=bulk_parser.structure,
-        return_all_info=True,
-        _parameter_order_warn=False,
-    )
-    assert isinstance(defect, Defect)  # typing
-
-    return DefectEntry(
-        defect=defect,
-        charge_state=charge_state,
-        sc_entry=defect_parser.get_computed_structure_entry(),
-        bulk_entry=bulk_data["bulk_entry"],
-        sc_defect_frac_coords=defect_site.frac_coords,
-        defect_supercell=defect_parser.structure,
-        bulk_supercell=bulk_parser.structure,
-        defect_supercell_site=defect_site,
-        calculation_metadata={
-            "calculator": "gpaw",
-            "bulk_path": bulk_data["bulk_path"],
-            "defect_path": str(defect_path),
-            "dielectric": dielectric,
-            "bulk_site_potentials": bulk_data["bulk_site_potentials"],
-            "defect_site_potentials": defect_parser.get_site_potentials(),
-            "bulk_locpot_dict": bulk_data["bulk_locpot_dict"],
-            "defect_locpot_dict": defect_parser.get_locpot_dict(),
-            "vbm": bulk_data["vbm"],
-            "band_gap": bulk_data["band_gap"],
-            "cbm": bulk_data["cbm"],
-            "efermi": bulk_data["efermi"],
-        },
-    )
-
-
-def get_gpaw_defect_entry(
-    defect_path: str | os.PathLike,
-    bulk_path: str | os.PathLike,
-    dielectric: float | np.ndarray | None = None,
-    charge_state: int = 0,
-    bulk_parser: GPAWParser | None = None,
-) -> DefectEntry:
-    """
-    Create a defect entry from GPAW output files or directories.
-    """
-    defect_parser = GPAWParser(defect_path)
-    close_bulk = bulk_parser is None
-    if bulk_parser is None:
-        bulk_parser = GPAWParser(bulk_path)
-
-    try:
-        bulk_data = _get_gpaw_bulk_data(bulk_parser, bulk_path)
-        return _get_gpaw_defect_entry_from_parsers(
-            defect_parser=defect_parser,
-            bulk_parser=bulk_parser,
-            defect_path=defect_path,
-            dielectric=dielectric,
-            charge_state=charge_state,
-            bulk_data=bulk_data,
-        )
-    finally:
-        defect_parser.close()
-        if close_bulk:
-            bulk_parser.close()
-
-
-class GPAWDefectsParser:
-    """
-    Class for rapidly parsing multiple GPAW defect supercell calculations.
-    """
-
-    def __init__(
-        self,
-        output_path: str | os.PathLike = ".",
-        dielectric: float | np.ndarray | None = None,
-        subfolder: str | os.PathLike | None = None,
-        bulk_path: str | os.PathLike | None = None,
-    ):
-        """
-        Args:
-            output_path (str): Path to directory containing defect folders.
-            dielectric (float or matrix): Dielectric constant for corrections.
-            subfolder (str): Optional subfolder within each defect folder.
-            bulk_path (str): Path to bulk reference folder.
-
-        Attributes:
-            defect_dict (dict): Parsed defect entries keyed by calculation folder name.
-        """
-        self.output_path = str(output_path)
-        self.dielectric = dielectric
-        self.subfolder = subfolder
-
-        if bulk_path is None:
-            # Try to find bulk folder
-            folders = [
-                f for f in os.listdir(self.output_path) if os.path.isdir(os.path.join(self.output_path, f))
-            ]
-            bulk_folders = [f for f in folders if "bulk" in f.lower()]
-            if not bulk_folders:
-                raise ValueError("Could not find bulk folder. Please specify bulk_path.")
-            bulk_folder = sorted(bulk_folders, key=lambda name: (name.lower() != "bulk", name))[0]
-            self.bulk_path = os.path.join(self.output_path, bulk_folder)
-        else:
-            bulk_path = os.fspath(bulk_path)
-            self.bulk_path = (
-                bulk_path if os.path.isabs(bulk_path) else os.path.join(self.output_path, bulk_path)
-            )
-
-        self.defect_dict = self._parse_all()
-
-    @staticmethod
-    def _get_charge_state(folder: str, parsed_charge: int | None) -> int:
-        """
-        Use the GPAW charge, falling back to a signed folder-name component.
-        """
-        if parsed_charge is not None:
-            return int(parsed_charge)
-        for component in reversed(folder.split("_")):
-            if component.startswith(("+", "-")):
-                try:
-                    return int(component)
-                except ValueError:
-                    pass
-        return 0
-
-    def _parse_all(self) -> dict[str, DefectEntry]:
-        """
-        Parse all GPAW defect calculations during initialisation.
-        """
-        defect_dict = {}
-        folders = [
-            f for f in os.listdir(self.output_path) if os.path.isdir(os.path.join(self.output_path, f))
-        ]
-
-        # Exclude bulk folder
-        defect_folders = [
-            f
-            for f in folders
-            if os.path.abspath(os.path.join(self.output_path, f)) != os.path.abspath(self.bulk_path)
-        ]
-
-        bulk_parser = GPAWParser(self.bulk_path)
-        try:
-            bulk_data = _get_gpaw_bulk_data(bulk_parser, self.bulk_path)
-            for folder in defect_folders:
-                defect_dir = os.path.join(self.output_path, folder)
-                try:
-                    gpw_file = _find_gpaw_output(defect_dir, self.subfolder)
-                except FileNotFoundError:
-                    continue
-                except ValueError as exc:
-                    print(f"Failed to parse {folder}: {exc}")
-                    continue
-
-                print(f"Parsing {folder}...")
-                defect_parser = None
-                try:
-                    defect_parser = GPAWParser(gpw_file)
-                    charge_state = self._get_charge_state(folder, defect_parser.charge)
-                    defect_entry = _get_gpaw_defect_entry_from_parsers(
-                        defect_parser=defect_parser,
-                        bulk_parser=bulk_parser,
-                        defect_path=os.path.dirname(gpw_file),
-                        dielectric=self.dielectric,
-                        charge_state=charge_state,
-                        bulk_data=bulk_data,
-                    )
-
-                    if self.dielectric is not None and charge_state != 0:
-                        try:
-                            defect_entry.get_kumagai_correction()
-                        except Exception as exc:
-                            print(f"Warning: Kumagai correction failed for {folder}: {exc}")
-
-                    # the calculation folder name is used verbatim as the entry name, with no validation,
-                    # duplicate detection or sorting -- so e.g. an ``..._unrelaxed`` test folder becomes a
-                    # separate defect species in ``DefectThermodynamics`` -- while
-                    # ``get_gpaw_defect_entry`` above leaves the name regenerated from structure analysis,
-                    # so the two disagree. See the GPAW tracking issue:
-                    defect_entry.name = folder
-                    defect_dict[folder] = defect_entry
-                except Exception as exc:
-                    print(f"Failed to parse {folder}: {exc}")
-                finally:
-                    if defect_parser is not None:
-                        defect_parser.close()
-        finally:
-            bulk_parser.close()
-
-        return defect_dict

@@ -5,7 +5,8 @@ from pathlib import Path
 from monty.serialization import dumpfn
 
 from doped.chemical_potentials import get_doped_chempots_from_entries
-from doped.io.gpaw import GPAWDefectsParser, GPAWParser
+from doped.io import get_calculation_outputs
+from doped.parsing import DefectsParser
 from doped.thermodynamics import DefectThermodynamics
 
 DIELECTRIC = 8.8963
@@ -13,21 +14,18 @@ DIELECTRIC = 8.8963
 
 def get_gpaw_entry(path):
     """Read one GPAW calculation as a computed structure entry."""
-    parser = GPAWParser(path)
-    try:
-        return parser.get_computed_structure_entry()
-    finally:
-        parser.close()
+    return get_calculation_outputs(path, calculator="gpaw").get_computed_entry()
 
 
 def main():
     calculation_dir = Path.cwd()
 
     print("Parsing MgO defect calculations...")
-    defect_parser = GPAWDefectsParser(
+    defect_parser = DefectsParser(
         output_path=calculation_dir,
         bulk_path="bulk",
         dielectric=DIELECTRIC,
+        calculator="gpaw",
     )
 
     print("Building GPAW-consistent Mg/O chemical potentials...")

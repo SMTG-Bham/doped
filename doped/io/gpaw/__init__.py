@@ -9,7 +9,7 @@ is still missing; those entry points raise ``NotImplementedError``. See the
 GPAW tracking issue.
 
 Submodule attributes can be accessed directly from this package (e.g.
-``from doped.io.gpaw import GPAWDefectsParser``); they are imported lazily to
+``from doped.io.gpaw import DefectsSet``); they are imported lazily to
 avoid unnecessary import costs.
 """
 

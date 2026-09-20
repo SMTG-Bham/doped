@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from monty.serialization import dumpfn
 
-from doped.io.gpaw import GPAWDefectsParser
+from doped.parsing import DefectsParser
 
 DIELECTRIC = np.diag([1e6, 1e6, 1.0])
 
@@ -14,10 +14,11 @@ def main():
     calculation_dir = Path.cwd()
 
     print("Parsing graphene defect calculations...")
-    parser = GPAWDefectsParser(
+    parser = DefectsParser(
         output_path=calculation_dir,
         bulk_path="bulk",
         dielectric=DIELECTRIC,
+        calculator="gpaw",
     )
     defect_dict = parser.defect_dict
     dumpfn(defect_dict, calculation_dir / "Graphene_GPAW_defect_dict.json.gz")
