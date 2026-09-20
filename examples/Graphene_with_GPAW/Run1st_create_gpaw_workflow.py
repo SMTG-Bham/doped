@@ -5,7 +5,7 @@ from pathlib import Path
 from pymatgen.core import Structure
 
 from doped.generation import DefectsGenerator
-from doped.io.gpaw import GPAWDefectRelaxSet
+from doped.io.gpaw import DefectRelaxSet
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
     }
 
     print("Writing bulk GPAW input...")
-    bulk_set = GPAWDefectRelaxSet(
+    bulk_set = DefectRelaxSet(
         defect_generator.bulk_supercell,
         charge_state=0,
         gpaw_settings=gpaw_settings,
@@ -38,7 +38,7 @@ def main():
     print("Writing defect GPAW inputs...")
     for defect_name, defect_entry in defect_generator.defect_entries.items():
         print(f"Setting up {defect_name}...")
-        defect_set = GPAWDefectRelaxSet(
+        defect_set = DefectRelaxSet(
             defect_entry,
             charge_state=defect_entry.charge_state,
             gpaw_settings=gpaw_settings,

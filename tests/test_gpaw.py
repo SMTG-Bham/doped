@@ -12,7 +12,7 @@ import pytest
 from pymatgen.core.structure import Structure
 from test_utils import gpaw_data_dir
 
-from doped.io.gpaw.inputs import GPAWDefectRelaxSet
+from doped.io.gpaw.inputs import DefectRelaxSet
 from doped.io.gpaw.outputs import _find_gpaw_output
 from doped.parsing import DefectParser, DefectsParser
 
@@ -37,7 +37,7 @@ class GPAWTest(unittest.TestCase):
 
     def test_gpaw_defect_relax_set(self):
         # Test with Structure
-        relax_set = GPAWDefectRelaxSet(self.structure, charge_state=1)
+        relax_set = DefectRelaxSet(self.structure, charge_state=1)
         relax_set.write_input(self.output_dir)
 
         assert os.path.exists(os.path.join(self.output_dir, "relax.py"))
@@ -57,7 +57,7 @@ class GPAWTest(unittest.TestCase):
             "xc": "PBE",
             "kpts": {"size": (2, 2, 2), "gamma": True},
         }
-        relax_set = GPAWDefectRelaxSet(self.structure, charge_state=-1, gpaw_settings=gpaw_settings)
+        relax_set = DefectRelaxSet(self.structure, charge_state=-1, gpaw_settings=gpaw_settings)
         relax_set.write_input(self.output_dir)
 
         with open(os.path.join(self.output_dir, "relax.py")) as f:
@@ -72,7 +72,7 @@ class GPAWTest(unittest.TestCase):
         gpaw_settings = {
             "mode": {"name": "lcao", "basis": "dzp"},
         }
-        relax_set = GPAWDefectRelaxSet(self.structure, charge_state=0, gpaw_settings=gpaw_settings)
+        relax_set = DefectRelaxSet(self.structure, charge_state=0, gpaw_settings=gpaw_settings)
         relax_set.write_input(self.output_dir)
 
         with open(os.path.join(self.output_dir, "relax.py")) as f:
@@ -81,7 +81,7 @@ class GPAWTest(unittest.TestCase):
             assert "from gpaw import GPAW, PW, LCAO, FD" in content
 
     def test_gpaw_singlepoint_set(self):
-        singlepoint_set = GPAWDefectRelaxSet(
+        singlepoint_set = DefectRelaxSet(
             self.structure,
             charge_state=1,
             calculation_type="singlepoint",
@@ -100,7 +100,7 @@ class GPAWTest(unittest.TestCase):
 
     def test_gpaw_initial_magnetic_moments(self):
         magnetic_moments = [1.0] + [0.0] * (len(self.structure) - 1)
-        input_set = GPAWDefectRelaxSet(
+        input_set = DefectRelaxSet(
             self.structure,
             gpaw_settings={"initial_magnetic_moments": magnetic_moments},
             calculation_type="singlepoint",
@@ -113,7 +113,7 @@ class GPAWTest(unittest.TestCase):
         assert f"atoms.set_initial_magnetic_moments({magnetic_moments!r})" in content
         assert "initial_magnetic_moments=" not in content
 
-        invalid_set = GPAWDefectRelaxSet(
+        invalid_set = DefectRelaxSet(
             self.structure,
             gpaw_settings={"initial_magnetic_moments": [*magnetic_moments, 0.0]},
         )

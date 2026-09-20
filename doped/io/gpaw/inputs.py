@@ -4,7 +4,7 @@ Code to generate GPAW defect calculation input files.
 GPAW support is experimental. Features which are not implemented, and so
 unavailable with GPAW:
 
-- :class:`GPAWDefectRelaxSet` is a standalone class, rather than a
+- :class:`DefectRelaxSet` is a standalone class, rather than a
   :class:`~doped.io.inputs.DefectsSetBase` subclass, so the ``DefectsSet``
   workflow (per-defect input sets for a full ``DefectsGenerator`` output,
   folder-structure writing, rattling, provenance serialisation) is
@@ -15,7 +15,7 @@ unavailable with GPAW:
   ``write_*_files()``), so ``CompetingPhases(..., calculator="gpaw")`` is
   not supported.
 - Default calculation parameters live hard-coded in
-  ``GPAWDefectRelaxSet._generate_script()``, rather than in data files
+  ``DefectRelaxSet._generate_script()``, rather than in data files
   alongside this module (as with ``doped/io/vasp/VASP_sets``), so they
   cannot be inspected or overridden as a set.
 
@@ -32,10 +32,10 @@ from pymatgen.util.typing import PathLike
 from doped.core import DefectEntry, _get_bulk_supercell, _get_defect_supercell
 from doped.io.inputs import DefectsSetBase
 
-# ``doped`` accesses the competing phase functions below directly on this backend module, and
-# ``DefectsSet``/``write_input_sets`` are the documented protocol names a user would reach for, so all are
-# intercepted here to fail informatively -- e.g. for ``CompetingPhases(..., calculator="gpaw")`` -- rather
-# than with an obscure ``AttributeError`` (see the module docstring, and ``doped.io.gpaw.outputs``):
+# ``doped`` accesses the competing phase functions below directly on this backend module (and
+# ``write_input_sets`` is the documented protocol name a user would reach for), so they are intercepted
+# here to fail informatively -- e.g. for ``CompetingPhases(..., calculator="gpaw")`` -- rather than with
+# an obscure ``AttributeError`` (see the module docstring, and ``doped.io.gpaw.outputs``):
 _UNIMPLEMENTED_BACKEND_ATTRS = (
     "get_kpoint_convergence_sets",
     "get_relaxation_sets",
@@ -55,17 +55,14 @@ def __getattr__(name: str) -> Any:
     """
     if name in _UNIMPLEMENTED_BACKEND_ATTRS:
         raise NotImplementedError(
-            f"`{__name__}.{name}` is not implemented. GPAW support in `doped` is experimental, and is "
-            f"not yet wired into the calculator-agnostic `doped.io` backend protocol, so `doped`'s "
-            f"generic input-generation machinery cannot write GPAW inputs. Generate GPAW defect "
-            f"supercell inputs with `doped.io.gpaw.inputs.GPAWDefectRelaxSet`, rather than "
-            f"`DefectsSet`; competing phase inputs are not supported for GPAW. See the GPAW "
-            f"tracking issue."
+            f"`{__name__}.{name}` is not implemented; GPAW support in `doped` is experimental, and "
+            f"does not yet cover competing phase input generation. Defect supercell inputs are "
+            f"generated as usual, with `doped.io.gpaw.inputs.DefectsSet`. See the GPAW tracking issue."
         )
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-class GPAWDefectRelaxSet:
+class DefectRelaxSet:
     """
     Class for generating input files (Python scripts) for GPAW defect
     relaxation.
@@ -268,10 +265,10 @@ class DefectsSet(DefectsSetBase):
     The calculator-agnostic orchestration (naming, folder structure,
     multiprocessed writing and provenance serialisation) comes from
     :class:`~doped.io.inputs.DefectsSetBase`; this only builds and writes the
-    per-defect :class:`GPAWDefectRelaxSet`\ s.
+    per-defect :class:`DefectRelaxSet`\ s.
     """
 
-    _input_set_name = "GPAWDefectRelaxSet"
+    _input_set_name = "DefectRelaxSet"
 
     def __init__(
         self,
@@ -287,22 +284,22 @@ class DefectsSet(DefectsSetBase):
                 inputs; see :class:`~doped.io.inputs.DefectsSetBase`.
             gpaw_settings (dict):
                 ``GPAW`` settings for the generated calculation scripts; see
-                :class:`GPAWDefectRelaxSet`. Default is ``None``.
+                :class:`DefectRelaxSet`. Default is ``None``.
             calculation_type (str):
                 Type of calculation script to generate, ``"relax"`` (default)
                 or ``"singlepoint"``.
             **kwargs:
-                Additional keyword arguments for :class:`GPAWDefectRelaxSet`.
+                Additional keyword arguments for :class:`DefectRelaxSet`.
         """
         self.gpaw_settings = gpaw_settings
         self.calculation_type = calculation_type
         super().__init__(defect_entries, **kwargs)
 
-    def _defect_input_set(self, defect_entry: DefectEntry) -> GPAWDefectRelaxSet:
+    def _defect_input_set(self, defect_entry: DefectEntry) -> DefectRelaxSet:
         """
-        Build the :class:`GPAWDefectRelaxSet` for a single defect entry.
+        Build the :class:`DefectRelaxSet` for a single defect entry.
         """
-        return GPAWDefectRelaxSet(
+        return DefectRelaxSet(
             defect_entry=defect_entry,
             charge_state=defect_entry.charge_state,
             gpaw_settings=self.gpaw_settings,
@@ -321,7 +318,7 @@ class DefectsSet(DefectsSetBase):
 
         if bulk:  # write the neutral bulk reference once, with the same settings
             bulk_folder = bulk if isinstance(bulk, str) else "bulk"
-            GPAWDefectRelaxSet(
+            DefectRelaxSet(
                 _get_bulk_supercell(defect_input_set.defect_entry),
                 charge_state=0,
                 gpaw_settings=defect_input_set.gpaw_settings,
@@ -352,6 +349,6 @@ class DefectsSet(DefectsSetBase):
                 Default (``None``) sets this automatically.
             **kwargs:
                 Additional keyword arguments for
-                :meth:`GPAWDefectRelaxSet.write_input`.
+                :meth:`DefectRelaxSet.write_input`.
         """
         super().write_files(output_path=output_path, bulk=bulk, processes=processes, **kwargs)

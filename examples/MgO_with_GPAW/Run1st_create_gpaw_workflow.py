@@ -4,7 +4,7 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 
 from doped.generation import DefectsGenerator
-from doped.io.gpaw import GPAWDefectRelaxSet
+from doped.io.gpaw import DefectRelaxSet
 
 
 def write_competing_phase_inputs(gpaw_settings):
@@ -46,7 +46,7 @@ def write_competing_phase_inputs(gpaw_settings):
             )
 
         print(f"Setting up competing phase {phase_name}...")
-        phase_set = GPAWDefectRelaxSet(
+        phase_set = DefectRelaxSet(
             phase_structure,
             charge_state=0,
             gpaw_settings=phase_settings,
@@ -80,7 +80,7 @@ def main():
     print("Writing GPAW input files...")
 
     # Setup Bulk using the finalized API parameters
-    bulk_set = GPAWDefectRelaxSet(
+    bulk_set = DefectRelaxSet(
         defect_gen.bulk_supercell,
         charge_state=0,
         gpaw_settings=gpaw_settings,
@@ -96,7 +96,7 @@ def main():
         print(f"Setting up {defect_name}...")
 
         # Pass the entry directly, and use the gpaw_settings dictionary
-        defect_set = GPAWDefectRelaxSet(
+        defect_set = DefectRelaxSet(
             defect_entry,
             charge_state=defect_entry.charge_state,
             gpaw_settings=gpaw_settings,
@@ -108,7 +108,7 @@ def main():
             unrelaxed_name = defect_name + "_unrelaxed"
             print(f"Setting up {unrelaxed_name}...")
 
-            singlepoint_set = GPAWDefectRelaxSet(
+            singlepoint_set = DefectRelaxSet(
                 defect_entry,
                 charge_state=defect_entry.charge_state,
                 gpaw_settings=gpaw_settings,

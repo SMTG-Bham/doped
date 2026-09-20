@@ -52,7 +52,7 @@ GPAW calculator.
 
    from pymatgen.core import Structure
 
-   from doped.io.gpaw import GPAWDefectRelaxSet
+   from doped.io.gpaw import DefectRelaxSet
 
    structure = Structure.from_file("POSCAR")
    gpaw_settings = {
@@ -63,7 +63,7 @@ GPAW calculator.
        "fmax": 0.05,
    }
 
-   relax_set = GPAWDefectRelaxSet(
+   relax_set = DefectRelaxSet(
        structure,
        charge_state=1,
        gpaw_settings=gpaw_settings,
@@ -75,7 +75,7 @@ single-point inputs can be generated with ``calculation_type="singlepoint"``:
 
 .. code-block:: python
 
-   singlepoint_set = GPAWDefectRelaxSet(
+   singlepoint_set = DefectRelaxSet(
        structure,
        charge_state=1,
        gpaw_settings=gpaw_settings,
