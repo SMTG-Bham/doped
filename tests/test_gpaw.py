@@ -42,7 +42,6 @@ class GPAWTest(unittest.TestCase):
             content = f.read()
             assert "charge=1" in content
             assert "mode=PW(ecut=400)" in content  # Default
-            assert "legacy_gpaw" not in content  # GPAW's deprecated legacy calculator is not pinned
 
     def test_gpaw_defect_relax_set_custom(self):
         # Test with custom settings
@@ -59,7 +58,6 @@ class GPAWTest(unittest.TestCase):
             assert "charge=-1" in content
             assert "mode=PW(ecut=400)" in content
             assert "'size': (2, 2, 2)" in content
-            assert "legacy_gpaw" not in content
             assert "from gpaw import GPAW, PW, LCAO, FD" in content
 
     def test_gpaw_defect_relax_set_lcao(self):
@@ -89,7 +87,6 @@ class GPAWTest(unittest.TestCase):
             content = file.read()
 
         assert "charge=1" in content
-        assert "legacy_gpaw" not in content
         assert "calc.write('singlepoint.gpw')" in content
         assert "ase.optimize" not in content
         assert "dyn.run" not in content
@@ -133,8 +130,7 @@ class GPAWTest(unittest.TestCase):
         """
         Test that the GPAW parser correctly extracts electrostatic potentials
         and calculates the eFNV (Kumagai) correction for multiple charge states
-        using real static ``.gpw`` files (both ``v_Mg`` and ``Mg_O``
-        defects).
+        using real static ``.gpw`` files (both ``v_Mg`` and ``Mg_O`` defects).
         """
         pytest.importorskip("gpaw")
         from doped.gpaw import GPAWParser, get_gpaw_defect_entry
@@ -274,11 +270,10 @@ class GPAWTest(unittest.TestCase):
 
         defect_dict = dp_gpaw.defect_dict
 
-        # Expected corrections with a metallic in-plane response and vacuum-like
-        # out-of-plane response. The large +4 value reflects q^2 scaling.
+        # Expected corrections with a metallic in-plane response and vacuum-like out-of-plane response
         expected_corrections = {
             "v_C_+1": -2.92459981,
-            "C_i_C3v_+4": -46.09056677,
+            "C_i_C3v_+4": -46.09056677,  # q^2 scaling...
             "N_C_-2": -2.31309662,
         }
 

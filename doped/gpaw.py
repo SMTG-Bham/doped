@@ -15,15 +15,6 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from doped.core import Defect, DefectEntry, _get_defect_supercell
 from doped.parsing import defect_from_structures
 
-# Note: gzipped ``.gpw`` files are not supported, as ``GPAW``'s reader requires a real seekable file
-# on disk (it cannot read a decompressed stream or in-memory buffer), so only uncompressed outputs are
-# listed here:
-_GZIP_ERROR = (
-    "Gzipped GPAW outputs are not supported: {path}\nGPAW's reader requires a real seekable file on "
-    "disk, so it cannot read a decompressed stream or in-memory buffer. Please decompress with "
-    "`gunzip` first."
-)
-
 _GPAW_OUTPUT_PRIORITY = (
     "relaxed.gpw",
     "singlepoint.gpw",
@@ -43,8 +34,6 @@ def _find_gpaw_output(
     """
     calc_path = Path(output_path)
     if calc_path.is_file():
-        if calc_path.name.lower().endswith(".gpw.gz"):
-            raise ValueError(_GZIP_ERROR.format(path=calc_path))
         if calc_path.name.lower().endswith(".gpw"):
             return str(calc_path)
         raise ValueError(f"GPAW output must be a '.gpw' file: {calc_path}")
@@ -66,8 +55,6 @@ def _find_gpaw_output(
     if len(gpw_files) == 1:
         return str(gpw_files[0])
     if not gpw_files:
-        if any(path.name.lower().endswith(".gpw.gz") for path in calc_path.iterdir() if path.is_file()):
-            raise ValueError(_GZIP_ERROR.format(path=calc_path))
         raise FileNotFoundError(f"No '.gpw' file found in: {calc_path}")
 
     filenames = ", ".join(sorted(path.name for path in gpw_files))
@@ -273,9 +260,9 @@ def _get_site_potentials_from_calc(calc) -> np.ndarray:
     ``GPAW``'s ``get_atomic_electrostatic_potentials()`` integrates the pseudo
     Hartree potential against each atom's L=0 compensation-charge shape
     function, which is the direct analogue of the average electrostatic
-    potential at the core reported by ``VASP`` in the ``OUTCAR``. It is
-    negated here to match the sign convention used by ``doped``/``pydefect``
-    for eFNV (Kumagai-Oba) corrections.
+    potential at the core reported by ``VASP`` in the ``OUTCAR``. It is negated
+    here to match the sign convention used by ``doped``/``pydefect`` for eFNV
+    (Kumagai-Oba) corrections.
 
     Args:
         calc (GPAW): ``GPAW`` calculator object.
@@ -469,9 +456,6 @@ def _get_gpaw_defect_entry_from_parsers(
     """
     Build a defect entry from already-open GPAW parsers.
     """
-    # Note: ``defect_from_structures`` returns the defect site in the PRIMITIVE structure, so
-    # ``return_all_info`` is needed to get the site in the defect supercell frame, which is what the
-    # finite-size corrections must be centred on (matching the ``VASP`` parsing workflow):
     (
         defect,
         defect_site,  # _relaxed_ defect site

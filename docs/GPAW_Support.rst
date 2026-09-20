@@ -5,8 +5,7 @@ GPAW Support
 
 ``doped`` provides an interface for generating and parsing defect calculations
 with `GPAW <https://gpaw.readthedocs.io/>`__, alongside the existing defect
-generation, correction and thermodynamic-analysis tools. The interface supports
-fixed-cell ionic relaxations and static single-point calculations.
+generation, correction and thermodynamic-analysis tools.
 
 Installation
 ------------
@@ -20,8 +19,7 @@ Install GPAW and its PAW datasets following the
    pip install doped[gpaw]
    gpaw install-data
 
-``GPAW`` 25.7.0 or later is required. ``pydefect``, which is used by ``doped``
-for the Kumagai (eFNV) correction, is already a core ``doped`` dependency.
+``GPAW`` 25.7.0 or later is required.
 
 .. note::
 
@@ -39,9 +37,7 @@ The GPAW workflow follows the usual ``doped`` sequence:
    :class:`~doped.gpaw.GPAWDefectRelaxSet`.
 #. Run the GPAW calculations locally or through a scheduler.
 #. Parse the bulk and defect ``.gpw`` restart files with
-   :class:`~doped.gpaw.GPAWDefectsParser`. Note that gzipped (``.gpw.gz``)
-   outputs are not supported, as ``GPAW``'s reader requires an uncompressed
-   file on disk.
+   :class:`~doped.gpaw.GPAWDefectsParser`.
 #. Analyse the resulting :class:`~doped.core.DefectEntry` objects with
    :class:`~doped.thermodynamics.DefectThermodynamics`.
 
@@ -175,14 +171,7 @@ Anisotropic and two-dimensional systems
 An anisotropic dielectric tensor should be supplied for anisotropic systems.
 For example, the graphene regression test uses
 ``numpy.diag([1e6, 1e6, 1.0])`` to represent metallic in-plane screening and a
-vacuum-like out-of-plane response. If the default Wigner-Seitz defect region
-leaves no atomic sampling sites, ``doped`` reduces the sampling radius and
-issues a warning.
-
-This fallback prevents an empty sampling set, but it does not replace a
-finite-size correction specifically derived for two-dimensional boundary
-conditions. Quantitative 2D results should therefore be checked against an
-appropriate specialised correction scheme and supercell convergence tests.
+vacuum-like out-of-plane response.
 
 Examples and API
 ----------------
