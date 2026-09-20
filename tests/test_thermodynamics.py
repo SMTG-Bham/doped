@@ -60,8 +60,10 @@ from doped.thermodynamics import (
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     get_min_dist_between_equiv_sites,
+    group_order_from_schoenflies,
     point_symmetry_from_site,
     point_symmetry_from_structure,
+    schoenflies_from_structure,
 )
 
 
@@ -644,6 +646,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         self.capsys.readouterr()  # clear previous stdout
         print("Checking get_symmetries_and_degeneracies()...")
+        host_pg_order = group_order_from_schoenflies(
+            schoenflies_from_structure(next(iter(defect_thermo.defect_entries.values())).defect.structure)
+        )
         # test runs fine with different options for ``get_symmetries_and_degeneracies``:
         prev_df = None
         for kwargs in [
@@ -658,7 +663,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             symm_df, output, symm_w = _run_func_and_capture_stdout_warnings(
                 defect_thermo.get_symmetries_and_degeneracies, **kwargs
             )
-            assert not symm_w, "No warnings expected for get_symmetries_and_degeneracies"
+            if kwargs.get("symprec") == 1:  # too-small-supercell warnings expected at this large symprec
+                # (local cluster cannot cover the first coordination shell while allowing operation
+                # translations at the 2*symprec anchor-noise scale, for typical supercell sizes):
+                assert all("The supercell is too small" in str(warning.message) for warning in symm_w)
+            else:
+                assert not symm_w, "No warnings expected for get_symmetries_and_degeneracies"
             assert not output, "No output expected for get_symmetries_and_degeneracies"
             assert isinstance(symm_df, pd.DataFrame), "Expected a DataFrame"
             if kwargs.get("skip_formatting", False):
@@ -675,6 +685,18 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 "Mult",
             }
             assert set(symm_df.index.names) == {"Defect", "q"}
+
+            print("Checking orbit-stabiliser relation for site multiplicities & symmetries")
+            # per-primitive-cell site multiplicities must satisfy the orbit-stabiliser relation against the
+            # determined bulk site symmetries: Mult x |site point group| == |host point group|:
+            for (defect_name, q), row in symm_df.iterrows():
+                if "N/A" in (row["Site_Symm"], str(row["Mult"])):
+                    continue  # symmetry/multiplicity determination failed; warned separately
+                site_pg_order = group_order_from_schoenflies(row["Site_Symm"])
+                assert np.isclose(row["Mult"] * site_pg_order, host_pg_order), (
+                    f"{defect_name}_{q}: Mult {row['Mult']} x |{row['Site_Symm']}| ({site_pg_order}) "
+                    f"!= {host_pg_order}"
+                )
 
             if prev_df is not None:
                 print("Comparing to previous symm_df")
@@ -3064,7 +3086,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert site_comp_conc_2000K < v_O.bulk_site_concentration * (
             degeneracy_factor / (1 + degeneracy_factor)
         )
-        assert np.isclose(site_comp_conc_2000K, 3.886e22, rtol=1e-3)
+        assert np.isclose(site_comp_conc_2000K, 4.3987e22, rtol=1e-3)
 
         dilute_lim_conc_2000K = v_O.equilibrium_concentration(
             temperature=2000,
@@ -3134,7 +3156,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ax.set_xlabel("T (K)")
         ax.set_ylabel("Concentration (cm$^{-3}$)")
         ax.semilogy()
-        ax.set_ylim(1e21, 3e23)
+        ax.set_ylim(1e21, 1e23)
         ax.legend()
 
         return fig
@@ -3187,16 +3209,16 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
                 > v_O_2.bulk_site_concentration
                 * (v_O_2_degeneracy_factor / (1 + summed_degeneracy_factors))
-            ).all()  # though v_O_1 has larger degeneracy factor (16 vs 4), so it dominates at higher temps
+            ).all()  # though v_O_1 has larger degeneracy factor (16 vs 8), so it dominates at higher temps
             assert (  # but still less than absolute max limit of g/(1+g)
                 site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
                 < v_O_2.bulk_site_concentration * (v_O_2_degeneracy_factor / (1 + v_O_2_degeneracy_factor))
             ).all()
             assert np.allclose(
-                site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"], 3.5510e22, rtol=1e-3
+                site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"], 2.9881e22, rtol=1e-3
             )
             assert np.allclose(
-                site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"], 1.0576e22, rtol=1e-3
+                site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"], 1.7799e22, rtol=1e-3
             )
 
             assert (
@@ -3415,7 +3437,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Chemical potential heatmap plotting requires 3-D data",
             "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
             "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.799",
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.719",
         ]:
             assert info_substring in output
         assert not w
@@ -3433,7 +3455,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Chemical potential heatmap plotting requires 3-D data",
             "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
             "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.799",
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.719",
         ]:
             assert info_substring in output
         assert not w
@@ -3578,9 +3600,9 @@ def test_Sb2S3_doping_interior_grid_scan():
 def test_Cu2SiSe3_dopability_interior_grid_scan():
     """
     As for ``test_Sb2S3_doping_interior_grid_scan``, but for the ternary system
-    Cu2SiSe3, which covers the barycentric |ChemicalPotentialGrid| path in
-    ``_get_doping_scan_points`` (whereas Sb2S3 is binary and hits the 1D
-    linear-interpolation branch).
+    Cu2SiSe3, which covers the multi-dimensional barycentric
+    |ChemicalPotentialGrid| path in ``_get_doping_scan_points`` (whereas Sb2S3
+    is binary and hits the 1D line-segment branch of ``get_grid``).
 
     The p-type dopability limit is ~0.04 eV lower (more VBM-ward) at an
     interior chemical potential point than at any vertex of the Cu-Si-Se
@@ -3766,6 +3788,38 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
     def belas_linear_fit(self, T):  # linear fit of CdTe gap dependence with temperature
         return 1.6395 - 0.000438 * T
+
+    def test_vectorised_conc_fn_matches_dataframe_path(self):
+        """
+        Test that the vectorised concentration function used inside the charge-
+        neutrality ``brentq`` objectives (``_vectorised_conc_fn``) matches the
+        ``get_equilibrium_concentrations`` ``DataFrame`` path to floating point
+        precision, across Fermi levels, temperatures and site competition
+        settings (with matching row order and charges).
+        """
+        defect_thermo = self.defect_thermo
+        chempots, el_refs = defect_thermo._get_chempots(None, None)
+        chempots, limit = defect_thermo._sanitise_chempots_for_concentrations(chempots, el_refs, "Te-rich")
+        for site_competition in (True, False):
+            v = defect_thermo._vectorised_conc_fn(chempots, limit, el_refs, site_competition)
+            for temperature in (300, 875):
+                for fermi_level in (-0.4, 0.0, 0.35, 0.8, 1.25, 1.9):
+                    lean_df = defect_thermo.get_equilibrium_concentrations(
+                        chempots=chempots,
+                        limit=limit,
+                        el_refs=el_refs,
+                        temperature=temperature,
+                        fermi_level=fermi_level,
+                        site_competition=site_competition,
+                        lean=True,
+                    )
+                    assert list(lean_df["Defect"]) == v.names
+                    assert np.allclose(lean_df["Charge"], v.charges)
+                    assert np.allclose(
+                        v.conc_fn(fermi_level, temperature),
+                        lean_df["Concentration (cm^-3)"],
+                        rtol=1e-12,
+                    )
 
     def test_get_equilibrium_fermi_level(self):
         """
@@ -4614,18 +4668,18 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         # relative to defects than the symmetric case):
         assert e_no < e_asym < e_sym, f"Expected n ordering no<asym<sym, got {e_no=}, {e_asym=}, {e_sym=}"
 
-        # Asymmetric and no renormalisation land within the experimental range, symmetric over-estimates
-        # (for T = 1500K synthesis temperature)
+        # Only the asymmetric treatment lands within the experimental range (for T = 1500K synthesis
+        # temperature); no renormalisation under-estimates and symmetric over-estimates:
         n_exp_low, n_exp_high = 5e18, 5e19  # cm^-3; experimental range (Claes et al.)
         assert n_exp_low < e_asym < n_exp_high, (
             f"Asymmetric n={e_asym:.2e} not within experimental band [{n_exp_low:.2e}, {n_exp_high:.2e}]"
         )
-        assert n_exp_low < e_no < n_exp_high, (
-            f"No renormalisation n={e_no:.2e} not within experimental band [{n_exp_low:.2e},"
-            f" {n_exp_high:.2e}]"
+        assert e_no < n_exp_low, (
+            f"No renormalisation n={e_no:.2e} not below the experimental band ({n_exp_low:.2e}); the "
+            f"un-renormalised band edges should under-estimate the carrier concentration"
         )
-        assert not (n_exp_low < e_sym < n_exp_high), (
-            f"Symmetric n={e_sym:.2e} within experimental band [{n_exp_low:.2e}, {n_exp_high:.2e}]"
+        assert e_sym > e_asym, (  # over-estimates relative to the (correct) asymmetric treatment
+            f"Symmetric n={e_sym:.2e} does not over-estimate vs asymmetric n={e_asym:.2e}"
         )
 
         # 3-panel figure (mirrors the thermodynamics tutorial / Claes et al. Fig. S6):

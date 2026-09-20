@@ -12,10 +12,11 @@ definition site and not asserted here.
 """
 
 import copy
+import warnings
 
 import numpy as np
 import pytest
-from pymatgen.core import Composition, Element, Lattice, PeriodicSite, Structure
+from pymatgen.core import Composition, Element, Lattice, PeriodicSite, Species, Structure
 from pymatgen.core.ion import Ion
 from pymatgen.core.structure import Molecule
 from pymatgen.entries.computed_entries import ComputedStructureEntry
@@ -203,6 +204,36 @@ class TestSGACaching:
         ops_a.clear()  # caller mutation...
         assert sga.get_symmetry_operations() == ops_b  # ...does not corrupt the cache
 
+    def test_get_symmetry_reuses_init_dataset_bit_identically(self):
+        # patched ``_get_symmetry`` extracts rotations/translations from the symmetry dataset already
+        # computed at ``SpacegroupAnalyzer`` init for non-magnetic cells, rather than re-calling
+        # ``spglib.get_symmetry``; outputs must be identical to the original method (magnetic cells fall
+        # back to it):
+        from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+
+        from doped.utils.efficiency import _original_get_symmetry
+
+        magmom_struct = Structure(CUBIC_LATTICE, ["Fe", "Fe"], [[0, 0, 0], [0.5, 0.5, 0.5]])
+        magmom_struct.add_site_property("magmom", [1.0, 2.0])  # magnetic cell -> fallback branch
+        perturbed = Structure(
+            CUBIC_LATTICE, ["Cd", "Te"], [[0.0001, -0.0002, 0.0001], [0.2499, 0.2502, 0.2498]]
+        )
+        for struct in [_simple_structure(), _simple_structure() * 2, perturbed, magmom_struct]:
+            sga = SpacegroupAnalyzer(struct)
+            magnetic = "magmom" in struct.site_properties
+            # pin the fast-path predicate itself, so the optimisation can't be silently disabled (e.g.
+            # by a ``pymatgen`` attribute rename) leaving these legs vacuously comparing like with like:
+            assert len(sga._cell) == (4 if magnetic else 3), struct.formula
+            assert magnetic or hasattr(sga._space_group_data, "rotations"), struct.formula
+            rotations, translations = sga._get_symmetry()  # patched, fresh SGA
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")  # magnetic-path spglib DeprecationWarning
+                orig_rotations, orig_translations = _original_get_symmetry(SpacegroupAnalyzer(struct))
+            assert rotations.dtype == orig_rotations.dtype, struct.formula
+            assert translations.dtype == orig_translations.dtype, struct.formula
+            assert np.array_equal(rotations, orig_rotations), struct.formula
+            assert translations.tobytes() == orig_translations.tobytes(), struct.formula  # bit-identical
+
 
 class TestSharedCacheMutationGuards:
     def test_get_all_equiv_sites_returns_fresh_list(self):
@@ -243,6 +274,90 @@ class TestSharedCacheMutationGuards:
         c2 = _cache_ready_Composition_init("Fe2O3")
         assert c1 == c2
         assert c1 is not c2  # fresh copy each call (incl. cache hits)
+
+    def test_get_orientation_preserving_primitive_returns_fresh_copies(self):
+        from doped.utils.symmetry import _get_orientation_preserving_primitive
+
+        supercell = _simple_structure() * 2
+        prim_and_matrix = _get_orientation_preserving_primitive(supercell)
+        assert prim_and_matrix is not None
+        prim, matrix = prim_and_matrix
+        n_prim_sites, matrix_00 = len(prim), matrix[0, 0]
+        prim.remove_sites([0])  # caller mutation of both returned objects...
+        matrix[0, 0] = 99
+        prim2, matrix2 = _get_orientation_preserving_primitive(supercell)
+        assert len(prim2) == n_prim_sites  # ...does not corrupt the cache
+        assert matrix2[0, 0] == matrix_00
+
+    def test_get_orientation_preserving_primitive_handles_dummy_species(self):
+        # ``DummySpecies.Z`` is ``hash(symbol)`` -- randomised per process and far outside ``spglib``'s
+        # int32 atomic-number range -- which raised ``SpglibError`` for any "X"-decorated structure;
+        # now handled without issue:
+        from doped.utils.symmetry import _get_orientation_preserving_primitive
+
+        supercell = _simple_structure() * 2
+        for frac_coords in np.array(list(np.ndindex(2, 2, 2))) / 2 + 0.125:
+            supercell.append("X", frac_coords)  # one X per sub-cell -> still a 2x2x2 supercell
+        prim, matrix = _get_orientation_preserving_primitive(supercell)
+        assert len(prim) == 3  # Cd + Te + X
+        assert "X0+" in [str(specie) for specie in prim.types_of_species]  # X survives the round-trip
+        assert round(float(np.linalg.det(matrix))) == 8
+
+
+class TestNonMagneticSymmetryDefault:
+    """
+    ``doped`` ignores magnetism in symmetry analysis unless
+    ``USE_MAGNETIC_SYMMETRY=1``; spins carried on ``Species`` objects must be
+    stripped for that, just like ``magmom`` site properties.
+    """
+
+    @staticmethod
+    def _spin_structure():
+        return Structure(
+            CUBIC_LATTICE,
+            [Species("Fe", 2, spin=4), Species("Fe", 2, spin=-4), Element("O")],
+            [[0, 0, 0], [0.5, 0.5, 0.5], [0.25, 0.25, 0.25]],
+        )
+
+    def test_species_spins_ignored_by_default(self, monkeypatch):
+        # spins live on the ``Species`` objects rather than in ``site_properties``, so they need to be
+        # pruned to avoid magnetic symmetry handling
+        struct = self._spin_structure()
+        monkeypatch.delenv("USE_MAGNETIC_SYMMETRY", raising=False)
+        sga = get_sga(struct)
+        assert len(sga._cell) == 3  # no magmoms handed to spglib
+        assert sga.get_space_group_symbol() == "R-3m"  # spin-degenerate Fe -> inversion retained
+
+        monkeypatch.setenv("USE_MAGNETIC_SYMMETRY", "1")
+        magnetic_sga = get_sga(struct)
+        assert len(magnetic_sga._cell) == 4
+        assert magnetic_sga.get_space_group_symbol() == "R3m"  # spins split the Fe sites -> no inversion
+
+    def test_spin_stripping_preserves_occupancies_and_oxidation_states(self, monkeypatch):
+        # only ``spin`` may be dropped: occupancies must be summed when spin variants merge onto one site,
+        # and oxidation states kept (else mixed-valence sites merge, giving spuriously `higher` symmetry):
+        monkeypatch.delenv("USE_MAGNETIC_SYMMETRY", raising=False)
+        disordered = Structure(
+            CUBIC_LATTICE, [{Species("Fe", 2, spin=4): 0.5, Species("Fe", 2, spin=-4): 0.5}], [[0, 0, 0]]
+        )
+        assert get_sga(disordered)._structure[0].species == Composition({Species("Fe", 2): 1.0})
+
+        mixed_valence = Structure(
+            CUBIC_LATTICE,
+            [Species("Fe", 2, spin=4), Species("Fe", 3, spin=-4), Element("O")],
+            [[0, 0, 0], [0.5, 0.5, 0.5], [0.25, 0.25, 0.25]],
+        )  # Fe2+ and Fe3+ stay distinct -> no inversion centre, unlike the same-valence case above
+        assert get_sga(mixed_valence).get_space_group_symbol() == "R3m"
+
+    def test_spin_stripping_does_not_mutate_input_or_break_dummy_species(self, monkeypatch):
+        monkeypatch.delenv("USE_MAGNETIC_SYMMETRY", raising=False)  # else the strip block is skipped
+        # ``Structure.remove_spin()`` is not usable here: it rebuilds every species as a ``Species``, which
+        # raises on the ``DummySpecies`` ("X") sites used throughout ``doped``:
+        struct = self._spin_structure()
+        struct.append("X", [0.75, 0.75, 0.75])
+        species_before = struct.types_of_species
+        get_sga(struct)  # must not raise
+        assert struct.types_of_species == species_before  # caller's structure untouched
 
 
 class TestDefectAndDefectEntryHashEq:

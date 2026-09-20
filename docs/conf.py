@@ -50,7 +50,15 @@ templates_path = ["_templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "JOSS", "Dev_ToDo.md", "Future_ToDo.md"]
+exclude_patterns = [
+    "_build",
+    "jupyter_execute",  # notebook execution output; picked up as (duplicate) source documents otherwise
+    "Thumbs.db",
+    ".DS_Store",
+    "JOSS",
+    "Dev_ToDo.md",
+    "Future_ToDo.md",
+]
 
 myst_enable_extensions = [
     "html_admonition",
@@ -112,10 +120,40 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "pymatgen.analysis.defects": ("https://materialsproject.github.io/pymatgen-analysis-defects/", None),
     "ase": ("https://docs.ase-lib.org/", None),
+    "spglib": ("https://spglib.readthedocs.io/en/stable/", None),
+    "python": ("https://docs.python.org/3", None),
+    "matplotlib": ("https://matplotlib.org/stable/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
 }
+
+nitpicky = True  # Warn (loudly) about unresolvable cross-references
+# ``doped`` docstrings use short type names in ``Args:`` sections (e.g. ``Structure``, ``np.ndarray``,
+# ``3x3 matrix``), which napoleon/autodoc turn into ``py:class`` references that can never be resolved,
+# so these are ignored -- only for ``py:class``, keeping explicit ``:meth:``/``:func:``/``:attr:`` loud:
+nitpick_ignore_regex = [  # note: these are full-match (i.e. ``re.fullmatch``) patterns:
+    ("py:class", r"[^.]+"),  # bare type names; e.g. ``Structure``, ``PathLike``, ``ArrayLike``...
+    ("py:class", r".*\s.*"),  # prose type descriptions; e.g. ``3x3 matrix``, ``2D sequence``...
+    ("py:class", r"(np|pd|plt|mpl|go)\..*"),  # abbreviated module names in docstring types
+    ("py:class", r"pathlib\._local\..*"),  # ``pathlib.Path`` annotations, with python >= 3.13
+    ("py:class", r"doped\.[\w.]*\._\w+"),  # private ``doped`` helper classes shown as bases (e.g. mixins)
+    # packages with no Sphinx inventories to link against;
+    ("py:.*", r"(monty|tqdm|sympy|pydefect|vise|plotly|dscribe)\..*"),
+    # ``pymatgen-analysis-defects`` (mapped above) publishes only module entries in its inventory:
+    ("py:(?!module).*", r"pymatgen\.analysis\.defects\..*"),
+]
 
 # -- Options for autodoc -----------------------------------------------------
 autoclass_content = "both"
+
+# ``doped`` groups attribute docs under bespoke headings; alias them to napoleon's
+# ``Attributes`` section so they generate real ``py:attribute`` targets (and hence
+# working ``:attr:`` cross-references) while keeping their descriptive headings:
+napoleon_custom_sections = [
+    ("Key Attributes", "Attributes"),
+    ("Core Attributes", "Attributes"),
+    ("Parsing Attributes", "Attributes"),
+    ("Generation Attributes", "Attributes"),
+]
 
 # -- Options for nb extension -----------------------------------------------
 nb_execution_mode = "off"
@@ -139,16 +177,21 @@ rst_prolog = """
 .. |DefectsParser| replace:: :class:`~doped.parsing.DefectsParser`
 .. |DefectThermodynamics| replace:: :class:`~doped.thermodynamics.DefectThermodynamics`
 .. |get_TLs| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels`
+.. |get_formation_energies| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`
 .. |ChemicalPotentialGrid| replace:: :class:`~doped.chemical_potentials.ChemicalPotentialGrid`
+.. |get_grid| replace:: :meth:`~doped.chemical_potentials.ChemicalPotentialGrid.get_grid`
+.. |get_constrained_grid| replace:: :meth:`~doped.chemical_potentials.ChemicalPotentialGrid.get_constrained_grid`
 .. |CompetingPhases| replace:: :class:`~doped.chemical_potentials.CompetingPhases`
 .. |CompetingPhasesAnalyzer| replace:: :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
 .. |Defect| replace:: :class:`~doped.core.Defect`
 .. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
+.. |bulk_site_concentration| replace:: :attr:`DefectEntry.bulk_site_concentration <doped.core.DefectEntry.bulk_site_concentration>`
 .. |DefectsSet| replace:: :class:`~doped.vasp.DefectsSet`
 .. |get_orientational_degeneracy| replace:: :func:`~doped.utils.symmetry.get_orientational_degeneracy()`
 .. |point_symmetry_from_defect_entry| replace:: :func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()`
+.. |get_X_rich_poor_limit| replace:: :func:`~doped.chemical_potentials.get_X_rich_poor_limit`
 .. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
-.. |PeriodicSite| replace:: :class:`~pymatgen.core.structure.PeriodicSite`
+.. |PeriodicSite| replace:: :class:`~pymatgen.core.sites.PeriodicSite`
 .. |Composition| replace:: :class:`~pymatgen.core.composition.Composition`
 .. |Lattice| replace:: :class:`~pymatgen.core.lattice.Lattice`
 .. |Atoms| replace:: :class:`~ase.Atoms`
@@ -156,13 +199,20 @@ rst_prolog = """
 .. |Procar| replace:: :class:`~pymatgen.io.vasp.outputs.Procar`
 .. |Outcar| replace:: :class:`~pymatgen.io.vasp.outputs.Outcar`
 .. |StructureMatcher| replace:: :class:`~pymatgen.core.structure_matcher.StructureMatcher`
+.. |VaspInputSet| replace:: :class:`~pymatgen.io.vasp.sets.VaspInputSet`
 .. |StructureMatcher_scan_stol| replace:: :func:`~doped.utils.efficiency.StructureMatcher_scan_stol`
 .. |ComputedEntry| replace:: :class:`~pymatgen.core.entries.ComputedEntry`
 .. |ComputedStructureEntry| replace:: :class:`~pymatgen.core.entries.ComputedStructureEntry`
 .. |PhaseDiagram| replace:: :class:`~pymatgen.analysis.phase_diagram.PhaseDiagram`
 .. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
-.. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__
 .. |DeepWiki| replace:: `DeepWiki <https://deepwiki.com/SMTG-Bham/doped>`__
+.. |Dielectric Constant| replace:: :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+.. |DOS Calculations| replace:: :ref:`Tips:Density of States (DOS) Calculations`
+.. |Installation docs| replace:: :ref:`Installation docs <setup_potcars_mp_api>`
+.. |Shallow Defects| replace:: :ref:`Tips:Perturbed Host States (Shallow Defects)`
+.. |Competing Phases Tips| replace:: :ref:`Tips:Competing Phases & Chemical Potentials`
+.. |FermiSolver tutorial| replace:: :doc:`FermiSolver tutorial <fermisolver_tutorial>`
+.. |chempot limits tutorial| replace:: :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`
 .. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.1038/s41578-025-00879-y>`__
 """

@@ -1080,6 +1080,41 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         for label, color in subset.items():
             assert color == full[label], label
 
+    def test_get_defect_colors_and_linestyles_dominance(self):
+        """
+        Test that ``get_defect_colors_and_linestyles`` with
+        ``dominance="formation_energy"`` reproduces the colours of the
+        corresponding formation energy diagram, independent of the input (plot)
+        ordering of ``lines`` (unlike the default plot ordering).
+        """
+        from doped.utils.plotting import get_defect_colors_and_linestyles
+
+        thermo = self.CdTe_LZ_thermo_wout_meta  # two Te_i (and two Cd_i) groups at default dist_tol
+        legend_colors = list(_legend_color_dict(thermo.plot(limit="Te-rich")).values())
+        lines = list(thermo.transition_level_map)  # plotted lines, in plot order
+        colors, linestyles = get_defect_colors_and_linestyles(
+            thermo, lines, dominance="formation_energy", limit="Te-rich"
+        )
+        assert list(colors.values()) == legend_colors
+        default_colors, _linestyles = get_defect_colors_and_linestyles(  # ``lines`` defaults to all
+            thermo, dominance="formation_energy", limit="Te-rich"
+        )  # defects in ``thermo``, in plot order:
+        assert default_colors == colors
+        assert set(linestyles.values()) == {"-"}  # default ``variant_style="fade"``; no linestyle cycling
+
+        # the default (plot) ordering gives different variant shades here, and is order-dependent, while
+        # the thermodynamic dominance ordering is not:
+        plot_ordered_colors, _linestyles = get_defect_colors_and_linestyles(thermo, lines)
+        assert list(plot_ordered_colors.values()) != legend_colors
+        reversed_colors, _linestyles = get_defect_colors_and_linestyles(
+            thermo, lines[::-1], dominance="formation_energy", limit="Te-rich"
+        )
+        assert reversed_colors == colors  # same colour per line, despite the reversed input order
+
+        with pytest.raises(ValueError) as exc:
+            get_defect_colors_and_linestyles(thermo, lines, dominance="concentration")
+        assert "`dominance` must be either `None`, 'formation_energy' or a" in str(exc.value)
+
     def test_type_keyed_colors_variant_shading_and_linestyles(self):
         """
         Test that multiple plotted defects of the same type get lightness

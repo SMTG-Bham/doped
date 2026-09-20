@@ -196,10 +196,9 @@ def get_freysoldt_correction(
 
     As a general rule of thumb, the charge correction terms should follow
     relatively consistent trends in terms of magnitudes. A large outlier
-    (easily scanned with
-    :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-    often indicates something unusual/unexpected. See the FNV/eFNV and other
-    finite-size charge correction papers for further details.
+    (easily scanned with |get_formation_energies|) often indicates something
+    unusual/unexpected. See the FNV/eFNV and other finite-size charge
+    correction papers for further details.
 
     Args:
         defect_entry:
@@ -211,10 +210,9 @@ def get_freysoldt_correction(
             not necessarily the same as the raw output of a VASP dielectric
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
-            ``defect_entry`` ``calculation_metadata`` if available.
-            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-            tutorial section for information on calculating and converging the
-            dielectric constant.
+            ``defect_entry`` ``calculation_metadata`` if available. See the
+            |Dielectric Constant| tutorial section for information on
+            calculating and converging the dielectric constant.
         defect_planar_averaged_potentials:
             The planar-averaged electrostatic potential from the defect
             supercell calculation, as a dictionary in the form:
@@ -250,10 +248,9 @@ def get_freysoldt_correction(
             (default), uses the default ``doped`` style
             (from ``doped/utils/doped.mplstyle``).
         **kwargs:
-            Additional kwargs to pass to
-            :func:`~pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction`
-            (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
-            ``defect_frac_coords``).
+            Additional kwargs to pass to the ``pymatgen-analysis-defects``
+            ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
+            ``mad_tol``, ``q_model``, ``step``, ``defect_frac_coords``).
 
     Returns:
         ``CorrectionResults`` (summary of the corrections applied and
@@ -437,10 +434,9 @@ def get_kumagai_correction(
 
     As a general rule of thumb, the charge correction terms should follow
     relatively consistent trends in terms of magnitudes. A large outlier
-    (easily scanned with
-    :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-    often indicates something unusual/unexpected. See the FNV/eFNV and other
-    finite-size charge correction papers for further details.
+    (easily scanned with |get_formation_energies|) often indicates something
+    unusual/unexpected. See the FNV/eFNV and other finite-size charge
+    correction papers for further details.
 
     Args:
         defect_entry (|DefectEntry|):
@@ -452,10 +448,9 @@ def get_kumagai_correction(
             not necessarily the same as the raw output of a VASP dielectric
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
-            ``defect_entry`` ``calculation_metadata`` if available.
-            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-            tutorial section for information on calculating and converging the
-            dielectric constant.
+            ``defect_entry`` ``calculation_metadata`` if available. See the
+            |Dielectric Constant| tutorial section for information on
+            calculating and converging the dielectric constant.
         defect_region_radius (float):
             Radius of the defect region (in Å). Sites outside the defect
             region are used for sampling the electrostatic potential far

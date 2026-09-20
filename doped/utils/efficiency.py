@@ -6,12 +6,12 @@ functions/workflows/calculations in ``doped``.
 import contextlib
 import copy
 import itertools
-import operator
 from collections import defaultdict
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Generator, Sequence
+from fractions import Fraction
 from functools import cached_property, lru_cache
 from string import digits
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -298,7 +298,7 @@ def _species__str__(self):
     """
     Memoized ``Species.__str__`` (immutable objects); avoids heavy string
     formatting in the many millions of ``Species.__hash__`` (= ``hash(str)``)
-    calls from ``Composition`` ``dict`` operations.
+    calls from |Composition| ``dict`` operations.
 
     We memoize the string, not
     the hash: changing ``__hash__`` values breaks pre-built ``Species``-keyed
@@ -323,7 +323,7 @@ def _noise_rounded_bytes(arr) -> bytes:
     round-trips) share a hash.
 
     ``1e-10`` sits safely below the ``__eq__`` tolerances (``atol=1e-8``) for
-    ``Structure``/``PeriodicSite``, so hash-merged values are always still
+    |Structure|/|PeriodicSite|, so hash-merged values are always still
     eq-equal -- required for the ``_Structure__eq__`` hash-equality fast path
     to stay sound.
     """
@@ -332,8 +332,13 @@ def _noise_rounded_bytes(arr) -> bytes:
 
 def _species_info(species: dict) -> tuple:
     # avoid ``str(el)`` (``Species.__str__``/format machinery); equal species give equal
-    # (symbol, oxi, amount) tuples, incl. amounts to distinguish partial occupancies:
-    return tuple((el.symbol, getattr(el, "_oxi_state", None), amt) for el, amt in species.items())
+    # ``(symbol, oxi, spin, amount)`` tuples, incl. amounts to distinguish partial occupancies. ``spin`` is
+    # included because ``Species.__eq__`` compares it, so omitting it made structures differing only in
+    # spin (e.g. ferro- vs antiferro-magnetic orderings of one lattice) compare equal and collide in...
+    return tuple(  # ...structure-keyed caches
+        (el.symbol, getattr(el, "_oxi_state", None), getattr(el, "_spin", None), amt)
+        for el, amt in species.items()
+    )
 
 
 # PeriodicSite overrides:
@@ -459,12 +464,12 @@ def get_all_distances(
     self,
     frac_coords1: "ArrayLike",
     frac_coords2: "ArrayLike",
-) -> NDArray[np.float64]:
+) -> NDArray[np.floating[Any]]:
     """
     Get the distances between two lists of coordinates taking into account
     periodic boundary conditions and the lattice.
 
-    See :meth:`~pymatgen.core.lattice.get_all_distances`.
+    See :meth:`~pymatgen.core.lattice.Lattice.get_all_distances`.
     """
     return _cached_get_all_distances(
         self, array_to_tuple(frac_coords1), array_to_tuple(frac_coords2)
@@ -579,9 +584,9 @@ def _Structure__eq__(self, other):
 
 def _structure__deepcopy__(self, memo):
     """
-    Fast ``__deepcopy__`` for ``Structure``: shallow ``.copy()``, then deep-
-    copy only the mutable ``properties`` dicts (structure- and site-level) so
-    the copy shares no state with the original.
+    Fast ``__deepcopy__`` for |Structure|: shallow ``.copy()``, then deep-copy
+    only the mutable ``properties`` dicts (structure- and site-level) so the
+    copy shares no state with the original.
     """
     new_structure = self.copy()
     new_structure.properties = copy.deepcopy(self.properties, memo)
@@ -629,13 +634,27 @@ def _get_symmetry(self) -> tuple[NDArray, NDArray]:
     Get the symmetry operations associated with the structure, memoised per-
     instance and ``get_sga`` already caches SGA construction by structure.
 
+    For non-magnetic cells, the rotations/translations are extracted from the
+    symmetry dataset already computed at ``SpacegroupAnalyzer`` init, rather
+    than re-calling the (expensive) ``spglib.get_symmetry`` function.
+
     The cached arrays are frozen so caller mutation raises loudly rather than
     silently corrupting the shared values.
     """
     try:
         return self._doped_symmetry
     except AttributeError:
-        rotations, translations = _original_get_symmetry(self)
+        dataset = getattr(self, "_space_group_data", None)
+        if dataset is not None and len(self._cell) == 3 and hasattr(dataset, "rotations"):
+            # non-magnetic cell (no magmoms in ``self._cell``): reuse the init dataset, replicating
+            # ``SpacegroupAnalyzer._get_symmetry``'s cleanup of small/unity translation values;
+            rotations = dataset.rotations.copy()  # copy, to not freeze the shared dataset arrays below
+            translations = np.array(
+                [[float(Fraction(c).limit_denominator(1000)) for c in row] for row in dataset.translations]
+            )
+            translations[np.abs(translations) == 1] = 0  # fractional translations of 1 -> 0
+        else:  # magnetic cell, or no/unrecognised dataset; use original (``spglib``-calling) method
+            rotations, translations = _original_get_symmetry(self)
         rotations.flags.writeable = False  # freeze mutatable arrays
         translations.flags.writeable = False
         self._doped_symmetry = (rotations, translations)
@@ -1011,10 +1030,9 @@ def StructureMatcher_scan_stol(
 
 class DopedTopographyAnalyzer:
     """
-    This is a modified version of
-    :class:`~pymatgen.analysis.defects.utils.TopographyAnalyzer` to lean down
-    the input options and make initialisation far more efficient (~2 orders of
-    magnitude faster).
+    This is a modified version of the ``pymatgen-analysis-defects``
+    ``TopographyAnalyzer`` class, to lean down the input options and make
+    initialisation far more efficient (~2 orders of magnitude faster).
 
     The original code was written by Danny Broberg and colleagues
     (10.1016/j.cpc.2018.01.004), which was then added to ``pymatgen`` before
@@ -1174,40 +1192,6 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     voronoi_struct.make_supercell(supercell_matrix)  # Map back to the supercell
 
     return voronoi_struct.sites.copy()  # copy() to help avoid mutability issues with cached outputs
-
-
-def _generic_group_labels(list_in: Sequence, comp: Callable = operator.eq) -> list[int]:
-    """
-    Group a list of unsortable objects, using a given comparator function.
-
-    Templated off the ``pymatgen-analysis-defects`` function, but fixed to
-    avoid broken reassignment logic and overwriting of labels (resulting in
-    sites being incorrectly dropped).
-
-    Previously in ``doped`` interstitial generation, but then removed after
-    updates in commit ``4699f38`` (for v3.0.0) to use faster site-matching
-    functions from ``doped``.
-
-    Args:
-        list_in (Sequence): A sequence of objects to group using ``comp``.
-        comp (Callable): A comparator function.
-
-    Returns:
-        list[int]: list of labels for the input list
-    """
-    list_out = [-1] * len(list_in)  # Initialize with -1 instead of None for clarity
-    label_num = 0
-
-    for i1 in range(len(list_in)):
-        if list_out[i1] != -1:  # Already labeled
-            continue
-        list_out[i1] = label_num
-        for i2 in range(i1 + 1, len(list_in)):
-            if list_out[i2] == -1 and comp(list_in[i1], list_in[i2]):
-                list_out[i2] = label_num
-        label_num += 1
-
-    return list_out
 
 
 class DopedVacancyGenerator(VacancyGenerator):

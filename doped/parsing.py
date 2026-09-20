@@ -33,12 +33,7 @@ from doped.corrections import (
     _convert_anisotropic_dielectric_to_isotropic_harmonic_mean,
     _convert_dielectric_to_tensor,
 )
-from doped.generation import (
-    get_defect_name_from_defect,
-    get_defect_name_from_entry,
-    name_defect_entries,
-    sort_defect_entries,
-)
+from doped.generation import get_defect_name_from_entry, name_defect_entries, sort_defect_entries
 from doped.io import get_backend
 from doped.io import utils as _io_utils
 from doped.io.outputs import CalculationOutputs
@@ -46,6 +41,7 @@ from doped.thermodynamics import DefectThermodynamics
 from doped.utils import (
     _doped_obj_properties_methods,
     _ignore_pmg_warnings,
+    _signed_charge,
     _warn_parameter_order,
     get_mp_context,
     pool_manager,
@@ -125,7 +121,7 @@ def check_and_set_defect_entry_name(
     defect_name_w_charge_state = (
         possible_defect_name
         if (possible_defect_name.endswith((f"_{charge_state}", f"_{charge_state:+}")))
-        else f"{possible_defect_name}_{'+' if charge_state > 0 else ''}{charge_state}"
+        else f"{possible_defect_name}_{_signed_charge(charge_state)}"
     )
 
     with contextlib.suppress(Exception):  # check if defect name is recognised
@@ -137,8 +133,7 @@ def check_and_set_defect_entry_name(
     # recognised:
     if "full_unrelaxed_defect_name" not in defect_entry.calculation_metadata:
         defect_entry.calculation_metadata["full_unrelaxed_defect_name"] = (
-            f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_"
-            f"{'+' if charge_state > 0 else ''}{charge_state}"
+            f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_{_signed_charge(charge_state)}"
         )
 
     if formatted_defect_name is not None:
@@ -269,6 +264,10 @@ def defect_from_structures(
     defect structures, and returns a corresponding |Defect| object with the
     defect site in the primitive structure.
 
+    Use :func:`defect_site_from_structures` for fast defect site determination
+    without the additional |Defect| handling (initialisation, equivalent site /
+    multiplicity determination, oxidation state guessing etc.).
+
     Note that this assumes consistent cell definitions (lattice vectors and
     bases) for the input defect and bulk supercells, and does not perform any
     structural re-orientations.
@@ -296,16 +295,12 @@ def defect_from_structures(
             see return signature. (Default: ``False``)
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
+            (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
+            initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
             fast site matching and |Defect| creation are desired (e.g. when
             analysing MD trajectories of defects), where providing these
             parameters can greatly speed up parsing.
-            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
-            auto-determination and accelerate parsing, if these properties are
-            not required.
 
     Returns:
         defect (|Defect|):
@@ -364,12 +359,9 @@ def defect_from_structures(
         frac_coords=defect_site_for_defect_obj.frac_coords,
         primitive=primitive_structure,
         supercell=bulk_supercell,
-        **{
-            k: v
-            for k, v in kwargs.items()
-            if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-        },  # allowed kwargs for ``get_equiv_frac_coords_in_primitive``
-    )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
+        **{k: v for k, v in kwargs.items() if k in ["symprec", "dist_tol_factor"]},
+        # allowed kwargs for ``get_equiv_frac_coords_in_primitive``
+    )  # equiv_coords=True
     assert isinstance(equiv_frac_coords_in_prim, list | np.ndarray)
     # sort equiv_frac_coords_in_prim deterministically, using _frac_coords_sort_func: (first coords in
     # equiv_frac_coords_in_prim are used as ``Defect.site``, for point defects)
@@ -392,11 +384,7 @@ def defect_from_structures(
             defect_site_in_prim.frac_coords = bulk_site_in_prim.frac_coords
 
         # also drop unsupported Defect() kwargs for non-interstitial defects:
-        kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k not in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-        }
+        kwargs = {k: v for k, v in kwargs.items() if k not in ["dist_tol_factor", "verbose"]}
 
     defect = MontyDecoder().process_decoded(  # initialise doped ``Defect`` object
         {
@@ -432,12 +420,16 @@ def defect_and_info_from_structures(
 ) -> tuple[Defect, PeriodicSite, dict]:
     """
     Generates a corresponding |Defect| object from the supplied bulk and defect
-    supercells (using ``defect_from_structures``), and returns the |Defect|
+    supercells (using :func:`defect_from_structures`), and returns the |Defect|
     object, the (relaxed) defect site in the defect supercell (see
     ``Returns``), and a dictionary of calculation metadata (including the
     defect site in the bulk supercell, defect site indices in the defect and
     bulk supercells, the guessed initial defect structure, and the unrelaxed
     defect structure).
+
+    Use :func:`defect_site_from_structures` for fast defect site determination
+    without the additional |Defect| handling (initialisation, equivalent site /
+    multiplicity determination, oxidation state guessing etc.).
 
     Note that this assumes consistent cell definitions (lattice vectors and
     bases) for the input defect and bulk supercells, and does not perform any
@@ -450,16 +442,12 @@ def defect_and_info_from_structures(
             Bulk supercell structure.
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
+            (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
+            initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
             fast site matching and |Defect| creation are desired (e.g. when
             analysing MD trajectories of defects), where providing these
             parameters can greatly speed up parsing.
-            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
-            auto-determination and accelerate parsing, if these properties are
-            not required.
 
     Returns:
         tuple[Defect, PeriodicSite, dict]:
@@ -585,10 +573,9 @@ def _get_soap_vecs_for_guess(
     elements not present in ``struct`` are allowed in ``species`` (their SOAP
     channels are zero).
 
-    Refactored from the implementation in
-    :func:`~pymatgen.analysis.defects.finder.get_soap_vec` to be more efficient
-    (using a leaner, but robust SOAP featurisation) and to properly include
-    species identities.
+    Refactored from the ``pymatgen-analysis-defects`` ``get_soap_vec``
+    implementation, to be more efficient (using a leaner, but robust SOAP
+    featurisation) and to properly include species identities.
     """
     try:
         from dscribe.descriptors import SOAP
@@ -660,9 +647,8 @@ def guess_defect_position(
             ``bulk_supercell`` share the same lattice/origin alignment.
             Default is ``None``.
         soap_n_jobs (int):
-            ``n_jobs`` passed to ``dscribe``'s
-            :meth:`~dscribe.descriptors.SOAP.create` (parallelise over site
-            centres). Default is 1 (no parallelisation).
+            ``n_jobs`` passed to ``dscribe.descriptors.SOAP.create``
+            (parallelise over site centres). Default is 1 (no parallelisation).
         soap_r_cut (float):
             SOAP cut-off radius in Å (for ``dscribe``), default 5.0.
         soap_n_max (int):
@@ -747,45 +733,6 @@ def guess_defect_position(
     )  # note we catch the edge case of zero dissimilarity (i.e. same structures); to avoid zero-division
 
 
-def defect_name_from_structures(
-    defect_supercell: Structure, bulk_supercell: Structure, _parameter_order_warn: bool = True, **kwargs
-) -> str:
-    """
-    Get the doped/SnB defect name using the bulk and defect structures.
-
-    Args:
-        defect_supercell (|Structure|):
-            Defect structure.
-        bulk_supercell (|Structure|):
-            Bulk (pristine) structure.
-        **kwargs:
-            Keyword arguments to pass to ``defect_from_structures`` (such as
-            ``oxi_state``, ``multiplicity``, ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``).
-
-    Returns:
-        str: Defect name.
-    """
-    if _parameter_order_warn:
-        _warn_parameter_order("defect_name_from_structures")  # TODO: Remove in doped v4.1
-    # set oxi_state and multiplicity to avoid wasting time trying to auto-determine when unnecessary here
-    default_init_kwargs: dict[str, Any] = {"oxi_state": "Undetermined", "multiplicity": 1}
-    default_init_kwargs.update(kwargs)
-    defect = defect_from_structures(
-        defect_supercell,
-        bulk_supercell,
-        return_all_info=False,
-        _parameter_order_warn=False,
-        **default_init_kwargs,
-    )
-    assert isinstance(defect, Defect)  # mypy typing
-
-    # note that if the symm_op approach fails for any reason here, the defect-supercell expansion
-    # approach will only be valid if the defect structure is a diagonal expansion of the primitive...
-
-    return get_defect_name_from_defect(defect)
-
-
 class DefectsParser:
     def __init__(
         self,
@@ -845,9 +792,8 @@ class DefectsParser:
                 DFT dielectric calculation, if an oddly-defined primitive cell
                 is used). If not provided, charge corrections cannot be
                 computed and so ``skip_corrections`` will be set to ``True``.
-                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-                tutorial section for information on calculating and converging
-                the dielectric constant.
+                See the |Dielectric Constant| tutorial section for information
+                on calculating and converging the dielectric constant.
             subfolder (PathLike):
                 Name of subfolder(s) within each defect calculation folder (in
                 the ``output_path`` directory) containing the VASP calculation
@@ -911,13 +857,13 @@ class DefectsParser:
                 CPUs available. Set to 1 for no multiprocessing.
             json_filename (PathLike):
                 Filename to save the parsed defect entries dict
-                (``DefectsParser.defect_dict``) to in ``output_path``, to avoid
-                having to re-parse defects when later analysing further and
-                aiding calculation provenance. Can be reloaded using the
+                (:attr:`DefectsParser.defect_dict`) to in ``output_path``, to
+                avoid having to re-parse defects when later analysing further
+                and aiding calculation provenance. Can be reloaded using the
                 ``loadfn`` function from ``monty.serialization`` (and then
                 input to |DefectThermodynamics| etc.). If ``None`` (default),
-                set as ``{Host Chemical Formula}_defect_dict.json.gz``.
-                If ``False``, no json file is saved.
+                set as ``{Host Chemical Formula}_defect_dict.json.gz``. If
+                ``False``, no json file is saved.
             parse_projected_eigen (bool):
                 Whether to parse the projected eigenvalues & magnetization from
                 the bulk and defect calculations (so
@@ -1244,9 +1190,10 @@ class DefectsParser:
         plot the defect thermodynamics (formation energies, transition levels,
         concentrations etc).
 
-        Note that the ``DefectEntry.name`` attributes (rather than the
-        ``defect_name`` key in the ``defect_dict``) are used to label the
-        defects in plots.
+        Note that :attr:`DefectEntry.name <doped.core.DefectEntry.name>`
+        attributes (rather than ``defect_name`` keys in
+        :attr:`DefectsParser.defect_dict`) are used to label the defects in
+        plots.
 
         See the |DefectThermodynamics| and accompanying methods docstrings in
         ``doped.thermodynamics`` for more.
@@ -1343,8 +1290,7 @@ class DefectsParser:
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
                 bulk DOS and defect supercell calculations. See the
-                :ref:`Tips:Density of States (DOS) Calculations` tips.
-                (Default: None)
+                |DOS Calculations| tips. (Default: None)
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
@@ -1850,10 +1796,7 @@ def _name_parsed_defect_entries(
     new_named_defect_entries_dict = name_defect_entries(entries_to_rename)
     # set name attribute: (these are names without charges!)
     for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
-        defect_entry.name = (
-            f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
-            f"{defect_entry.charge_state}"
-        )
+        defect_entry.name = f"{defect_name_wout_charge}_{_signed_charge(defect_entry.charge_state)}"
 
     if duplicate_names := [  # if any duplicate names, crash (and burn, b...)
         defect_entry.name for defect_entry in entries_to_rename if defect_entry.name in defect_dict
@@ -2203,8 +2146,8 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
         **kwargs:
             Additional keyword arguments to pass to the
             |point_symmetry_from_defect_entry| function, such as ``symprec``,
-            ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
-            ``verbose``, ``bulk_symprec`` and ``centre_error_range``.
+            ``dist_tol_factor``, ``verbose``, ``bulk_symprec`` and
+            ``centre_error_range``.
     """
     relaxed_point_group = point_symmetry_from_defect_entry(
         defect_entry,
@@ -2219,7 +2162,7 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
         **{
             k.replace("bulk_", ""): v
             for k, v in kwargs.items()
-            if k in ["bulk_symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+            if k in ["bulk_symprec", "dist_tol_factor", "verbose"]
         },
     )  # same symprec used w/interstitial multiplicity for consistency
     assert isinstance(bulk_site_point_group, str)  # typing (str returned)
@@ -2235,7 +2178,6 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
                     "symprec",
                     "bulk_symprec",
                     "dist_tol_factor",
-                    "fixed_symprec_and_dist_tol_factor",
                     "verbose",
                 ]
             },
@@ -2367,9 +2309,8 @@ class DefectParser:
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If not provided, charge corrections cannot be
                 computed and so ``skip_corrections`` will be set to ``True``.
-                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-                tutorial section for information on calculating and converging
-                the dielectric constant.
+                See the |Dielectric Constant| tutorial section for information
+                on calculating and converging the dielectric constant.
             charge_state (int):
                 Charge state of defect. If not provided, will be automatically
                 determined from defect calculation outputs, or if that fails,
@@ -2513,7 +2454,6 @@ class DefectParser:
                     "dist_tol_factor",  # for interstitial multiplicities
                     "angle_tolerance",
                     "user_charges",
-                    "fixed_symprec_and_dist_tol_factor",
                     "verbose",
                 ]
             },

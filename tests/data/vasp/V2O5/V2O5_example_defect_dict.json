@@ -2,7 +2,7 @@
     "v_O_1_0": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.0",
+        "@version": "3.2.1",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,
@@ -59674,7 +59674,7 @@
     "v_O_2_0": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.0",
+        "@version": "3.2.1",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,
@@ -65396,7 +65396,7 @@
                 "@class": "array",
                 "@module": "numpy",
                 "data": [
-                    0.499642700089325,
+                    0.4996607770235813,
                     0.49467171,
                     0.64768647
                 ],
@@ -119346,7 +119346,7 @@
     "v_O_3_0": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.0",
+        "@version": "3.2.1",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,

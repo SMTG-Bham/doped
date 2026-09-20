@@ -8,7 +8,7 @@ import math
 import os
 import re
 import warnings
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import cmcrameri.cm as cmc
@@ -26,6 +26,8 @@ from pymatgen.util.typing import PathLike
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
+from doped.core import _get_abs_chempots
+from doped.utils import _signed_charge
 from doped.utils.symmetry import sch_symbols  # point group symbols
 
 if TYPE_CHECKING:
@@ -409,7 +411,7 @@ def _resolve_color_grouping(
             return grouping
 
     # finest granularity; if still a single colour group (and not explicitly set by user), the per-line
-    # colour fallback in ``_get_group_keyed_colors_and_linestyles`` handles it, enforcing variants
+    # colour fallback in ``get_defect_colors_and_linestyles`` handles it, enforcing variants
     return "site"
 
 
@@ -435,7 +437,7 @@ def get_defect_type_palette(
 ) -> dict[str, tuple[float, ...]]:
     """
     Get a ``{defect type, extrinsic element or defect group: colour}`` dict
-    palette for the defects in a ``DefectThermodynamics`` object.
+    palette for the defects in a |DefectThermodynamics| object.
 
     Colours are keyed on defect identity rather than position in the plot
     legend, so that plots of the same system share base colours for the same
@@ -450,11 +452,13 @@ def get_defect_type_palette(
       e.g. ``v_Cd``, ``Te_i``, ``F_O``).
     - ``"element"``: mostly the same as ``"type"``, except `extrinsic` defects
       of the same element are grouped under a single colour (e.g. ``F_O`` and
-      ``F_i`` -> ``"F"``). Note that the thermodynamic-dominance ordering of
-      variants within such element groups (i.e. most opaque/solid line used for
-      dominant lowest-energy defect in the group) can depend on the chemical
-      potential conditions (unlike ``"type"`` / ``"site"`` groups, where all
-      group members share the same stoichiometry).
+      ``F_i`` -> ``"F"``); intrinsic defects are unaffected, so this is
+      equivalent to ``"type"`` for systems with no extrinsic defects. Note that
+      the thermodynamic-dominance ordering of variants within such element
+      groups (i.e. most opaque/solid line used for dominant lowest-energy
+      defect in the group) can depend on the chemical potential conditions
+      (unlike ``"type"`` / ``"site"`` groups, where all group members share the
+      same stoichiometry).
     - ``"site"``: one colour per defect `group` (i.e. per cluster of
       inequivalent defect sites, keyed on the group names in
       ``DefectThermodynamics.all_entries``; e.g. ``Te_i_Td_Te2.83_a`` and
@@ -471,7 +475,7 @@ def get_defect_type_palette(
 
     Args:
         defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing the defect entries.
+            |DefectThermodynamics| object containing the defect entries.
         color_grouping (str):
             Colour grouping granularity: ``"element"``, ``"type"`` (default) or
             ``"site"`` -- see above. Default is ``"type"``. Note that this
@@ -507,7 +511,7 @@ def get_defect_type_palette(
     return palette
 
 
-def _variant_dominance_order(line_keys: list[str], line_xy: dict, band_gap: float) -> list[str]:
+def _variant_dominance_order(line_keys: list[str], line_xy: "Mapping", band_gap: float) -> list[str]:
     """
     Order lines within a colour group by thermodynamic dominance: by the
     fraction of the in-gap Fermi level range for which each line is the lowest
@@ -534,20 +538,72 @@ def _variant_dominance_order(line_keys: list[str], line_xy: dict, band_gap: floa
     ]
 
 
-def _get_group_keyed_colors_and_linestyles(
+def _dominance_line_xy(
     defect_thermodynamics: "DefectThermodynamics",
-    line_groups: dict[str, str],
+    dominance: "Mapping[str, Any] | str | None",
+    chempots: dict | None = None,
+    limit: str | None = None,
+    el_refs: dict | None = None,
+) -> "Mapping[str, Any] | None":
+    """
+    Resolve the ``dominance`` option of ``get_defect_colors_and_linestyles`` to
+    ``{line key: [[x_vals], [y_vals]]}`` line data for
+    ``_variant_dominance_order`` (or ``None``, for plot ordering).
+
+    Formation energy lines are computed from ``defect_thermodynamics`` (as in
+    ``DefectThermodynamics.plot()``, using ``chempots``/``limit``/``el_refs``)
+    if ``dominance = "formation_energy"``, and otherwise ``dominance`` is
+    already the line data (or ``None``) and is returned as-is.
+    """
+    if dominance is None or isinstance(dominance, Mapping):
+        return dominance
+    if dominance != "formation_energy":
+        raise ValueError(
+            f"`dominance` must be either `None`, 'formation_energy' or a `{{line key: [[x_vals], "
+            f"[y_vals]]}}` dict -- not {dominance}. See docs/docstrings for more info."
+        )
+    if defect_thermodynamics.band_gap is None:
+        raise ValueError(
+            "`band_gap` is not set for `DefectThermodynamics`, cannot compute formation energies for "
+            "`dominance='formation_energy'`."
+        )
+    chempots, el_refs = defect_thermodynamics._get_chempots(chempots, el_refs)  # thermo values if None
+    abs_chempots = _get_abs_chempots(chempots, el_refs, limit)
+    _chempot_warning(abs_chempots)
+    (xy, _), (all_lines_xy, _, _), _ = _get_formation_energy_lines(
+        defect_thermodynamics, abs_chempots, (0, defect_thermodynamics.band_gap)
+    )
+    return all_lines_xy | xy  # per-charge-state lines (i.e. ``all_entries=True``), then group lines
+
+
+def get_defect_colors_and_linestyles(
+    defect_thermodynamics: "DefectThermodynamics",
+    lines: "Sequence[str] | Mapping[str, str] | None" = None,
     variant_style: str = "fade",
     color_grouping: str | None = None,
     colormap: "str | dict | None" = None,
     linestyles: str = "-",
     group_palette: dict | None = None,
-    line_xy: dict | None = None,
-) -> tuple[list[tuple[float, ...]], list[str]]:
+    dominance: "Mapping[str, Any] | str | None" = None,
+    chempots: dict | None = None,
+    limit: str | None = None,
+    el_refs: dict | None = None,
+) -> tuple[dict[str, tuple[float, ...]], dict[str, str]]:
     """
-    Get colours and linestyles for defect formation energy lines, keyed on
-    defect identity (type (default) / extrinsic element / site group; see
-    ``color_grouping``) -- see ``get_defect_type_palette``.
+    Get colours and linestyles for plotting defects, keyed on defect identity.
+
+    (type (default) / extrinsic element / site group; see ``color_grouping``)
+    -- see :func:`get_defect_type_palette`.
+
+    Can be used to match the ``doped`` formation energy diagram colour scheme
+    in custom plots (e.g. defect/carrier concentrations from ``FermiSolver``
+    scans), e.g.:
+
+    .. code-block:: python
+
+        colors, linestyles = get_defect_colors_and_linestyles(thermo, defects)
+        for defect in defects:
+            ax.plot(x, y[defect], color=colors[defect], linestyle=linestyles[defect])
 
     Multiple plotted lines of the same colour group (e.g. inequivalent ``Te_i``
     sites with ``color_grouping=type``, extrinsic ``F_O`` & ``F_i`` defects
@@ -555,21 +611,28 @@ def _get_group_keyed_colors_and_linestyles(
     ``all_entries=True`` and any ``color_grouping`` choice) get ordered
     lightness variants of the group's base colour and/or cycled linestyles
     (according to ``variant_style``), with the base (full) colour/style
-    assigned to the group's most thermodynamically-dominant line (that which is
-    the lowest energy of the group over the largest fraction of the in-gap
-    Fermi level range, then 2nd-lowest etc -- or the lowest energy at the Fermi
-    level ('vbm') for metals; see ``_variant_dominance_order``) when
-    ``line_xy`` is provided (otherwise in plot order).
+    assigned to the group's most dominant line -- as set by ``dominance``
+    (by default, just the input (plot) order of ``lines``).
 
     Args:
         defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing the defect entries.
-        line_groups (dict[str, str]):
-            ``{line key: defect group name}`` for each line to plot, in plot
-            order (group names matching ``DefectThermodynamics.all_entries``
-            keys). For standard plots this is an identity mapping of the
-            group names; for ``all_entries=True`` plots the line keys are the
-            per-charge-state entry names.
+            |DefectThermodynamics| object containing the defect entries.
+        lines (Sequence[str] | Mapping[str, str]):
+            The lines to get colours/linestyles for, in plot order; either a
+            sequence of defect group names (matching
+            ``DefectThermodynamics.all_entries`` keys; the usual case -- e.g.
+            the defect names in a ``FermiSolver`` scan ``DataFrame`` index), or
+            a ``{line key: defect group name}`` mapping when the line keys are
+            not the group names themselves (e.g. the per-charge-state entry
+            names for ``all_entries=True`` formation energy plots).
+
+            If ``None`` (default), all defects in ``defect_thermodynamics`` are
+            used, in the same order as plotted by
+            ``DefectThermodynamics.plot()``. Note that variants are shaded /
+            cycled within the given set of lines, so indexing the default
+            (all-defect) dicts for a subset of defects keeps the shades of the
+            full plot, while passing just that subset as ``lines`` re-spreads
+            them (as in ``plot(defect_subset=...)``).
         variant_style (str):
             How to differentiate same-colour-group variants: ``"fade"``
             (lightness fading; default), ``"linestyle"`` (cycled
@@ -591,21 +654,55 @@ def _get_group_keyed_colors_and_linestyles(
             Base linestyle for the lines. Default is ``"-"``.
         group_palette (dict):
             Pre-computed ``{colour group key: colour}`` palette (e.g. from
-            the parent ``DefectThermodynamics`` before any pruning/subsetting,
+            the parent |DefectThermodynamics| before any pruning/subsetting,
             for base-colour stability). If ``None`` (default), computed from
             ``defect_thermodynamics``.
-        line_xy (dict):
-            ``{line key: [[x_vals], [y_vals]]}`` formation energy line data
-            (matching ``line_groups`` keys), used to order variants within each
-            colour group by thermodynamic dominance (see
-            ``_variant_dominance_order``). If ``None`` (default), variants are
-            ordered by plot order.
+        dominance (Mapping[str, Any] | str):
+            How to order the lines within each colour group, determining which
+            gets the base (full) colour/linestyle and which get the faded /
+            cycled variants. Either:
+
+            - ``None`` (default): just uses the input (plot) order of
+              ``lines``. To instead match the ordering of a concentration plot,
+              just sort ``lines`` by concentration first, e.g.
+              ``concs = conc_df.groupby(level=0)["Concentration (cm^-3)"].max()``,
+              then ``lines = concs.sort_values(ascending=False).index`` (which
+              also gives a dominance-ordered plot legend).
+            - ``"formation_energy"``: thermodynamic dominance, matching
+              ``DefectThermodynamics.plot()``; i.e. ordered by which line is
+              the lowest energy of its colour group over the largest fraction
+              of the in-gap Fermi level range, then 2nd-lowest etc (or the
+              lowest energy at the VBM for metals). Uses ``chempots`` /
+              ``limit`` / ``el_refs`` (which affect this ordering), as in
+              ``DefectThermodynamics.plot()``.
+            - a ``{line key: [[x_vals], [y_vals]]}`` mapping: as
+              ``"formation_energy"``, but using the provided line data
+              (lowest ``y`` = most dominant) rather than computing it.
+
+        chempots (dict):
+            Chemical potentials to use when computing formation energies for
+            ``dominance="formation_energy"``, in any format accepted by
+            ``DefectThermodynamics.get_formation_energy`` -- see its docstring.
+            If ``None`` (default), uses ``DefectThermodynamics.chempots``.
+        limit (str):
+            The chemical potential limit to use, if ``chempots`` is in the
+            ``doped`` format with multiple limits. Default is the first limit.
+        el_refs (dict):
+            ``{element symbol: reference energy}`` elemental reference
+            energies, if ``chempots`` is given in the format of formal
+            (relative) chemical potentials. If ``None`` (default), uses
+            ``DefectThermodynamics.el_refs``.
 
     Returns:
-        colors (list), linestyles (list[str]):
-            Colours and linestyles for the lines, in ``line_groups`` order.
+        colors (dict), linestyles (dict):
+            ``{line key: RGBA colour}`` and ``{line key: linestyle}`` dicts,
+            in ``lines`` order.
     """
     _check_variant_style(variant_style)
+    lines = list(defect_thermodynamics.all_entries) if lines is None else lines  # default: all defects
+    lines = [lines] if isinstance(lines, str) else lines  # don't iterate over a single name's chars
+    line_groups = lines if isinstance(lines, Mapping) else {name: name for name in lines}
+    line_xy = _dominance_line_xy(defect_thermodynamics, dominance, chempots, limit, el_refs)
     fade_variants = variant_style in ("fade", "both")
     linestyle_variants = variant_style in ("linestyle", "both")
     auto_color_grouping = color_grouping is None
@@ -634,9 +731,12 @@ def _get_group_keyed_colors_and_linestyles(
         and len(line_groups) > 1  # with multiple lines
         and not isinstance(colormap, dict)  # and no user colour overrides
     ):  # (e.g. the charge states of a single defect group with ``all_entries=True``)
-        return [tuple(color) for color in get_colors(colormap, len(line_groups))], [
-            _variant_linestyle(i) for i in range(len(line_groups))
-        ]  # use a range of colours (one per line) rather than variants of a single colour
+        # use a range of colours (one per line) rather than variants of a single colour:
+        line_colors = get_colors(colormap, len(line_groups))
+        return (
+            {key: tuple(color) for key, color in zip(line_groups, line_colors, strict=True)},
+            {key: _variant_linestyle(i) for i, key in enumerate(line_groups)},
+        )
 
     group_types: dict[str, str] = {}  # {defect group name: defect type}
     group_palette_keys: dict[str, str] = {}  # {defect group name: palette colour key}
@@ -678,7 +778,7 @@ def _get_group_keyed_colors_and_linestyles(
             keys = _variant_dominance_order(keys, line_xy, band_gap)  # noqa: PLW2901
         variant_indices.update({key: i for i, key in enumerate(keys)})
 
-    colors, linestyle_list = [], []
+    colors, linestyle_dict = {}, {}
     for line_key, color_group in zip(line_groups, line_color_groups, strict=True):
         index = variant_indices[line_key]
         base = (
@@ -687,10 +787,10 @@ def _get_group_keyed_colors_and_linestyles(
             else group_palette.get(color_group, (0.5, 0.5, 0.5, 1.0))  # grey fallback if not in palette
         )
         n_variants = len(color_group_line_keys[color_group])
-        colors.append(_fade_variant_color(base, index, n_variants) if fade_variants else base)
-        linestyle_list.append(_variant_linestyle(index))
+        colors[line_key] = _fade_variant_color(base, index, n_variants) if fade_variants else base
+        linestyle_dict[line_key] = _variant_linestyle(index)
 
-    return colors, linestyle_list
+    return colors, linestyle_dict
 
 
 def _plot_formation_energy_lines(
@@ -768,7 +868,7 @@ def _plot_transition_level_markers(
         ax (plt.Axes):
             ``Axes`` object to plot the transition level markers on.
         defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing the transition level
+            |DefectThermodynamics| object containing the transition level
             data (in the ``transition_level_map`` attribute).
         defect_names (Iterable[str]):
             List of defect names to plot transition level markers for, matching
@@ -965,14 +1065,6 @@ def _set_title_and_save_figure(
         fig = ax.get_figure()
         assert isinstance(fig, Figure)
         fig.savefig(filename, dpi=600, bbox_inches="tight", transparent=True)
-
-
-def _signed_charge(charge: int) -> str:
-    """
-    Format a charge state with an explicit ``+`` for positive values (and no
-    sign for zero or negative values), e.g. ``+1``, ``0``, ``-2``.
-    """
-    return f"{charge:+}" if charge > 0 else str(charge)
 
 
 def format_defect_name(
@@ -1418,7 +1510,7 @@ def format_defect_names(
         defect_names (list[str]):
             List of defect names to format (e.g. ``["Cd_i_C3v_0", "Cd_Te",
             "v_Cd_-1", ...]``), as taken from ``DefectEntry.name`` or the keys
-            of a ``DefectThermodynamics`` transition-level dictionary.
+            of a |DefectThermodynamics| transition-level dictionary.
         include_charge (bool):
             Whether to include the charge states in the formatted defect names.
             Defaults to ``False``.
@@ -1727,8 +1819,8 @@ def formation_energy_plot(
     energy / transition level diagram).
 
     This function is not intended to be directly called. The recommended usage
-    is :meth:`~doped.thermodynamics.DefectThermodynamics.plot()` -- see
-    docstring for details.
+    is :meth:`doped.thermodynamics.DefectThermodynamics.plot` -- see docstring
+    for details.
 
     Args:
         defect_thermodynamics (|DefectThermodynamics|):
@@ -1854,7 +1946,7 @@ def formation_energy_plot(
             includes linestyle variation).
         group_palette (dict):
             Pre-computed ``{colour group key: colour}`` palette to use (e.g.
-            from the parent ``DefectThermodynamics`` object before any pruning
+            from the parent |DefectThermodynamics| object before any pruning
             / subsetting, for base-colour stability -- as in
             ``DefectThermodynamics.plot()``). If ``None`` (default), computed
             from ``defect_thermodynamics``.
@@ -1898,7 +1990,7 @@ def formation_energy_plot(
         linestyles = get_linestyles(linestyles, len(plotting_xy))
     else:  # default; colours keyed on defect type, with fade/linestyle variants within each type
         line_groups = all_line_groups if all_entries is True else {name: name for name in xy}
-        colors, group_linestyles = _get_group_keyed_colors_and_linestyles(
+        line_colors, group_linestyles = get_defect_colors_and_linestyles(
             defect_thermodynamics,
             line_groups,
             variant_style=variant_style,
@@ -1906,12 +1998,13 @@ def formation_energy_plot(
             colormap=colormap,
             linestyles=linestyles if isinstance(linestyles, str) else "-",
             group_palette=group_palette,
-            line_xy=plotting_xy,
+            dominance=plotting_xy,
         )
+        colors = list(line_colors.values())  # in ``line_groups`` (plot) order
         linestyles = (  # explicit linestyles list overrides variant cycling, by legend position
             get_linestyles(linestyles, len(plotting_xy))
             if isinstance(linestyles, list)
-            else group_linestyles
+            else list(group_linestyles.values())
         )
 
     # generate plot:
@@ -2078,8 +2171,8 @@ class TransitionLevelLabel(NamedTuple):
     A plot position for a charge transition level (TL) label.
 
     ``(x, y)`` is the label anchor position with alignments ``ha``/``va``;
-    ``label`` and ``label_w`` are the label text and width; ``TL_eV`` is the
-    TL position in eV from the VBM (same as for :class`TransitionLevel`);
+    ``label`` and ``label_w`` are the label text and width; ``TL_eV`` is the TL
+    position in eV from the VBM (same as for :class:`TransitionLevel`);
     ``conn_y`` and ``conn_x`` are the source TL line ``y``/column-edge ``x``
     for an off-column label that needs a connector (both ``None`` for an inline
     label with no connector).

@@ -51,13 +51,12 @@ generated from a different algorithm), and/or customise the generation algorithm
 
 Efficient Interstitial Screening
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-As described in the defect calculation tutorial (`YouTube <https://youtu.be/FWz7nm9qoNg>`__,
-`B站 <https://www.bilibili.com/list/6073855/?sid=4603908&oid=113988666990435&bvid=BV1V5KVeYEMn>`__),
-our recommended workflow for calculating interstitial defects is to first generate the set of candidate
-interstitial sites for your structure using |DefectsGenerator| (which uses Voronoi 
-tessellation for this, see note below), and then perform Gamma-point-only relaxations (using ``vasp_gam``) 
-for each charge state of the generated interstitial candidates, and then pruning some of the candidate 
-sites based on the criteria below. Typically the easiest way to do this is to follow the workflow shown in 
+Our recommended workflow for calculating interstitial defects is to first generate the set of candidate
+interstitial sites for your structure using |DefectsGenerator| (which uses Voronoi tessellation along with
+clustering, exclusion of extremely short interstitial-host distances and candidate adsorbate sites, see note
+below), and then perform Gamma-point-only relaxations (e.g. using ``vasp_gam``) for each charge state of the
+generated interstitial candidates, and then pruning some of the candidate sites based on the criteria below.
+Typically the easiest way to do this is to follow the workflow shown in
 the defect generation tutorial, and then run the |ShakeNBreak| ``vasp_gam`` relaxations for the 
 ``Unperturbed`` and ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, 
 you can generate the ``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in
@@ -591,13 +590,11 @@ for an example of setting up a bulk DOS calculation.
 
 
 If there is a significant mismatch between the VBM eigenvalue or band gap of the bulk DOS (``bulk_dos``)
-and bulk/defect supercell calculations (stored as the 
-:attr:`~doped.thermodynamics.DefectThermodynamics.vbm`/ 
-:attr:`~doped.thermodynamics.DefectThermodynamics.gap` attributes of 
-|DefectThermodynamics|), this can lead to inaccuracies in the
-thermodynamics & concentration analyses. If ``doped`` detects this to be the case, it will throw a warning
-like: ``The band gap / VBM eigenvalue of the bulk DOS calculation (... eV) differs by >0.05 eV from
-DefectThermodynamics.vbm/gap...``.
+and bulk/defect supercell calculations (stored as the :attr:`~doped.thermodynamics.DefectThermodynamics.vbm`/
+:attr:`~doped.thermodynamics.DefectThermodynamics.band_gap` attributes of |DefectThermodynamics|), this can lead to
+inaccuracies in the thermodynamics & concentration analyses. If ``doped`` detects this to be the case, it will throw a
+warning like:
+``The band gap / VBM eigenvalue of the bulk DOS calculation (... eV) differs by >0.05 eV from DefectThermodynamics.vbm/gap...``.
 
 This can arise for a number of reasons:
 
@@ -730,9 +727,9 @@ This tag is particularly important for magnetic materials (as discussed in the
 `Magnetism <https://shakenbreak.readthedocs.io/en/latest/Tips.html#magnetism>`__ section of the
 ``ShakeNBreak`` tips page), and can be useful if trying to favour a specific polaron/spin configuration
 (as briefly discussed at `this point <https://youtu.be/FWz7nm9qoNg?si=sOnJQ5b0tZ5WwNO-&t=6914>`__ in the
-YouTube defects tutorial). This tag can be set using the ``user_incar_settings`` parameter in the
-``doped.io.vasp.inputs`` classes, for which the python API helps streamline this process when setting ``MAGMOM``
-for multiple defects.
+old YouTube defects tutorial). This tag can be set using the ``user_incar_settings`` parameter in the
+``doped.io.vasp.inputs`` classes, for which the python API helps streamline this process when setting
+``MAGMOM`` for multiple defects.
 
 .. note::
 
@@ -744,9 +741,8 @@ for multiple defects.
 
 When parsing defect calculations, ``doped`` will automatically extract the total magnetization from the
 ``VASP`` output files, in order to determine the spin multiplicity. This value is stored in
-the :attr:`~doped.core.DefectEntry.degeneracy_factors` |DefectEntry| attribute 
-(``DefectEntry.degeneracy_factors["spin degeneracy"]``, and printed in the 
-|DefectThermodynamics| 
+the :attr:`~doped.core.DefectEntry.degeneracy_factors` |DefectEntry| attribute
+(``DefectEntry.degeneracy_factors["spin degeneracy"]``, and printed in the |DefectThermodynamics|
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_symmetries_and_degeneracies()` method) and used in
 thermodynamic analyses. See the :func:`~doped.io.vasp.outputs.spin_degeneracy_from_vasprun()` function for 
 details.
@@ -755,11 +751,11 @@ Symmetry Precision (``symprec``)
 --------------------------------
 When computing the symmetries of structures, a threshold parameter has to be set in order to distinguish
 structural/positional noise from distinct site differences. In ``doped`` as in ``spglib`` (and 
-``pymatgen``), this can be controlled with the ``symprec`` parameter (which can be set in
-|DefectsParser|, :class:`~doped.parsing.DefectParser`, all
-|DefectThermodynamics| symmetry/concentration functions,
+``pymatgen``), this can be controlled with the ``symprec`` parameter (see the :ref:`spglib definition
+<spglib:variables_symprec>`), which can be set in |DefectsParser|, :class:`~doped.parsing.DefectParser`,
+all |DefectThermodynamics| symmetry/concentration functions,
 :func:`~doped.utils.symmetry.get_orientational_degeneracy()`,
-:func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()` and others).
+:func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()` and others.
 
 By default, ``doped`` uses a value of ``symprec = 0.01`` for unrelaxed/bulk structures (matching the
 ``pymatgen`` default), and a larger ``symprec = 0.1`` for determining the point symmetries (and thus
@@ -778,8 +774,8 @@ etc.).
 .. note::
 
     Wyckoff letters for lattice sites can depend on the ordering of elements in the conventional standard
-    structure, for which doped uses the ``spglib`` convention (e.g. in the 
-    |DefectsGenerator| info output).
+    structure, for which doped uses the ``spglib`` :ref:`convention <spglib:def_standardized_unit_cell>`
+    (e.g. in the |DefectsGenerator| info output).
 
 .. note::
 
@@ -890,7 +886,7 @@ Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as th
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_dopability_limits()`,
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_doping_windows()` and
 |get_TLs| methods for |DefectThermodynamics| objects, and the
-:attr:`~doped.chemical_potentials.CompetingPhasesAnalyzer.formation_energy_df` attribute and
+:meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.get_formation_energy_df()` method and
 :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.calculate_chempots()` method for
 |CompetingPhasesAnalyzer|. As mentioned in the tutorials, these
 ``DataFrame`` objects can be output to ``csv`` (or ``json``, ``xlsx`` etc., see the ``pandas`` API docs
@@ -904,9 +900,10 @@ Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as th
 
 These ``csv`` files can easily be used as data tables when writing up results, by directly importing to
 Microsoft Word or converting to LaTeX format using `Tables Generator <https://www.tablesgenerator.com>`__.
-|CompetingPhasesAnalyzer| can also be reinitialised from a saved ``csv``
-formation energies file with the :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.from_csv()` 
-method.
+|CompetingPhasesAnalyzer| objects can also be saved to and reloaded from JSON with the ``save()`` and ``load()`` methods
+(inherited from ``monty``'s ``MSONable``), or with ``dumpfn()``/``loadfn()`` from ``monty.serialization``, or converted
+to/from dict with :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.as_dict()` /
+:meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.from_dict()`.
 
 .. note::
 

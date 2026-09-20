@@ -21,7 +21,13 @@ from scipy.constants import value as constants_value
 from scipy.stats import sem
 
 from doped.io.outputs import CalculationOutputs
-from doped.utils import _doped_obj_properties_methods, get_mp_context, vise_handling, warn_once
+from doped.utils import (
+    _doped_obj_properties_methods,
+    _signed_charge,
+    get_mp_context,
+    vise_handling,
+    warn_once,
+)
 from doped.utils.efficiency import (
     Composition,
     Element,
@@ -31,6 +37,8 @@ from doped.utils.efficiency import (
     cache_species,
 )
 from doped.utils.mappings import get_matching_site
+
+kB = constants_value("Boltzmann constant in eV/K")  # ~8.617e-5 eV/K
 
 if TYPE_CHECKING:
     import matplotlib as mpl
@@ -93,8 +101,8 @@ class DefectEntry(thermo.DefectEntry):
         _sc_entry_energy: float | None = None,
     ):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.thermo.DefectEntry` with
-        additional attributes used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects`` ``DefectEntry`` class,
+        with additional attributes used by ``doped``.
 
         Core Attributes:
             defect:
@@ -218,7 +226,7 @@ class DefectEntry(thermo.DefectEntry):
             except Exception:
                 name_wout_charge = self.defect.name
 
-            self.name = f"{name_wout_charge}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
+            self.name = f"{name_wout_charge}_{_signed_charge(self.charge_state)}"
         else:
             self.name = name
 
@@ -350,10 +358,9 @@ class DefectEntry(thermo.DefectEntry):
 
         As a general rule of thumb, the charge correction terms should follow
         relatively consistent trends in terms of magnitudes. A large outlier
-        (easily scanned with
-        :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-        often indicates something unusual/unexpected. See the FNV/eFNV and
-        other finite-size charge correction papers for further details.
+        (easily scanned with |get_formation_energies|) often indicates
+        something unusual/unexpected. See the FNV/eFNV and other finite-size
+        charge correction papers for further details.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -363,9 +370,8 @@ class DefectEntry(thermo.DefectEntry):
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If ``None``, then the dielectric constant is taken
                 from the |DefectEntry| ``calculation_metadata`` if available.
-                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-                tutorial section for information on calculating and converging
-                the dielectric constant.
+                See the |Dielectric Constant| tutorial section for information
+                on calculating and converging the dielectric constant.
             defect_planar_averaged_potentials:
                 The planar-averaged electrostatic potential from the defect
                 supercell calculation, as a dictionary in the form:
@@ -409,10 +415,9 @@ class DefectEntry(thermo.DefectEntry):
                 (default), uses the default doped style
                 (from ``doped/utils/doped.mplstyle``).
             **kwargs:
-                Additional kwargs to pass to
-                :func:`~pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction`
-                (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
-                ``defect_frac_coords``).
+                Additional kwargs to pass to the ``pymatgen-analysis-defects``
+                ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
+                ``mad_tol``, ``q_model``, ``step``, ``defect_frac_coords``).
 
         Returns:
             ``utils.CorrectionResults`` (summary of the corrections applied and
@@ -517,10 +522,9 @@ class DefectEntry(thermo.DefectEntry):
 
         As a general rule of thumb, the charge correction terms should follow
         relatively consistent trends in terms of magnitudes. A large outlier
-        (easily scanned with
-        :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-        often indicates something unusual/unexpected. See the FNV/eFNV and
-        other finite-size charge correction papers for further details.
+        (easily scanned with |get_formation_energies|) often indicates
+        something unusual/unexpected. See the FNV/eFNV and other finite-size
+        charge correction papers for further details.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -530,9 +534,8 @@ class DefectEntry(thermo.DefectEntry):
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If ``None``, then the dielectric constant is taken
                 from the |DefectEntry| ``calculation_metadata`` if available.
-                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-                tutorial section for information on calculating and converging
-                the dielectric constant.
+                See the |Dielectric Constant| tutorial section for information
+                on calculating and converging the dielectric constant.
             defect_region_radius (float):
                 Radius of the defect region (in Å). Sites outside the defect
                 region are used for sampling the electrostatic potential far
@@ -783,8 +786,7 @@ class DefectEntry(thermo.DefectEntry):
         their occupation (if ``plot=True``).
 
         Can be used to determine if a defect is adopting a perturbed host state
-        (PHS / shallow state), see the
-        :ref:`Tips:Perturbed Host States (Shallow Defects)` tips section.
+        (PHS / shallow state), see the |Shallow Defects| tips section.
 
         If eigenvalue data has not already been parsed for |DefectEntry|
         (default in ``doped`` is to parse this data with |DefectsParser|/
@@ -1098,13 +1100,7 @@ class DefectEntry(thermo.DefectEntry):
                 if already present in the |DefectEntry| object
                 ``calculation_metadata``.
                 You may want to adjust for your system (e.g. if there are very
-                slight octahedral distortions etc.). If
-                ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
-                this value will be automatically adjusted (up to 10x, down to
-                0.1x) until the identified equivalent sites from ``spglib``
-                have consistent point group symmetries. Setting ``verbose`` to
-                ``True`` will print information on the trialled ``symprec``
-                (and ``dist_tol_factor`` values).
+                slight octahedral distortions etc.).
                 (Default: None)
             bulk_symprec (float):
                 Symmetry precision to use for determining symmetry operations
@@ -1115,21 +1111,15 @@ class DefectEntry(thermo.DefectEntry):
                 distortions etc.). If set, then site symmetries & degeneracies
                 will be re-parsed/computed even if already present in the
                 |DefectEntry| object ``calculation_metadata``.
-                If ``fixed_symprec_and_dist_tol_factor`` is ``False``
-                (default), this value will be automatically adjusted (up to
-                10x, down to 0.1x) until the identified equivalent sites from
-                ``spglib`` have consistent point group symmetries. Setting
-                ``verbose`` to ``True`` will print information on the trialled
-                ``symprec`` (and ``dist_tol_factor`` values).
                 (Default: None)
             **kwargs:
                 Additional keyword arguments to pass to
                 ``get_all_equiv_sites`` /
                 ``get_equiv_frac_coords_in_primitive``, such as
-                ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``, and
-                ``verbose``, and/or |Defect| initialization (such as
-                ``oxi_state``, ``multiplicity``, ``dist_tol_factor``) in the
-                ``defect_and_info_from_structures`` function.
+                ``dist_tol_factor`` and ``verbose``, and/or |Defect|
+                initialization (such as ``oxi_state``, ``multiplicity``,
+                ``dist_tol_factor``) in the ``defect_and_info_from_structures``
+                function.
         """
         from doped.utils.symmetry import get_orientational_degeneracy, point_symmetry_from_defect_entry
 
@@ -1153,11 +1143,7 @@ class DefectEntry(thermo.DefectEntry):
                     self,
                     relaxed=False,
                     symprec=bulk_symprec,
-                    **{
-                        k: v
-                        for k, v in kwargs.items()
-                        if k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-                    },
+                    **{k: v for k, v in kwargs.items() if k in ["dist_tol_factor", "verbose"]},
                 )
             except Exception as e:
                 warnings.warn(f"Unable to determine bulk site symmetry for {self.name}, got error:\n{e!r}")
@@ -1181,11 +1167,7 @@ class DefectEntry(thermo.DefectEntry):
                     bulk_site_point_group=self.calculation_metadata["bulk site symmetry"],
                     symprec=symprec or 0.1,
                     bulk_symprec=bulk_symprec or 0.01,
-                    **{
-                        k: v
-                        for k, v in kwargs.items()
-                        if k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-                    },
+                    **{k: v for k, v in kwargs.items() if k in ["dist_tol_factor", "verbose"]},
                 )
             except Exception as e:
                 warnings.warn(
@@ -1259,9 +1241,7 @@ class DefectEntry(thermo.DefectEntry):
         """
         # Note: Could in future operate in logspace (logsumexp), as in py-sc-fermi, but so far unnecessary
         with np.errstate(over="ignore"):
-            exp_factor = np.exp(
-                -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
-            )
+            exp_factor = np.exp(-formation_energy / (kB * temperature))
             return np.maximum(exp_factor * degeneracy_factor, 1e-150)
 
     def equilibrium_concentration(
@@ -1802,9 +1782,8 @@ def _update_defect_entry_structure_metadata(
             attributes are not already set).
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
+            (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
+            initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``) in the
             ``defect_and_info_from_structures`` function.
     """
@@ -1861,9 +1840,8 @@ def template_defect_entry_from_structures(
             The bulk supercell structure.
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
+            (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
+            initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``) in the
             ``defect_and_info_from_structures`` function.
 
@@ -2362,7 +2340,7 @@ class Defect(core.Defect):
         **doped_kwargs,
     ):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.core.Defect` with
+        Subclass of the ``pymatgen-analysis-defects`` ``Defect`` class, with
         additional attributes and methods used by ``doped``.
 
         Args:
@@ -2452,11 +2430,12 @@ class Defect(core.Defect):
         **doped_kwargs,
     ) -> "Defect":
         """
-        Create a ``doped`` |Defect| from a ``pymatgen`` ``Defect`` object.
+        Create a ``doped`` |Defect| from a ``pymatgen-analysis-defects``
+        ``Defect`` object.
 
         Args:
             defect:
-                ``pymatgen`` ``Defect`` object.
+                ``pymatgen-analysis-defects`` ``Defect`` object.
             bulk_oxi_states:
                 Controls oxi-state guessing (later used for charge state
                 guessing). By default, oxidation states are taken from
@@ -2466,11 +2445,11 @@ class Defect(core.Defect):
                 ``{element: oxi_state}``), or otherwise guessed using the
                 ``doped`` methods.
                 If ``bulk_oxi_states`` is ``False``, then just uses the
-                already-set ``Defect`` ``oxi_state`` attribute (default = 0),
+                already-set |Defect| ``oxi_state`` attribute (default = 0),
                 with no more guessing.
                 If ``True``, re-guesses the oxidation state of the defect
-                (ignoring the ``pymatgen`` ``Defect``  ``oxi_state``
-                attribute).
+                (ignoring the ``pymatgen-analysis-defects`` ``Defect``
+                ``oxi_state`` attribute).
 
                 If the structure is mixed-valence, then ``bulk_oxi_states``
                 should be either a structure input or ``True`` (to re-guess).
@@ -2857,31 +2836,19 @@ class Defect(core.Defect):
                 which uses ``self.symprec`` (which is ``0.01`` by default,
                 matching the ``pymatgen`` default. You may want to adjust
                 for your system (e.g. if there are very slight octahedral
-                distortions etc.). If ``fixed_symprec_and_dist_tol_factor`` is
-                ``False`` (default), this value will be automatically adjusted
-                (up to 10x, down to 0.1x) until the identified equivalent sites
-                from ``spglib`` have consistent point group symmetries. Setting
-                ``verbose`` to ``True`` will print information on the trialled
-                ``symprec`` (and ``dist_tol_factor``) values.
+                distortions etc.).
             dist_tol_factor (float):
                 Distance tolerance for clustering generated sites (to ensure
                 they are truly distinct), as a multiplicative factor of
                 ``symprec``. Default is 1.0 (i.e. ``dist_tol = symprec``, in
-                Å). If ``fixed_symprec_and_dist_tol_factor`` is ``False``
-                (default), this value will also be automatically adjusted if
-                necessary (up to 10x, down to 0.1x)(after ``symprec``
-                adjustments) until the identified equivalent sites from
-                ``spglib`` have consistent point group symmetries. Setting
-                ``verbose`` to ``True`` will print information on the trialled
-                ``dist_tol_factor`` (and ``symprec``) values.
+                Å).
             primitive_structure (|Structure| | None):
                 (Deprecated, to be removed in v4.1.) Unused; retained for
                 backwards compatibility. Primitive cell folding is now handled
                 internally in ``get_all_equiv_sites``.
             **kwargs:
                 Additional keyword arguments to pass to
-                ``get_all_equiv_sites``, such as ``fold_to_primitive``,
-                ``fixed_symprec_and_dist_tol_factor`` and ``verbose``.
+                ``get_all_equiv_sites``, such as ``fold_to_primitive``.
 
         Returns:
             int: The multiplicity of ``self.site`` in ``self.structure``.
@@ -3144,11 +3111,12 @@ def doped_defect_from_pmg_defect(
 ):
     """
     Create the corresponding ``doped`` |Defect| (``Vacancy``, ``Interstitial``,
-    ``Substitution``) from an input ``pymatgen`` ``Defect`` object.
+    ``Substitution``) from an input ``pymatgen-analysis-defects`` ``Defect``
+    object.
 
     Args:
         defect:
-            ``pymatgen`` ``Defect`` object.
+            ``pymatgen-analysis-defects`` ``Defect`` object.
         bulk_oxi_states:
             Controls oxi-state guessing (later used for charge state guessing).
             By default, oxidation states are taken from
@@ -3160,7 +3128,8 @@ def doped_defect_from_pmg_defect(
             If ``bulk_oxi_states`` is ``False``, then just uses the already-set
             |Defect| ``oxi_state`` attribute (default = 0), with no more
             guessing. If ``True``, re-guesses the oxidation state of the defect
-            (ignoring the ``pymatgen`` ``Defect``  ``oxi_state``  attribute).
+            (ignoring the ``pymatgen-analysis-defects`` ``Defect``
+            ``oxi_state`` attribute).
 
             If the structure is mixed-valence, then ``bulk_oxi_states``
             should be either a structure input or ``True`` (to re-guess).
@@ -3194,7 +3163,7 @@ def doped_defect_from_pmg_defect(
 class Vacancy(Defect, core.Vacancy):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.core.Vacancy` with
+        Subclass of the ``pymatgen-analysis-defects`` ``Vacancy`` class, with
         additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
@@ -3210,8 +3179,8 @@ class Vacancy(Defect, core.Vacancy):
 class Substitution(Defect, core.Substitution):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.core.Substitution` with
-        additional attributes and methods used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects`` ``Substitution`` class,
+        with additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
 
@@ -3226,24 +3195,21 @@ class Substitution(Defect, core.Substitution):
 class Interstitial(Defect, core.Interstitial):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of :class:`~pymatgen.analysis.defects.core.Interstitial` with
-        additional attributes and methods used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects`` ``Interstitial`` class,
+        with additional attributes and methods used by ``doped``.
 
         If ``multiplicity`` is not set in ``kwargs``, then it will be
         automatically calculated using ``get_multiplicity``. Keyword arguments
         for ``get_multiplicity``, such as ``symprec`` (-> ``self.symprec``),
-        ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor`` and
-        ``verbose`` can also be passed in ``kwargs``.
+        ``dist_tol_factor`` can also be passed in ``kwargs``.
         """
-        calc_multiplicity = "multiplicity" not in kwargs
-        kwargs.setdefault("multiplicity", 1)  # will break for Interstitials if not set
+        if calc_multiplicity := "multiplicity" not in kwargs and len(args) < 3:  # kwarg or 3rd positional
+            kwargs["multiplicity"] = 1  # placeholder; ``pymatgen`` breaks for Interstitials if not set
         multiplicity_kwargs = {
-            k: kwargs.pop(k)
-            for k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-            if k in kwargs
+            k: kwargs.pop(k) for k in ["dist_tol_factor"] if k in kwargs
         }  # symprec set as self.symprec and used by default in ``get_multiplicity``
         super().__init__(*args, **kwargs)
-        if calc_multiplicity:
+        if calc_multiplicity:  # efficient ``doped`` auto multiplicity determination
             self.multiplicity = self.get_multiplicity(**multiplicity_kwargs)
 
     def __repr__(self) -> str:

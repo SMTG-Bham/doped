@@ -84,16 +84,11 @@ def if_present_rm(path):
 
 
 def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
-    from doped.utils import _ignore_pmg_warnings
-
     original_stdout = sys.stdout  # Save a reference to the original standard output
     sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
     w = None
     try:
         with warnings.catch_warnings(record=True) as w:
-            # Re-apply ``doped`` noise-suppressing warning filters, since ``pytest`` and
-            # ``catch_warnings`` can reset the filters in ``warnings.catch_warnings(record=True)``:
-            _ignore_pmg_warnings()
             result = func(*args, **kwargs)
         output = sys.stdout.getvalue()  # Return a str containing the printed output
     finally:
