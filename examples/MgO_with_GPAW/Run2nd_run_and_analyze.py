@@ -5,7 +5,7 @@ from pathlib import Path
 from monty.serialization import dumpfn
 
 from doped.chemical_potentials import get_doped_chempots_from_entries
-from doped.gpaw import GPAWDefectsParser, GPAWParser
+from doped.io.gpaw import GPAWDefectsParser, GPAWParser
 from doped.thermodynamics import DefectThermodynamics
 
 DIELECTRIC = 8.8963

@@ -4,7 +4,7 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 
 from doped.generation import DefectsGenerator
-from doped.gpaw import GPAWDefectRelaxSet
+from doped.io.gpaw import GPAWDefectRelaxSet
 
 
 def write_competing_phase_inputs(gpaw_settings):

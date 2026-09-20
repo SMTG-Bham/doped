@@ -1,5 +1,5 @@
 """
-Tests for the GPAW interface in ``doped.gpaw``.
+Tests for the GPAW interface in ``doped.io.gpaw``.
 """
 
 import os
@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 from pymatgen.core.structure import Structure
 
-from doped.gpaw import GPAWDefectRelaxSet, GPAWDefectsParser, _find_gpaw_output
+from doped.io.gpaw.inputs import GPAWDefectRelaxSet
+from doped.io.gpaw.outputs import GPAWDefectsParser, _find_gpaw_output
 
 
 class GPAWTest(unittest.TestCase):
@@ -133,7 +134,7 @@ class GPAWTest(unittest.TestCase):
         using real static ``.gpw`` files (both ``v_Mg`` and ``Mg_O`` defects).
         """
         pytest.importorskip("gpaw")
-        from doped.gpaw import GPAWParser, get_gpaw_defect_entry
+        from doped.io.gpaw.outputs import GPAWParser, get_gpaw_defect_entry
 
         # Path to the static test data directories
         gpaw_mgo_dir = os.path.join(self.data_dir, "gpaw_mgo_test")

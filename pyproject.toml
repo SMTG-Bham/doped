@@ -51,7 +51,8 @@ tests = [
     "ase",  # ase build utilities used in some tests
 ]
 gpaw = [
-    # Experimental GPAW support (``doped.gpaw``). ``.gpw`` outputs are read with GPAW's own reader, so
+    # Experimental GPAW support (``doped.io.gpaw``). ``.gpw`` outputs are read with GPAW's own reader,
+    # so
     # GPAW must be installed; see https://gpaw.readthedocs.io/install.html for build requirements:
     "gpaw>=25.7.0",
 ]

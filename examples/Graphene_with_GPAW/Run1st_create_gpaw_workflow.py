@@ -5,7 +5,7 @@ from pathlib import Path
 from pymatgen.core import Structure
 
 from doped.generation import DefectsGenerator
-from doped.gpaw import GPAWDefectRelaxSet
+from doped.io.gpaw import GPAWDefectRelaxSet
 
 
 def main():

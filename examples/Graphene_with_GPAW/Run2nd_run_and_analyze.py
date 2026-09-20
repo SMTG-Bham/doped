@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from monty.serialization import dumpfn
 
-from doped.gpaw import GPAWDefectsParser
+from doped.io.gpaw import GPAWDefectsParser
 
 DIELECTRIC = np.diag([1e6, 1e6, 1.0])
 

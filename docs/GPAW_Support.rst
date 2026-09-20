@@ -34,10 +34,10 @@ The GPAW workflow follows the usual ``doped`` sequence:
 #. Generate defect supercells with
    :class:`~doped.generation.DefectsGenerator`.
 #. Write ``structure.cif`` and GPAW Python inputs with
-   :class:`~doped.gpaw.GPAWDefectRelaxSet`.
+   :class:`~doped.io.gpaw.inputs.GPAWDefectRelaxSet`.
 #. Run the GPAW calculations locally or through a scheduler.
 #. Parse the bulk and defect ``.gpw`` restart files with
-   :class:`~doped.gpaw.GPAWDefectsParser`.
+   :class:`~doped.io.gpaw.outputs.GPAWDefectsParser`.
 #. Analyse the resulting :class:`~doped.core.DefectEntry` objects with
    :class:`~doped.thermodynamics.DefectThermodynamics`.
 
@@ -52,7 +52,7 @@ GPAW calculator.
 
    from pymatgen.core import Structure
 
-   from doped.gpaw import GPAWDefectRelaxSet
+   from doped.io.gpaw import GPAWDefectRelaxSet
 
    structure = Structure.from_file("POSCAR")
    gpaw_settings = {
@@ -110,7 +110,7 @@ directory and stores the parsed entries in ``defect_dict``:
 
 .. code-block:: python
 
-   from doped.gpaw import GPAWDefectsParser
+   from doped.io.gpaw import GPAWDefectsParser
 
    parser = GPAWDefectsParser(
        output_path=".",
@@ -143,7 +143,7 @@ limits:
 .. code-block:: python
 
    from doped.chemical_potentials import get_doped_chempots_from_entries
-   from doped.gpaw import GPAWParser
+   from doped.io.gpaw import GPAWParser
    from doped.thermodynamics import DefectThermodynamics
 
    bulk_parser = GPAWParser("bulk")
@@ -179,4 +179,4 @@ Examples and API
 - ``examples/MgO_with_GPAW``: three-dimensional MgO workflow, competing-phase
   references, chemical potentials and formation-energy diagrams.
 - ``examples/Graphene_with_GPAW``: anisotropic two-dimensional parsing example.
-- :doc:`doped.gpaw`: complete GPAW API reference.
+- :doc:`doped.io`: complete GPAW API reference (``doped.io.gpaw``).

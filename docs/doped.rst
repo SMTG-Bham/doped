@@ -13,7 +13,6 @@ Modules
    doped.core
    doped.corrections
    doped.generation
-   doped.gpaw
    doped.init
    doped.parsing
    doped.thermodynamics

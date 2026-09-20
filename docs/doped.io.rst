@@ -61,3 +61,19 @@ doped.io.vasp.outputs module
    :members:
    :undoc-members:
    :show-inheritance:
+
+doped.io.gpaw.inputs module
+-------------------------------
+
+.. automodule:: doped.io.gpaw.inputs
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+doped.io.gpaw.outputs module
+--------------------------------
+
+.. automodule:: doped.io.gpaw.outputs
+   :members:
+   :undoc-members:
+   :show-inheritance:
