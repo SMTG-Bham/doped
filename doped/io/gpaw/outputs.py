@@ -410,23 +410,26 @@ def get_calculation_outputs(
 
 
 _COMPATIBILITY_PARAMETERS = (
-    "mode",
+    "mode",  # PW/LCAO/FD and the plane-wave cutoff
     "xc",
     "kpts",
-    "setups",
-    "basis",
-    "h",
-    "gpts",
-    "spinpol",
-    "occupations",
-    "convergence",
-    "poissonsolver",
-    "external",
-    "background_charge",
+    "setups",  # PAW datasets
+    "basis",  # LCAO basis set
+    "h",  # real-space grid spacing...
+    "gpts",  # ...or grid points
+    "external",  # external potential (e.g. an electric field)
+    "background_charge",  # explicit jellium background
 )
 """
 The ``GPAW`` calculation parameters which must match between the bulk and
-defect supercell calculations for their energies to be comparable.
+defect supercell calculations for their energies to be comparable; the analogue
+of :data:`~doped.io.vasp.outputs.default_energy_affecting_incar_tags`
+(functional, basis/grid, k-points, PAW datasets and external fields).
+
+As for
+``VASP``, spin polarisation (``spinpol``), smearing (``occupations``) and SCF
+thresholds (``convergence``) are not compared, as they may legitimately differ
+between the bulk and defect calculations.
 """
 
 
