@@ -5385,8 +5385,7 @@ def shallow_dopant_binding_energy(
     Estimate the binding energy of a shallow dopant /defect in a semiconductor,
     using effective mass theory.
 
-    Discussion in the :ref:`Tips:Perturbed Host States (Shallow Defects)` tips
-    section.
+    Discussion in the |Shallow Defects| tips section.
 
     For delocalised, shallow states (a.k.a. perturbed host states), the
     hydrogenic effective mass model typically gives quite a good estimate of

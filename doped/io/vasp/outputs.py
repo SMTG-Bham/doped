@@ -1388,7 +1388,7 @@ MISMATCH_WARNING_SPECS = {
     "mismatching_INCAR_tags": {
         "object_name": "INCAR tags",
         "per_defect_warning_prefix": "There are mismatching",
-        "transform": set,
+        "transform": tuple,
         "message": lambda lst: (
             "'Defects: (INCAR tag, value in defect calculation, value in bulk calculation))':\n"
             f"{_format_mismatching_incar_warning(lst)}\n"
@@ -1836,15 +1836,12 @@ def check_entry_compatibility(entries, template_candidates=None) -> None:
             )  # warned collectively below if any mismatches
             # ignore ISIF warnings in cases of supercell calculations (i.e. either gas calculations
             # or bulk supercell -- assumed to be the correct volume):
-            incar_mismatches = [
+            entry.data["mismatching_INCAR_tags"] = [
                 i
                 for i in incar_mismatches
                 if i[0] != "ISIF"
                 or all(ent.structure.volume < 800 for ent in [incar_template_entry, entry])
             ] or False
-            entry.data["mismatching_INCAR_tags"] = (
-                incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
-            )
 
         mismatching_INCAR_warnings = sorted(
             [

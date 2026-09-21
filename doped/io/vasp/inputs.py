@@ -2751,8 +2751,8 @@ def get_relaxation_sets(
     defect calculations for a final single-point energy calculation), to
     avoid spurious Pulay stress effects.
 
-    See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-    for tips on boosting the efficiency of competing phases calculations.
+    See the |Competing Phases Tips| tips section for tips on boosting the
+    efficiency of competing phases calculations.
 
     Args:
         competing_phases (CompetingPhases):
@@ -2917,10 +2917,9 @@ def get_singlepoint_sets(
     (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
     check for cheaper converged `k`-point densities for these final
     single-point calculations -- particularly useful if e.g. performing
-    hybrid DFT SOC calculations. See the
-    :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-    for further tips on boosting the efficiency of competing phases
-    calculations.
+    hybrid DFT SOC calculations. See the |Competing Phases Tips| tips
+    section for further tips on boosting the efficiency of competing
+    phases calculations.
 
     Note that this function uses a single kpoint density setting each for
     metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
@@ -3214,8 +3213,8 @@ def write_relaxation_files(
     defect calculations for a final single-point energy calculation), to
     avoid spurious Pulay stress effects.
 
-    See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-    for tips on boosting the efficiency of competing phases calculations.
+    See the |Competing Phases Tips| tips section for tips on boosting the
+    efficiency of competing phases calculations.
 
     Args:
         competing_phases (CompetingPhases):
@@ -3348,10 +3347,9 @@ def write_singlepoint_files(
     (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
     check for cheaper converged `k`-point densities for these final
     single-point calculations -- particularly useful if e.g. performing
-    hybrid DFT SOC calculations. See the
-    :ref:`Tips:Competing Phases & Chemical Potentials` tips section
-    for further tips on boosting the efficiency of competing phases
-    calculations.
+    hybrid DFT SOC calculations. See the |Competing Phases Tips| tips
+    section for further tips on boosting the efficiency of competing
+    phases calculations.
 
     Note that this function uses a single kpoint density setting each for
     metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and

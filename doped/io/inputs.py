@@ -30,7 +30,7 @@ from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
 from doped.core import DefectEntry
-from doped.utils import _doped_obj_properties_methods, get_mp_context, pool_manager
+from doped.utils import _doped_obj_properties_methods, _signed_charge, get_mp_context, pool_manager
 
 if TYPE_CHECKING:
     from doped.generation import DefectsGenerator
@@ -183,8 +183,7 @@ class DefectsSetBase(MSONable, ABC):
             # set name attribute: (these are names without charges!)
             for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
                 defect_entry.name = (
-                    f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
-                    f"{defect_entry.charge_state}"
+                    f"{defect_name_wout_charge}_{_signed_charge(defect_entry.charge_state)}"
                 )
 
             # if any duplicate names, crash (and burn, b...)
