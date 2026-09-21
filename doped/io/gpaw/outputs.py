@@ -273,14 +273,11 @@ def get_potentials_from_input(
             The type of directory being parsed (e.g. ``"bulk"`` or
             ``"defect"``), for informative errors.
         entry_energy (float):
-            Accepted for backend-protocol compatibility and otherwise
-            unused; ``GPAW`` writes the potentials and the total energy to
-            the same ``.gpw`` file, so there is no separate calculation to
-            cross-check against (unlike ``VASP``'s ``OUTCAR``). Default is
-            ``None``.
+            Accepted for backend-protocol compatibility but **unused**;
+            ``GPAW`` writes the potentials and total energy to the same
+            ``.gpw`` file, so there is no separate calculation to cross-check.
         run_metadata (dict):
-            Accepted for backend-protocol compatibility and otherwise
-            unused, as for ``entry_energy``. Default is ``None``.
+            Accepted for backend-protocol compatibility but unused.
 
     Returns:
         The planar-averaged potentials (dict of ``{axis: potentials}``) or
@@ -418,18 +415,12 @@ _COMPATIBILITY_PARAMETERS = (
     "h",  # real-space grid spacing...
     "gpts",  # ...or grid points
     "external",  # external potential (e.g. an electric field)
-    "background_charge",  # explicit jellium background
+    "background_charge",  # explicit jellium (not standard uniform background for charged supercells)
 )
 """
 The ``GPAW`` calculation parameters which must match between the bulk and
-defect supercell calculations for their energies to be comparable; the analogue
-of :data:`~doped.io.vasp.outputs.default_energy_affecting_incar_tags`
-(functional, basis/grid, k-points, PAW datasets and external fields).
-
-As for
-``VASP``, spin polarisation (``spinpol``), smearing (``occupations``) and SCF
-thresholds (``convergence``) are not compared, as they may legitimately differ
-between the bulk and defect calculations.
+defect supercell calculations for their energies to be comparable; functional,
+basis/grid, k-points, PAW datasets and external fields.
 """
 
 
@@ -537,17 +528,18 @@ def get_site_potentials(
 
     Args:
         path (PathLike): Path to the calculation directory or ``.gpw`` file.
-        dir_type (str): The type of directory being parsed (``"bulk"`` or
-            ``"defect"``), for informative errors. Default is ``"bulk"``.
-        quiet (bool): Accepted for backend-protocol compatibility and
-            otherwise unused. Default is ``False``.
-        outputs (CalculationOutputs): Already-parsed outputs, whose site
-            potentials are used if present. Default is ``None``.
-        total_energy (list | float): Accepted for backend-protocol
-            compatibility and otherwise **unused**; ``GPAW`` writes the
-            potentials and the total energy to the same ``.gpw`` file, so
-            there is no separate calculation to cross-check against (unlike
-            ``VASP``'s ``OUTCAR``). Default is ``None``.
+        dir_type (str):
+            The type of directory being parsed (``"bulk"`` or ``"defect"``),
+            for informative errors. Default is ``"bulk"``.
+        quiet (bool):
+            Accepted for backend-protocol compatibility but unused.
+        outputs (CalculationOutputs):
+            Already-parsed outputs, whose site potentials are used if present.
+            Default is ``None``.
+        total_energy (list | float):
+            Accepted for backend-protocol compatibility but **unused**;
+            ``GPAW`` writes the potentials and total energy to the same
+            ``.gpw`` file, so there is no separate calculation to cross-check.
 
     Returns:
         np.ndarray: The atomic-site potentials (eV), one per site.
