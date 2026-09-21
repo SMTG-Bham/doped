@@ -85,3 +85,30 @@ jobs:
         with:
           name: doped_GH_test_plots_${{ matrix.os }}_${{ matrix.split }}
           path: tests/remote_baseline
+
+  test-gpaw:
+    # GPAW support (``doped.io.gpaw``) needs GPAW itself to read ``.gpw`` outputs, and GPAW builds a C
+    # extension against libxc/BLAS/LAPACK/FFTW (with no Windows support), so its tests run in one Linux job
+    # rather than across the matrix above. Without GPAW installed, ``tests/test_gpaw.py`` skips entirely.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y libxc-dev libblas-dev liblapack-dev libfftw3-dev
+          python -m pip install --upgrade pip
+          pip install --no-deps git+https://github.com/SMTG-Bham/ShakeNBreak@develop
+          # ``ase`` 3.29.0's ``.gpw`` reader sets ``ndarray.shape``, deprecated in NumPy 2.5 (already fixed in
+          # unreleased ``ase``), which the test config treats as an error; drop the pin at the next ``ase`` release:
+          pip install -e ".[tests,gpaw]" "numpy<2.5"
+
+      - name: Check GPAW is importable  # the GPAW tests skip without it, so a broken install must fail here
+        run: python -c "import gpaw; print(gpaw.__version__)"
+
+      - name: Test
+        run: pytest -vv tests/test_gpaw.py
