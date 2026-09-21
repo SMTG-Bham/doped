@@ -174,7 +174,7 @@ suppress_warnings = ["myst.header", "mystnb.image", "mystnb.unknown_mime_type"]
 # These substitutions are available in all RST files
 rst_prolog = """
 .. |DefectsGenerator| replace:: :class:`~doped.generation.DefectsGenerator`
-.. |DefectsParser| replace:: :class:`~doped.analysis.DefectsParser`
+.. |DefectsParser| replace:: :class:`~doped.parsing.DefectsParser`
 .. |DefectThermodynamics| replace:: :class:`~doped.thermodynamics.DefectThermodynamics`
 .. |get_TLs| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels`
 .. |get_formation_energies| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`

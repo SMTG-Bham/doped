@@ -12,8 +12,11 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
-    # only run when tests have passed (or manually triggered)
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.event == 'push') }}
+    # only run when tests have passed (or manually triggered), and only for pushes to this repository:
+    # the ``workflow_run`` ``branches: [main]`` filter above matches the HEAD branch of the triggering
+    # run, which for a fork PR is the fork's own branch name -- so without this guard an outside PR
+    # from a branch named ``main`` could trigger a PyPI release
 
     steps:
       - uses: actions/checkout@v4

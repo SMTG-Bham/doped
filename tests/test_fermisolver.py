@@ -29,7 +29,14 @@ from test_thermodynamics import (
     belas_linear_fit,
     reduced_anneal_temperatures,
 )
-from test_utils import EXAMPLE_DIR, STYLE, _print_warning_info, custom_mpl_image_compare, data_dir
+from test_utils import (
+    EXAMPLE_DIR,
+    STYLE,
+    _print_warning_info,
+    custom_mpl_image_compare,
+    data_dir,
+    vasp_data_dir,
+)
 
 from doped.chemical_potentials import ChemicalPotentialGrid
 from doped.thermodynamics import (
@@ -583,7 +590,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert solver.py_sc_fermi_dos is k18_dos  # cached, not re-derived on repeated access
         assert solver.volume == self.CdTe_fermi_dos.volume
 
-        k10_path = os.path.join(data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
+        k10_path = os.path.join(vasp_data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
         solver.defect_thermodynamics.bulk_dos = k10_path  # parsed by the ``DefectThermodynamics`` setter
         assert self.CdTe_thermo.bulk_dos is self.CdTe_fermi_dos  # user's thermo untouched (shallow copy)
         k10_dos = solver.py_sc_fermi_dos
@@ -3024,7 +3031,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = FermiSolver(
             self.CdTe_thermo,
-            bulk_dos=os.path.join(data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz"),
+            bulk_dos=os.path.join(vasp_data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz"),
             backend=backend,
         )
 

@@ -1,5 +1,5 @@
 """
-Tests for the `doped.vasp` module.
+Tests for the `doped.io.vasp.inputs` module.
 """
 
 import contextlib
@@ -26,11 +26,11 @@ from test_utils import (
     _run_heavy_tests,
     data_dir,
     if_present_rm,
+    vasp_data_dir,
 )
 
 from doped.generation import DefectsGenerator
-from doped.utils.efficiency import Structure, StructureMatcher_scan_stol
-from doped.vasp import (
+from doped.io.vasp.inputs import (
     DefectDictSet,
     DefectRelaxSet,
     DefectsSet,
@@ -40,6 +40,9 @@ from doped.vasp import (
     default_potcar_dict,
     singlepoint_incar_settings,
 )
+from doped.utils.efficiency import Structure, StructureMatcher_scan_stol
+
+# TODO: Should move this to a .io tests subpackage?
 
 
 def _check_potcar_dir_not_setup_warning_error(dds, message, poscar=True):
@@ -81,7 +84,7 @@ def _check_nupdown_neutral_cell_warning(message):
 
 class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
-        self.CdTe_data_dir = os.path.join(data_dir, "CdTe")
+        self.CdTe_data_dir = os.path.join(vasp_data_dir, "CdTe")
         self.prim_cdte = Structure.from_file(f"{EXAMPLE_DIR}/CdTe/relaxed_primitive_POSCAR")
         self.CdTe_defect_gen = DefectsGenerator(self.prim_cdte)
         self.ytos_bulk_supercell = Structure.from_file(f"{EXAMPLE_DIR}/YTOS/Bulk/POSCAR")

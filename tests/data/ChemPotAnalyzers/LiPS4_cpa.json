@@ -685,6 +685,31 @@
             ]
         }
     },
+    "calc_output_paths": [
+        "competing_phases/P2S5_EaH=0/vasprun.xml",
+        "competing_phases/P4S9_EaH=0.0012/vasprun.xml",
+        "competing_phases/S_EaH=0.019/vasprun.xml",
+        "competing_phases/S_EaH=0.021/vasprun.xml",
+        "competing_phases/P_EaH=0/vasprun.xml",
+        "competing_phases/S_EaH=0.044/vasprun.xml",
+        "competing_phases/S_EaH=0.011/vasprun.xml",
+        "competing_phases/P2S7_EaH=0/vasprun.xml",
+        "competing_phases/Li3PS4_gamma/vasprun.xml",
+        "competing_phases/Li2S_EaH=0/vasprun.xml",
+        "competing_phases/S_EaH=0/vasprun.xml",
+        "competing_phases/P4S9_EaH=0/vasprun.xml",
+        "competing_phases/P2S7_EaH=0.0029/vasprun.xml",
+        "competing_phases/Li_ICSD/vasprun.xml",
+        "competing_phases/Li2S_EaH=0.056/vasprun.xml",
+        "competing_phases/S_EaH=0.032/vasprun.xml",
+        "competing_phases/P4S3_EaH=0/vasprun.xml",
+        "competing_phases/S_EaH=0.014/vasprun.xml",
+        "competing_phases/S_EaH=0.041/vasprun.xml",
+        "competing_phases/S_EaH=0.0409/vasprun.xml",
+        "competing_phases/P_EaH=0.045/vasprun.xml",
+        "competing_phases/S_EaH=0.001/vasprun.xml",
+        "competing_phases/P4S3_EaH=0.00018/vasprun.xml"
+    ],
     "composition": {
         "Li": 3.0,
         "P": 1.0,
@@ -16808,30 +16833,5 @@
         "competing_phases/S_EaH=0.001/",
         "competing_phases/P4S3_EaH=0.00018/"
     ],
-    "unstable_host": false,
-    "vasprun_paths": [
-        "competing_phases/P2S5_EaH=0/vasprun.xml",
-        "competing_phases/P4S9_EaH=0.0012/vasprun.xml",
-        "competing_phases/S_EaH=0.019/vasprun.xml",
-        "competing_phases/S_EaH=0.021/vasprun.xml",
-        "competing_phases/P_EaH=0/vasprun.xml",
-        "competing_phases/S_EaH=0.044/vasprun.xml",
-        "competing_phases/S_EaH=0.011/vasprun.xml",
-        "competing_phases/P2S7_EaH=0/vasprun.xml",
-        "competing_phases/Li3PS4_gamma/vasprun.xml",
-        "competing_phases/Li2S_EaH=0/vasprun.xml",
-        "competing_phases/S_EaH=0/vasprun.xml",
-        "competing_phases/P4S9_EaH=0/vasprun.xml",
-        "competing_phases/P2S7_EaH=0.0029/vasprun.xml",
-        "competing_phases/Li_ICSD/vasprun.xml",
-        "competing_phases/Li2S_EaH=0.056/vasprun.xml",
-        "competing_phases/S_EaH=0.032/vasprun.xml",
-        "competing_phases/P4S3_EaH=0/vasprun.xml",
-        "competing_phases/S_EaH=0.014/vasprun.xml",
-        "competing_phases/S_EaH=0.041/vasprun.xml",
-        "competing_phases/S_EaH=0.0409/vasprun.xml",
-        "competing_phases/P_EaH=0.045/vasprun.xml",
-        "competing_phases/S_EaH=0.001/vasprun.xml",
-        "competing_phases/P4S3_EaH=0.00018/vasprun.xml"
-    ]
+    "unstable_host": false
 }

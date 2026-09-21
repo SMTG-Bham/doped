@@ -60,8 +60,8 @@ Typically the easiest way to do this is to follow the workflow shown in
 the defect generation tutorial, and then run the |ShakeNBreak| ``vasp_gam`` relaxations for the 
 ``Unperturbed`` and ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, 
 you can generate the ``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in
-:class:`~doped.vasp.DefectsSet` :meth:`~doped.vasp.DefectsSet.write_files()` -- this will rattle 
-the output structures by default to break symmetry (controlled by the ``rattle`` option).
+:class:`~doped.io.vasp.inputs.DefectsSet` :meth:`~doped.io.vasp.inputs.DefectsSet.write_files()` -- this
+will rattle the output structures by default to break symmetry (controlled by the ``rattle`` option).
 
 We can then compare the energies of these trial relaxations, and remove candidates that either:
 
@@ -206,7 +206,7 @@ particularly for metals, which are often the most expensive competing phases -- 
   greatly reduce the cost with minimal loss of accuracy -- as encouraged in the defect supercell 
   workflow (see the :ref:`VASP input file generation <generation_tutorial:Prepare VASP calculation files with doped>`
   section of the defect generation tutorial, and the
-  :attr:`~doped.vasp.DefectRelaxSet.vasp_nkred_std` property). 
+  :attr:`~doped.io.vasp.inputs.DefectRelaxSet.vasp_nkred_std` property). 
   This is particularly useful for metallic competing phases, which require high `k`-point densities and 
   thus can be very expensive/memory-demanding, particularly if also using hybrid DFT and/or including 
   spin-orbit coupling (SOC), but can often use reduced Fock exchange `k`-point densities without 
@@ -463,7 +463,7 @@ As discussed below, this is performed automatically in ``doped``.
     charge-carrier (electron/hole), :math:`\epsilon` is the total dielectric constant
     (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and ``Ry`` is the Rydberg constant
     (i.e. binding energy of an electron in a hydrogen atom; ~13.6 eV).
-    This formula is used in the :func:`~doped.analysis.shallow_dopant_binding_energy()` convenience
+    This formula is used in the :func:`~doped.thermodynamics.shallow_dopant_binding_energy()` convenience
     function, with example usage shown
     :ref:`here in the advanced analysis tutorial <advanced_analysis_tutorial:Estimate Dopant (Acceptor) Binding Energy>`.
     As shown in the tutorial example, this formula can also be used to estimate the Wannier-Mott exciton
@@ -619,7 +619,7 @@ This can arise for a number of reasons:
 
     - Assuming the `k`-point sampling of the DOS calculation is sufficiently dense, then the issue is just
       that the VBM eigenvalue and band gap of the bulk supercell calculation is not accurate. This can be
-      rectified by using the ``bulk_band_gap_vr`` option during defect parsing (see
+      rectified by using the ``bulk_band_gap_outputs`` option during defect parsing (see
       |DefectsParser| docstring) to set the bulk band gap and VBM eigenvalue to
       the correct values.
     - In this case, the absolute values of predictions should not be affected as the eigenvalue references
@@ -728,8 +728,8 @@ This tag is particularly important for magnetic materials (as discussed in the
 ``ShakeNBreak`` tips page), and can be useful if trying to favour a specific polaron/spin configuration
 (as briefly discussed at `this point <https://youtu.be/FWz7nm9qoNg?si=sOnJQ5b0tZ5WwNO-&t=6914>`__ in the
 old YouTube defects tutorial). This tag can be set using the ``user_incar_settings`` parameter in the
-``doped.vasp`` classes, for which the python API helps streamline this process when setting ``MAGMOM``
-for multiple defects.
+``doped.io.vasp.inputs`` classes, for which the python API helps streamline this process when setting
+``MAGMOM`` for multiple defects.
 
 .. note::
 
@@ -744,7 +744,7 @@ When parsing defect calculations, ``doped`` will automatically extract the total
 the :attr:`~doped.core.DefectEntry.degeneracy_factors` |DefectEntry| attribute
 (``DefectEntry.degeneracy_factors["spin degeneracy"]``, and printed in the |DefectThermodynamics|
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_symmetries_and_degeneracies()` method) and used in
-thermodynamic analyses. See the :func:`~doped.utils.parsing.spin_degeneracy_from_vasprun()` function for 
+thermodynamic analyses. See the :func:`~doped.io.vasp.outputs.spin_degeneracy_from_vasprun()` function for 
 details.
 
 Symmetry Precision (``symprec``)
@@ -752,7 +752,7 @@ Symmetry Precision (``symprec``)
 When computing the symmetries of structures, a threshold parameter has to be set in order to distinguish
 structural/positional noise from distinct site differences. In ``doped`` as in ``spglib`` (and 
 ``pymatgen``), this can be controlled with the ``symprec`` parameter (see the :ref:`spglib definition
-<spglib:variables_symprec>`), which can be set in |DefectsParser|, :class:`~doped.analysis.DefectParser`,
+<spglib:variables_symprec>`), which can be set in |DefectsParser|, :class:`~doped.parsing.DefectParser`,
 all |DefectThermodynamics| symmetry/concentration functions,
 :func:`~doped.utils.symmetry.get_orientational_degeneracy()`,
 :func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()` and others.
@@ -855,13 +855,13 @@ In the typical defect calculation workflow with ``doped`` (exemplified in the tu
 ``JSON`` files are automatically written to file:
 
 - The |DefectsGenerator| object or ``defect_entries`` dictionary that is input to
-  :class:`~doped.vasp.DefectsSet`, when writing ``VASP`` input files with
-  :class:`~doped.vasp.DefectsSet` :meth:`~doped.vasp.DefectsSet.write_files()` -- written to
-  ``output_path``. Additionally, for each calculation directory generated, the corresponding
+  :class:`~doped.io.vasp.inputs.DefectsSet`, when writing ``VASP`` input files with
+  :class:`~doped.io.vasp.inputs.DefectsSet` :meth:`~doped.io.vasp.inputs.DefectsSet.write_files()` --
+  written to ``output_path``. Additionally, for each calculation directory generated, the corresponding
   |DefectEntry| object is written to a ``{DefectEntry.name}.json`` file in the directory 
   so that all information on the generated defect structure, charge state etc. is preserved in the 
   calculation directory.
-- The parsed defect entries dict (:attr:`~doped.analysis.DefectsParser.defect_dict`) when defect
+- The parsed defect entries dict (:attr:`~doped.parsing.DefectsParser.defect_dict`) when defect
   calculations are parsed with |DefectsParser| -- written to ``output_path``. The 
   JSON filename can be set with e.g. ``DefectsParser(json_filename="custom_name.json")``, but the default 
   is ``{Host Chemical Formula}_defect_dict.json.gz``.

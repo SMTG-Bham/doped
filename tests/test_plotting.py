@@ -1,8 +1,8 @@
 """
 Tests for the `doped.utils.plotting` module, which also implicitly tests some
-of the `doped.utils.parsing` and `doped.analysis` modules.
+of the `doped.utils.mappings` and `doped.parsing` modules.
 
-Note that some of the integration tests in `test_analysis.py` also implicitly
+Note that some of the integration tests in `test_parsing.py` also implicitly
 tests much of the plotting functionality.
 
 The plotting tests are split into two ``TestCase`` classes:
@@ -33,10 +33,11 @@ from test_utils import (
     custom_mpl_image_compare,
     data_dir,
     if_present_rm,
+    vasp_data_dir,
 )
 
-from doped.analysis import DefectParser
 from doped.core import Interstitial, Substitution
+from doped.parsing import DefectParser
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import plotting
 
@@ -687,14 +688,14 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         Test plotting V2O5 defects, FNV correction.
         """
         dielectric = [4.186, 19.33, 17.49]
-        bulk_path = f"{data_dir}/V2O5/V2O5_bulk"
-        chempots = loadfn(f"{data_dir}/V2O5/chempots.json")
+        bulk_path = f"{vasp_data_dir}/V2O5/V2O5_bulk"
+        chempots = loadfn(f"{vasp_data_dir}/V2O5/chempots.json")
 
         defect_dict = {
             defect: DefectParser.from_paths(
-                f"{data_dir}/V2O5/{defect}", bulk_path, dielectric=dielectric
+                f"{vasp_data_dir}/V2O5/{defect}", bulk_path, dielectric=dielectric
             ).defect_entry
-            for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
+            for defect in [dir for dir in os.listdir(f"{vasp_data_dir}/V2O5") if "v_O" in dir]
         }  # charge auto-determined (as neutral)
         thermo = DefectThermodynamics(list(defect_dict.values()))
         return thermo.plot(chempots, limit="V2O5-O2")
