@@ -4,11 +4,6 @@ Code to generate GPAW defect calculation input files.
 GPAW support is experimental. Features which are not implemented, and so
 unavailable with GPAW:
 
-- :class:`DefectRelaxSet` is a standalone class, rather than a
-  :class:`~doped.io.inputs.DefectsSetBase` subclass, so the ``DefectsSet``
-  workflow (per-defect input sets for a full ``DefectsGenerator`` output,
-  folder-structure writing, rattling, provenance serialisation) is
-  unavailable, as is ``DefectsGenerator``-driven input writing.
 - The competing phase input-set functions
   (``get_kpoint_convergence_sets()``, ``get_relaxation_sets()``,
   ``get_singlepoint_sets()``, ``write_input_sets()`` and the corresponding

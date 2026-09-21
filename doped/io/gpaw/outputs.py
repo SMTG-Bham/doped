@@ -367,7 +367,8 @@ def get_calculation_outputs(
                     np.stack(
                         [
                             calc.get_eigenvalues(kpt=kpt, spin=spin_index),
-                            calc.get_occupation_numbers(kpt=kpt, spin=spin_index),
+                            # ``raw`` = in [0, 1], without k-point weights or spin degeneracy:
+                            calc.get_occupation_numbers(kpt=kpt, spin=spin_index, raw=True),
                         ],
                         axis=-1,
                     )
@@ -408,11 +409,42 @@ def get_calculation_outputs(
             calc.atoms.calc = None
 
 
-_COMPATIBILITY_PARAMETERS = ("mode", "xc", "kpts", "setups", "spinpol", "convergence")
+_COMPATIBILITY_PARAMETERS = (
+    "mode",
+    "xc",
+    "kpts",
+    "setups",
+    "basis",
+    "h",
+    "gpts",
+    "spinpol",
+    "occupations",
+    "convergence",
+    "poissonsolver",
+    "external",
+    "background_charge",
+)
 """
 The ``GPAW`` calculation parameters which must match between the bulk and
 defect supercell calculations for their energies to be comparable.
 """
+
+
+def _comparable(value: Any) -> Any:
+    """
+    Convert a ``GPAW`` parameter value to a form which compares by value.
+
+    ``GPAW`` parameters can hold ``numpy`` arrays (e.g. an explicit k-point
+    list), for which ``!=`` gives an array rather than a ``bool``, and
+    equivalent lists/tuples; all are converted to (nested) lists.
+    """
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, dict):
+        return {key: _comparable(val) for key, val in value.items()}
+    if isinstance(value, list | tuple):
+        return [_comparable(val) for val in value]
+    return value
 
 
 def check_run_compatibility(
@@ -448,7 +480,7 @@ def check_run_compatibility(
     mismatches = {
         parameter: (defect_parameters.get(parameter), bulk_parameters.get(parameter))
         for parameter in _COMPATIBILITY_PARAMETERS
-        if defect_parameters.get(parameter) != bulk_parameters.get(parameter)
+        if _comparable(defect_parameters.get(parameter)) != _comparable(bulk_parameters.get(parameter))
     }
     if mismatches and warn:
         mismatch_info = "\n".join(
