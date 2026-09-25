@@ -19,11 +19,11 @@ from doped.utils._optimise import (
     _beam_zoom_search,
     _default_grid_resolution,
     _independent_columns,
+    _kB,
     _landscape_smoothness_scale,
     _nearest_distances,
     _PolytopeInterp,
     _select_seeds,
-    kB,
 )
 
 # Synthetic two-basin landscape on a triangular ("ternary") stability polytope: a broad basin (amplitude 1,
@@ -66,7 +66,7 @@ class TestTwoBasinRegression:
 
     def test_new_defaults_find_global_basin(self):
         result = _beam_zoom_search(
-            two_basin, TRIANGLE, make_grid=make_grid, initial_grid_resolution=kB * 900
+            two_basin, TRIANGLE, make_grid=make_grid, initial_grid_resolution=_kB * 900
         )
         assert result.value >= 99.5
         assert np.max(np.abs(result.point[:2] - NARROW)) < 0.02
@@ -80,7 +80,7 @@ class TestTwoBasinRegression:
             two_basin,
             TRIANGLE,
             make_grid=make_grid,
-            initial_grid_resolution=kB * 450,
+            initial_grid_resolution=_kB * 450,
             n_audit_points=0,
             polish=False,
         )
@@ -88,7 +88,7 @@ class TestTwoBasinRegression:
             two_basin,
             TRIANGLE,
             make_grid=make_grid,
-            initial_grid_resolution=kB * 450,
+            initial_grid_resolution=_kB * 450,
             n_audit_points=0,
         )
         assert 96 <= unpolished.value < polished.value
@@ -127,7 +127,7 @@ class TestTwoBasinRegression:
         centre = np.array([-2 * 6 / 37 - spacing / 2, -2 * 28 / 37 - spacing / 2])  # mid-cell
         suppressed = lambda pts: two_basin(pts, amp=2.0, centre=centre, sigma=0.02)  # noqa: E731
 
-        first_pass = make_grid(TRIANGLE, resolution=kB * 900)
+        first_pass = make_grid(TRIANGLE, resolution=_kB * 900)
         near_basin = np.linalg.norm(first_pass[:, :2] - centre, axis=1) < 3 * 0.02
         assert suppressed(first_pass)[near_basin].max() < 0.5  # precondition: basin sample-suppressed
 
@@ -136,7 +136,7 @@ class TestTwoBasinRegression:
             TRIANGLE,
             make_grid=make_grid,
             max_beam_width=1,
-            initial_grid_resolution=kB * 900,
+            initial_grid_resolution=_kB * 900,
             n_audit_points=0,
         )
         assert abs(argmax_and_polish.value - 1.0) < 0.1  # wrong (broad) basin
@@ -145,7 +145,7 @@ class TestTwoBasinRegression:
             suppressed,
             TRIANGLE,
             make_grid=make_grid,
-            initial_grid_resolution=kB * 900,
+            initial_grid_resolution=_kB * 900,
             n_audit_points=0,
         )
         assert abs(beam.value - 2.0) < 0.02
@@ -350,21 +350,21 @@ class TestFirstPassResolutionDefaults:
     """
 
     def test_smoothness_scale_dispatch(self):
-        assert np.isclose(_landscape_smoothness_scale(temperature=500), kB * 500)
+        assert np.isclose(_landscape_smoothness_scale(temperature=500), _kB * 500)
         assert np.isclose(  # frozen totals; c(μ) ~ exp(-dH/kT_anneal):
-            _landscape_smoothness_scale(annealing_temperature=900, quenched_temperature=300), kB * 900
+            _landscape_smoothness_scale(annealing_temperature=900, quenched_temperature=300), _kB * 900
         )
         assert np.isclose(  # free defects re-equilibrate against the reservoir at T_quench:
             _landscape_smoothness_scale(
                 annealing_temperature=900, quenched_temperature=300, free_defects=["v_"]
             ),
-            kB * 300,
+            _kB * 300,
         )
         assert np.isclose(  # conservative kB * min(temperatures) fallback (T_quench > T_anneal here):
             _landscape_smoothness_scale(
                 annealing_temperature=300, quenched_temperature=600, free_defects=["v_"]
             ),
-            kB * 300,
+            _kB * 300,
         )
 
     def test_opportunistic_refinement_2d_reaches_quench_floor(self):
@@ -373,7 +373,7 @@ class TestFirstPassResolutionDefaults:
         resolution = _default_grid_resolution(
             make_grid, TRIANGLE, annealing_temperature=900, quenched_temperature=300
         )
-        assert np.isclose(resolution, kB * 300)
+        assert np.isclose(resolution, _kB * 300)
 
     def test_4d_stays_at_dispatch_scale_budget_bound(self):
         simplex_4d = np.hstack([np.vstack([np.zeros(4), -2 * np.eye(4)]), np.zeros((5, 1))])
@@ -386,12 +386,12 @@ class TestFirstPassResolutionDefaults:
         resolution = _default_grid_resolution(
             make_grid_4d, simplex_4d, annealing_temperature=900, quenched_temperature=300
         )
-        assert np.isclose(resolution, kB * 900)  # budget-bound; no refinement below dispatch scale
+        assert np.isclose(resolution, _kB * 900)  # budget-bound; no refinement below dispatch scale
 
     def test_equilibrium_no_refinement_below_kT(self):
         # for full equilibrium the dispatch scale equals the floor (kB*T); no refinement below it:
         resolution = _default_grid_resolution(make_grid, TRIANGLE, temperature=500)
-        assert np.isclose(resolution, kB * 500)
+        assert np.isclose(resolution, _kB * 500)
 
     def test_refinement_dimension_uses_affine_rank(self):
         # a collinear 4-column line grid (affine rank 1): refinement from the 1.0 eV smoothness scale is
@@ -406,8 +406,8 @@ class TestFirstPassResolutionDefaults:
             line_grid,
             np.array([[0.0, 0.0, 0.0, 0.0], [1.0, 2.0, 3.0, -6.0]]),
             smoothness_scale=1.0,
-            annealing_temperature=1 / kB,
-            quenched_temperature=0.5 / kB,
+            annealing_temperature=1 / _kB,
+            quenched_temperature=0.5 / _kB,
             max_initial_points=500,
         )
         assert resolution == 0.5
