@@ -980,7 +980,7 @@ def plot_displacements_ellipsoid(
             fig, axs = plt.subplots(1, 2, figsize=(14, 6))
 
             # Part 1: Displacement Distribution Box Plot
-            axs[0].boxplot(disp_df["Displacement"], orientation="vertical", patch_artist=True)
+            axs[0].boxplot(disp_df["Displacement"], patch_artist=True)
             axs[0].set_title("Displacement Norm Distribution")
             axs[0].set_ylabel("Displacement Norm (Å)")
             axs[0].grid(False)
@@ -1046,7 +1046,7 @@ def plot_displacements_ellipsoid(
                     "opacity": 0.5,
                     "color": anisotropy_df["Longest Radius"],  # set color according to column "a"
                     "colorscale": "rainbow",
-                    "colorbar": {"title": "Ellipsoid Maximum Radius (Å)", "titleside": "right"},
+                    "colorbar": {"title": {"text": "Ellipsoid Maximum Radius (Å)", "side": "right"}},
                 },
                 text=anisotropy_df["Longest Radius"],
                 hoverinfo="text",
