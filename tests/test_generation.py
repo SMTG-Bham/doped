@@ -43,7 +43,13 @@ from doped.core import (
     Vacancy,
     _falling_back_to_common_oxi_states_warning,
 )
-from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
+from doped.generation import (
+    DefectsGenerator,
+    get_bond_centre_sites,
+    get_defect_name_from_defect,
+    get_defect_name_from_entry,
+    get_interstitial_sites,
+)
 from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure, StructureMatcher_scan_stol
 from doped.utils.supercells import get_min_image_distance, min_dist
 from doped.utils.symmetry import (
@@ -3887,13 +3893,32 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         bcc_distorted_oct_site = "H_i_D4h          [0]                [0.000,0.000,0.500]  6b"
         bcc_D3d_site = "H_i_D3d          [0]                [0.250,0.250,0.250]  8c"
 
-        # by default, only D2d site generated, which relaxes to the stable octahedral site anyway (point
-        # of support for our default settings; https://github.com/SMTG-Bham/doped/issues/140):
+        # by default, D2d site generated (which relaxes to the stable octahedral site anyway; point of
+        # support for our default settings; https://github.com/SMTG-Bham/doped/issues/140), along with the
+        # D3d site, which is the nearest-neighbour bond centre (included by default for hydrogen), and the
+        # (distorted) octahedral D4h site, which is the bond centre of the second-nearest-neighbour Fe-Fe
+        # bonds (2.87 Å, 1.15 x the nearest-neighbour bond length; within the default ``bond_tol`` of 0.2):
+        assert len(defect_gen.defect_entries) == 3
+        assert bcc_default_voronoi_site in output
+        assert bcc_D3d_site in output
+        assert bcc_distorted_oct_site in output
+
+        # only the D2d site without bond-centre sites:
+        defect_gen, output = self._generate_and_test_no_warnings(
+            bcc_fe,
+            generate_supercell=False,
+            interstitial_elements=["H"],
+            substitution_elements=[],
+            vacancy_elements=[],
+            neutral_only=True,
+            interstitial_gen_kwargs={"include_bond_centres": False},
+            min_image_distance=2.86,
+        )
         assert len(defect_gen.defect_entries) == 1
         assert bcc_default_voronoi_site in output
 
         # test enforcing inclusion of unique Wyckoff positions; canonical distorted octahedral site now
-        # included, along with D3d site:
+        # included, along with D3d site (not duplicated by the equivalent bond-centre site):
         defect_gen, output = self._generate_and_test_no_warnings(
             bcc_fe,
             generate_supercell=False,
@@ -3931,3 +3956,46 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert bcc_default_voronoi_site in output
         assert bcc_D3d_site in output
         assert bcc_distorted_oct_site not in output
+
+    def test_bond_centre_interstitial_sites(self):
+        """
+        Test generation of bond-centre interstitial sites, which are included
+        by default for hydrogen interstitials.
+        """
+        prim_si = self.conv_si.get_primitive_structure()
+        bond_centre_sites = get_bond_centre_sites(prim_si)
+        assert len(bond_centre_sites) == 1  # single Si-Si bond-centre site
+        bond_centre_fpos, multiplicity, equiv_fpos = bond_centre_sites[0]
+        assert multiplicity == len(equiv_fpos) == 4  # 4 bonds per 2-atom primitive cell
+        assert np.allclose(  # midpoint of Si-Si bond:
+            prim_si.lattice.get_all_distances(bond_centre_fpos, prim_si.frac_coords), min_dist(prim_si) / 2
+        )
+        n_voronoi_sites = len(get_interstitial_sites(prim_si, min_dist=0.5))
+        assert len(get_interstitial_sites(prim_si, min_dist=0.5, include_bond_centres=True)) == (
+            n_voronoi_sites + 1
+        )
+
+        # ``bond_tol`` is passed through to ``get_bond_centre_sites``; in Sb2Se3, the default (0.2) also
+        # includes the (intra-ribbon) 2.96 Å Sb-Se bond, which is excluded with ``bond_tol=0.1``:
+        prim_sb2se3 = Structure.from_file(
+            f"{data_dir}/Sb2Se3_bulk_supercell_POSCAR"
+        ).get_primitive_structure()
+        assert len(get_bond_centre_sites(prim_sb2se3)) == 5
+        assert len(get_bond_centre_sites(prim_sb2se3, bond_tol=0.1)) == 4
+        assert len(get_interstitial_sites(prim_sb2se3, min_dist=0.5, include_bond_centres=True)) == (
+            len(get_interstitial_sites(prim_sb2se3, min_dist=0.5, include_bond_centres=True, bond_tol=0.1))
+            + 1
+        )
+
+        # included by default for hydrogen in ``DefectsGenerator``:
+        defect_gen, output = self._generate_and_test_no_warnings(
+            self.conv_si,
+            extrinsic="H",
+            interstitial_elements=["H"],
+            substitution_elements=[],
+            vacancy_elements=[],
+            neutral_only=True,
+        )
+        assert "H_i_D3d_Si1.18_0" in defect_gen.defect_entries
+        assert "[0.125,0.125,0.125]  16c" in output
+        assert len(defect_gen.defect_entries) == n_voronoi_sites + 1

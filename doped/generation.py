@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from ase.atoms import Atoms
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
+_H_INTERSTITIAL_GEN_KWARGS = {"min_dist": 0.5, "include_bond_centres": True}  # H defaults
 
 core._logger.setLevel(logging.CRITICAL)  # avoid unnecessary pymatgen-analysis-defects warnings about
 # oxi states (already handled within doped)
@@ -1419,11 +1420,13 @@ class DefectsGenerator(MSONable):
                 ``min_dist`` (0.9 Å, or 0.5 Å for Hydrogen), ``clustering_tol``
                 (0.8 Å), ``symm_pref_dist_factor`` (0.85), ``stol`` (0.32),
                 ``tight_stol`` (0.02), ``symprec`` (0.01), ``vacuum_radius``
-                (1.5 * bulk bond length), ``include_unique_wyckoffs`` (False)
-                -- see its docstring, parentheses indicate default values), or
-                ``InterstitialGenerator`` (where only ``min_dist`` is used) if
-                ``interstitial_coords`` is specified. If set to ``False``,
-                interstitial generation will be skipped entirely.
+                (1.5 * bulk bond length), ``include_unique_wyckoffs`` (False),
+                ``include_bond_centres`` (False, or True for Hydrogen),
+                ``bond_tol`` (0.2) -- see its docstring, parentheses indicate
+                default values), or ``InterstitialGenerator`` (where only
+                ``min_dist`` is used) if ``interstitial_coords`` is specified.
+                If set to ``False``, interstitial generation will be skipped
+                entirely.
             target_frac_coords (list):
                 Defects are placed at the closest equivalent site to these
                 fractional coordinates in the generated supercells. Default is
@@ -1859,16 +1862,13 @@ class DefectsGenerator(MSONable):
         pbar.update(5)  # 30% of progress bar
 
     def _generate_interstitials(self, pbar: tqdm):
-        if (
-            self.interstitial_gen_kwargs is False or self.kwargs.get("interstitial_elements", True) == []
-        ):  # skip interstitials
-            return
+        if self.interstitial_gen_kwargs is False or self.kwargs.get("interstitial_elements", True) == []:
+            return  # skip interstitials
 
-        interstitial_gen_kwargs: dict[str, Any] = (
-            self.interstitial_gen_kwargs if isinstance(self.interstitial_gen_kwargs, dict) else {}
-        )
-        interstitial_gen_kwargs["symprec"] = self.symprec
-        self.interstitial_gen_kwargs = interstitial_gen_kwargs
+        self.interstitial_gen_kwargs = interstitial_gen_kwargs = {
+            **(self.interstitial_gen_kwargs if isinstance(self.interstitial_gen_kwargs, dict) else {}),
+            "symprec": self.symprec,
+        }
 
         pbar.set_description("Generating interstitials")
         if self.interstitial_coords:
@@ -1902,24 +1902,21 @@ class DefectsGenerator(MSONable):
 
         self.defects["interstitials"] = []
         for el in self.kwargs.get("interstitial_elements", self._element_list):
-            if el == "H" and "min_dist" not in interstitial_gen_kwargs and not self.interstitial_coords:
-                # Hydrogen present, min_dist not set, and no manually-specified interstitial sites;
-                # so re-generate interstitial sites for Hydrogen with min_dist = 0.5
-                ig = InterstitialGenerator(min_dist=0.5)
-                H_sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
-                    host_structure=self.primitive_structure,
-                    min_dist=0.5,
-                    **interstitial_gen_kwargs,
-                )
-                cand_sites, multiplicity, equiv_fpos = zip(
-                    *H_sorted_sites_mul_and_equiv_fpos, strict=False
+            if (
+                el == "H"
+                and not self.interstitial_coords
+                and (H_gen_kwargs := {**_H_INTERSTITIAL_GEN_KWARGS, **interstitial_gen_kwargs})
+                != interstitial_gen_kwargs
+            ):
+                # Hydrogen present, H-specific generation defaults not overridden, and no manually
+                # specified interstitial sites; so re-generate interstitial sites for H with these settings
+                interstitial_gen_kwargs = H_gen_kwargs
+                sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
+                    self.primitive_structure, **H_gen_kwargs
                 )
 
-            else:
-                ig = InterstitialGenerator(interstitial_gen_kwargs.get("min_dist", 0.9))
-                cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
-
-            inter_generator = ig.generate(
+            cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
+            inter_generator = InterstitialGenerator(interstitial_gen_kwargs.get("min_dist", 0.9)).generate(
                 self.primitive_structure,
                 insertions={el: cand_sites},
                 multiplicities={el: multiplicity},
@@ -1928,10 +1925,8 @@ class DefectsGenerator(MSONable):
                 symprec=self.symprec,
             )
             self.defects["interstitials"].extend(
-                [
-                    Interstitial._from_pmg_defect(inter, bulk_oxi_states=self._bulk_oxi_states)
-                    for inter in inter_generator
-                ]
+                Interstitial._from_pmg_defect(inter, bulk_oxi_states=self._bulk_oxi_states)
+                for inter in inter_generator
             )
 
             # check if any manually-specified interstitials were skipped due to min_dist and
@@ -2693,6 +2688,70 @@ def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
     return stol * (structure.volume / len(structure)) ** (1 / 3)
 
 
+def get_bond_centre_sites(
+    host_structure: Structure, bond_tol: float = 0.2, symprec: float = 0.01
+) -> list[tuple[np.ndarray, int, list[np.ndarray]]]:
+    """
+    Get the symmetry-inequivalent bond-centre sites (i.e. midpoints of nearest-
+    neighbour bonds) in ``host_structure``.
+
+    Bond-centre sites are often favoured by hydrogen interstitials (e.g. in
+    covalent semiconductors), but are excluded by the Voronoi approach in
+    ``get_interstitial_sites`` (as they lie close to host atoms and are
+    unlikely for most interstitial species, other than Hydrogen).
+
+    Bonds are taken as pairs of sites separated by no more than
+    ``(1 + bond_tol)`` times the shortest bond length of either site (i.e. its
+    distance to its nearest neighbour, of any species). Bonds to hydrogen are
+    excluded.
+
+    Args:
+        host_structure (|Structure|): Host structure.
+        bond_tol (float):
+            Fractional tolerance for bond lengths, relative to the shortest
+            bond length of each site, to include for bond centre sites.
+            Default is 0.2.
+        symprec (float):
+            Symmetry precision for (symmetry-)equivalent site determination.
+            Default is 0.01.
+
+    Returns:
+        list[tuple[np.ndarray, int, list[np.ndarray]]]:
+            List of ``(frac_coords, multiplicity, equiv_frac_coords)`` for each
+            symmetry-inequivalent bond-centre site, as in the output of
+            ``get_interstitial_sites``.
+    """
+    r = 2 * (host_structure.volume / len(host_structure)) ** (1 / 3)  # ~2x mean site spacing
+    while not all(all_neighbours := host_structure.get_all_neighbors(r)):  # need a neighbour for each site
+        r *= 1.5
+    shortest_bonds = [min(nbr.nn_distance for nbr in neighbours) for neighbours in all_neighbours]
+    if (bond_cutoff := (1 + bond_tol) * max(shortest_bonds)) > r:
+        all_neighbours = host_structure.get_all_neighbors(bond_cutoff)
+
+    bond_centre_sites: list[tuple[np.ndarray, int, list[np.ndarray]]] = []
+    for i, (site, neighbours) in enumerate(zip(host_structure, all_neighbours, strict=True)):
+        for neighbour in neighbours:
+            if "H" in {site.specie.symbol, neighbour.specie.symbol} or neighbour.nn_distance > (
+                1 + bond_tol
+            ) * max(shortest_bonds[i], shortest_bonds[neighbour.index]):
+                continue  # not bonded, or bonded to H (bond centres of bonds to H are not meaningful)
+            bond_centre = host_structure.lattice.get_fractional_coords(
+                (site.coords + neighbour.coords) / 2
+            )
+            if any(  # each bond is found from both ends, and symmetry-equivalent bonds already included
+                np.min(host_structure.lattice.get_all_distances(equiv_fpos, bond_centre)) < 0.1
+                for *_, equiv_fpos in bond_centre_sites
+            ):
+                continue
+            equiv_fpos = symmetry.get_all_equiv_sites(
+                bond_centre, host_structure, symprec=symprec, just_frac_coords=True
+            )
+            equiv_fpos = sorted(cast("list[np.ndarray]", equiv_fpos), key=symmetry._frac_coords_sort_func)
+            bond_centre_sites.append((equiv_fpos[0], len(equiv_fpos), equiv_fpos))
+
+    return bond_centre_sites
+
+
 @lru_cache(maxsize=int(1e4))
 def get_interstitial_sites(
     host_structure: Structure,
@@ -2704,6 +2763,8 @@ def get_interstitial_sites(
     symprec: float = 0.01,
     vacuum_radius: float | None = None,
     include_unique_wyckoffs: bool = False,
+    include_bond_centres: bool = False,
+    bond_tol: float = 0.2,
 ) -> list:
     """
     Generate candidate interstitial sites using Voronoi analysis.
@@ -2737,6 +2798,10 @@ def get_interstitial_sites(
       distance from the host atoms, if its ``min_dist`` is no more than
       no more than ``symm_pref_dist_factor`` (0.85 by default) times the largest
       possible ``min_dist`` (distanceto the host atoms).
+    - If ``include_bond_centres`` is ``True``, add bond-centre sites (see
+      ``get_bond_centre_sites``), excluding any within ``min_dist`` of host
+      atoms or coinciding with the sites above (i.e. within the distance
+      equivalent of ``tight_stol``; see ``get_stol_equiv_dist``).
 
     (Parameters mentioned here can be supplied via ``interstitial_gen_kwargs``
     as noted in the args section below.)
@@ -2757,8 +2822,10 @@ def get_interstitial_sites(
 
     You can see what Cartesian distance the chosen ``stol`` corresponds to
     using the ``get_stol_equiv_dist`` function. Note that you will likely want
-    to reduce ``min_dist`` for hydrogen interstitials! (This is done by default
-    with |DefectsGenerator|, reducing it to 0.5 Å for Hydrogen.)
+    to reduce ``min_dist`` and include bond-centre sites for hydrogen
+    interstitials! (This is done by default with |DefectsGenerator|, reducing
+    ``min_dist`` to 0.5 Å and setting ``include_bond_centres = True`` for
+    Hydrogen.)
 
     Args:
         host_structure (|Structure|): Host structure.
@@ -2795,6 +2862,17 @@ def get_interstitial_sites(
             but will increase the number of candidate interstitials and is
             not expected to locate lower-energy sites compared to the default
             Voronoi approach in most cases. Defaults to ``False``.
+        include_bond_centres (bool):
+            Include bond-centre sites (i.e. midpoints of nearest-neighbour
+            bonds; see ``get_bond_centre_sites``) in the set of candidate
+            interstitial sites. These are often favoured by hydrogen
+            interstitials, but are excluded by the Voronoi generation approach.
+            Defaults to ``False`` (but set to ``True`` for Hydrogen by default
+            in |DefectsGenerator|).
+        bond_tol (float):
+            Fractional bond length tolerance for determining bond-centre sites,
+            if ``include_bond_centres`` is ``True`` (see
+            ``get_bond_centre_sites``). Default is 0.2.
 
 
     Returns:
@@ -2839,12 +2917,6 @@ def get_interstitial_sites(
         sites_list.extend(wyckoff_candidate_frac_coords)
 
     sites_array = remove_collisions(sites_list, structure=host_structure, min_dist=min_dist)
-    if sites_array.size == 0:
-        warnings.warn(
-            f"No interstitial sites found after removing those within {min_dist} Å of host atoms!"
-        )
-        return []
-
     site_frac_coords_array = symmetry.doped_cluster_frac_coords(
         sites_array,
         host_structure,
@@ -2975,11 +3047,31 @@ def get_interstitial_sites(
                 else symmetry_favoured_site_mul_and_equiv_fpos
             )
 
+    # bond-centre sites are added after grouping, as they could otherwise be dropped in favour of nearby
+    # (higher-symmetry, further from host atoms) candidate sites by the looser site grouping above:
+    if include_bond_centres:
+        cand_fpos = [fpos for *_, equiv_fpos in cand_site_mul_and_equiv_fpos_list for fpos in equiv_fpos]
+        for bond_centre_site_mul_and_equiv_fpos in get_bond_centre_sites(
+            host_structure, bond_tol=bond_tol, symprec=symprec
+        ):
+            bond_centre_fpos = bond_centre_site_mul_and_equiv_fpos[0]
+            cand_dists = host_structure.lattice.get_all_distances(cand_fpos, bond_centre_fpos)
+            if (
+                remove_collisions([bond_centre_fpos], structure=host_structure, min_dist=min_dist).size
+                and np.min(cand_dists, initial=np.inf) > tight_dist
+            ):  # not coinciding with other candidates or within min_dist of host atoms
+                cand_site_mul_and_equiv_fpos_list.append(bond_centre_site_mul_and_equiv_fpos)
+
     sorted_sites_mul_and_equiv_fpos = []
     for _cand_site, multiplicity, equiv_fpos in cand_site_mul_and_equiv_fpos_list:
         # take site with equiv_fpos sorted by symmetry._frac_coords_sort_func:
         sorted_equiv_fpos = sorted(equiv_fpos, key=symmetry._frac_coords_sort_func)
         ideal_cand_site = sorted_equiv_fpos[0]
         sorted_sites_mul_and_equiv_fpos.append((ideal_cand_site, multiplicity, sorted_equiv_fpos))
+
+    if not sorted_sites_mul_and_equiv_fpos:
+        warnings.warn(
+            f"No interstitial sites found after removing those within {min_dist} Å of host atoms!"
+        )
 
     return sorted_sites_mul_and_equiv_fpos

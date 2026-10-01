@@ -950,12 +950,12 @@ def _guess_initial_defect_structure(
     if defect_type != "interstitial":
         return guessed_initial_defect_structure, defect_site_in_bulk
 
-    from doped.generation import get_interstitial_sites
+    from doped.generation import _H_INTERSTITIAL_GEN_KWARGS, get_interstitial_sites
 
     # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
     # settings) to the relaxed interstitial site, as this is likely the _initial_ interstitial site
     int_site = guessed_initial_defect_structure.pop(defect_site_index)
-    int_gen_kwargs: dict[str, Any] = {"min_dist": 0.5} if int_site.species_string == "H" else {}
+    int_gen_kwargs: dict[str, Any] = _H_INTERSTITIAL_GEN_KWARGS if int_site.species_string == "H" else {}
     all_equiv_fpos = [  # all candidate interstitial frac coords in the bulk supercell
         fpos
         for *_, equiv_fpos in get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
