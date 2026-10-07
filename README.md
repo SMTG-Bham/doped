@@ -77,6 +77,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - N.-R. Skogemyr **_First-Principles Defect Thermodynamics of MgSnN<sub>2</sub>: Origin and Suppression of Unintentional n-Type Conductivity_** [_MSc Thesis, Linköping University_](https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510) 2026
+- N. Singh, V. Agarwal and D. Ghosh **_Deep Learning the Defect Landscape: Long-Timescale Vacancy Dynamics in Lead-Free Double Perovskites_** [_ACS Applied Energy Materials_](https://doi.org/10.1021/acsaem.6c02409) 2026
 - M. W. Swift et al. **_Copper–vacancy center in gallium oxide: A telecom quantum defect_** [_Applied Physics Letters_](https://doi.org/10.1063/5.0350234) 2026
 - K. Li, J. Yang, Y. Zhai and H. Li **_Disentangling cation–polyanion coupling reveals which anion motion dominates cation transport in solid electrolytes_** [_Nature Communications_](https://doi.org/10.1038/s41467-026-77273-x) 2026
 - J. Yi et al. **_Thermal cycling–induced nitriding increases energy-storage density in titanate ferroelectric films_** [_Science_](https://doi.org/10.1126/science.aeb5274) 2026
