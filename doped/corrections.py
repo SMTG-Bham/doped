@@ -485,7 +485,11 @@ def get_kumagai_correction(
                 sites.append(PotentialSite(specie, distance, pot, None))
                 rel_coords.append([x - y for x, y in zip(frac_coords, defect_coords, strict=False)])
 
-        ewald = Ewald(lattice.matrix, dielectric_tensor, accuracy=accuracy)
+        # evaluate the Ewald sums in the eps^-1/2-scaled frame, where the dielectric is the identity (with
+        # potentials scaled by 1/sqrt(det(eps))), for efficiency and accuracy (w/pydefect Ewald defaults)
+        eigvals, eigvecs = np.linalg.eigh((dielectric_tensor + dielectric_tensor.T) / 2)
+        ewald = Ewald(lattice.matrix @ (eigvecs * eigvals**-0.5) @ eigvecs.T, np.eye(3), accuracy=accuracy)
+        unit_conversion /= np.sqrt(np.prod(eigvals))
 
         # Monkey-patch pydefect Ewald functions to vectorise the calculations (otherwise can be slow):
         from scipy.special import erfc
