@@ -550,9 +550,11 @@ class DefectEntry(thermo.DefectEntry):
             defect_region_radius (float):
                 Radius of the defect region (in Å). Sites outside the defect
                 region are used for sampling the electrostatic potential far
-                from the defect (to obtain the potential alignment).
-                If None (default), uses the Wigner-Seitz radius of the
-                supercell.
+                from the defect (to obtain the potential alignment). If
+                ``None`` (default), uses half the largest distance between
+                parallel cell faces (as in ``pydefect``). The radius is reduced
+                as necessary (with a warning) to ensure at least 3 sites in the
+                sampling region.
             excluded_indices (list):
                 List of site indices (in the defect supercell) to exclude from
                 the site potential sampling in the correction calculation/plot.

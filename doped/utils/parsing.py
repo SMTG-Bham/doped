@@ -1116,10 +1116,12 @@ def find_missing_idx(
     )
 
 
-def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
+def get_half_max_face_distance(lattice: Structure | Lattice) -> float:
     """
-    Calculates the Wigner-Seitz radius of the structure, which corresponds to
-    the maximum radius of a sphere fitting inside the cell.
+    Get half the largest distance between parallel faces of the cell.
+
+    This is the default defect region radius for eFNV potential sampling in
+    ``pydefect`` (and ``doped``).
 
     Templated on the ``calc_max_sphere_radius`` function from ``pydefect``,
     but rewritten to avoid calling ``vise`` which causes hanging on Windows.
@@ -1132,7 +1134,7 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
 
     Returns:
         float:
-            The Wigner-Seitz radius of the structure.
+            Half the largest distance between parallel cell faces (in Å).
     """
     lattice_matrix = lattice.matrix if isinstance(lattice, Lattice) else lattice.lattice.matrix
     distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4; avoid vise issues
@@ -1157,13 +1159,13 @@ def check_atom_mapping_far_from_defect(
     warn the user if they are large (often indicates a mismatch between the
     bulk and defect supercell definitions).
 
-    For sites of a given species outside the Wigner-Seitz radius of the defect
-    (the radius of the largest sphere which can fit in the cell), a 'large'
-    displacement is flagged if either the *mean* displacement exceeds
-    ``displacement_tol`` Ångströms (capturing a systematic/global mismatch),
-    *or* the *fraction* of such sites individually displaced by more than
-    ``displacement_tol`` exceeds ``fraction_tol`` (capturing a partial mismatch
-    without being triggered by single outlier sites).
+    For sites of a given species further from the defect than half the largest
+    distance between parallel cell faces, a 'large' displacement is flagged if
+    either the *mean* displacement exceeds ``displacement_tol`` Ångströms
+    (capturing a systematic/global mismatch), *or* the *fraction* of such sites
+    individually displaced by more than ``displacement_tol`` exceeds
+    ``fraction_tol`` (capturing a partial mismatch without being triggered by
+    single outlier sites).
 
     Args:
         defect_supercell (|Structure|):
@@ -1191,54 +1193,54 @@ def check_atom_mapping_far_from_defect(
         bool:
             Returns ``False`` if a mismatch is detected, else ``True``.
     """
-    wigner_seitz_radius = get_wigner_seitz_radius(bulk_supercell.lattice)
+    far_radius = get_half_max_face_distance(bulk_supercell.lattice)
     defect_frac_coords = (
         defect_coords
         if not coords_are_cartesian
         else bulk_supercell.lattice.get_fractional_coords(defect_coords)
     )
 
-    bulk_sites_outside_or_at_ws_radius = [  # vectorised for fast computation
+    bulk_sites_outside_or_at_far_radius = [  # vectorised for fast computation
         bulk_supercell[i]
         for i in np.where(
             bulk_supercell.lattice.get_all_distances(
                 bulk_supercell.frac_coords, defect_frac_coords
             ).ravel()
-            > np.max((wigner_seitz_radius - 1, 1))
+            > np.max((far_radius - 1, 1))
         )[0]
     ]
-    defect_sites_outside_wigner_radius = [  # vectorised for fast computation
+    defect_sites_outside_far_radius = [  # vectorised for fast computation
         defect_supercell[i]
         for i in np.where(
             defect_supercell.lattice.get_all_distances(
                 defect_supercell.frac_coords, defect_frac_coords
             ).ravel()
-            > wigner_seitz_radius
+            > far_radius
         )[0]
     ]
 
-    disps_outside_ws: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
+    disps_outside_far: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
     for species in bulk_supercell.composition.elements:  # divide and vectorise calc for efficiency
-        bulk_species_outside_near_ws_fcoords = get_coords_and_idx_of_species(
-            bulk_sites_outside_or_at_ws_radius, species.name
+        bulk_species_outside_near_far_fcoords = get_coords_and_idx_of_species(
+            bulk_sites_outside_or_at_far_radius, species.name
         )[0]
-        defect_species_outside_ws_fcoords = get_coords_and_idx_of_species(
-            defect_sites_outside_wigner_radius, species.name
+        defect_species_outside_far_fcoords = get_coords_and_idx_of_species(
+            defect_sites_outside_far_radius, species.name
         )[0]
-        if not (len(bulk_species_outside_near_ws_fcoords) and len(defect_species_outside_ws_fcoords)):
+        if not (len(bulk_species_outside_near_far_fcoords) and len(defect_species_outside_far_fcoords)):
             continue  # no sites of this species outside the WS radius, skip
 
-        site_mapping_outside_ws = _get_site_mapping_from_coords_and_indices(
-            defect_species_outside_ws_fcoords,
-            bulk_species_outside_near_ws_fcoords,
+        site_mapping_outside_far = _get_site_mapping_from_coords_and_indices(
+            defect_species_outside_far_fcoords,
+            bulk_species_outside_near_far_fcoords,
             lattice=bulk_supercell.lattice,
         )
-        displacement_dists = [dist for dist, _i, _j in site_mapping_outside_ws if dist is not None]
-        disps_outside_ws[species.name].extend(np.round(displacement_dists, 2))
+        displacement_dists = [dist for dist, _i, _j in site_mapping_outside_far if dist is not None]
+        disps_outside_far[species.name].extend(np.round(displacement_dists, 2))
 
-    if large_disps_outside_ws := {
+    if large_disps_outside_far := {
         specie: list
-        for specie, list in disps_outside_ws.items()
+        for specie, list in disps_outside_far.items()
         if list
         and (
             np.mean(list) > displacement_tol  # mean displacement of ``specie`` sites exceeds tolerance
@@ -1246,15 +1248,15 @@ def check_atom_mapping_far_from_defect(
         )
     }:
         message = (
-            f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
+            f"Detected atoms far from the defect site (>{far_radius:.2f} Å) with major "
             f"displacements (>{displacement_tol} Å) in the defect supercell. This likely indicates a "
             f"mismatch between the bulk and defect supercell definitions (-> see troubleshooting docs) or "
             f"an unconverged supercell size, both of which could cause errors in parsing. The mean (or at "
             f"least {fraction_tol:.0%}) of displacements of the following species, at sites far from the "
-            f"determined defect position, is >{displacement_tol} Å: {list(large_disps_outside_ws.keys())}"
+            f"determined defect position, is >{displacement_tol} Å: {list(large_disps_outside_far.keys())}"
         )
         if warning == "verbose":
-            message += f", with displacements (Å): {large_disps_outside_ws}"
+            message += f", with displacements (Å): {large_disps_outside_far}"
         if warning:
             warnings.warn(message)
 

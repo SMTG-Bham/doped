@@ -32,8 +32,8 @@ from doped.utils.parsing import (
     _nearest_neighbour_site_mapping,
     check_atom_mapping_far_from_defect,
     find_missing_idx,
+    get_half_max_face_distance,
     get_site_mappings,
-    get_wigner_seitz_radius,
 )
 from doped.utils.supercells import min_dist
 from doped.utils.symmetry import get_clean_structure, point_symmetry_from_structure, summed_dist
@@ -357,11 +357,11 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
         """
         bulk = self.Se_intrinsic_thermo["vac_1_Se_-1"].bulk_supercell
         defect_coords = np.array([0.5, 0.5, 0.5])
-        ws_radius = get_wigner_seitz_radius(bulk.lattice)
-        far_indices = [  # sites outside the defect Wigner-Seitz radius
+        far_radius = get_half_max_face_distance(bulk.lattice)
+        far_indices = [  # sites far from the defect
             i
             for i in range(len(bulk))
-            if bulk.lattice.get_all_distances(bulk[i].frac_coords, defect_coords).ravel()[0] > ws_radius
+            if bulk.lattice.get_all_distances(bulk[i].frac_coords, defect_coords).ravel()[0] > far_radius
         ]
 
         def _displace_fraction(fraction, magnitude):

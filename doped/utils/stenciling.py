@@ -33,8 +33,8 @@ from doped.utils.parsing import (
     check_atom_mapping_far_from_defect,
     get_coords_and_idx_of_species,
     get_defect_type_and_composition_diff,
+    get_half_max_face_distance,
     get_site_mappings,
-    get_wigner_seitz_radius,
 )
 from doped.utils.supercells import _largest_cube_length_from_matrix, min_dist
 from doped.utils.symmetry import (
@@ -204,13 +204,14 @@ def get_defect_in_supercell(
             threshold, a warning is issued. Default is 0.9 (i.e. 90% of the
             ``bulk_min_bond_length``).
         orientation_template_radii_range (float | range | list | np.ndarray | None):
-            A range or list of scale factors (relative to the Wigner-Seitz
-            radius of ``target_supercell``) to scan over when constructing the
-            template sub-structures of ``target_supercell`` and the bulk
-            super-supercell used for pre-stenciling orientation matching (to
-            try to ensure matching supercell atomic bases (i.e. tiling of
-            primitive cells in the supercells) in the output stenciled cells
-            with ``target_supercell``). Default is ``None``, in which case the
+            A range or list of scale factors (relative to half the largest
+            distance between parallel faces of ``target_supercell``) to scan
+            over when constructing the template sub-structures of
+            ``target_supercell`` and the bulk super-supercell used for
+            pre-stenciling orientation matching (to try to ensure matching
+            supercell atomic bases (i.e. tiling of primitive cells in the
+            supercells) in the output stenciled cells with
+            ``target_supercell``). Default is ``None``, in which case the
             default test range of ``[0.8, 1.0, 0.6, 0.4, 1.2]`` is used. It is
             expected that this parameter should rarely be required to tune.
         show_pbar (bool):
@@ -308,10 +309,10 @@ def get_defect_in_supercell(
         orientation_template_radii_range = _ensure_list(
             orientation_template_radii_range
             if orientation_template_radii_range is not None
-            else [0.8, 1.0, 0.6, 0.4, 1.2]  # scale factors of get_wigner_seitz_radius(target_supercell)
+            else [0.8, 1.0, 0.6, 0.4, 1.2]  # scale factors of get_half_max_face_distance(target_supercell)
         )
         assert isinstance(orientation_template_radii_range, list | np.ndarray)  # typing
-        wsr_target = get_wigner_seitz_radius(target_supercell)
+        radius_target = get_half_max_face_distance(target_supercell)
         trans_to_match_target = None
         fake_target_supercell_w_big_supercell_lattice = None
         # scan all sampling-sphere (orientation template) radii at tight ``stol`` values, before loosening
@@ -321,7 +322,7 @@ def get_defect_in_supercell(
             for r_factor in orientation_template_radii_range:
                 fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
                     target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                    r=r_factor * wsr_target,
+                    r=r_factor * radius_target,
                 )
                 if not fake_target_supercell_sites:
                     continue
@@ -334,7 +335,7 @@ def get_defect_in_supercell(
                 fake_big_supercell = Structure.from_sites(
                     big_bulk_supercell.get_sites_in_sphere(
                         big_bulk_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                        r=r_factor * wsr_target / 0.8,  # slightly larger r for fake big supercell
+                        r=r_factor * radius_target / 0.8,  # slightly larger r for fake big supercell
                     )
                 )
                 trans_to_match_target = get_transformation_from_s2_to_s1(
@@ -1385,13 +1386,13 @@ def _convert_defect_neighbours_to_X(
     defect_supercell: Structure,
     defect_position: np.ndarray,
     coords_are_cartesian: bool = False,
-    ws_radius_fraction: float = 0.5,
+    radius_fraction: float = 0.5,
 ) -> Structure:
     """
     Convert all neighbouring sites of a defect site in a supercell, within
-    ``ws_radius_fraction`` of the Wigner-Seitz radius, to have their species as
-    "X" (storing their original species in the site property dict under the
-    "orig_species" key).
+    ``radius_fraction`` of half the largest distance between parallel cell
+    faces, to have their species as "X" (storing their original species in the
+    site property dict under the "orig_species" key).
 
     Intended to then be used to make structure-matching far more efficient, by
     ignoring the highly-perturbed defect neighbourhood (which requires larger
@@ -1408,10 +1409,10 @@ def _convert_defect_neighbours_to_X(
         coords_are_cartesian (bool):
             Whether the defect position is in Cartesian coordinates. Default is
             ``False`` (fractional coordinates).
-        ws_radius_fraction (float):
-            The fraction of the Wigner-Seitz radius to use as the cut-off
-            distance for neighbouring sites to convert to species "X". Default
-            is 0.5 (50%).
+        radius_fraction (float):
+            The fraction of half the largest distance between parallel cell
+            faces to use as the cut-off distance for neighbouring sites to
+            convert to species "X". Default is 0.5 (50%).
 
     Returns:
         Structure:
@@ -1419,7 +1420,7 @@ def _convert_defect_neighbours_to_X(
             sites converted to species X.
     """
     converted_defect_supercell = defect_supercell.copy()
-    ws_radius = get_wigner_seitz_radius(defect_supercell)
+    half_max_face_dist = get_half_max_face_distance(defect_supercell)
     defect_frac_coords = (
         defect_position
         if not coords_are_cartesian
@@ -1429,7 +1430,7 @@ def _convert_defect_neighbours_to_X(
         defect_supercell.lattice.get_all_distances(
             defect_supercell.frac_coords, defect_frac_coords
         ).ravel()
-        < np.max((ws_radius * ws_radius_fraction, 1))
+        < np.max((half_max_face_dist * radius_fraction, 1))
     )[0]
 
     for i, orig_site in enumerate(defect_supercell):

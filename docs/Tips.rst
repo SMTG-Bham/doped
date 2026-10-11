@@ -279,8 +279,8 @@ Due to the layered structure, the charge and strain associated with the defect i
 defective layer, while that of the layer away from the defect mostly experiences the typical long-range
 electostatic potential of the defect charge. The same behaviour can be seen for `h`-BN in the
 `original eFNV paper <https://doi.org/10.1103/PhysRevB.89.195205>`_ (Figure 4d).
-This means that our usual default of using the
-Wigner-Seitz radius to determine the sampling region is not as good, as it's including sites in the
+This means that our usual default sampling region (sites further from the defect than half the largest
+distance between parallel cell faces) is not as good, as it's including sites in the
 defective layer (circled in orange) which are causing the variance in the potential offset (ΔV) and thus
 the error in the charge correction.
 

@@ -11,8 +11,8 @@ The charge-correction methods implemented are:
    Includes:
 
        a) anisotropic PC energy.
-       b) potential alignment by atomic site averaging outside Wigner Seitz
-          radius.
+       b) potential alignment by atomic site averaging outside the defect
+          region.
 
 2. Freysoldt (FNV) correction for isotropic systems. Only recommended if eFNV
    correction fails for some reason. Includes:
@@ -60,9 +60,9 @@ from doped.utils.parsing import (
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
     get_core_potentials_from_outcar,
+    get_half_max_face_distance,
     get_locpot,
     get_site_mappings,
-    get_wigner_seitz_radius,
 )
 from doped.utils.plotting import doped_plot_style, format_defect_name
 
@@ -395,11 +395,12 @@ def get_kumagai_correction(
             |Dielectric Constant| tutorial section for information on
             calculating and converging the dielectric constant.
         defect_region_radius (float):
-            Radius of the defect region (in Å). Sites outside the defect
-            region are used for sampling the electrostatic potential far
-            from the defect (to obtain the potential alignment).
-            If ``None`` (default), uses the Wigner-Seitz radius of the
-            supercell.
+            Radius of the defect region (in Å). Sites outside the defect region
+            are used for sampling the electrostatic potential far from the
+            defect (to obtain the potential alignment). If ``None`` (default),
+            uses half the largest distance between parallel cell faces (as in
+            ``pydefect``). The radius is reduced as necessary (with a warning)
+            to ensure at least 3 sites in the sampling region.
         excluded_indices (list):
             List of site indices (in the defect supercell) to exclude from
             the site potential sampling in the correction calculation/plot.
@@ -512,7 +513,17 @@ def get_kumagai_correction(
         point_charge_correction = -ewald.lattice_energy * charge**2 if charge else 0.0
 
         if defect_region_radius is None:
-            defect_region_radius = get_wigner_seitz_radius(lattice)
+            defect_region_radius = get_half_max_face_distance(lattice)
+        site_distances = np.array([site.distance for site in sites])
+        min_sampled = min(3, len(site_distances))  # ensure >= 3 sampled sites (e.g. for slabs with vacuum)
+        if np.count_nonzero(site_distances > defect_region_radius) < min_sampled:
+            # reduce to just below the 3rd-furthest site distance (with tolerance for equidistant sites):
+            defect_region_radius = np.sort(site_distances)[-min_sampled] - 1e-3
+            warnings.warn(
+                f"Fewer than {min_sampled} atomic sites lie outside the eFNV defect region radius, so "
+                f"it has been reduced to {defect_region_radius:.2f} Å to include at least {min_sampled} "
+                "sites in the potential sampling region."
+            )
 
         for site, rel_coord in zip(sites, rel_coords, strict=False):
             if site.distance > defect_region_radius:
