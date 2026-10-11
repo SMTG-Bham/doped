@@ -124,18 +124,33 @@ def _convert_dielectric_to_tensor(dielectric: float | np.ndarray | list) -> np.n
     else:
         dielectric = np.eye(3) * dielectric
 
-    return dielectric
+    return dielectric  # TODO: Can use _get_dielectric_tensor in next pymatgen-analysis-defects release
 
 
-def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
+def _convert_anisotropic_dielectric_to_isotropic_spherical_average(
     aniso_dielectric: np.ndarray | list,
 ) -> float:
-    """
+    r"""
     Convert an anisotropic dielectric tensor to the equivalent isotropic
-    dielectric constant using the harmonic mean (closest physically reasonable
-    choice for finite-size charge corrections).
+    dielectric constant, as the spherical average of the directional response:
+    :math:`1/\bar{\epsilon} = \langle 1/(\hat{g}^T \epsilon \hat{g}) \rangle`
+    over unit vectors :math:`\hat{g}`.
+
+    This is the isotropic dielectric used by ``sxdefectalign`` for the isolated
+    self-energy and alignment terms of the anisotropic FNV correction, and is
+    exact for the spherically-averaged potential of a point charge
+    (:math:`q/\bar{\epsilon}r`) and so the energy of spherical charge
+    distributions in anisotropic media. It lies between the harmonic and
+    arithmetic means of the eigenvalues :math:`\lambda_i`, and is computed as
+    :math:`\sqrt{\det\epsilon} / R_F(1/\lambda_1, 1/\lambda_2, 1/\lambda_3)`,
+    with :math:`R_F` the Carlson symmetric elliptic integral.
     """
-    return 3 / sum(1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric))
+    from scipy.special import elliprf
+    # TODO: Can use get_spherically_averaged_dielectric in next pymatgen-analysis-defects release
+
+    aniso_dielectric = np.asarray(aniso_dielectric, dtype=float)
+    eigvals = np.linalg.eigvalsh((aniso_dielectric + aniso_dielectric.T) / 2)
+    return float(np.sqrt(np.prod(eigvals)) / elliprf(*(1 / eigvals)))
 
 
 def check_and_set_defect_entry_name(
@@ -2534,7 +2549,6 @@ class DefectParser:
         return dp
 
     def _check_and_load_appropriate_charge_correction_data(self):
-        skip_corrections = False
         dielectric = self.defect_entry.calculation_metadata["dielectric"]
         bulk_path = self.defect_entry.calculation_metadata["bulk_path"]
         defect_path = self.defect_entry.calculation_metadata["defect_path"]
@@ -2557,97 +2571,69 @@ class DefectParser:
             or _check_folder_for_file_match(bulk_path, "LOCPOT")
         )
 
-        # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
-        isotropic_dielectric = all(np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric))
-
         # regardless, try parsing OUTCAR files first (quickest, more robust for cases where defect
         # charge is localised somewhat off the (auto-determined) defect site (e.g. split-interstitials
-        # etc) and also works regardless of isotropic/anisotropic)
+        # etc) and also works regardless of isotropic/anisotropic), falling back to LOCPOTs (FNV):
+        kumagai_exc = None
         if efnv_data_available:
             try:
                 self.load_eFNV_data()
-            except Exception as kumagai_exc:
-                if fnv_data_available:
-                    try:
-                        if not isotropic_dielectric:
-                            # convert anisotropic dielectric to harmonic mean of the diagonal:
-                            # (this is a better approximation than the pymatgen default of the
-                            # standard arithmetic mean of the diagonal)
-                            self.defect_entry.calculation_metadata["dielectric"] = (
-                                _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
-                            )
-                        self.load_FNV_data()
-                        if not isotropic_dielectric:
-                            warnings.warn(
-                                _aniso_dielectric_but_outcar_problem_warning
-                                + "in the defect or bulk folder were unable to be parsed, giving the "
-                                "following error message:"
-                                + f"\n{kumagai_exc}\n"
-                                + _aniso_dielectric_but_using_locpot_warning
-                            )
-                    except Exception as freysoldt_exc:
-                        warnings.warn(
-                            f"Got this error message when attempting to parse defect & bulk `OUTCAR` "
-                            f"files to compute the Kumagai (eFNV) charge correction:"
-                            f"\n{kumagai_exc}\n"
-                            f"Then got this error message when attempting to parse defect & bulk "
-                            f"`LOCPOT` files to compute the Freysoldt (FNV) charge correction:"
-                            f"\n{freysoldt_exc}\n"
-                            f"-> Charge corrections will not be applied for this defect."
-                        )
-                        if not isotropic_dielectric:
-                            # reset dielectric to original anisotropic value if FNV failed as well:
-                            self.defect_entry.calculation_metadata["dielectric"] = dielectric
-                        skip_corrections = True
+                return False
+            except Exception as exc:
+                kumagai_exc = exc
 
-                else:
-                    warnings.warn(
-                        f"`OUTCAR` files (needed to compute the Kumagai eFNV charge correction for "
-                        f"_anisotropic_ and isotropic systems) in the defect or bulk folder were unable "
-                        f"to be parsed, giving the following error message:"
-                        f"\n{kumagai_exc}\n"
-                        f"-> Charge corrections will not be applied for this defect."
-                    )
-                    skip_corrections = True
-
-        elif fnv_data_available:
-            try:
-                if not isotropic_dielectric:
-                    # convert anisotropic dielectric to harmonic mean of the diagonal:
-                    # (this is a better approximation than the pymatgen default of the
-                    # standard arithmetic mean of the diagonal)
-                    self.defect_entry.calculation_metadata["dielectric"] = (
-                        _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(dielectric)
-                    )
-                self.load_FNV_data()
-                if not isotropic_dielectric:
-                    warnings.warn(
-                        _aniso_dielectric_but_outcar_problem_warning
-                        + "are missing from the defect or bulk folder.\n"
-                        + _aniso_dielectric_but_using_locpot_warning
-                    )
-            except Exception as freysoldt_exc:
-                warnings.warn(
-                    f"Got this error message when attempting to parse defect & bulk `LOCPOT` files to "
-                    f"compute the Freysoldt (FNV) charge correction:"
-                    f"\n{freysoldt_exc}\n"
-                    f"-> Charge corrections will not be applied for this defect."
-                )
-                if not isotropic_dielectric:
-                    # reset dielectric to original anisotropic value if FNV failed as well:
-                    self.defect_entry.calculation_metadata["dielectric"] = dielectric
-                skip_corrections = True
-
-        else:
-            if int(self.defect_entry.charge_state) != 0:
+        if not fnv_data_available:
+            if kumagai_exc is None:
                 warnings.warn(
                     "`LOCPOT` or `OUTCAR` files are missing from the defect or bulk folder. "
                     "These are needed to perform the finite-size charge corrections. "
                     "Charge corrections will not be applied for this defect."
                 )
-                skip_corrections = True
+            else:
+                warnings.warn(
+                    f"`OUTCAR` files (needed to compute the Kumagai eFNV charge correction for "
+                    f"_anisotropic_ and isotropic systems) in the defect or bulk folder were unable "
+                    f"to be parsed, giving the following error message:"
+                    f"\n{kumagai_exc}\n"
+                    f"-> Charge corrections will not be applied for this defect."
+                )
+            return True
 
-        return skip_corrections
+        try:
+            self.load_FNV_data()
+        except Exception as freysoldt_exc:
+            kumagai_exc_message = (
+                f"Got this error message when attempting to parse defect & bulk `OUTCAR` files to compute "
+                f"the Kumagai (eFNV) charge correction:\n{kumagai_exc}\nThen got"
+                if kumagai_exc is not None
+                else "Got"
+            )
+            warnings.warn(
+                f"{kumagai_exc_message} this error message when attempting to parse defect & bulk "
+                f"`LOCPOT` files to compute the Freysoldt (FNV) charge correction:"
+                f"\n{freysoldt_exc}\n-> Charge corrections will not be applied for this defect."
+            )
+            return True
+
+        # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
+        if not np.allclose(np.diag(dielectric), dielectric[0, 0], rtol=0.2):
+            # convert anisotropic dielectric to its spherical average (better approximation than the
+            # pymatgen default): -- TODO: Remove with next pmg-defects release
+            self.defect_entry.calculation_metadata["dielectric"] = (
+                _convert_anisotropic_dielectric_to_isotropic_spherical_average(dielectric)
+            )
+            warnings.warn(
+                _aniso_dielectric_but_outcar_problem_warning
+                + (
+                    "are missing from the defect or bulk folder.\n"
+                    if kumagai_exc is None
+                    else "in the defect or bulk folder were unable to be parsed, giving the following "
+                    f"error message:\n{kumagai_exc}\n"
+                )
+                + _aniso_dielectric_but_using_locpot_warning
+            )
+
+        return False
 
     def load_FNV_data(self, bulk_locpot_dict: dict | None = None):
         """
@@ -3081,7 +3067,7 @@ def shallow_dopant_binding_energy(
     eff_mass: float,
     dielectric: float | np.ndarray | list,
 ):
-    """
+    r"""
     Estimate the binding energy of a shallow dopant /defect in a semiconductor,
     using effective mass theory.
 
@@ -3104,7 +3090,11 @@ def shallow_dopant_binding_energy(
             Effective mass of the dopant.
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Total dielectric constant (ionic + static contributions) of the
-            semiconductor host.
+            semiconductor host. For an anisotropic dielectric tensor, the
+            spherical average :math:`\bar{\epsilon}` (with
+            :math:`1/\bar{\epsilon} = \langle 1/(\hat{g}^T \epsilon \hat{g}) \rangle`)
+            is used, which gives the exact variational energy for a hydrogenic
+            (1s) envelope with isotropic effective mass.
 
     Returns:
         float: Binding energy of the shallow dopant, in eV.
@@ -3113,7 +3103,7 @@ def shallow_dopant_binding_energy(
 
     rydberg_in_eV = sc.physical_constants["Rydberg constant times hc in eV"][0]
 
-    eff_dielectric = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
+    eff_dielectric = _convert_anisotropic_dielectric_to_isotropic_spherical_average(
         _convert_dielectric_to_tensor(dielectric)
     )
     return rydberg_in_eV * (eff_mass / eff_dielectric**2)  # in eV
