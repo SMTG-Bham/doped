@@ -576,10 +576,56 @@ def get_defect_type_and_composition_diff(
     return defect_type, composition_diff
 
 
+def _is_split_interstitial(
+    site_frac_coords: ArrayLike,
+    pair_frac_coords: ArrayLike,
+    bulk_frac_coords: ArrayLike,
+    lattice: Lattice,
+) -> bool:
+    """
+    Determine whether two atoms form a split interstitial about a bulk site.
+
+    This requires the two atoms to be:
+
+    - Similarly displaced from the site, with their distances to the site
+      within 15% of each other.
+    - Split across the site, with the midpoint of the pair closer to the site
+      than half the distance from the site to the nearer atom.
+    - Local to the site, with both atoms closer to the site than its shortest
+      bond length (i.e. its distance to the nearest bulk site, of any species;
+      floored at 1 Å).
+
+    Args:
+        site_frac_coords (ArrayLike):
+            Fractional coordinates of the (vacated / shared) bulk site.
+        pair_frac_coords (ArrayLike):
+            Fractional coordinates of the two atoms.
+        bulk_frac_coords (ArrayLike):
+            Fractional coordinates of all bulk sites (including the site
+            itself).
+        lattice (Lattice):
+            The lattice of the structures.
+
+    Returns:
+        bool: Whether the two atoms form a split interstitial about the site.
+    """
+    site_frac_coords = np.reshape(np.asarray(site_frac_coords, dtype=float), (1, 3))
+    vecs = pbc_shortest_vectors(lattice, site_frac_coords, np.asarray(pair_frac_coords, dtype=float))[0]
+    dists = np.linalg.norm(vecs, axis=1)
+    site_bond_length = max(  # shortest bond length of the site, floored at 1 Å (as for ``site_tol``)
+        np.partition(lattice.get_all_distances(site_frac_coords, bulk_frac_coords)[0], 1)[1], 1
+    )  # (``np.partition(..., 1)[1]``: second-smallest distance, as the smallest is the site itself)
+    return bool(
+        abs(dists[0] - dists[1]) < 0.15 * dists.max()  # similar displacements from the site
+        and np.linalg.norm(vecs.sum(axis=0) / 2) < 0.5 * dists.min()  # split across the site
+        and dists.max() <= site_bond_length  # both local to the site
+    )
+
+
 def get_defect_type_and_site_indices(
     defect_supercell: Structure,
     bulk_supercell: Structure,
-    site_tol: float | None = None,  # TODO: Change to 0.5 and add complex defect handling
+    site_tol: float | None = None,  # TODO: Change to 0.4 and add complex defect handling
     abs_tol: bool = False,
     use_oxi_states: bool = False,
     rms: bool = False,
@@ -589,7 +635,11 @@ def get_defect_type_and_site_indices(
     substitutions) and defect (interstitials / substitutions) supercells.
 
     Defect sites are determined by matching sites in the bulk and defect
-    structures (by element and distances), according to ``site_tol``.
+    structures (by element and distances), according to ``site_tol``. If
+    ``site_tol`` is set, split interstitials are also identified (see
+    ``_is_split_interstitial``), with the bulk site returned as a missing site
+    (even if the split-interstitial atoms are within the distance tolerance)
+    and both atoms as additional defect sites.
 
     Note that this assumes consistent cell definitions (lattice vectors and
     bases) for the input defect and bulk supercells, and does not perform any
@@ -603,16 +653,17 @@ def get_defect_type_and_site_indices(
         site_tol (float | None):
             The (fractional) tolerance for matching sites between the defect
             and bulk structures. If ``abs_tol`` is ``False`` (default), then
-            the distance threshold for matching is set to the product of
-            ``site_tol`` and the shortest bond length in the bulk structure for
-            the given species, otherwise the value is used directly (as a
-            length in Å).
+            the distance threshold for matching each bulk site is set to the
+            product of ``site_tol`` and the shortest bond length of that site
+            in the bulk structure (i.e. its distance to the nearest other site,
+            of any species; floored at 1 Å), otherwise the value is used
+            directly (as a length in Å). Values around 0.4 are recommended.
             If ``None`` (default), we assume a single point defect and return
             the site of largest mismatch.
         abs_tol (bool):
             Whether to use ``site_tol`` as an absolute distance tolerance (in
             Å) instead of a fractional tolerance (in terms of the shortest bond
-            length in the structure). Default is ``False``.
+            length of each bulk site). Default is ``False``.
         use_oxi_states (bool):
             Whether to use the oxidation states of the sites in the bulk and
             defect structures when considering matching sites (such that e.g.
@@ -627,8 +678,8 @@ def get_defect_type_and_site_indices(
 
     Returns:
         defect_type (str):
-            The type of defect as a string (``interstitial``, ``vacancy`` or
-            ``substitution``).
+            The type of defect as a string (``interstitial``, ``vacancy``,
+            ``substitution`` or ``complex``).
         missing_bulk_site_indices (list[int]):
             Indices of sites in the bulk structure that do not match any site
             in the defect structure (according to ``site_tol`` choice).
@@ -636,8 +687,6 @@ def get_defect_type_and_site_indices(
             Indices of sites in the defect structure that do not match any site
             in the bulk structure (according to ``site_tol`` choice).
     """
-    # TODO: Default is 0.5 (i.e. half the shortest bond length in the bulk structure for the given
-    #  species). -- add to site_tol docstring
     bulk_composition = bulk_supercell.composition
     defect_composition = defect_supercell.composition
 
@@ -664,12 +713,21 @@ def get_defect_type_and_site_indices(
         )
         use_oxi_states = False
 
-    elt_symbols = {
-        str(species) if use_oxi_states else species.symbol
-        for species in bulk_composition.elements + defect_composition.elements
-    }
+    elt_symbols = (  # species strings as parsed by ``get_coords_and_idx_of_species``:
+        {_parse_site_species_str(site) for site in [*bulk_supercell, *defect_supercell]}
+        if use_oxi_states
+        else {species.symbol for species in bulk_composition.elements + defect_composition.elements}
+    )
     additional_defect_site_indices = []
     missing_bulk_site_indices = []
+
+    # distance tolerance for each bulk site; ``inf`` if ``site_tol`` is ``None`` (then only unmatched sites
+    # are defect sites), otherwise ``site_tol`` x site's shortest bond or ``site_tol`` in Å if ``abs_tol``
+    site_dist_tols = np.full(len(bulk_supercell), np.inf if site_tol is None else site_tol, dtype=float)
+    if site_tol is not None and not abs_tol:
+        bulk_dists = bulk_supercell.distance_matrix
+        np.fill_diagonal(bulk_dists, np.inf)  # exclude self-distances
+        site_dist_tols *= np.maximum(bulk_dists.min(axis=1), 1)  # shortest bond lengths, floored at 1 Å
 
     for elt_symbol in elt_symbols:
         bulk_species_fcoords, bulk_species_indices = get_coords_and_idx_of_species(
@@ -678,15 +736,6 @@ def get_defect_type_and_site_indices(
         defect_species_fcoords, defect_species_indices = get_coords_and_idx_of_species(
             defect_supercell, elt_symbol, use_oxi_states=use_oxi_states
         )
-        if bulk_species_indices.size == 0:  # extrinsic species
-            site_dist_tol = None
-        else:
-            species_distances = bulk_supercell.lattice.get_all_distances(
-                bulk_supercell.frac_coords[bulk_species_indices], bulk_supercell.frac_coords
-            )
-            species_min_dist = max(species_distances[np.nonzero(species_distances)].min(), 1)
-            site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * species_min_dist
-
         site_mapping = _get_site_mapping_from_coords_and_indices(
             defect_species_fcoords,
             bulk_species_fcoords,
@@ -698,8 +747,27 @@ def get_defect_type_and_site_indices(
         defect_site_mappings = [
             mapping
             for mapping in site_mapping
-            if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
+            if mapping[0] is None or mapping[0] > site_dist_tols[mapping[2]]
         ]
+
+        # for split interstitials, we treat it as 2X_i + V_X even if either X_i is within the matching
+        # tolerance of V_X, so flag any matched X which forms a split interstitial with an additional X_i:
+        extra_idxs = [m[1] for m in defect_site_mappings if m[1] is not None]  # additional defect sites
+        if site_tol is not None and bulk_species_indices.size and extra_idxs:
+            matched = {m[2]: m for m in site_mapping if m[0] is not None and m[0] <= site_dist_tols[m[2]]}
+            _dists, nearest_idxs = _get_closest_coords(
+                defect_supercell.frac_coords[extra_idxs], bulk_species_fcoords, bulk_supercell.lattice
+            )
+            for extra_idx, nearest_idx in zip(extra_idxs, nearest_idxs, strict=True):
+                mapping = matched.get(bulk_species_indices[nearest_idx])
+                if mapping and _is_split_interstitial(
+                    bulk_species_fcoords[nearest_idx],
+                    defect_supercell.frac_coords[[extra_idx, mapping[1]]],
+                    bulk_supercell.frac_coords,
+                    bulk_supercell.lattice,
+                ):
+                    defect_site_mappings.append(matched.pop(mapping[2]))  # pop: ensure not added twice
+
         for _dist, defect_idx, bulk_idx in defect_site_mappings:
             if bulk_idx is not None:  # missing bulk site
                 missing_bulk_site_indices.append(bulk_idx)

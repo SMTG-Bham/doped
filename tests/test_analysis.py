@@ -32,6 +32,7 @@ from doped.analysis import (
     DefectParser,
     DefectsParser,
     defect_from_structures,
+    defect_site_from_structures,
     guess_defect_position,
     parse_symmetry_and_degeneracy_metadata,
     shallow_dopant_binding_energy,
@@ -2383,6 +2384,140 @@ class DefectsParsingTestCase(unittest.TestCase):
                 get_defect_type_and_site_indices, vacancy_structure, bulk_sc_structure, site_tol=site_tol
             )
             assert not w
+
+    def test_defect_site_indices_per_site_tolerance(self):
+        """
+        Test that the ``site_tol`` distance threshold in
+        ``get_defect_type_and_site_indices`` is set by the shortest bond length
+        of each bulk site, and that bond-centre split vacancies are robustly
+        identified with ``site_tol = 0.4`` (as a validation test).
+        """
+        # Ag2Se has Ag sites with different shortest bond lengths (2.63 -- 2.85 Å), so the same 1.1 Å
+        # displacement (> 0.4 x 2.63, < 0.4 x 2.85 Å) is a defect site only for the shortest-bond Ag site:
+        ag2se = Structure.from_file(f"{data_dir}/Ag2Se_POSCAR") * 2
+        dists = ag2se.distance_matrix
+        np.fill_diagonal(dists, np.inf)
+        ag_idxs = sorted(ag2se.indices_from_symbol("Ag"), key=lambda i: dists[i].min())
+        short_idx, long_idx = ag_idxs[0], ag_idxs[-1]
+        defect_structure = ag2se.copy()
+        defect_structure.translate_sites([short_idx, long_idx], [1.1, 0, 0], frac_coords=False)
+        assert get_defect_type_and_site_indices(defect_structure, ag2se, site_tol=0.4)[1:] == (
+            [short_idx],
+            [short_idx],
+        )
+        for structure in [ag2se, defect_structure]:  # works equally well with oxidation states assigned:
+            structure.add_oxidation_state_by_element({"Ag": 1, "Se": -2})
+        assert get_defect_type_and_site_indices(
+            defect_structure, ag2se, site_tol=0.4, use_oxi_states=True
+        )[1:] == ([short_idx], [short_idx])
+
+        # split vacancy in Si (2 V_Si + Si_i) with the interstitial exactly at the bond centre (0.5 x the
+        # bond length from both vacant sites):
+        si = Structure.from_spacegroup("Fd-3m", np.eye(3) * 5.431, ["Si"], [[0, 0, 0]]) * 2
+        neighbour = si.get_neighbors(si[0], 2.4)[0]  # nearest neighbour of site 0 (Si-Si bond: 2.35 Å)
+        split_vac_structure = si.copy()
+        split_vac_structure.remove_sites([0, neighbour.index])
+        split_vac_structure.append("Si", (si[0].frac_coords + neighbour.frac_coords) / 2)
+        defect_type, missing_idxs, additional_idxs = get_defect_type_and_site_indices(
+            split_vac_structure, si, site_tol=0.4
+        )
+        assert (defect_type, sorted(missing_idxs), additional_idxs) == (
+            "vacancy",
+            sorted([0, neighbour.index]),
+            [len(si) - 2],
+        )
+
+    def test_defect_site_indices_split_interstitials(self):
+        """
+        Test identification of split interstitials (two atoms sharing a bulk
+        site; 2 X_i + V_X) by ``get_defect_type_and_site_indices``.
+        """
+        si = Structure.from_spacegroup("Fd-3m", np.eye(3) * 5.431, ["Si"], [[0, 0, 0]]) * 2
+        si_si_bond = np.sort(si.distance_matrix[0])[1]
+        direction = np.array([1, 1, 0]) / np.sqrt(2)
+        # <110> dumbbells at site 0, with the (host, extra) atom distances to the site (in units of the
+        # bond length), for a ``site_tol`` (distance tolerance sphere radius) of 0.4:
+        for host_dist, extra_dist, split in [
+            (0.35, 0.35, True),  # both atoms inside the tolerance sphere
+            (0.45, 0.45, True),  # both outside (so host atom off-site anyway)
+            (0.39, 0.45, True),  # similar displacements (within 15%); host atom inside the sphere
+            (0.30, 0.38, False),  # dissimilar displacements; displaced host atom + interstitial
+        ]:
+            defect_structure = si.copy()
+            defect_structure.translate_sites([0], host_dist * si_si_bond * direction, frac_coords=False)
+            defect_structure.append(
+                "Si", si[0].coords - extra_dist * si_si_bond * direction, coords_are_cartesian=True
+            )
+            defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+                get_defect_type_and_site_indices(defect_structure, si, site_tol=0.4)
+            )
+            assert defect_type == "interstitial"
+            assert missing_bulk_site_indices == ([0] if split else [])
+            assert sorted(additional_defect_site_indices) == ([0, len(si)] if split else [len(si)])
+
+        # split interstitial in a Frenkel pair (with a separate vacancy, so no unmatched defect sites):
+        far_idx = int(np.argmax(si.distance_matrix[0]))
+        frenkel_structure = si.copy()
+        frenkel_structure.translate_sites([0], 0.35 * si_si_bond * direction, frac_coords=False)
+        frenkel_structure.append(
+            "Si", si[0].coords - 0.35 * si_si_bond * direction, coords_are_cartesian=True
+        )
+        frenkel_structure.remove_sites([far_idx])
+        defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+            get_defect_type_and_site_indices(frenkel_structure, si, site_tol=0.4)
+        )
+        assert defect_type == "complex"
+        assert sorted(missing_bulk_site_indices) == [0, far_idx]
+        assert sorted(additional_defect_site_indices) == [0, len(si) - 1]
+
+        # similar displacements, but not split across the site (bent at 90°), so not a split interstitial:
+        bent_structure = si.copy()
+        bent_structure.translate_sites([0], 0.36 * si_si_bond * direction, frac_coords=False)
+        bent_structure.append(
+            "Si",
+            si[0].coords + 0.38 * si_si_bond * np.array([1, -1, 0]) / np.sqrt(2),
+            coords_are_cartesian=True,
+        )
+        assert get_defect_type_and_site_indices(bent_structure, si, site_tol=0.4) == (
+            "interstitial",
+            [],
+            [len(si)],
+        )
+
+        # bond-centre interstitial is not a split interstitial:
+        nn_idx = int(np.argsort(si.distance_matrix[0])[1])
+        _dist, image = si[0].distance_and_image(si[nn_idx])
+        bond_centre_structure = si.copy()
+        bond_centre_structure.append("Si", (si[0].frac_coords + si[nn_idx].frac_coords + image) / 2)
+        assert get_defect_type_and_site_indices(bond_centre_structure, si, site_tol=0.4) == (
+            "interstitial",
+            [],
+            [len(si)],
+        )
+
+    def test_bond_centre_H_interstitial_initial_site(self):
+        """
+        Test that the guessed initial (unrelaxed) site of a hydrogen
+        interstitial which has relaxed near a bond-centre site is that bond-
+        centre site (included by default for hydrogen interstitials).
+        """
+        si = Structure.from_spacegroup("Fd-3m", np.eye(3) * 5.431, ["Si"], [[0, 0, 0]]) * 2
+        nn_idx = int(np.argsort(si.distance_matrix[0])[1])
+        _dist, image = si[0].distance_and_image(si[nn_idx])
+        bond_centre = (si[0].frac_coords + si[nn_idx].frac_coords + image) / 2
+        defect_structure = si.copy()
+        defect_structure.append("H", bond_centre)
+        defect_structure.translate_sites([-1], [0.2, -0.2, 0], frac_coords=False)  # relaxed off-centre
+        _defect_site, defect_type, defect_site_in_bulk, *_ = defect_site_from_structures(
+            defect_structure,
+            si,
+            return_all_info=True,
+            _parameter_order_warn=False,  # TODO: Remove in v4.1
+        )
+        assert defect_type == "interstitial"
+        assert np.isclose(
+            si.lattice.get_distance_and_image(defect_site_in_bulk.frac_coords, bond_centre)[0], 0
+        )
 
     @custom_mpl_image_compare("YTOS_Int_F_-1_eigenvalue_plot_ISPIN_1.png")
     def test_extrinsic_interstitial_parsing_and_kumagai(self):
