@@ -2948,9 +2948,7 @@ class DefectParser:
                 mpid = mpid_fit_list[0]
                 print(f"Single mp-id found for bulk structure:{mpid}.")
             elif len(mpid_fit_list) > 1:
-                num_mpid_list = [int(mpid.split("-")[1]) for mpid in mpid_fit_list]
-                num_mpid_list.sort()
-                mpid = f"mp-{num_mpid_list[0]!s}"
+                mpid = f"mp-{min(int(mpid.split('-')[1]) for mpid in mpid_fit_list)}"
                 print(
                     f"Multiple mp-ids found for bulk structure:{mpid_fit_list}. Will use lowest "
                     f"number mpid for bulk band structure = {mpid}."

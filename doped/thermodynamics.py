@@ -6804,17 +6804,12 @@ class FermiSolver(MSONable):
         self._check_temperature_settings(
             annealing_temperature_range, temperature_range, quenched_temperature_range, range=True
         )
-        # Ensure temperature ranges are lists:
-        temperature_list = _ensure_list(temperature_range)
-        annealing_temperature_list = _ensure_list(annealing_temperature_range)  # returns None if None
-        quenched_temperature_list = _ensure_list(quenched_temperature_range)
-
         single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
 
-        temp_args = product(
+        temp_args = product(  # scalars (or ``None`` annealing temperature) -> single-value lists
             *(
                 i if isinstance(i, Iterable) else [i]
-                for i in [annealing_temperature_list, quenched_temperature_list, temperature_list]
+                for i in [annealing_temperature_range, quenched_temperature_range, temperature_range]
             )
         )
         return pd.concat(
@@ -7067,7 +7062,7 @@ class FermiSolver(MSONable):
                 concentration.
         """
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
-        effective_dopant_concentration_list = _ensure_list(effective_dopant_concentration_range)
+        effective_dopant_concentration_list = np.atleast_1d(effective_dopant_concentration_range)
 
         single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
 
@@ -8936,11 +8931,3 @@ def _extract_target_value(results_df: pd.DataFrame, target_names: list[str], col
 
     matching = _target_rows_mask(results_df, target_names)
     return float(results_df.loc[matching, "Concentration (cm^-3)"].sum(skipna=False))
-
-
-def _ensure_list(
-    var: float | range | list | np.ndarray | None = None,
-) -> list[float | int] | np.ndarray | None:
-    if isinstance(var, range):
-        return list(var)
-    return [var] if isinstance(var, int | float) else var

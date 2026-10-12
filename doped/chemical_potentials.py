@@ -2981,10 +2981,8 @@ class ChemicalPotentialGrid(MSONable):
         if n_dims == 1:  # 1D space (e.g. a binary system, or two limits of a multinary system); stable
             # chemical potential range is just a line segment, for which barycentric and Cartesian grids
             cartesian = False  # are identical -> "hull" = the segment endpoints,
-            order = np.argsort(
-                ind_vars[:, int(np.argmax(spans))]
-            )  # sorted along the largest-span μ coordinate
-            hull_idx = np.array([order[0], order[-1]])
+            span_coords = ind_vars[:, int(np.argmax(spans))]  # largest-span μ coordinate
+            hull_idx = np.array([np.argmin(span_coords), np.argmax(span_coords)])
         else:
             hull = ConvexHull(ind_vars)  # convex hull of the vertices
             hull_idx = hull.vertices  # indices of the hull points

@@ -2371,7 +2371,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             print(info_line)
             assert info_line in repr(CdTe_defect_gen)
 
-        CdTe_defect_gen.add_charge_states("Cd_i", -6)
+        CdTe_defect_gen.add_charge_states("Cd_i", np.int64(-6))  # numpy scalar, to test input flexibility
         self._general_defect_gen_check(CdTe_defect_gen)
         for info_line in [line.replace("[+2,+1,0]      ", "[+2,+1,0,-6]   ") for line in info_lines]:
             print(info_line)

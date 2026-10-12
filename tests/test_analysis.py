@@ -3323,7 +3323,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             get_primitive_structure(entry.bulk_supercell)
         ).get_conventional_standard_structure()
         cubic = conv_structure * 2  # 64-atom cubic supercell
-        vac_index = next(i for i, site in enumerate(cubic) if site.specie.symbol == "Zn")
+        vac_index = cubic.indices_from_symbol("Zn")[0]
         cubic_center_cart = cubic[vac_index].coords.copy()
         cubic.remove_sites([vac_index])
         for site in cubic.get_sites_in_sphere(cubic_center_cart, 3.0):  # breathing mode, as in (i)

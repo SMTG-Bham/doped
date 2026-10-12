@@ -32,7 +32,7 @@ from pymatgen.util.typing import PathLike, SpeciesLike
 from scipy.spatial import KDTree
 
 from doped.utils import _warn_parameter_order
-from doped.utils.efficiency import _parse_site_species_str
+from doped.utils.efficiency import _parse_site_species_str, get_element_indices
 
 if TYPE_CHECKING:
     from doped.core import DefectEntry
@@ -1597,7 +1597,7 @@ def get_site_mappings(
 
     # Generate a site matching table between the input and the template
     min_dist_with_index: list[tuple] = []
-    s1_species_symbols = (
+    s1_species_symbols: list[Any] = (
         [
             species.symbol
             for species in struct1.composition.elements
@@ -1606,17 +1606,17 @@ def get_site_mappings(
         if not anonymous
         else [None]
     )
+    s1_idx_dict, s2_idx_dict = (  # {symbol: indices} for each structure, in one pass over sites
+        {None: list(range(len(struct)))} if anonymous else get_element_indices(struct, s1_species_symbols)
+        for struct in (struct1, struct2)
+    )
 
     for s1_species_symbol in s1_species_symbols:
         if species is not None and s1_species_symbol != species and not anonymous:
             continue
-        s1_species_indices = [
-            i for i, site in enumerate(struct1) if (site.specie.symbol == s1_species_symbol or anonymous)
-        ]
+        s1_species_indices = s1_idx_dict[s1_species_symbol]
         s1_coords = [get_coords(struct1[i]) for i in s1_species_indices]
-        s2_species_indices = [
-            i for i, site in enumerate(struct2) if (site.specie.symbol == s1_species_symbol or anonymous)
-        ]
+        s2_species_indices = s2_idx_dict[s1_species_symbol]
         s2_coords = [get_coords(struct2[i]) for i in s2_species_indices]
 
         if not s2_coords:  # no sites of this species in struct2
