@@ -959,7 +959,7 @@ def find_ideal_supercell(
     b = [1, 0, 1]
     c = [1, 1, 0]  # get FCC metric which aligns best with input cell:
     fcc_target_metrics = [0.5 * np.array(perm, dtype=float) for perm in permutations([a, b, c])]
-    fcc_target_metric = sorted(fcc_target_metrics, key=lambda x: -np.abs(np.linalg.norm(x * cell)))[0]
+    fcc_target_metric = max(fcc_target_metrics, key=lambda x: np.abs(np.linalg.norm(x * cell)))
 
     sc_optimal_P = _find_ideal_supercell_for_target_metric(
         cell=cell,

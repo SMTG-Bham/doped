@@ -1495,15 +1495,9 @@ class DefectsGenerator(MSONable):
                 if isinstance(val, set):
                     self.kwargs[kwarg] = list(val)  # convert sets to lists for JSON serialisation
 
-        if interstitial_coords is not None:
-            # if a single list or array, convert to list of lists
-            self.interstitial_coords = (
-                interstitial_coords
-                if isinstance(interstitial_coords[0], list | tuple | np.ndarray)
-                else [interstitial_coords]  # ensure list of lists
-            )
-        else:
-            self.interstitial_coords = []
+        self.interstitial_coords = (  # list of lists, also for a single set of coords (``[]`` if ``None``)
+            np.reshape(interstitial_coords, (-1, 3)).tolist() if interstitial_coords is not None else []
+        )
 
         self.prim_interstitial_coords_mult_and_equiv_coords: list[tuple] = []
         self.generate_supercell = generate_supercell
@@ -2155,8 +2149,7 @@ class DefectsGenerator(MSONable):
         if defect_entry_name[-1].isdigit():  # if defect entry name ends with number:
             defect_entry_name = defect_entry_name.rsplit("_", 1)[0]  # name without charge
 
-        if isinstance(charge_states, int | float):
-            charge_states = [round(charge_states)]
+        charge_states = [round(charge) for charge in np.atleast_1d(charge_states).tolist()]  # int list
 
         matching_entry_names_wout_charge = [
             name for name in self.defect_entries if _check_if_name_subset(name, defect_entry_name)
@@ -3004,7 +2997,7 @@ def get_interstitial_sites(
                         axis=1,
                     ),
                     *symmetry._frac_coords_sort_func(
-                        sorted(cand_site_mul_and_equiv_fpos[2], key=symmetry._frac_coords_sort_func)[0]
+                        min(cand_site_mul_and_equiv_fpos[2], key=symmetry._frac_coords_sort_func)
                     ),
                 )
                 for cand_site_mul_and_equiv_fpos in tight_cand_site_mul_and_equiv_fpos_sublist

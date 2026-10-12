@@ -731,10 +731,10 @@ def doped_cluster_frac_coords(
             )
             for x in frac_coords
         }
-        symmetry_favoured_site = sorted(frac_coords_scores.items(), key=lambda x: x[1])[0][0]
-        dist_favoured_site = sorted(
+        symmetry_favoured_site = min(frac_coords_scores, key=lambda x: frac_coords_scores[x])
+        dist_favoured_site, _score = min(
             frac_coords_scores.items(), key=lambda x: (x[1][1], x[1][0], *x[1][2:])
-        )[0][0]
+        )
 
         if (
             np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
