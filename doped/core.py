@@ -593,8 +593,9 @@ class DefectEntry(thermo.DefectEntry):
                 (from ``doped/utils/doped.mplstyle``).
             **kwargs:
                 Additional kwargs to pass to
-                ``pydefect.corrections.efnv_correction.ExtendedFnvCorrection``
-                (e.g. ``charge``, ``defect_region_radius``, ``defect_coords``).
+                :func:`~doped.corrections.get_kumagai_correction` (e.g.
+                ``point_charges`` to model the defect charge as multiple point
+                charges, such as for defect complexes, or ``defect_coords``).
 
         Returns:
             ``utils.CorrectionResults`` (summary of the corrections applied and

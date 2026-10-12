@@ -915,7 +915,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )  # for test_plotting
 
         # spot check:
-        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.81760, atol=1e-3)
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
     def test_extrinsic_Sb2Se3_parsing_with_single_defect_dir(self):
@@ -927,7 +927,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w  # no warnings
         check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
-        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.81760, atol=1e-3)
 
         assert len(Sb2Se3_O_thermo.defect_entries) == 1  # only the one specified defect parsed
 
@@ -1746,7 +1746,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             7.661,
             atol=3e-3,
         )  # uncorrected energy
-        assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 10.379714081555262, atol=1e-3)
+        assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 10.09570347183319, atol=1e-3)
 
         # test no warnings when skip_corrections is True
         with warnings.catch_warnings(record=True) as w:
@@ -1859,7 +1859,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             atol=3e-3,
         )  # uncorrected energy
         assert np.isclose(
-            parsed_int_Te_2_fake_aniso.get_ediff(), -4.7620, atol=2e-2
+            parsed_int_Te_2_fake_aniso.get_ediff(), -5.0602, atol=2e-2
         )  # -4.734 with old voronoi frac coords, expanded atol now to account for LOCPOT sub-sampling
         # compression
 
