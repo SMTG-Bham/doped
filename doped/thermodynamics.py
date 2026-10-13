@@ -2819,6 +2819,7 @@ class DefectThermodynamics(MSONable):
         style_file: PathLike | None = None,
         fermi_level: float | None = None,
         filename: PathLike | None = None,
+        ax: plt.Axes | list[plt.Axes] | np.ndarray | None = None,
         **kwargs,
     ) -> Figure | list[Figure]:
         r"""
@@ -3069,6 +3070,15 @@ class DefectThermodynamics(MSONable):
                 ``get_fermi_level_and_concentrations``). Default: None.
             filename (PathLike): Filename to save the plot to. Default: None
                 (not saved).
+            ax (plt.Axes, list[plt.Axes]):
+                ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+                figures), rather than creating new figure(s), in which case the
+                parent ``Figure`` of the ``Axes`` is returned. If multiple
+                chemical potential limits are plotted (i.e. ``limit`` not set),
+                a list/array of ``Axes`` (one per limit, in order) should be
+                given. Creating the figure within the ``doped_plot_style()``
+                context manager (from ``doped.utils.plotting``) applies the
+                ``doped`` plot style to the whole figure. Default: None.
             **kwargs:
                 Additional keyword arguments for advanced customisation, such
                 as ``shallow_charge_stability_tolerance`` or
@@ -3095,6 +3105,12 @@ class DefectThermodynamics(MSONable):
 
         limit = _parse_limit(chempots, limit)
         limits = [limit] if limit is not None else _get_limits_to_plot(chempots, self.bulk_formula)
+        axes = None if ax is None else list(np.asarray(ax, dtype=object).ravel())  # Axes, or list/array
+        if axes is not None and len(axes) != len(limits):
+            raise ValueError(
+                f"Got {len(axes)} `Axes` with `ax`, but there are {len(limits)} chemical potential limits "
+                f"to plot ({limits}). Provide one `Axes` per limit, or set `limit` to plot a single limit."
+            )
 
         if (
             chempots
@@ -3137,7 +3153,7 @@ class DefectThermodynamics(MSONable):
 
         with doped_plot_style(style_file):
             figs = []
-            for limit in limits:
+            for i, limit in enumerate(limits):
                 abs_chempots = chempots["limits"][limit]
                 plot_title = limit if len(limits) > 1 else None
                 plot_filename = (
@@ -3166,9 +3182,15 @@ class DefectThermodynamics(MSONable):
                         auto_labels=auto_labels,
                         fermi_level=fermi_level,
                         title=plot_title,
-                        filename=plot_filename,
+                        filename=plot_filename if axes is None else None,  # with ``ax``, saved below
+                        ax=None if axes is None else axes[i],
                     )
                 figs.append(fig)
+
+            if axes is not None and filename:
+                # save (e.g. multi-panel) figure(s) once all limits are plotted
+                for fig in dict.fromkeys(figs):  # unique figures
+                    fig.savefig(filename, dpi=600, bbox_inches="tight", transparent=True)
 
             return figs[0] if len(figs) == 1 else figs
 
@@ -3186,6 +3208,7 @@ class DefectThermodynamics(MSONable):
         figsize: tuple | None = None,
         style_file: PathLike | None = None,
         filename: PathLike | None = None,
+        ax: plt.Axes | None = None,
         **kwargs,
     ) -> Figure:
         r"""
@@ -3280,13 +3303,22 @@ class DefectThermodynamics(MSONable):
                 plots.
             figsize (tuple):
                 ``(width, height)`` of the figure in inches. Defaults to a size
-                that scales with the number of defects.
+                that scales with the number of defects. Cannot be set with
+                ``ax`` (in which case the size of ``ax`` is used).
             style_file (PathLike):
                 Path to a ``mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style (from
                 ``doped/utils/doped.mplstyle``).
             filename (PathLike):
                 If set, save the figure to this path. (Default: None)
+            ax (plt.Axes):
+                ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+                figures), rather than creating a new figure, in which case the
+                parent ``Figure`` of ``ax`` is returned (and saved, if
+                ``filename`` is set). Creating the figure within the
+                ``doped_plot_style()`` context manager (from
+                ``doped.utils.plotting``) applies the ``doped`` plot style to
+                the whole figure. Default: None.
             **kwargs:
                 Additional keyword arguments controlling the stability window
                 tolerances when pruning unstable/shallow entries (e.g.
@@ -3310,6 +3342,7 @@ class DefectThermodynamics(MSONable):
                 column_width=column_width,
                 figsize=figsize,
                 filename=filename,
+                ax=ax,
             )
 
     def _get_single_electron_tls(self) -> dict[str, list[TransitionLevel]]:
@@ -4846,6 +4879,7 @@ class DefectThermodynamics(MSONable):
         label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
         filename: PathLike | None = None,
         style_file: PathLike | None = None,
+        ax: plt.Axes | None = None,
         **kwargs,
     ) -> plt.Figure:
         """
@@ -4944,6 +4978,14 @@ class DefectThermodynamics(MSONable):
                 Path to a mplstyle file to use for the plot. If ``None``
                 (default), uses the default ``doped`` style (from
                 ``doped/utils/doped.mplstyle``).
+            ax (plt.Axes):
+                ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+                figures), rather than creating a new figure, in which case the
+                parent ``Figure`` of the ``Axes`` is returned (and saved, if
+                ``filename`` is set). Creating the figure within the
+                ``doped_plot_style()`` context manager (from
+                ``doped.utils.plotting``) applies the ``doped`` plot style to
+                the whole figure. Default: None.
             **kwargs:
                 Additional keyword arguments to pass to |get_grid|, such as
                 ``n_points`` (default = 1000) and ``cartesian`` (default =
@@ -4970,6 +5012,7 @@ class DefectThermodynamics(MSONable):
             label_positions=label_positions,
             filename=filename,
             style_file=style_file,
+            ax=ax,
             **kwargs,
         )
 

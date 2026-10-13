@@ -7,6 +7,7 @@ developers.
 """
 
 import os
+import tempfile
 import unittest
 from typing import Any
 from unittest.mock import patch
@@ -335,6 +336,72 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         fig.axes[0].set_visible(False)
         fig.axes[1].set_visible(False)
 
+        return fig
+
+    @custom_mpl_image_compare("v_Cd_-2_FNV_plot_onto_axes.png")
+    def test_plot_freysoldt_onto_axes(self):
+        """
+        Test FNV correction plotting onto user-provided ``Axes``.
+        """
+        plt = mpl.pyplot
+        v_Cd_entry = self.v_Cd_dict["v_Cd_-2"]
+        # extra row to check only the given ``Axes`` are drawn on:
+        user_fig, user_axes = plt.subplots(2, 3, figsize=(12, 7))
+        user_fig.subplots_adjust(wspace=0.3, hspace=0.35)  # room for the per-panel axis labels & titles
+        num_figs = len(plt.get_fignums())
+
+        _corr, fig = get_freysoldt_correction(v_Cd_entry, 9.13, plot=True, ax=user_axes[0], verbose=False)
+        assert fig is user_fig
+        assert len(plt.get_fignums()) == num_figs  # no new figures
+        assert all(ax.lines for ax in user_axes[0])
+        assert not any(ax.lines for ax in user_axes[1])
+
+        # single axis, also via ``DefectEntry`` method:
+        _corr, fig = v_Cd_entry.get_freysoldt_correction(plot=True, axis=0, ax=user_axes[1, 1])
+        assert fig is user_fig
+        assert len(plt.get_fignums()) == num_figs
+        assert user_axes[1, 1].lines
+        assert user_axes[1, 1].get_title() == r"$a$-axis"
+
+        root_fig = (
+            plt.figure()
+        )  # ``Axes`` within a ``SubFigure``; root ``Figure`` should be returned & saved
+        sub_axes = root_fig.subfigures(2, 1)[0].subplots(1, 3)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            _corr, fig = get_freysoldt_correction(
+                v_Cd_entry, 9.13, plot=True, ax=sub_axes, filename=f"{tmp_dir}/FNV.png", verbose=False
+            )
+            assert os.listdir(tmp_dir) == ["FNV.png"]
+        assert fig is root_fig
+        plt.close(root_fig)
+
+        for ax, axis in [(user_axes[0], 0), (user_axes[1, 0], None)]:  # wrong number of ``Axes``
+            with pytest.raises(ValueError, match="`Axes` with `ax`, but"):
+                get_freysoldt_correction(v_Cd_entry, 9.13, plot=True, axis=axis, ax=ax, verbose=False)
+
+        return user_fig
+
+    @custom_mpl_image_compare("F_O_+1_eFNV_plot.png")  # same as ``test_plot_kumagai``
+    def test_correction_plots_keep_user_figures_open(self):
+        """
+        Test that FNV/eFNV correction plotting doesn't close other open (user)
+        figures.
+        """
+        plt = mpl.pyplot
+        user_fig = plt.figure()
+        _corr, fnv_fig = get_freysoldt_correction(
+            self.v_Cd_dict["v_Cd_-2"], 9.13, plot=True, axis=0, verbose=False
+        )
+        assert plt.fignum_exists(user_fig.number)
+        plt.figure(user_fig.number)  # make the user figure current again; eFNV must not draw on it
+        _corr, fig = get_kumagai_correction(
+            self.F_O_1_entry, dielectric=self.ytos_dielectric, plot=True, verbose=False
+        )
+        assert plt.fignum_exists(user_fig.number)
+        assert fig is not user_fig
+        assert not user_fig.axes  # nothing drawn on the user figure
+        plt.close(user_fig)
+        plt.close(fnv_fig)
         return fig
 
     @custom_mpl_image_compare("F_O_+1_eFNV_plot.png")

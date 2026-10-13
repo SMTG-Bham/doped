@@ -348,6 +348,7 @@ class DefectEntry(thermo.DefectEntry):
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
         style_file: PathLike | None = None,
+        ax: "mpl.axes.Axes | list[mpl.axes.Axes] | np.ndarray | None" = None,
         **kwargs,
     ) -> utils.CorrectionResult:
         """
@@ -425,6 +426,15 @@ class DefectEntry(thermo.DefectEntry):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
                 (from ``doped/utils/doped.mplstyle``).
+            ax (plt.Axes, list[plt.Axes]):
+                ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+                figures), rather than creating a new figure, in which case the
+                parent ``Figure`` of the ``Axes`` is returned. If ``axis`` is
+                ``None`` (all three axes plotted), a list/array of three
+                ``Axes`` (for the a, b and c axes, in order) should be given
+                (note that the shared y-axis of the default three-panel figure
+                is not applied to user-provided ``Axes``), otherwise a single
+                ``Axes``. Default: None.
             **kwargs:
                 Additional kwargs to pass to the ``pymatgen-analysis-defects``
                 ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
@@ -455,6 +465,7 @@ class DefectEntry(thermo.DefectEntry):
             filename=filename,
             axis=axis,
             style_file=style_file,
+            ax=ax,
             **kwargs,
         )
         correction = fnv_correction_output if not plot and filename is None else fnv_correction_output[0]
