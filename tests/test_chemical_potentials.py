@@ -3162,6 +3162,34 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         assert os.path.exists("test.png")
         return plot
 
+    @custom_mpl_image_compare(filename="AgSbTe2_chempot_heatmap_onto_axes.png")
+    def test_AgSbTe2_chempot_heatmap_onto_axes(self):
+        fig, axes = plt.subplots(1, 2, figsize=(7, 3.5))
+        fig.subplots_adjust(wspace=0.4)  # room for the heatmap y-axis labels
+        panel_label = axes[1].text(
+            -0.15, 1.05, "(b)", transform=axes[1].transAxes
+        )  # pre-existing user text
+        num_figs = len(plt.get_fignums())
+        returned_fig = self.AgSbTe2_cpa.plot_chempot_heatmap(ax=axes[1], filename="test.png")
+        assert panel_label.get_position() == (-0.15, 1.05)  # user text not moved by label nudging
+        assert returned_fig is fig
+        assert len(plt.get_fignums()) == num_figs  # no new figures opened
+        assert len(fig.axes) == 3  # colorbar Axes added to the user's figure
+        assert axes[1].collections  # heatmap (``tripcolor``) drawn on the given Axes
+        assert not axes[0].collections
+        assert os.path.exists("test.png")  # parent figure saved
+
+        root_fig = (
+            plt.figure()
+        )  # ``Axes`` within a ``SubFigure``; root ``Figure`` should be returned & saved
+        sub_ax = root_fig.subfigures(1, 2)[1].subplots()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            returned_fig = self.AgSbTe2_cpa.plot_chempot_heatmap(ax=sub_ax, filename=f"{tmp_dir}/hm.png")
+            assert os.listdir(tmp_dir) == ["hm.png"]
+        assert returned_fig is root_fig
+        plt.close(root_fig)
+        return fig
+
     @custom_mpl_image_compare(
         filename="AgSbTe2_chempot_heatmap_custom.png",
         style=f"{module_path}/../doped/utils/displacement.mplstyle",

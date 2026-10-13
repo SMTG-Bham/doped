@@ -231,8 +231,8 @@ def get_band_edge_info(
         pbes = make_perfect_band_edge_state_from_vasp(vasprun=bulk_vr, procar=bulk_procar)
 
     # get defect neighbour indices
-    sorted_distances = np.sort(defect_vr.final_structure.distance_matrix.flatten())
-    min_distance = sorted_distances[sorted_distances > 0.5][0]
+    distance_matrix = defect_vr.final_structure.distance_matrix
+    min_distance = distance_matrix[distance_matrix > 0.5].min()
 
     if defect_supercell_site is None:
         defect_supercell_site = defect_site_from_structures(

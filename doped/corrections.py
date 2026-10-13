@@ -135,6 +135,7 @@ def get_freysoldt_correction(
     axis: int | None = None,
     verbose: bool = True,
     style_file: PathLike | None = None,
+    ax: plt.Axes | list[plt.Axes] | np.ndarray | None = None,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -200,6 +201,15 @@ def get_freysoldt_correction(
             Path to a ``.mplstyle`` file to use for the plot. If ``None``
             (default), uses the default ``doped`` style
             (from ``doped/utils/doped.mplstyle``).
+        ax (plt.Axes, list[plt.Axes]):
+            ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+            figures), rather than creating a new figure, in which case the
+            parent ``Figure`` of the ``Axes`` is returned. If ``axis`` is
+            ``None`` (all three axes plotted), a list/array of three ``Axes``
+            (for the a, b and c axes, in order) should be given (note that the
+            shared y-axis of the default three-panel figure is not applied to
+            user-provided ``Axes``), otherwise a single ``Axes``.
+            Default: None.
         **kwargs:
             Additional kwargs to pass to the ``pymatgen-analysis-defects``
             ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
@@ -245,22 +255,28 @@ def get_freysoldt_correction(
         return fnv_correction
 
     axis_label_dict = {0: r"$a$-axis", 1: r"$b$-axis", 2: r"$c$-axis"}
-    if axis is None:
-        with doped_plot_style(style_file):
-            fig, axs = plt.subplots(1, 3, sharey=True, figsize=(12, 3.5), dpi=600)
-            for direction in range(3):
-                plot_FNV(
-                    fnv_correction.metadata["plot_data"][direction],
-                    ax=axs[direction],
-                    title=axis_label_dict[direction],
-                    style_file=style_file,
-                )
-    else:
-        plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
-        fig = plt.gcf()
+    axes = None if ax is None else list(np.asarray(ax, dtype=object).ravel())  # Axes, or list/array
+    if axes is not None and len(axes) != (num_axes := 3 if axis is None else 1):
+        raise ValueError(
+            f"Got {len(axes)} `Axes` with `ax`, but {num_axes} are required "
+            f"({'one per a/b/c axis, as `axis` is None' if axis is None else 'as `axis` is set'})."
+        )
+
+    directions = range(3) if axis is None else [axis]
+    with doped_plot_style(style_file):
+        if axes is None and axis is None:
+            _fig, axes = plt.subplots(1, 3, sharey=True, figsize=(12, 3.5), dpi=600)
+        for i, direction in enumerate(directions):
+            plotted_ax = plot_FNV(
+                fnv_correction.metadata["plot_data"][direction],
+                ax=None if axes is None else axes[i],
+                title=axis_label_dict[direction],
+                style_file=style_file,
+            )
+    fig = plotted_ax.figure.figure  # root parent figure (of the user-provided ``ax``, if given)
 
     if filename:
-        plt.savefig(filename, bbox_inches="tight", transparent=True)
+        fig.savefig(filename, bbox_inches="tight", transparent=True)
 
     return fnv_correction, fig
 
@@ -302,7 +318,6 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
 
     with doped_plot_style(style_file):
         if ax is None:
-            plt.close("all")  # close any previous figures
             _fig, ax = plt.subplots()
         (line1,) = ax.plot(x, v_R, c="black", zorder=1, label="FNV long-range model ($V_{lr}$)")
         (line2,) = ax.plot(x, diff, c="red", label=r"$\Delta$(Locpot)")
@@ -698,7 +713,7 @@ def get_kumagai_correction(
         efnv_correction=efnv_correction,
     )
     with doped_plot_style(style_file):
-        plt.close("all")  # close any previous figures
+        plt.figure()  # new current figure for pydefect's pyplot-based plotting
         spp.construct_plot()
         fig = spp.plt.gcf()
         ax = fig.gca()
@@ -740,6 +755,6 @@ def get_kumagai_correction(
         ax.set_xlabel(f"{x_label} ({spp._x_unit})", size=spp._mpl_defaults.label_font_size)
 
     if filename:
-        spp.plt.savefig(filename, bbox_inches="tight", transparent=True)
+        fig.savefig(filename, bbox_inches="tight", transparent=True)
 
     return kumagai_correction_result, fig

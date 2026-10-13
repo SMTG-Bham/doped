@@ -15,7 +15,6 @@ from tqdm import tqdm
 
 from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry
-from doped.thermodynamics import _ensure_list
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import (
     Composition,
@@ -306,12 +305,11 @@ def get_defect_in_supercell(
         # First, we reduce to only atoms closest to the centre for both target and super-supercells, to
         # greatly reduce comp costs with site-matching enormous supercells; for this, we scan over possible
         # radii for the sampling sphere as some choices give matches (transformations) and some fail:
-        orientation_template_radii_range = _ensure_list(
+        orientation_template_radii_range = np.atleast_1d(
             orientation_template_radii_range
             if orientation_template_radii_range is not None
             else [0.8, 1.0, 0.6, 0.4, 1.2]  # scale factors of get_half_max_face_distance(target_supercell)
         )
-        assert isinstance(orientation_template_radii_range, list | np.ndarray)  # typing
         radius_target = get_half_max_face_distance(target_supercell)
         trans_to_match_target = None
         fake_target_supercell_w_big_supercell_lattice = None
@@ -454,10 +452,8 @@ def get_defect_in_supercell(
             oriented_new_bulk_supercell = new_bulk_supercell
             oriented_new_defect_supercell = new_defect_supercell
 
-        oriented_new_defect_site = next(  # get defect site and remove X from sites
-            oriented_new_defect_supercell.pop(i)
-            for i, site in enumerate(oriented_new_defect_supercell.sites)
-            if site.specie.symbol == "X"
+        oriented_new_defect_site = oriented_new_defect_supercell.pop(  # get defect site and remove X
+            oriented_new_defect_supercell.indices_from_symbol("X")[0]
         )
         if pbar is not None:
             pbar.update(35)  # 90% of progress bar
@@ -681,12 +677,12 @@ def stencil_target_cell_from_big_cell(
     Returns:
         Structure: The stenciled supercell structure.
     """
-    edge_tol_range = _ensure_list(edge_tol_range if edge_tol_range is not None else np.arange(0.2, 4, 0.2))
-    min_dist_tol_factor_range = _ensure_list(
+    edge_tol_range = np.atleast_1d(
+        edge_tol_range if edge_tol_range is not None else np.arange(0.2, 4, 0.2)
+    )
+    min_dist_tol_factor_range = np.atleast_1d(
         min_dist_tol_factor_range if min_dist_tol_factor_range is not None else np.arange(0.95, 0.5, -0.05)
     )
-    assert isinstance(edge_tol_range, list | np.ndarray)
-    assert isinstance(min_dist_tol_factor_range, list | np.ndarray)
 
     # first, translate sites to put the centre of big_supercell (which should have defect site at the
     # centre) to the centre of the target supercell (w/cart coords)
@@ -817,25 +813,25 @@ def stencil_target_cell_from_big_cell(
                         )
                         frac_coords = [site.frac_coords for site in fake_candidate_struct_sites]
                         distance_matrix = get_distance_matrix(frac_coords, target_supercell.lattice)
-                        sorted_distances = np.sort(distance_matrix.flatten())
+                        # take the 10 smallest distances (after the diagonal zeros) for comparison:
+                        flat_distances = distance_matrix.flatten()
+                        num_kept = min(len(frac_coords) + 10, flat_distances.size)
+                        smallest_distances = np.sort(np.partition(flat_distances, num_kept - 1)[:num_kept])
                         min_interatomic_distances_tuple_combo_dict[
-                            tuple(sorted_distances[len(frac_coords) : len(frac_coords) + 10])
-                            # take the 10 smallest distances for comparison purposes
+                            tuple(smallest_distances[len(frac_coords) :])
                         ] = idx_combo_sites_in_target
 
-                # get the candidate structure with the largest minimum interatomic distance:
-                min_interatomic_distances_tuple_combo_list = sorted(
-                    min_interatomic_distances_tuple_combo_dict.items(),
-                    key=lambda x: x[0],
-                    reverse=True,
-                )
-
-                if not min_interatomic_distances_tuple_combo_list:
+                if not min_interatomic_distances_tuple_combo_dict:
                     raise RuntimeError("No matching compositions for stenciling found.")
+
+                # get the candidate structure with the largest minimum interatomic distance:
+                min_dists_tuple, best_idx_combo_sites = max(
+                    min_interatomic_distances_tuple_combo_dict.items(), key=lambda x: x[0]
+                )
 
                 # raise RuntimeError and dynamically increase ``edge_tol`` (first, then decrease
                 # ``min_dist_tol_factor``) if resulting min_dist is too small:
-                idx_combo_min_dist = min_interatomic_distances_tuple_combo_list[0][0][0]
+                idx_combo_min_dist = min_dists_tuple[0]
                 if idx_combo_min_dist < (bulk_min_bond_length * min_dist_tol_factor):
                     raise RuntimeError(
                         f"Minimum interatomic distance ({idx_combo_min_dist:.2f} Å) near the edge (within "
@@ -844,9 +840,7 @@ def stencil_target_cell_from_big_cell(
                         f"fatal issue with the stenciling process. Aborting."
                     )
 
-                new_supercell_sites = def_new_supercell_sites + list(
-                    min_interatomic_distances_tuple_combo_list[0][1]
-                )
+                new_supercell_sites = def_new_supercell_sites + list(best_idx_combo_sites)
 
                 min_dist_warning_tol = bulk_min_bond_length * min_dist_warning_tol_factor
                 if idx_combo_min_dist < min_dist_warning_tol:

@@ -1455,10 +1455,11 @@ class DefectRelaxSet(MSONable):
                 ]
             for trial_structure in trial_structures:
                 distance_matrix = trial_structure.distance_matrix
-                sorted_distances = np.sort(distance_matrix[distance_matrix > 0.8].flatten())
-                if len(sorted_distances) > 0:
-                    stdev = 0.1 * sorted_distances[0] if stdev is None else stdev
-                    d_min = 0.8 * sorted_distances[0] if d_min is None else d_min
+                distances = distance_matrix[distance_matrix > 0.8]
+                if distances.size > 0:
+                    min_distance = distances.min()
+                    stdev = 0.1 * min_distance if stdev is None else stdev
+                    d_min = 0.8 * min_distance if d_min is None else d_min
                     break
 
         vasp_xxx_attribute.write_input(

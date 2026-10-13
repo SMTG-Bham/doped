@@ -1087,7 +1087,7 @@ def _set_title_and_save_figure(
             ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
 
     if filename is not None:
-        fig = ax.get_figure()
+        fig = ax.figure.figure  # root ``Figure`` (``ax.figure`` is a ``SubFigure`` for subfigure axes)
         assert isinstance(fig, Figure)
         fig.savefig(filename, dpi=600, bbox_inches="tight", transparent=True)
 
@@ -1838,6 +1838,7 @@ def formation_energy_plot(
     fermi_level: float | None = None,
     title: str | None = None,
     filename: PathLike | None = None,
+    ax: plt.Axes | None = None,
 ) -> "mpl.figure.Figure":
     """
     Produce defect formation energy vs Fermi level plot (i.e. defect formation
@@ -1991,6 +1992,11 @@ def formation_energy_plot(
             Title for the plot. (Default: None)
         filename (PathLike):
             Filename to save the plot to. (Default: None (not saved)).
+        ax (plt.Axes):
+            ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+            figures), rather than creating a new figure, in which case the
+            parent figure of ``ax`` is returned (and saved, if ``filename`` is
+            set). (Default: None)
 
     Returns:
         ``matplotlib`` ``Figure`` object.
@@ -2033,9 +2039,13 @@ def formation_energy_plot(
         )
 
     # generate plot:
-    styled_fig_size = plt.rcParams["figure.figsize"]
-    fig, ax = plt.subplots(figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1]))
-    # Gives a final figure width matching styled_fig_size, with dimensions matching the doped default
+    if ax is None:
+        styled_fig_size = plt.rcParams["figure.figsize"]
+        fig, ax = plt.subplots(
+            figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1])
+        )  # Gives final figure width matching styled_fig_size, with dimensions matching the doped default
+    else:  # plot onto user-provided axes
+        fig = ax.figure.figure  # root ``Figure`` (``ax.figure`` is a ``SubFigure`` for subfigure axes)
     styled_font_size = plt.rcParams["font.size"]
     styled_linewidth = plt.rcParams["lines.linewidth"]
     styled_markersize = plt.rcParams["lines.markersize"]
@@ -2937,6 +2947,7 @@ def transition_level_diagram(
     column_width: float = 0.4,
     figsize: tuple[float, float] | None = None,
     filename: PathLike | None = None,
+    ax: plt.Axes | None = None,
 ):
     r"""
     Produce a vertical transition level diagram for a |DefectThermodynamics|
@@ -3005,15 +3016,24 @@ def transition_level_diagram(
             to ``0.4``. Can be a useful parameter to tune for busy plots.
         figsize (tuple):
             ``(width, height)`` of the figure in inches. Defaults to a width
-            that scales with the number of defects.
+            that scales with the number of defects. Cannot be set with ``ax``
+            (in which case the size of ``ax`` is used).
         filename (PathLike):
             If set, save the figure to this path. (Default: None)
+        ax (plt.Axes):
+            ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+            figures), rather than creating a new figure, in which case the
+            parent figure of ``ax`` is returned (and saved, if ``filename`` is
+            set). (Default: None)
 
     Returns:
         ``matplotlib`` ``Figure`` object.
     """
     if defect_thermodynamics.band_gap is None:
         raise ValueError("`DefectThermodynamics.band_gap` is not set, cannot plot transition levels.")
+
+    if ax is not None and figsize is not None:
+        raise ValueError("`figsize` cannot be set with `ax` (the size of `ax` is used instead).")
 
     if all not in (False, True, "faded", "faded_labels"):
         raise ValueError(f"`all` must be False, True, 'faded' or 'faded_labels', not {all!r}")
@@ -3038,6 +3058,14 @@ def transition_level_diagram(
     # estimate label horizontal extent (in data units = column spacing) so we can extend xlim to leave
     # room for labels at the sides of the outer columns. The data width is approximated by ``n_defects``
     # (columns are spaced 1 data-unit apart) as ``xlim`` is not yet known, assuming ~7-character labels:
+    if ax is not None:
+        # label sizing heuristics below use the figure size as a proxy for the axes size, so use the size
+        # of a ``doped``-created figure (with default subplot margins) whose axes would match ``ax``:
+        rc = plt.rcParams
+        figsize = (
+            ax.bbox.width / ax.figure.dpi / (rc["figure.subplot.right"] - rc["figure.subplot.left"]),
+            ax.bbox.height / ax.figure.dpi / (rc["figure.subplot.top"] - rc["figure.subplot.bottom"]),
+        )
     if figsize is None:
         styled_figsize = plt.rcParams["figure.figsize"]
         figsize_w = max(styled_figsize[0], n_defects + 1.0)
@@ -3054,7 +3082,10 @@ def transition_level_diagram(
         # widen the figure to accommodate the side padding without squishing column spacing:
         figsize = (figsize_w + 0.8 * (2 * side_pad + left_extra_pad), figsize_h)
 
-    fig, ax = plt.subplots(figsize=figsize)
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:  # plot onto user-provided axes
+        fig = ax.figure.figure  # root ``Figure`` (``ax.figure`` is a ``SubFigure`` for subfigure axes)
     xlim = (-side_pad - left_extra_pad, n_defects - 1 + side_pad)
 
     shade_band_edges(ax, defect_thermodynamics.band_gap, xlim, ylim, orientation="vertical")
