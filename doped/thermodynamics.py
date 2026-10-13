@@ -5340,7 +5340,8 @@ def scissor_dos(
             Whether to print information about the original and new band gaps.
 
     Returns:
-        FermiDos: The scissored DOS object.
+        Dos/FermiDos: The scissored DOS object (a ``FermiDos`` if the input is
+        a ``FermiDos``, otherwise a ``Dos``).
     """
     if delta_gap:
         warnings.warn(  # TODO: remove ``delta_gap`` (and this branch) in v4.1.
@@ -5370,9 +5371,16 @@ def scissor_dos(
         np.where((dos_densities > tol) & (dos.energies - dos.efermi < dos_gap / 2))[0][-1]
     ]
 
+    # Sanity checks: (1) ``vbm_energy``/``cbm_energy`` are the last/first grid points with non-zero DOS
+    # below/above the gap, whereas ``get_gap`` returns the gap between the bounding _zero-DOS_ grid points
+    # (one grid point inside the gap on each side), so if the band edges were correctly identified,
+    # ``cbm_energy - vbm_energy`` is exactly 2 grid spacings larger than ``dos_gap``; (2) ``new_cbm_index``
+    # is the grid point nearest to ``cbm_energy + delta_gap``, so ``new_cbm_energy - cbm_energy`` matches
+    # ``delta_gap`` to within half a grid spacing:
+    grid_spacing = np.median(np.diff(dos.energies))
     if not (
-        np.isclose(cbm_energy - vbm_energy, dos_gap, atol=1e-1)
-        and np.isclose(new_cbm_energy - cbm_energy, delta_gap, atol=1e-2)
+        np.isclose(cbm_energy - vbm_energy - 2 * grid_spacing, dos_gap, atol=1e-1)
+        and np.isclose(new_cbm_energy - cbm_energy, delta_gap, atol=1e-2 + grid_spacing / 2)
     ):
         warnings.warn(
             "The new band gap does not appear to be equal to the original band gap plus the scissor "
@@ -5386,7 +5394,7 @@ def scissor_dos(
     scissored_dos_dict = dos.as_dict()
 
     # Shift the CBM and remove/add values:
-    if values_to_remove_or_add < 0:  # remove values
+    if values_to_remove_or_add <= 0:  # remove values (none for rigid shifts / sub-half-grid gap changes)
         scissored_dos_dict["energies"] = np.concatenate(
             (dos.energies[: cbm_index + values_to_remove_or_add], dos.energies[cbm_index:] + delta_gap)
         )
@@ -5416,14 +5424,13 @@ def scissor_dos(
     scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
 
     # now apply the rigid shift of all energies by delta_VBM:
-    # ensure 'energies' is array (should be if function used correctly, not if band gap change is zero...):
     scissored_dos_dict["energies"] = np.array(scissored_dos_dict["energies"]) + delta_VBM
     scissored_dos_dict["efermi"] += delta_VBM
 
     if verbose:
         print(f"Orig gap: {dos_gap:.4f}, new gap:{dos_gap + delta_gap:.4f}")
-    scissored_dos_dict["structure"] = dos.structure.as_dict()
-    if isinstance(dos, FermiDos):
+    if isinstance(dos, FermiDos):  # (plain ``Dos`` objects have no ``structure``)
+        scissored_dos_dict["structure"] = dos.structure.as_dict()
         return FermiDos.from_dict(scissored_dos_dict)
     return Dos.from_dict(scissored_dos_dict)
 
