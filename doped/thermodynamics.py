@@ -24,6 +24,7 @@ from matplotlib.figure import Figure
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition, Element
+from pymatgen.core.sites import PeriodicSite
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
 from pymatgen.io.vasp import Vasprun
 from pymatgen.util.typing import PathLike
@@ -37,7 +38,7 @@ from doped.chemical_potentials import (
     get_X_rich_poor_limit,
     plot_chempot_heatmap,
 )
-from doped.core import DefectEntry, _get_abs_chempots, _no_chempots_warning
+from doped.core import DefectComplex, DefectEntry, _get_abs_chempots, _no_chempots_warning
 from doped.generation import sort_defect_entries
 from doped.utils import _doped_obj_properties_methods, _signed_charge
 from doped.utils._optimise import (
@@ -398,11 +399,11 @@ def group_defects_by_type_and_distance(
     # clustering, the results can be a little sensitive to which / how many defects are parsed together
     # (due to daisy-chaining effects). The user can always adjust `dist_tol` as desired.
     defect_type_cluster_dict: dict[str, dict[int, set[DefectEntry]]] = {
-        entry.defect.name: defaultdict(set) for entry in defect_entries
+        entry.defect.net_name: defaultdict(set) for entry in defect_entries
     }
     for defect_name in list(defect_type_cluster_dict.keys()):
         defect_type_cluster_dict[defect_name] = group_defects_by_distance(
-            [entry for entry in defect_entries if entry.defect.name == defect_name],
+            [entry for entry in defect_entries if entry.defect.net_name == defect_name],
             dist_tol=dist_tol,
             symprec=symprec,
             method=method,
@@ -516,34 +517,66 @@ def _group_defects_by_distance(
     #    a defect entry cluster of all entries corresponding to that equiv site cluster which are not
     #    already members of an earlier defect entry cluster.
 
+    def _get_equiv_fcoords(site: PeriodicSite) -> list[tuple[float, float, float]]:
+        """
+        Get the fractional coordinates of the sites equivalent to ``site`` in
+        ``symm_bulk_struct``.
+        """
+        try:
+            return [
+                tuple(equiv_site.frac_coords)
+                for equiv_site in symm_bulk_struct.find_equivalent_sites(site)
+            ]
+        except ValueError:  # likely interstitials, need to determine equivalent sites
+            return [
+                tuple(frac_coords)
+                for frac_coords in cast(  # just_frac_coords=True -> list[np.ndarray]
+                    "list[np.ndarray]",
+                    get_all_equiv_sites(
+                        site.frac_coords, symm_bulk_struct, symprec=symprec, just_frac_coords=True
+                    ),
+                )
+            ]
+
     for entry in entry_list:
         # using primitive (rather than bulk supercell) here should mostly avoid periodicity-breaking issues
         entry_bulk_structure = entry.defect.structure
-        entry_bulk_site = entry.defect.site
-        entry_equiv_sites = getattr(entry.defect, "equivalent_sites", None)
+        # for a defect complex, the sites of its constituent point defects are used (rather than its
+        # centroid), so that it is clustered with the corresponding point defect sites (e.g. a split
+        # vacancy with the vacancy sites):
+        constituents = entry.defect.defects if isinstance(entry.defect, DefectComplex) else [entry.defect]
+        entry_sites = [constituent.site for constituent in constituents]
+        entry_equiv_sites = [
+            list(getattr(constituent, "equivalent_sites", None) or []) for constituent in constituents
+        ]
         if entry_bulk_structure != bulk_structure:
-            # bulk structures differ, so need to try transforming the ``entry_bulk_site`` (and equiv sites)
+            # bulk structures differ, so need to try transforming the ``entry_sites`` (and equiv sites)
             # to match the ``bulk_structure`` used for all defect entries here
             trans = get_transformation_from_s2_to_s1(bulk_structure, entry_bulk_structure)
             if trans is not None:
                 supercell_matrix, trans_vector, mapping = trans
                 extended = entry_bulk_structure.copy()
-                # extend bulk structure to include defect site:
-                extended.append(entry_bulk_site.species, entry_bulk_site.frac_coords)
-                if entry_equiv_sites:
-                    extended.extend(entry_equiv_sites)
-                reoriented_extended = apply_s2_to_s1_transformation(
+                # extend bulk structure to include defect sites:
+                for site in [*entry_sites, *chain.from_iterable(entry_equiv_sites)]:
+                    extended.append(site.species, site.frac_coords)
+                reoriented_sites = apply_s2_to_s1_transformation(
                     bulk_structure,
                     extended,
                     supercell_matrix,
                     trans_vector,
                     mapping,
                     new_lattice="struct1",  # ``bulk_structure`` lattice
+                )[len(bulk_structure) :]  # get reoriented defect sites
+                entry_sites, reoriented_sites = (
+                    reoriented_sites[: len(entry_sites)],
+                    reoriented_sites[len(entry_sites) :],
                 )
-                entry_bulk_site = reoriented_extended[len(bulk_structure)]  # get reoriented defect site
+                for equiv_sites in entry_equiv_sites:  # (in place)
+                    equiv_sites[:], reoriented_sites = (
+                        reoriented_sites[: len(equiv_sites)],
+                        reoriented_sites[len(equiv_sites) :],
+                    )
                 entry_bulk_structure = bulk_structure
-                if entry_equiv_sites:
-                    entry_equiv_sites = reoriented_extended[len(bulk_structure) + 1 :]
 
             else:
                 warnings.warn(
@@ -556,9 +589,11 @@ def _group_defects_by_distance(
 
         # get min distances to each equiv_fcoords_tuple for previously checked defect entries:
         min_dist_list = [  # min dist for all equiv site tuples, in case multiple less than dist_tol
-            entry_bulk_site.lattice.get_all_distances(
-                entry_bulk_site.frac_coords, list(equiv_fcoords_tuple)
-            ).min()
+            entry_sites[0]
+            .lattice.get_all_distances(
+                [site.frac_coords for site in entry_sites], list(equiv_fcoords_tuple)
+            )
+            .min()
             for equiv_fcoords_tuple in equiv_fcoords_entries_dict
         ]
 
@@ -569,34 +604,14 @@ def _group_defects_by_distance(
             equiv_fcoords_entries_dict[list(equiv_fcoords_entries_dict.keys())[idxmin]].append(entry)
 
         else:  # no exact match found, add new entry
-            if entry_equiv_sites:
-                equiv_fcoords_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                    tuple(site.frac_coords) for site in entry_equiv_sites
+            equiv_fcoords_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                chain.from_iterable(
+                    [tuple(equiv_site.frac_coords) for equiv_site in equiv_sites]
+                    if equiv_sites
+                    else _get_equiv_fcoords(site)
+                    for site, equiv_sites in zip(entry_sites, entry_equiv_sites, strict=True)
                 )
-            else:
-                try:
-                    equiv_fcoords_tuple = (
-                        tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                            tuple(site.frac_coords)
-                            for site in symm_bulk_struct.find_equivalent_sites(entry_bulk_site)
-                        )
-                    )
-                except ValueError:  # likely interstitials, need to add equiv sites to tuple
-                    equiv_fcoords_tuple = (
-                        tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                            tuple(frac_coords)
-                            for frac_coords in cast(  # just_frac_coords=True -> list[np.ndarray]
-                                "list[np.ndarray]",
-                                get_all_equiv_sites(
-                                    entry_bulk_site.frac_coords,
-                                    symm_bulk_struct,
-                                    symprec=symprec,
-                                    just_frac_coords=True,
-                                ),
-                            )
-                        )
-                    )
-
+            )
             equiv_fcoords_entries_dict[equiv_fcoords_tuple].append(entry)
 
     all_frac_coords = list(chain.from_iterable(equiv_fcoords_entries_dict.keys()))
@@ -1353,7 +1368,7 @@ class DefectThermodynamics(MSONable):
             self.clustered_defect_entries = {0: set(self.defect_entries.values())}
             type_clusters: dict[str, set[DefectEntry]] = defaultdict(set)
             for entry in self.defect_entries.values():
-                type_clusters[entry.defect.name].add(entry)
+                type_clusters[entry.defect.net_name].add(entry)
             self.clustered_defect_entries_by_type = {
                 defect_type: {0: entry_set} for defect_type, entry_set in type_clusters.items()
             }
@@ -1373,11 +1388,11 @@ class DefectThermodynamics(MSONable):
                     list(self.defect_entries.values())
                 )  # {defect name without charge: [DefectEntry,...]}; dict[str, set[DefectEntry]]
                 self.clustered_defect_entries_by_type = {
-                    entry.defect.name: defaultdict(set) for entry in self.defect_entries.values()
+                    entry.defect.net_name: defaultdict(set) for entry in self.defect_entries.values()
                 }  # {simple defect name: {defect name without charge: {DefectEntry, ...}}};
                 # dict[str, dict[str, set[DefectEntry]]]
                 for defect_name_wout_charge, defect_entry_set in self.clustered_defect_entries.items():
-                    self.clustered_defect_entries_by_type[next(iter(defect_entry_set)).defect.name][
+                    self.clustered_defect_entries_by_type[next(iter(defect_entry_set)).defect.net_name][
                         defect_name_wout_charge
                     ] = defect_entry_set
 
@@ -1440,7 +1455,7 @@ class DefectThermodynamics(MSONable):
             )
 
             defect_name_wout_charge = (
-                sorted_defect_entries[0].defect.name
+                sorted_defect_entries[0].defect.net_name
                 if np.isinf(self.dist_tol)  # plain type w/dist_tol=inf
                 else name_defect_cluster(sorted_defect_entries)
             )

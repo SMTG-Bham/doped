@@ -359,7 +359,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 info_dict["bulk_supercell"],
                 relaxed=True,
                 verbose=False,
-                parse_complex=True,
             )
             assert orig_split_vacancy_symm == subdict["unrelaxed_split_vac_symm"]
 
@@ -381,7 +380,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
                 info_dict["bulk_supercell"],
                 verbose=False,
-                parse_complex=True,
             )
             assert relaxed_symm == subdict["relaxed_split_vac_symm"]
 
@@ -480,7 +478,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 info_dict["bulk_supercell"],
                 relaxed=True,
                 verbose=False,
-                parse_complex=True,
             )
             assert orig_split_vacancy_symm == subdict["unrelaxed_split_vac_symm"]
 
@@ -503,7 +500,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
                 info_dict["bulk_supercell"],
                 verbose=False,
-                parse_complex=True,
             )
             assert relaxed_symm == subdict["relaxed_split_vac_symm"]
 
@@ -625,7 +621,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                     info_dict["bulk_supercell"],
                     relaxed=True,
                     verbose=False,
-                    parse_complex=True,
                 )
                 assert orig_split_vacancy_symm == subdict["unrelaxed_split_vac_symm"]
 
@@ -643,7 +638,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                     Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
                     info_dict["bulk_supercell"],
                     verbose=False,
-                    parse_complex=True,
                 )
                 assert relaxed_symm == subdict["relaxed_split_vac_symm"]
 

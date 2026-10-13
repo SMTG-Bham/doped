@@ -415,6 +415,11 @@ def get_defect_name_from_defect(
     Returns:
         str: Defect name.
     """
+    if isinstance(defect, DefectComplex):  # constituents, separations and point group, as in generation
+        from doped.complexes import get_defect_complex_name  # avoid a circular import
+
+        return get_defect_complex_name(defect, element_list=element_list)
+
     point_group_symbol = symmetry.point_symmetry_from_defect(defect, symprec=symprec)
 
     return f"{defect.name}_{point_group_symbol}_{closest_site_info(defect, element_list=element_list)}"
@@ -465,6 +470,13 @@ def get_defect_name_from_entry(
     point_group_symbol = symmetry.point_symmetry_from_defect_entry(
         defect_entry, symprec=symprec, relaxed=relaxed, **kwargs
     )
+    if isinstance(defect_entry.defect, DefectComplex):  # constituents and separations, then point group
+        from doped.complexes import get_defect_complex_name  # avoid a circular import
+
+        complex_name = get_defect_complex_name(
+            defect_entry.defect, element_list=element_list, include_point_group=False
+        )
+        return f"{complex_name}-{point_group_symbol}"
 
     return (
         f"{defect_entry.defect.name}_{point_group_symbol}"
@@ -787,13 +799,19 @@ def name_defect_entries(
 
         return defect_naming_dict, defect_name
 
-    defect_naming_dict: dict[str, DefectEntry] = {}
-    for defect_entry in defect_entries:
-        defect = (
+    def _get_defect(defect_entry):
+        return (
             defect_entry.defect
             if isinstance(defect_entry, DefectEntry | thermo.DefectEntry)
             else defect_entry
         )
+
+    complex_entries = [entry for entry in defect_entries if isinstance(_get_defect(entry), DefectComplex)]
+    defect_naming_dict: dict[str, DefectEntry] = {}
+    for defect_entry in defect_entries:
+        defect = _get_defect(defect_entry)
+        if isinstance(defect, DefectComplex):
+            continue  # named below
         full_defect_name = get_defect_name_from_defect(defect, element_list)
         split_number = 1 if defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
@@ -821,6 +839,14 @@ def name_defect_entries(
             defect_naming_dict, full_defect_name, defect_entry
         )
         defect_naming_dict[full_defect_name] = defect_entry
+
+    # defect complexes are named as in |DefectsGenerator| (constituents, separations and point group; e.g.
+    # ``v_Cd-1.87-Cd_i-1.87-v_Cd-C3v``), with ``_a``, ``_b``... suffixes for any shared names:
+    complex_names, _renames = _disambiguate_names(
+        [get_defect_name_from_defect(_get_defect(entry), element_list) for entry in complex_entries],
+        existing_names=defect_naming_dict,
+    )
+    defect_naming_dict.update(zip(complex_names, complex_entries, strict=True))
 
     if len(defect_entries) != len(defect_naming_dict):
         raise ValueError(
@@ -3501,7 +3527,9 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
     |DefectsParser| objects.
 
     Sorts defect entries by defect type (vacancies, substitutions,
-    interstitials, complexes), then by order of appearance of elements in the host
+    interstitials, complexes; where complexes with the net composition change
+    of a single point defect, e.g. split vacancies, are sorted with that point
+    defect type), then by order of appearance of elements in the host
     composition, then by periodic group (main groups 1, 2, 13-18 first, then
     TMs), then by atomic number, then (for defect entries of the same type)
     sort by name and charge state (from positive to negative).
@@ -3529,18 +3557,33 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
         else name_defect_entries(defect_entries, element_list)
     )
 
-    def _name_elements(name: str, defect: Defect) -> tuple:
+    def _type_and_name_elements(name: str, defect: Defect) -> tuple[int, tuple]:
         """
-        Complex-aware equivalent of the first and second element sort key:
-        takes only symmetry-invariant, always available (generation and parsing)
-        keys only for complexes - number of defects, constituent point defects
+        Complex-aware equivalent of the defect type and first and second
+        element sort keys.
+
+        Defect complexes with the net composition change of a single point
+        defect (such as split vacancies; see ``DefectComplex.net_name``) are
+        sorted with that point defect type, while for other complexes this
+        takes only symmetry-invariant, always available (generation and
+        parsing) keys - number of defects, constituent point defects
         composition, and interdefect distances.
         """
         if isinstance(defect, core.DefectComplex):
-            return _defect_sort_key(defect, element_list)[1:-1]
-        return (
-            _list_index_or_val(element_list, _first_and_second_element(name)[0]),
-            _list_index_or_val(element_list, _first_and_second_element(name)[1]),
+            if defect.net_name == defect.name:  # not a single net point defect
+                return defect.defect_type.value, _defect_sort_key(defect, element_list)[1:-1]
+            name = defect.net_name  # sort with the corresponding point defect type
+            defect_type = (
+                core.DefectType.Vacancy
+                if name.startswith("v_")
+                else core.DefectType.Interstitial
+                if name.endswith("_i")
+                else core.DefectType.Substitution
+            )
+        else:
+            defect_type = defect.defect_type
+        return defect_type.value, tuple(
+            _list_index_or_val(element_list, element) for element in _first_and_second_element(name)
         )
 
     try:
@@ -3548,8 +3591,7 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
             sorted(
                 defect_entries_dict.items(),
                 key=lambda s: (
-                    s[1].defect.defect_type.value,
-                    _name_elements(s[0], s[1].defect),
+                    *_type_and_name_elements(s[0], s[1].defect),
                     s[0].rsplit("_", 1)[0],  # name without charge
                     -s[1].charge_state,  # charge state
                 ),

@@ -2939,6 +2939,19 @@ class Defect(core.Defect):
 
         return self._element_changes
 
+    @property
+    def net_name(self) -> str:
+        """
+        Name of the point defect type of the defect, used to group defects of
+        the same type in thermodynamic analyses (e.g. ``"v_Cd"``, ``"Te_i"``).
+
+        For point defects this is ``Defect.name``, while for defect complexes
+        it is the name of the single point defect with the same net composition
+        change (e.g. ``"Te_i"`` for a split interstitial ``Te_i-Te_i-v_Te``);
+        see ``DefectComplex.net_name``.
+        """
+        return self.name
+
     def __hash__(self):
         """
         Hash the |Defect| object, based on the defect name.
@@ -3373,6 +3386,30 @@ class DefectComplex(core.DefectComplex, Defect):
         ``"Te_Cd-v_Cd"``.
         """
         return "-".join(sorted(defect.name for defect in self.defects))
+
+    @property
+    def net_name(self) -> str:
+        """
+        Name of the point defect with the same net composition change as the
+        defect complex.
+
+        For example ``"Te_i"`` for a split interstitial (``Te_i-Te_i-v_Te``),
+        ``"v_Ga"`` for a split vacancy (``Ga_i-v_Ga-v_Ga``) or ``"Te_Cd"`` for
+        a displaced antisite (``Te_i-v_Cd``), so that the complex is grouped
+        with the corresponding point defect configurations in thermodynamic
+        analyses. If the net composition change does not correspond to a
+        single point defect (such as ``Al_Zn-v_S``), this is the complex
+        ``name``.
+        """
+        changes = {element.symbol: change for element, change in self.element_changes.items() if change}
+        removed, added = ([el for el, change in changes.items() if change == sign] for sign in (-1, 1))
+        if len(changes) == 1 and removed:
+            return f"v_{removed[0]}"
+        if len(changes) == 1 and added:
+            return f"{added[0]}_i"
+        if len(changes) == 2 and len(removed) == len(added) == 1:
+            return f"{added[0]}_{removed[0]}"
+        return self.name
 
     def get_multiplicity(
         self,

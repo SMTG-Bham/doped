@@ -1174,6 +1174,10 @@ def get_min_dist_between_equiv_sites(
     Get the minimum distance (in Å) between equivalent sites of two input
     site/|Defect|/|DefectEntry| objects.
 
+    For defect complexes, the equivalent sites of the constituent point defects
+    are used (consistent with defect site clustering in
+    |DefectThermodynamics|).
+
     Args:
         site_1 (|PeriodicSite| | Sequence[float, float, float] | |Defect| | |DefectEntry|):
             First site to get equivalent sites of, to determine minimum
@@ -1275,13 +1279,22 @@ def get_min_dist_between_equiv_sites(
         structure_2 = structure
 
     def _get_equiv_fcoords(site, host_structure):
-        return get_equiv_frac_coords_in_primitive(  # returns ``None`` if no mapping found
-            _parse_site_to_frac_coords(site),
-            primitive,
-            host_structure,
-            symprec=symprec,
-            dist_tol_factor=dist_tol_factor,
-        )
+        # for a defect complex, the equivalent sites of its constituent point defects are used (rather than
+        # its centroid), consistent with defect site clustering in ``DefectThermodynamics``:
+        defect = site.defect if isinstance(site, DefectEntry) else site
+        equiv_fcoords: list = []
+        for constituent in defect.defects if isinstance(defect, DefectComplex) else [site]:
+            constituent_equiv_fcoords = get_equiv_frac_coords_in_primitive(
+                _parse_site_to_frac_coords(constituent),
+                primitive,
+                host_structure,
+                symprec=symprec,
+                dist_tol_factor=dist_tol_factor,
+            )
+            if constituent_equiv_fcoords is None:  # no mapping found
+                return None
+            equiv_fcoords.extend(constituent_equiv_fcoords)
+        return equiv_fcoords
 
     with warnings.catch_warnings():
         if different_structures:  # host equivalence not guaranteed; map failure -> ``inf`` (not an error):
@@ -4157,7 +4170,6 @@ def point_symmetry_from_structure(
     symprec: float | None = None,
     relaxed: bool = True,
     verbose: bool | None = None,
-    parse_complex: bool = False,
     **kwargs,
 ) -> str:
     r"""
@@ -4251,12 +4263,6 @@ def point_symmetry_from_structure(
         verbose (bool):
             If ``True``, prints diagnostic information about the local symmetry
             analysis. Default is ``None`` (no diagnostic output).
-        parse_complex (bool):
-            Temporary flag (as in ``defect_and_info_from_structures``): if
-            ``True`` (with ``bulk_structure``), the defect is parsed as a
-            defect complex when multiple constituent point defects are found
-            (e.g. split vacancies), and the point symmetry of the complex is
-            returned. Default is ``False``.
         **kwargs:
             Additional keyword arguments to pass to ``local_point_symmetry``
             when ``relaxed=True`` (``centre_error_range``, ``bulk_symprec``),
@@ -4276,7 +4282,6 @@ def point_symmetry_from_structure(
             bulk_structure,
             oxi_state="Undetermined",
             multiplicity=1,
-            parse_complex=parse_complex,
         )
 
         return point_symmetry_from_defect_entry(

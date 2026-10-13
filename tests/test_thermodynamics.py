@@ -53,7 +53,11 @@ from doped.thermodynamics import (
     get_interpolated_chempots,
     scissor_dos,
 )
-from doped.utils.parsing import _get_defect_supercell_frac_coords, get_vasprun
+from doped.utils.parsing import (
+    _get_defect_supercell_frac_coords,
+    get_point_defect_types_and_site_indices,
+    get_vasprun,
+)
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     get_min_dist_between_equiv_sites,
@@ -1049,7 +1053,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     other_cluster_dict = (
                         defect_thermo.clustered_defect_entries
                         if method == "centroid"
-                        else defect_thermo.clustered_defect_entries_by_type[entry.defect.name]
+                        else defect_thermo.clustered_defect_entries_by_type[entry.defect.net_name]
                     )
                     for other_cluster in other_cluster_dict.values():
                         if other_cluster == cluster:
@@ -2532,26 +2536,40 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 skipped += 1
                 continue
 
+            # structures parsed as defect complexes (e.g. split interstitials, with ``site_tol = 0.4``)
+            # have unrelaxed symmetries of the complex configuration (rather than the point defect bulk
+            # site), from ``point_symmetry_from_structure(relaxed=False)`` -- tested in ``test_complexes``:
+            parsed_as_complex = (
+                len(
+                    get_point_defect_types_and_site_indices(
+                        defect_entry.defect_supercell, defect_entry.bulk_supercell
+                    )
+                )
+                > 1
+            )
+
             assert (
                 point_symmetry_from_structure(defect_entry.defect_supercell)
                 == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
             )  # no bulk reference: defect position guessed (SOAP analysis) and candidate symmetry
             # operations generated directly from the local atomic geometry
-            assert (
-                point_symmetry_from_structure(
-                    defect_entry.defect_supercell, bulk_structure=defect_entry.bulk_supercell
-                )
-                == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
+            assert point_symmetry_from_structure(
+                defect_entry.defect_supercell, bulk_structure=defect_entry.bulk_supercell
+            ) == (  # local analysis centred on the complex (v_Te + v_Cd + Cd_i) here, rather than v_Te:
+                "Cs"
+                if defect_entry.name == "vac_2_Te_shaken_-2"
+                else sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
             )
 
-            assert (
-                point_symmetry_from_structure(
-                    defect_entry.defect_supercell,
-                    bulk_structure=defect_entry.bulk_supercell,
-                    relaxed=False,
+            if not parsed_as_complex:
+                assert (
+                    point_symmetry_from_structure(
+                        defect_entry.defect_supercell,
+                        bulk_structure=defect_entry.bulk_supercell,
+                        relaxed=False,
+                    )
+                    == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
                 )
-                == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
-            )
             assert (
                 point_symmetry_from_site(
                     _get_defect_supercell_frac_coords(defect_entry, relaxed=False),
@@ -2560,14 +2578,15 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
             )
 
-            assert (
-                point_symmetry_from_structure(
-                    defect_entry.defect_supercell,
-                    bulk_structure=defect_entry.bulk_supercell,
-                    relaxed=False,
+            if not parsed_as_complex:
+                assert (
+                    point_symmetry_from_structure(
+                        defect_entry.defect_supercell,
+                        bulk_structure=defect_entry.bulk_supercell,
+                        relaxed=False,
+                    )
+                    == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
                 )
-                == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
-            )
             assert (
                 point_symmetry_from_site(
                     _get_defect_supercell_frac_coords(defect_entry, relaxed=False),
