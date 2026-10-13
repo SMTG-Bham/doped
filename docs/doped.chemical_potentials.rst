@@ -4,3 +4,4 @@ doped.chemical_potentials module
    :members:
    :undoc-members:
    :show-inheritance:
+   :inherited-members: MSONable

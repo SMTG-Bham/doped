@@ -11,8 +11,8 @@ The charge-correction methods implemented are:
    Includes:
 
        a) anisotropic PC energy (optionally multiple PCs).
-       b) potential alignment by atomic site averaging outside Wigner Seitz
-          radius.
+       b) potential alignment by atomic site averaging outside the defect
+          region.
 
 2. Freysoldt (FNV) correction for isotropic systems. Only recommended if eFNV
    correction fails for some reason. Includes:
@@ -41,6 +41,7 @@ they should be used here.
 
 import contextlib
 import warnings
+from itertools import combinations
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -60,12 +61,12 @@ from doped.utils.parsing import (
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
     get_core_potentials_from_outcar,
+    get_half_max_face_distance,
     get_locpot,
     get_site_mappings,
-    get_wigner_seitz_radius,
 )
 from doped.utils.plotting import doped_plot_style, format_defect_name
-from doped.utils.supercells import _get_min_image_distance_from_matrix
+from doped.utils.supercells import _get_min_image_distance_from_matrix, _get_unwrapped_complex_fc
 
 
 def _monty_decode_nested_dicts(d):
@@ -151,10 +152,9 @@ def get_freysoldt_correction(
 
     As a general rule of thumb, the charge correction terms should follow
     relatively consistent trends in terms of magnitudes. A large outlier
-    (easily scanned with
-    :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-    often indicates something unusual/unexpected. See the FNV/eFNV and other
-    finite-size charge correction papers for further details.
+    (easily scanned with |get_formation_energies|) often indicates something
+    unusual/unexpected. See the FNV/eFNV and other finite-size charge
+    correction papers for further details.
 
     Args:
         defect_entry:
@@ -166,10 +166,9 @@ def get_freysoldt_correction(
             not necessarily the same as the raw output of a VASP dielectric
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
-            ``defect_entry`` ``calculation_metadata`` if available.
-            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-            tutorial section for information on calculating and converging the
-            dielectric constant.
+            ``defect_entry`` ``calculation_metadata`` if available. See the
+            |Dielectric Constant| tutorial section for information on
+            calculating and converging the dielectric constant.
         defect_locpot:
             Path to the output VASP LOCPOT file from the defect supercell
             calculation, or the corresponding ``pymatgen`` ``Locpot`` object,
@@ -202,10 +201,9 @@ def get_freysoldt_correction(
             (default), uses the default ``doped`` style
             (from ``doped/utils/doped.mplstyle``).
         **kwargs:
-            Additional kwargs to pass to
-            :func:`~pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction`
-            (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
-            ``defect_frac_coords``).
+            Additional kwargs to pass to the ``pymatgen-analysis-defects``
+            ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
+            ``mad_tol``, ``q_model``, ``step``, ``defect_frac_coords``).
 
     Returns:
         ``CorrectionResults`` (summary of the corrections applied and
@@ -382,10 +380,9 @@ def get_kumagai_correction(
 
     As a general rule of thumb, the charge correction terms should follow
     relatively consistent trends in terms of magnitudes. A large outlier
-    (easily scanned with
-    :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
-    often indicates something unusual/unexpected. See the FNV/eFNV and other
-    finite-size charge correction papers for further details.
+    (easily scanned with |get_formation_energies|) often indicates something
+    unusual/unexpected. See the FNV/eFNV and other finite-size charge
+    correction papers for further details.
 
     Args:
         defect_entry (|DefectEntry|):
@@ -397,28 +394,31 @@ def get_kumagai_correction(
             not necessarily the same as the raw output of a VASP dielectric
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
-            ``defect_entry`` ``calculation_metadata`` if available.
-            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
-            tutorial section for information on calculating and converging the
-            dielectric constant.
+            ``defect_entry`` ``calculation_metadata`` if available. See the
+            |Dielectric Constant| tutorial section for information on
+            calculating and converging the dielectric constant.
         defect_region_radius (float):
-            Radius of the defect region (in Å). Sites outside the defect
-            region are used for sampling the electrostatic potential far
-            from the defect (to obtain the potential alignment).
-            If ``None`` (default), uses the Wigner-Seitz radius of the
-            supercell.
+            Radius of the defect region (in Å). Sites outside the defect region
+            are used for sampling the electrostatic potential far from the
+            defect (to obtain the potential alignment). If ``None`` (default),
+            uses half the largest distance between parallel cell faces (as in
+            ``pydefect``). The radius is reduced as necessary (with a warning)
+            to ensure at least 3 sites in the sampling region.
         excluded_indices (list):
             List of site indices (in the defect supercell) to exclude from
             the site potential sampling in the correction calculation/plot.
             If ``None`` (default), no sites are excluded.
         point_charges (list[tuple[float, ArrayLike]]):
-            List of ``(charge, frac_coords)`` pairs specifying a multicentre
-            point-charge model (e.g. for constituent point defects of a
-            defect complex), used in place of the default single point charge.
-            The charges should sum to the defect charge state. TODO: Currently
-            the sites sampled from alignment are based on the distance from the
-            nearest point charge, not the overall defect site.
-            Default is ``None`` (single point charge).
+            List of ``(charge, frac_coords)`` pairs specifying a multiple
+            point charge model of the defect (e.g. for the constituents of a
+            defect complex or split vacancy, as possible with ``sxdefectalign``
+            for the FNV correction), used in place of the default single point
+            charge. The charges must sum to the defect charge state, and the
+            fractional coordinates are in the defect supercell. The point
+            charges are unwrapped to a single (minimum image) configuration,
+            and the potential sampling region is then defined by the distance
+            to the nearest point charge (so ``defect_region_radius`` applies
+            around each). Default is ``None`` (single point charge).
         defect_outcar (PathLike or |Outcar|):
             Path to the output ``VASP`` ``OUTCAR`` file from the defect
             supercell calculation, or the corresponding ``pymatgen`` |Outcar|
@@ -441,9 +441,8 @@ def get_kumagai_correction(
             Path to a mplstyle file to use for the plot. If ``None`` (default),
             uses the default ``doped`` style (from doped/utils/doped.mplstyle).
         **kwargs:
-            Additional kwargs to pass to
-            ``pydefect.corrections.efnv_correction.ExtendedFnvCorrection``
-            (e.g. ``charge``, ``defect_region_radius``, ``defect_coords``).
+            Additional kwargs for the eFNV correction calculation (e.g.
+            ``defect_coords``, ``accuracy``).
 
     Returns:
         ``CorrectionResults`` (summary of the corrections applied and
@@ -457,10 +456,6 @@ def get_kumagai_correction(
         from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
         from pydefect.defaults import defaults
         from pydefect.util.error_classes import SupercellError
-
-    # TODO switch for sampling away from all charges vs sampling away from defect_coords
-    # (probably the centroid)
-    sample_away_from_all_charges = True
 
     def doped_make_efnv_correction(
         charge: float,
@@ -482,29 +477,45 @@ def get_kumagai_correction(
         we likely want to adjust the defect region radius to ensure that only
         `other` layers are used for the sampling (plateau) region), and to
         allow the model charge to be split over multiple point charges (e.g.
-        over the constituent point defects of a defect complex).
+        over the constituent point defects of a defect complex), with the
+        sampling region then defined by the distance to the nearest point
+        charge.
 
-        If defect_region_radius is not specified, then the ``pydefect`` default
-        (which is the Wigner-Seitz region of the supercell) is used.
+        If ``defect_region_radius`` is not specified, then the ``pydefect``
+        default (half the largest distance between parallel cell faces) is
+        used, reduced as necessary (with a warning) to ensure at least 3 sites
+        in the sampling region.
         """
         if calc_results.structure.lattice != perfect_calc_results.structure.lattice:
             raise SupercellError("The lattice constants for defect and perfect models are different")
         lattice = calc_results.structure.lattice
-
-        if point_charges is not None:
-            pc_charges, pc_frac_coords = zip(*point_charges, strict=True)
-            if not abs(sum(pc_charges) - charge) < 1e-2:
-                raise ValueError(
-                    f"The sum of the supplied point charges ({np.sum(pc_charges):+.3f}) does not "
-                    f"match the total defect charge state ({charge:+.3f})."
-                )
-        else:
-            pc_charges = [charge]
-            pc_frac_coords = [defect_coords]
-        pc_charges = np.array(pc_charges, dtype=float)
-        pc_frac_coords = np.array(pc_frac_coords, dtype=float)
-
         sites, rel_coords = [], []
+
+        point_charges = point_charges or [(charge, defect_coords)]
+        site_charges = np.array([q for q, _fc in point_charges], dtype=float)
+        if not np.isclose(site_charges.sum(), charge):
+            raise ValueError(
+                f"The sum of the supplied point charges ({site_charges.sum():+.3f}) does not match the "
+                f"defect charge state ({charge:+.3f})."
+            )
+        # unwrap to a single (minimum image) configuration, i.e. the isolated complex geometry:
+        charge_coords = np.array(
+            _get_unwrapped_complex_fc(lattice, np.array([fc for _q, fc in point_charges], dtype=float))
+        )
+        half_min_image_dist = _get_min_image_distance_from_matrix(lattice.matrix) / 2
+        for i, j in combinations(range(len(site_charges)), 2):
+            pair_dist = np.linalg.norm(lattice.get_cartesian_coords(charge_coords[j] - charge_coords[i]))
+            if pair_dist < 0.1:  # pair term is finite as pair_dist -> 0, but likely an input error
+                raise ValueError(
+                    f"Point charges {i} and {j} are (near-)coincident ({pair_dist:.2f} Å apart), so "
+                    f"should be combined into a single point charge."
+                )
+            if pair_dist > half_min_image_dist:
+                warnings.warn(
+                    f"Point charges {i} and {j} are {pair_dist:.2f} Å apart, which is more than half the "
+                    f"minimum image distance of the supercell ({half_min_image_dist:.2f} Å), so the "
+                    f"multiple point charge model (and eFNV correction) may be unreliable."
+                )
 
         excluded_indices = [] if excluded_indices is None else [int(i) for i in excluded_indices]
 
@@ -516,24 +527,17 @@ def get_kumagai_correction(
             if d not in excluded_indices and not any(i is None for i in [d, p]):
                 specie = str(calc_results.structure[d].specie)
                 frac_coords = calc_results.structure[d].frac_coords
-
-                # TODO distance to the nearest point charge right now
-                distance = (
-                    min(
-                        lattice.get_distance_and_image(pc_coords, frac_coords)[0]
-                        for pc_coords in pc_frac_coords
-                    )
-                    if sample_away_from_all_charges
-                    else lattice.get_distance_and_image(defect_coords, frac_coords)[0]
-                )
+                # sampling distance is to the nearest point charge (i.e. the defect site, by default):
+                distance = min(lattice.get_distance_and_image(c, frac_coords)[0] for c in charge_coords)
                 pot = calc_results.potentials[d] - perfect_calc_results.potentials[p]
-
                 sites.append(PotentialSite(specie, distance, pot, None))
+                rel_coords.append((frac_coords - charge_coords).tolist())  # (N_charges, 3)
 
-                # rel coords to all centres to reconstruct model potential
-                rel_coords.append([(frac_coords - pc_coords).tolist() for pc_coords in pc_frac_coords])
-
-        ewald = Ewald(lattice.matrix, dielectric_tensor, accuracy=accuracy)
+        # evaluate the Ewald sums in the eps^-1/2-scaled frame, where the dielectric is the identity (with
+        # potentials scaled by 1/sqrt(det(eps))), for efficiency and accuracy (w/pydefect Ewald defaults)
+        eigvals, eigvecs = np.linalg.eigh((dielectric_tensor + dielectric_tensor.T) / 2)
+        ewald = Ewald(lattice.matrix @ (eigvecs * eigvals**-0.5) @ eigvecs.T, np.eye(3), accuracy=accuracy)
+        unit_conversion /= np.sqrt(np.prod(eigvals))
 
         # Monkey-patch pydefect Ewald functions to vectorise the calculations (otherwise can be slow):
         from scipy.special import erfc
@@ -553,62 +557,39 @@ def get_kumagai_correction(
 
         Ewald.ewald_real = ewald_real
         Ewald.ewald_rec = ewald_rec
+        point_charge_correction = (
+            -ewald.lattice_energy * sum(q**2 for q in site_charges) if any(site_charges) else 0.0
+        )
+        for i, j in combinations(range(len(site_charges)), 2):  # multiple charges: pair interactions
+            rel_ij = (charge_coords[j] - charge_coords[i]).tolist()
+            # direct (isolated) Coulomb interaction of the pair, subtracted from the periodic interaction:
+            isolated_pot = 1 / (4 * np.pi * np.linalg.norm(np.dot(rel_ij, ewald.lattice)))  # eps-scaled
+            point_charge_correction -= (
+                site_charges[i] * site_charges[j] * (ewald.atomic_site_potential(rel_ij) - isolated_pot)
+            )
 
-        # for multi centre: point charge correction is linear so
-        # E_corr = 1/2 * sum over i,j [q_i*q_j*(v_periodic(r_ij)-v_isolated(r_ij))]
-        # plus alignment?
-        point_charge_correction = 0.0
-        d_min = 0.5 * _get_min_image_distance_from_matrix(lattice.matrix)
-        if np.any(pc_charges):
-            # self image term correction i=j
-            point_charge_correction = -ewald.lattice_energy * np.sum(pc_charges**2)
-
-            # cross image term correction i<j
-            for i, (q_i, x_i) in enumerate(zip(pc_charges, pc_frac_coords, strict=True)):
-                for j, (q_j, x_j) in enumerate(zip(pc_charges, pc_frac_coords, strict=True)):
-                    if j <= i or not (q_i and q_j):
-                        continue
-                    d_ij, image = lattice.get_distance_and_image(x_i, x_j)
-                    x_ij = x_j + image - x_i
-
-                    # catch coincident charges
-                    if d_ij < 0.1:
-                        raise ValueError(
-                            f"Point charges {i} and {j} are (near-)coincident (separation "
-                            f"{d_ij:.2f} Å), giving a divergent point-charge model -- these "
-                            f"should be combined into a single point charge!"
-                        )
-
-                    # validity of multicentre
-                    if d_ij > d_min:
-                        warnings.warn(
-                            f"Point charge separation ({d_ij:.2f} Å) exceeds half the minimum "
-                            f"image distance of the supercell ({d_min:.2f} Å), so the multicentre "
-                            f"point-charge model may be unreliable."
-                        )
-
-                    v_periodic = ewald.atomic_site_potential(x_ij.tolist())
-                    r_ij = lattice.get_cartesian_coords(x_ij)
-                    v_isolated = 1 / (
-                        4 * np.pi * ewald.root_epsilon * np.sqrt(r_ij @ ewald.epsilon_inv @ r_ij)
-                    )
-                    point_charge_correction += -q_i * q_j * (v_periodic - v_isolated)
-
-        # ? this is not WS radius in efnv paper (min_image_distance/2)?
         if defect_region_radius is None:
-            defect_region_radius = get_wigner_seitz_radius(lattice)
+            defect_region_radius = get_half_max_face_distance(lattice)
+        site_distances = np.array([site.distance for site in sites])
+        min_sampled = min(3, len(site_distances))  # ensure >= 3 sampled sites (e.g. for slabs with vacuum)
+        if np.count_nonzero(site_distances > defect_region_radius) < min_sampled:
+            # reduce to just below the 3rd-furthest site distance (with tolerance for equidistant sites):
+            defect_region_radius = np.sort(site_distances)[-min_sampled] - 1e-3
+            warnings.warn(
+                f"Fewer than {min_sampled} atomic sites lie outside the eFNV defect region radius, so "
+                f"it has been reduced to {defect_region_radius:.2f} Å to include at least {min_sampled} "
+                "sites in the potential sampling region."
+            )
 
-        # model potential is just sum of point charge potentials
-        for site, site_rel_coords in zip(sites, rel_coords, strict=False):
+        for site, rel_coord in zip(sites, rel_coords, strict=False):
             if site.distance > defect_region_radius:
-                if not np.any(pc_charges):
+                if not any(site_charges):
                     site.pc_potential = 0
                 else:
                     site.pc_potential = (
                         sum(
-                            pc_charge * ewald.atomic_site_potential(rel_coord)
-                            for pc_charge, rel_coord in zip(pc_charges, site_rel_coords, strict=False)
-                            if pc_charge
+                            q * ewald.atomic_site_potential(rc)
+                            for q, rc in zip(site_charges, rel_coord, strict=True)
                         )
                         * unit_conversion
                     )
@@ -618,7 +599,7 @@ def get_kumagai_correction(
             point_charge_correction=point_charge_correction * unit_conversion,
             defect_region_radius=defect_region_radius,
             sites=sites,
-            defect_coords=tuple(defect_coords),
+            defect_coords=tuple(charge_coords.mean(axis=0)),  # centroid (defect site, by default)
         )
 
     # ensure calculation_metadata are decoded in case defect_dict was reloaded from json
@@ -682,14 +663,14 @@ def get_kumagai_correction(
         potentials=core_potentials_dict["bulk"],
     )
 
+    # _relaxed_ defect coords (except for vacancies) by default:
+    defect_coords = kwargs.pop("defect_coords", _get_defect_supercell_frac_coords(defect_entry))
     efnv_correction = doped_make_efnv_correction(
         charge=defect_entry.charge_state,
         calc_results=defect_calc_results_for_eFNV,
         perfect_calc_results=bulk_calc_results_for_eFNV,
         dielectric_tensor=dielectric,
-        defect_coords=kwargs.pop(
-            "defect_coords", _get_defect_supercell_frac_coords(defect_entry)
-        ),  # _relaxed_ defect coords (except for vacancies)
+        defect_coords=defect_coords,
         defect_region_radius=defect_region_radius,
         excluded_indices=excluded_indices,
         point_charges=point_charges,
@@ -699,6 +680,10 @@ def get_kumagai_correction(
         correction_energy=efnv_correction.correction_energy,
         metadata={"pydefect_ExtendedFnvCorrection": efnv_correction},
     )
+    if point_charges:  # store multiple point charge model, for reproducibility
+        kumagai_correction_result.metadata["point_charges"] = [
+            (float(q), np.asarray(fc, dtype=float).tolist()) for q, fc in point_charges
+        ]
 
     if verbose:
         print(
@@ -751,11 +736,7 @@ def get_kumagai_correction(
         ]
         ax.legend_.remove()
         ax.legend(handles, labels, loc="best", borderaxespad=0, fontsize=8)
-        x_label = (
-            "Distance from nearest PC"
-            if point_charges and sample_away_from_all_charges
-            else "Distance from defect"
-        )
+        x_label = "Distance from nearest PC" if point_charges else "Distance from defect"
         ax.set_xlabel(f"{x_label} ({spp._x_unit})", size=spp._mpl_defaults.label_font_size)
 
     if filename:

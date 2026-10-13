@@ -17,9 +17,11 @@ import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.electronic_structure.dos import FermiDos
+from pymatgen.io.vasp.inputs import Kpoints
 from test_utils import (
     EXAMPLE_DIR,
     _print_warning_info,
+    _run_func_and_capture_stdout_warnings,
     assert_df_rows_equal,
     custom_mpl_image_compare,
     data_dir,
@@ -30,12 +32,12 @@ from doped.analysis import (
     DefectParser,
     DefectsParser,
     defect_from_structures,
-    defect_name_from_structures,
+    defect_site_from_structures,
     guess_defect_position,
     parse_symmetry_and_degeneracy_metadata,
     shallow_dopant_binding_energy,
 )
-from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
+from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.utils.efficiency import Structure
 from doped.utils.eigenvalues import get_eigenvalue_analysis
 from doped.utils.parsing import (
@@ -43,6 +45,9 @@ from doped.utils.parsing import (
     _create_unrelaxed_defect_structure,
     _num_electrons_from_charge_state,
     _simple_spin_degeneracy_from_num_electrons,
+    compare_incar_tags,
+    compare_kpoints,
+    compare_potcar_symbols,
     get_defect_type_and_composition_diff,
     get_defect_type_and_site_indices,
     get_magnetization_from_vasprun,
@@ -55,6 +60,7 @@ from doped.utils.symmetry import (
     get_orientational_degeneracy,
     get_primitive_structure,
     get_sga,
+    group_order_from_schoenflies,
     point_symmetry_from_defect_entry,
     point_symmetry_from_structure,
     schoenflies_from_hermann,
@@ -107,6 +113,8 @@ def check_DefectsParser(dp, skip_corrections=False, **thermo_kwargs):
     assert dp.skip_corrections == skip_corrections
     assert len(dp.defect_folders) >= len(dp.defect_dict)
 
+    bulk_symprec = dp.kwargs.get("bulk_symprec", 0.01)
+
     for name, defect_entry in dp.defect_dict.items():
         print(f"Checking {name}")
         assert name == defect_entry.name
@@ -127,13 +135,26 @@ def check_DefectsParser(dp, skip_corrections=False, **thermo_kwargs):
             "Should be the same:",
             len(defect_entry.defect.equivalent_sites),
             defect_entry.defect.multiplicity,
-            defect_entry.defect.get_multiplicity(symprec=dp.kwargs.get("bulk_symprec", 0.01)),
+            defect_entry.defect.get_multiplicity(symprec=bulk_symprec),
         )  # debugging
         assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
         assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
-            symprec=dp.kwargs.get("bulk_symprec", 0.01)
+            symprec=bulk_symprec
         )
         assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+
+        bulk_site_symmetry = defect_entry.calculation_metadata.get("bulk site symmetry")
+        # site multiplicities must satisfy the orbit-stabiliser relation against the determined bulk site
+        # symmetry: multiplicity x |site point group| == number of spacegroup operations of the host cell
+        # (= n_primitive_cells x |host point group|:
+        if bulk_site_symmetry is not None:  # orbit-stabiliser check (see above)
+            site_pg_order = group_order_from_schoenflies(bulk_site_symmetry)
+            sga = get_sga(defect_entry.defect.structure, symprec=bulk_symprec)
+            n_ops = len(sga.get_symmetry_dataset().rotations)
+            assert defect_entry.defect.multiplicity * site_pg_order == n_ops, (
+                f"{name}: multiplicity {defect_entry.defect.multiplicity} x |{bulk_site_symmetry}| "
+                f"({site_pg_order}) != {n_ops}"
+            )
 
         from pymatgen.analysis.defects.core import Substitution as pmg_Substitution
         from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
@@ -185,7 +206,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             raise  # tearDownClass skipped if setUpClass fails; but we still want to (attempt) clean up
 
     def setUp(self):
-        self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
+        self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk", "vasp_ncl")
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
         self.CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
 
@@ -356,7 +377,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                     for i in [
                         "Multiple `OUTCAR` files",
                         "(directory: chosen file for parsing):",
-                        f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl: OUTCAR.gz",
+                        f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl')}: OUTCAR.gz",
                         "OUTCAR files are used to",
                         "parse core levels and compute the Kumagai (eFNV) image charge correction.",
                     ]
@@ -651,8 +672,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         assert (
             f"No files with any of ('vasprun.xml', 'vasprun.xml.gz') in names found under "
-            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk (subfolder vasp_std). Please ensure bulk supercell "
-            f"calculation files are present and/or specify `bulk_path` manually."
+            f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'CdTe_bulk')} (subfolder vasp_std). Please ensure "
+            f"bulk supercell calculation files are present and/or specify `bulk_path` manually."
         ) in str(exc.value)
 
     def test_DefectsParser_CdTe_skip_corrections(self):
@@ -697,7 +718,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             "which corresponds to using the effective isotropic average of the supplied "
             "anisotropic dielectric. This could lead to significant errors for very anisotropic "
             "systems and/or relatively small supercells!",
-            f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect subfolders)",
+            f"(using bulk path {self.CdTe_BULK_DATA_DIR} and vasp_ncl defect subfolders)",
         ]:
             assert any(i in str(warn.message) for warn in w)
 
@@ -713,8 +734,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                     "which corresponds to using the effective isotropic average of the supplied "
                     "anisotropic dielectric. This could lead to significant errors for very anisotropic "
                     "systems and/or relatively small supercells!",
-                    f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect "
-                    f"subfolders)",
+                    f"(using bulk path {self.CdTe_BULK_DATA_DIR} and vasp_ncl defect subfolders)",
                 ]
             )
             for warn in w
@@ -875,10 +895,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=self.Sb2Se3_dielectric,
             )
         assert (  # bulk in separate folder so fails
-            f"Could not determine bulk supercell calculation folder in {self.Sb2Se3_DATA_DIR}/defect, "
-            f"found 0 folders containing any of ('vasprun.xml', 'vasprun.xml.gz') in filenames (in "
-            f"subfolders) and 'bulk' in the folder name. Please specify `bulk_path` manually."
-            in str(exc.value)
+            f"Could not determine bulk supercell calculation folder in "
+            f"{os.path.join(self.Sb2Se3_DATA_DIR, 'defect')}, found 0 folders containing any of "
+            f"('vasprun.xml', 'vasprun.xml.gz') in filenames (in subfolders) and 'bulk' in the "
+            f"folder name. Please specify `bulk_path` manually." in str(exc.value)
         )
 
         Sb2Se3_O_dp, w = _create_dp_and_capture_warnings(
@@ -895,7 +915,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )  # for test_plotting
 
         # spot check:
-        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.81760, atol=1e-3)
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
     def test_extrinsic_Sb2Se3_parsing_with_single_defect_dir(self):
@@ -907,7 +927,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w  # no warnings
         check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
-        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.81760, atol=1e-3)
 
         assert len(Sb2Se3_O_thermo.defect_entries) == 1  # only the one specified defect parsed
 
@@ -978,7 +998,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             "which is greater than the `error_tolerance`: 0.050 eV)." in str(warn.message)
             for warn in w
         )
-        assert np.isclose(correction.correction_energy, 1.077, atol=1e-3)
+        assert np.isclose(correction.correction_energy, 1.0785, atol=1e-3)
         assert np.isclose(
             v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
             0.067,
@@ -988,7 +1008,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             correction, fig = v_Sb_minus_3_ent.get_kumagai_correction(plot=True, defect_region_radius=8.75)
         assert not any("Estimated error" in str(warn.message) for warn in w)
-        assert np.isclose(correction.correction_energy, 1.206, atol=1e-3)
+        assert np.isclose(correction.correction_energy, 1.207, atol=1e-3)
         assert np.isclose(
             v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
             0.023,
@@ -1007,7 +1027,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 plot=True, excluded_indices=sites_within_3A
             )
         assert not any("Estimated error" in str(warn.message) for warn in w)
-        assert np.isclose(correction.correction_energy, 1.234, atol=1e-3)
+        assert np.isclose(correction.correction_energy, 1.236, atol=1e-3)
         assert np.isclose(
             v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
             0.017,
@@ -1339,10 +1359,20 @@ class DefectsParsingTestCase(unittest.TestCase):
                 {"C2v", "Cs", "Td"},
                 {"C1", "Cs", "Td"},
             ),
-            0.2: (
+            0.25: (
                 {"0": "C2v", "-1": "C2v", "-2": "Td"},
-                {"C2v", "Cs", "Td"},
+                {"C2v", "C3v", "Td"},
                 {"C1", "Cs", "Td"},
+            ),
+            0.5: (
+                {"0": "C2v", "-1": "Td", "-2": "Td"},
+                {"C2v", "C3v", "Td"},
+                {"Cs", "Td"},
+            ),
+            1.0: (  # mush regime; only certifiable alongside "supercell too small" warnings (below)
+                {"0": "D2d", "-1": "Td", "-2": "Td"},
+                {"C1", "Cs", "D2d", "Td"},
+                {"Cs", "Td"},
             ),
         }
         for symprec, (v_Zn, vac_sub_defect, inter_defect) in expected_symms.items():
@@ -1351,7 +1381,12 @@ class DefectsParsingTestCase(unittest.TestCase):
                 symm_df = thermo.get_symmetries_and_degeneracies(**kwargs)
             print(symm_df)  # for debugging
             _print_warning_info(w)
-            assert not w
+            if symprec is None:  # no warnings with the default symprec (0.1)
+                assert not w
+            else:  # at symprec >= 0.15, (some) ZnS defects trigger the too-small-supercell warning (the
+                # local cluster (radius 3.84 Å) cannot cover the first coordination shell while allowing
+                # operation translations at the anchor-noise scale (2*symprec)):
+                assert all("The supercell is too small" in str(warning.message) for warning in w)
             assert set(symm_df["Site_Symm"]) == {"Td", "C3v", "Cs", "C1"}
 
             vacancy_and_sub_rows = symm_df[
@@ -1500,7 +1535,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert any("('NKRED', 2, 1)" in str(warn.message) for warn in w)
             if outcar_vr_mismatch:  # warning about our artificially shifted vasprun energy:
                 assert any(
-                    "sub_1_O_on_Se_1/vasp_std:\nThe total energies of the provided (bulk) `OUTCAR` "
+                    f"{os.path.join('sub_1_O_on_Se_1', 'vasp_std')}:\nThe total energies of the "
+                    "provided (bulk) `OUTCAR` "
                     "(-381.559 eV), used to obtain the atomic core potentials for the eFNV correction, "
                     "and the `vasprun.xml` (-381.729eV, -363.622 eV; final energy & last electronic step "
                     "energy), used for" in str(warn.message)
@@ -1710,7 +1746,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             7.661,
             atol=3e-3,
         )  # uncorrected energy
-        assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 10.379714081555262, atol=1e-3)
+        assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 10.09570347183319, atol=1e-3)
 
         # test no warnings when skip_corrections is True
         with warnings.catch_warnings(record=True) as w:
@@ -1742,8 +1778,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             ).defect_entry
             assert (
                 f"Multiple `OUTCAR` files found in defect directory: "
-                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using OUTCAR.gz to parse core levels and "
-                f"compute the Kumagai (eFNV) image charge correction." in str(w[0].message)
+                f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl')}. Using OUTCAR.gz to "
+                f"parse core levels and compute the Kumagai (eFNV) image charge correction."
+                in str(w[0].message)
             )
             assert (
                 f"Estimated error in the Kumagai (eFNV) charge correction for defect "
@@ -1822,7 +1859,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             atol=3e-3,
         )  # uncorrected energy
         assert np.isclose(
-            parsed_int_Te_2_fake_aniso.get_ediff(), -4.7620, atol=2e-2
+            parsed_int_Te_2_fake_aniso.get_ediff(), -5.0602, atol=2e-2
         )  # -4.734 with old voronoi frac coords, expanded atol now to account for LOCPOT sub-sampling
         # compression
 
@@ -1898,10 +1935,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert (  # different warning start depending on whether isotropic or anisotropic dielectric
             f"in the defect or bulk folder were unable to be parsed, giving the following error message:\n"
             f"Unable to parse atomic core potentials from defect `OUTCAR` at "
-            f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR_no_core_levels.gz. This can happen if "
-            f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, the calculation was finished "
-            f"prematurely with a `STOPCAR`, or the calculation crashed. The Kumagai (eFNV) charge "
-            f"correction cannot be computed without this data!\n{action}" in str(warnings[0].message)
+            f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl', 'OUTCAR_no_core_levels.gz')}"
+            f". This can happen if `ICORELEVEL` was not set to 0 (= default) in the `INCAR`, the "
+            f"calculation was finished prematurely with a `STOPCAR`, or the calculation crashed. The "
+            f"Kumagai (eFNV) charge correction cannot be computed without this data!\n{action}"
+            in str(warnings[0].message)
         )
 
         return result
@@ -1937,7 +1975,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             assert (
                 f"Multiple `OUTCAR` files found in defect directory: "
-                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using "
+                f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl')}. Using "
                 f"OUTCAR.gz to parse core levels and compute the Kumagai (eFNV) image charge "
                 f"correction." in str(w[1].message)
             )
@@ -1947,7 +1985,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 3)
 
     def test_multiple_locpots(self):
-        defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
+        defect_path = os.path.join(self.CdTe_EXAMPLE_DIR, "v_Cd_-2", "vasp_ncl")
 
         shutil.copyfile(f"{defect_path}/LOCPOT.gz", f"{defect_path}/another_LOCPOT.gz")
         shutil.copyfile(
@@ -1977,7 +2015,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
     def test_multiple_vaspruns(self):
-        defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
+        defect_path = os.path.join(self.CdTe_EXAMPLE_DIR, "v_Cd_-2", "vasp_ncl")
 
         shutil.copyfile(f"{defect_path}/vasprun.xml.gz", f"{defect_path}/another_vasprun.xml.gz")
         shutil.copyfile(
@@ -2304,6 +2342,182 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # assert auto-determined substitution site is correct (exact match because perfect supercell):
         assert np.array_equal(unrelaxed_defect_structure[defect_site_idx].frac_coords, [0.00, 0.00, 0.00])
+
+    def test_defect_site_indices_warnings(self):
+        """
+        Test the warnings thrown by ``get_defect_type_and_site_indices`` when
+        no sites, or an implausibly large number of sites, are identified as
+        defect sites (currently only with an explicitly-set ``site_tol``).
+        """
+        bulk_sc_structure = Structure.from_file(
+            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk/CdTe_bulk_supercell_POSCAR"
+        )
+        # same structure but with a different basis/origin definition (uniform shift), which should be
+        # flagged as a supercell mismatch by the ``check_atom_mapping_far_from_defect`` diagnostic:
+        shifted_bulk_sc_structure = bulk_sc_structure.copy()
+        shifted_bulk_sc_structure.translate_sites(range(len(shifted_bulk_sc_structure)), [0.1, 0, 0])
+
+        for defect_structure, site_tol, kwargs, expected_warnings in [
+            (bulk_sc_structure, 0.5, {}, ["No defect sites could be identified"]),  # bulk input; no defect
+            (  # shifted bulk, many defect sites and bulk mismatch
+                shifted_bulk_sc_structure,
+                0.2,
+                {"abs_tol": True},
+                ["sites were identified as defect sites", "Detected atoms far from the defect site"],
+            ),
+        ]:
+            _result, _output, w = _run_func_and_capture_stdout_warnings(
+                get_defect_type_and_site_indices,
+                defect_structure,
+                bulk_sc_structure,
+                site_tol=site_tol,
+                **kwargs,
+            )
+            for expected_warning in expected_warnings:
+                assert any(expected_warning in str(warning.message) for warning in w)
+
+        # no warnings for a normal point defect, with or without ``site_tol``:
+        vacancy_structure = bulk_sc_structure.copy()
+        vacancy_structure.remove_sites([0])
+        for site_tol in [None, 0.5]:
+            _result, _output, w = _run_func_and_capture_stdout_warnings(
+                get_defect_type_and_site_indices, vacancy_structure, bulk_sc_structure, site_tol=site_tol
+            )
+            assert not w
+
+    def test_defect_site_indices_per_site_tolerance(self):
+        """
+        Test that the ``site_tol`` distance threshold in
+        ``get_defect_type_and_site_indices`` is set by the shortest bond length
+        of each bulk site, and that bond-centre split vacancies are robustly
+        identified with ``site_tol = 0.4`` (as a validation test).
+        """
+        # Ag2Se has Ag sites with different shortest bond lengths (2.63 -- 2.85 Å), so the same 1.1 Å
+        # displacement (> 0.4 x 2.63, < 0.4 x 2.85 Å) is a defect site only for the shortest-bond Ag site:
+        ag2se = Structure.from_file(f"{data_dir}/Ag2Se_POSCAR") * 2
+        dists = ag2se.distance_matrix
+        np.fill_diagonal(dists, np.inf)
+        ag_idxs = sorted(ag2se.indices_from_symbol("Ag"), key=lambda i: dists[i].min())
+        short_idx, long_idx = ag_idxs[0], ag_idxs[-1]
+        defect_structure = ag2se.copy()
+        defect_structure.translate_sites([short_idx, long_idx], [1.1, 0, 0], frac_coords=False)
+        assert get_defect_type_and_site_indices(defect_structure, ag2se, site_tol=0.4)[1:] == (
+            [short_idx],
+            [short_idx],
+        )
+        for structure in [ag2se, defect_structure]:  # works equally well with oxidation states assigned:
+            structure.add_oxidation_state_by_element({"Ag": 1, "Se": -2})
+        assert get_defect_type_and_site_indices(
+            defect_structure, ag2se, site_tol=0.4, use_oxi_states=True
+        )[1:] == ([short_idx], [short_idx])
+
+        # split vacancy in Si (2 V_Si + Si_i) with the interstitial exactly at the bond centre (0.5 x the
+        # bond length from both vacant sites):
+        si = Structure.from_spacegroup("Fd-3m", np.eye(3) * 5.431, ["Si"], [[0, 0, 0]]) * 2
+        neighbour = si.get_neighbors(si[0], 2.4)[0]  # nearest neighbour of site 0 (Si-Si bond: 2.35 Å)
+        split_vac_structure = si.copy()
+        split_vac_structure.remove_sites([0, neighbour.index])
+        split_vac_structure.append("Si", (si[0].frac_coords + neighbour.frac_coords) / 2)
+        defect_type, missing_idxs, additional_idxs = get_defect_type_and_site_indices(
+            split_vac_structure, si, site_tol=0.4
+        )
+        assert (defect_type, sorted(missing_idxs), additional_idxs) == (
+            "vacancy",
+            sorted([0, neighbour.index]),
+            [len(si) - 2],
+        )
+
+    def test_defect_site_indices_split_interstitials(self):
+        """
+        Test identification of split interstitials (two atoms sharing a bulk
+        site; 2 X_i + V_X) by ``get_defect_type_and_site_indices``.
+        """
+        si = Structure.from_spacegroup("Fd-3m", np.eye(3) * 5.431, ["Si"], [[0, 0, 0]]) * 2
+        si_si_bond = np.sort(si.distance_matrix[0])[1]
+        direction = np.array([1, 1, 0]) / np.sqrt(2)
+        # <110> dumbbells at site 0, with the (host, extra) atom distances to the site (in units of the
+        # bond length), for a ``site_tol`` (distance tolerance sphere radius) of 0.4:
+        for host_dist, extra_dist, split in [
+            (0.35, 0.35, True),  # both atoms inside the tolerance sphere
+            (0.45, 0.45, True),  # both outside (so host atom off-site anyway)
+            (0.39, 0.45, True),  # similar displacements (within 15%); host atom inside the sphere
+            (0.30, 0.38, False),  # dissimilar displacements; displaced host atom + interstitial
+        ]:
+            defect_structure = si.copy()
+            defect_structure.translate_sites([0], host_dist * si_si_bond * direction, frac_coords=False)
+            defect_structure.append(
+                "Si", si[0].coords - extra_dist * si_si_bond * direction, coords_are_cartesian=True
+            )
+            defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+                get_defect_type_and_site_indices(defect_structure, si, site_tol=0.4)
+            )
+            assert defect_type == "interstitial"
+            assert missing_bulk_site_indices == ([0] if split else [])
+            assert sorted(additional_defect_site_indices) == ([0, len(si)] if split else [len(si)])
+
+        # split interstitial in a Frenkel pair (with a separate vacancy, so no unmatched defect sites):
+        far_idx = int(np.argmax(si.distance_matrix[0]))
+        frenkel_structure = si.copy()
+        frenkel_structure.translate_sites([0], 0.35 * si_si_bond * direction, frac_coords=False)
+        frenkel_structure.append(
+            "Si", si[0].coords - 0.35 * si_si_bond * direction, coords_are_cartesian=True
+        )
+        frenkel_structure.remove_sites([far_idx])
+        defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+            get_defect_type_and_site_indices(frenkel_structure, si, site_tol=0.4)
+        )
+        assert defect_type == "complex"
+        assert sorted(missing_bulk_site_indices) == [0, far_idx]
+        assert sorted(additional_defect_site_indices) == [0, len(si) - 1]
+
+        # similar displacements, but not split across the site (bent at 90°), so not a split interstitial:
+        bent_structure = si.copy()
+        bent_structure.translate_sites([0], 0.36 * si_si_bond * direction, frac_coords=False)
+        bent_structure.append(
+            "Si",
+            si[0].coords + 0.38 * si_si_bond * np.array([1, -1, 0]) / np.sqrt(2),
+            coords_are_cartesian=True,
+        )
+        assert get_defect_type_and_site_indices(bent_structure, si, site_tol=0.4) == (
+            "interstitial",
+            [],
+            [len(si)],
+        )
+
+        # bond-centre interstitial is not a split interstitial:
+        nn_idx = int(np.argsort(si.distance_matrix[0])[1])
+        _dist, image = si[0].distance_and_image(si[nn_idx])
+        bond_centre_structure = si.copy()
+        bond_centre_structure.append("Si", (si[0].frac_coords + si[nn_idx].frac_coords + image) / 2)
+        assert get_defect_type_and_site_indices(bond_centre_structure, si, site_tol=0.4) == (
+            "interstitial",
+            [],
+            [len(si)],
+        )
+
+    def test_bond_centre_H_interstitial_initial_site(self):
+        """
+        Test that the guessed initial (unrelaxed) site of a hydrogen
+        interstitial which has relaxed near a bond-centre site is that bond-
+        centre site (included by default for hydrogen interstitials).
+        """
+        si = Structure.from_spacegroup("Fd-3m", np.eye(3) * 5.431, ["Si"], [[0, 0, 0]]) * 2
+        nn_idx = int(np.argsort(si.distance_matrix[0])[1])
+        _dist, image = si[0].distance_and_image(si[nn_idx])
+        bond_centre = (si[0].frac_coords + si[nn_idx].frac_coords + image) / 2
+        defect_structure = si.copy()
+        defect_structure.append("H", bond_centre)
+        defect_structure.translate_sites([-1], [0.2, -0.2, 0], frac_coords=False)  # relaxed off-centre
+        _defect_site, defect_type, defect_site_in_bulk, *_ = defect_site_from_structures(
+            defect_structure,
+            si,
+            return_all_info=True,
+            _parameter_order_warn=False,  # TODO: Remove in v4.1
+        )
+        assert defect_type == "interstitial"
+        assert np.isclose(
+            si.lattice.get_distance_and_image(defect_site_in_bulk.frac_coords, bond_centre)[0], 0
+        )
 
     @custom_mpl_image_compare("YTOS_Int_F_-1_eigenvalue_plot_ISPIN_1.png")
     def test_extrinsic_interstitial_parsing_and_kumagai(self):
@@ -2651,8 +2865,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
 
-    def test_defect_name_from_structures(self):
-        # by proxy also tests defect_from_structures
+    def test_defect_from_structures(self):
+        # by proxy also tests defect_from_structures;
         for defect_gen_name in [
             "CdTe_defect_gen",
             "ytos_defect_gen",
@@ -2667,15 +2881,16 @@ class DefectsParsingTestCase(unittest.TestCase):
 
             for defect_entry in [entry for entry in defect_gen.values() if entry.charge_state == 0]:
                 print(defect_entry.defect, defect_entry.defect_supercell_site)
-                assert defect_name_from_structures(
-                    defect_entry.defect_supercell, defect_entry.bulk_supercell, _parameter_order_warn=False
-                ) == get_defect_name_from_defect(defect_entry.defect)
-
-                # Can't use defect.structure/defect.defect_structure because might be vacancy in a 1/2
-                # atom cell etc.:
-                # assert defect_name_from_structures(
-                #     defect_entry.defect.structure, defect_entry.defect.defect_structure
-                # ) == get_defect_name_from_defect(defect_entry.defect)
+                # set oxi_state and multiplicity to avoid wasting time auto-determining when not needed:
+                defect = defect_from_structures(
+                    defect_entry.defect_supercell,
+                    defect_entry.bulk_supercell,
+                    return_all_info=False,
+                    _parameter_order_warn=False,  # TODO: Remove in v4.1
+                    oxi_state="Undetermined",
+                    multiplicity=1,
+                )
+                assert defect == defect_entry.defect  # symmetry-equivalent site, same host & name
 
     def test_defect_from_structures_rattled(self):
         """
@@ -2841,6 +3056,23 @@ class DefectsParsingTestCase(unittest.TestCase):
         dp, _warnings = _create_dp_and_capture_warnings(self.ZnS_DATA_DIR, dielectric=8.9)
         assert len(dp.defect_dict) == 17
 
+        # site multiplicities must satisfy the orbit-stabilizer relation against the determined bulk site
+        # symmetry: multiplicity x |site point group| == |host point group| (24, Td, for this F-43m host):
+        from doped.utils.symmetry import group_order_from_schoenflies, schoenflies_from_structure
+
+        host_pg_order = group_order_from_schoenflies(
+            schoenflies_from_structure(next(iter(dp.defect_dict.values())).bulk_supercell)
+        )
+        assert host_pg_order == 24  # Td
+        for name, defect_entry in dp.defect_dict.items():
+            bulk_site_symmetry = defect_entry.calculation_metadata.get("bulk site symmetry")
+            if bulk_site_symmetry is None:
+                continue
+            multiplicity = defect_entry.defect.multiplicity
+            assert multiplicity * group_order_from_schoenflies(bulk_site_symmetry) == host_pg_order, (
+                f"{name}: multiplicity {multiplicity} x |{bulk_site_symmetry}| != {host_pg_order}"
+            )
+
         for name, defect_entry in dp.defect_dict.items():
             print(f"Checking symmetry for {name}")
             bulk_site_symmetry = defect_entry.calculation_metadata["bulk site symmetry"]
@@ -2997,38 +3229,41 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # iii) robustness to approximate defect positions: the defect position input is only used to place
         # the local analysis region (with the symmetry centre itself derived from the determined
-        # operations, and the analysis re-run recentred on the derived centre when not all candidate
-        # operations certify). An explicitly provided ``defect_frac_coords`` is otherwise respected (it may
-        # deliberately target a specific site, e.g. in a defect complex or multi-defect cell), so the guess
-        # must lie within ~``t_max/2`` of the true centre (see the note in (iv) below) -- only ~0.3 Å in
-        # this small (~3.8 Å radius), noisy supercell:
-        offset_frac = unrelaxed_defect_structure.lattice.get_fractional_coords(
-            center_cart + np.array([0.2, 0.2, 0.1])
-        )  # 0.3 Å off the true site
-        symbol, ops, info = local_point_symmetry(
-            breathing, entry.bulk_supercell, defect_frac_coords=offset_frac
-        )
-        assert symbol == "Td"
-        assert len(ops) == 24
-        assert np.linalg.norm(info["centre_cart"] - center_cart) < 0.1  # derived centre = true site
-        symbol, ops, _info = local_point_symmetry(
-            c3v_distorted, entry.bulk_supercell, defect_frac_coords=offset_frac
+        # operations, and the analysis re-run recentred on the derived and/or displaced-motif evidence
+        # centres when they differ significantly from the initial centre guess). An explicitly provided
+        # ``defect_frac_coords`` is otherwise respected (it may deliberately target a specific site, e.g.
+        # in a defect complex or multi-defect cell), so the guess must lie within ~``centre_error_range``
+        # (1.5 Å default) of the true centre. Track the current tolerance ceiling and crossover point:
+        # recovered up to 1.4 Å off the true site here, while beyond ~``centre_error_range`` the stranded
+        # subgroup's ops-derived centre is self-consistently wrong (the C3v fixed-point set is a line
+        # through the offset position), so the recentring re-runs cannot recover the true site and a
+        # spuriously lowered symmetry (currently C3v) is returned -- pinned to track tolerance changes:
+        offset_direction = np.array([0.5, 0.5, 0.3]) / np.linalg.norm([0.5, 0.5, 0.3])
+        for offset_magnitude in [0.3, 0.77, 1.4, 1.5, 2.0]:
+            offset_frac = unrelaxed_defect_structure.lattice.get_fractional_coords(
+                center_cart + offset_magnitude * offset_direction
+            )
+            symbol, ops, info = local_point_symmetry(
+                breathing, entry.bulk_supercell, defect_frac_coords=offset_frac
+            )
+            if offset_magnitude <= 1.4:  # recovers the true site and symmetry
+                assert symbol == "Td", f"{offset_magnitude} Å: expected Td, got {symbol}"
+                assert len(ops) == 24
+                assert np.linalg.norm(info["centre_cart"] - center_cart) < 0.1  # derived = true site
+            else:  # beyond ~``centre_error_range`` -- spuriously lowered (currently C3v):
+                assert len(ops) < 24, f"{offset_magnitude} Å: expected lowered symmetry, got {symbol}"
+                assert symbol == "C3v"
+                assert len(ops) == 6
+
+        symbol, ops, _info = local_point_symmetry(  # and an offset (0.3 Å) guess, C3v-distorted cell:
+            c3v_distorted,
+            entry.bulk_supercell,
+            defect_frac_coords=unrelaxed_defect_structure.lattice.get_fractional_coords(
+                center_cart + 0.3 * offset_direction
+            ),
         )
         assert symbol == "C3v"
         assert len(ops) == 6
-
-        # while a too-far-off guess (beyond the ~``t_max/2`` single-pass tolerance) returns a spuriously
-        # _lowered_ symmetry: only the subgroup (nearly) fixing the offset direction certifies, and its
-        # ops-derived centre is then self-consistently wrong (the C3v fixed-point set is a _line_ -- its
-        # axis -- so the recentring re-run cannot recover the true centre; see the note in (iv) below):
-        offset_frac = np.array(center_frac) + unrelaxed_defect_structure.lattice.get_fractional_coords(
-            [0.5, 0.5, 0.3]
-        )  # 0.77 Å off the true site
-        symbol, ops, info = local_point_symmetry(
-            breathing, entry.bulk_supercell, defect_frac_coords=offset_frac
-        )
-        assert len(ops) < 24  # spuriously lowered (currently C3v)
-        assert np.linalg.norm(info["centre_cart"] - center_cart) > 0.5  # stuck near the (wrong) input
 
         # for unknown or poor position guesses with a bulk reference available, ``defect_frac_coords``
         # should instead be omitted -- the cluster centre is then auto-determined from bulk vs defect
@@ -3069,23 +3304,21 @@ class DefectsParsingTestCase(unittest.TestCase):
         # re-run on the ops-derived centre -- the auto-determined defect site is deliberately not retried
         # (respecting explicit centre choices; see (iii) above), and the reference-free path has no
         # structure-comparison site anyway. In a single pass, a centre error ``d`` requires a fixing
-        # translation of
-        # up to ~``2*d`` per operation (``(R - I)`` applied to the offset), which must satisfy the
-        # translation bound ``|t| <= t_max = min(2*centre_range, radius - 2*symprec - shell_dist)``; the
-        # guess must therefore lie within ~``t_max/2`` of the true symmetry centre. This is
-        # ~``centre_range`` in roomy supercells, but is radius-limited to ~1 Å or below in smaller cells
-        # (extraction radius capped by the periodic boundary). The recentring re-run typically extends this
-        # (recovering the 1.62 Å-off guess below), but beyond ~2 Å the reference-free analysis returns a
-        # spuriously _lowered_ symmetry -- a certified-but-off-centre subgroup can have a self-consistent
-        # fixed point near the wrong input position, leaving the residual offset unobservable from the
-        # operations alone. This is mitigated in the ``point_symmetry_from_structure`` wrapper by
-        # cross-checking the reference-free local result against global spglib analysis of the defect
-        # supercell, taking the higher-symmetry result (each approach can only spuriously _lower_ the true
-        # symmetry, _in the noise free limit_). Global analysis gives C1 in this periodicity-breaking ZnS
-        # supercell, so demonstrate with a (non-periodicity-breaking) cubic conventional supercell and low
-        # noise (0.01 Å stdev; global spglib analysis requires _max_ deviations within ``symprec`` so is
-        # much less noise-tolerant than the local isometry analysis), with a position guess beyond the
-        # single-pass ~``t_max/2`` tolerance (1.62 Å off), recovered by the ops-derived recentring re-run:
+        # translation of up to ~``2*d`` per operation (``(R - I)`` applied to the offset), which must
+        # satisfy the candidate translation bound ``|t| <= t_max = 2*centre_error_range + 2*symprec``; the
+        # guess must therefore lie within ~``centre_error_range`` of the true symmetry centre. The
+        # recentring re-runs typically extend this somewhat (recovering the 1.62 Å-off guess below), but
+        # beyond ~2 Å the reference-free analysis returns a spuriously `lowered` symmetry -- a
+        # certified-but-off-centre subgroup can have a self-consistent fixed point near the wrong input
+        # position, leaving the residual offset unobservable from the operations alone. This is mitigated
+        # in the ``point_symmetry_from_structure`` wrapper by cross-checking the reference-free local
+        # result against global spglib analysis of the defect supercell, taking the higher-symmetry result
+        # (each approach can only spuriously `lower` the true symmetry, `in the noise free limit`). Global
+        # analysis gives C1 in this periodicity-breaking ZnS supercell, so demonstrate with a
+        # (non-periodicity-breaking) cubic conventional supercell and low noise (0.01 Å stdev; global
+        # spglib analysis requires `max` deviations within ``symprec`` so is much less noise-tolerant than
+        # the local isometry analysis), with a position guess beyond the single-pass
+        # ~``centre_error_range`` tolerance (1.62 Å off), recovered by the ops-derived recentring re-run:
         conv_structure = get_sga(
             get_primitive_structure(entry.bulk_supercell)
         ).get_conventional_standard_structure()
@@ -3202,25 +3435,68 @@ class DefectsParsingTestCase(unittest.TestCase):
             if symbol != ref_free_symbol:
                 auto_guess_flips.add(name)
 
-        assert with_bulk_flips == {("vac_1_Zn_-2", 0.77), ("vac_2_S_2", 0.77)}
-        assert auto_guess_flips == {"vac_1_Zn_-2", "vac_2_S_1"}
+        assert with_bulk_flips == {("vac_1_Zn_-2", 0.77)}
+        assert auto_guess_flips == {"vac_2_S_1"}  # ~2.5 Å guess error
 
         # track the current reference-free tolerance ceiling on real relaxed data (cf. the ~2.2 Å synthetic
-        # ceiling in (iv)): stable at 1.0 Å, spuriously lowered at ~1.5 Å (again a ceiling set mostly by
-        # the small ZnS supercells -- see the small-cell note above -- rather than the approach itself):
+        # ceiling in (iv)): stable to ~1.5 Å (extended from ~1.0 Å by the beyond-coverage centre-evidence
+        # recentring), spuriously lowered at ~2 Å (again a ceiling set mostly by the small ZnS supercells
+        # -- see the small-cell note above -- rather than the approach itself):
         sub_entry = thermo.defect_entries["sub_1_Al_on_Zn_0"]
         sub_sc = sub_entry.defect_supercell
         sub_cart = sub_sc.lattice.get_cartesian_coords(sub_entry.defect_supercell_site.frac_coords)
-        symbol, ops, _info = local_point_symmetry(
-            sub_sc, defect_frac_coords=sub_sc.lattice.get_fractional_coords(sub_cart + offset_direction)
-        )
-        assert symbol == "Td"
-        assert len(ops) == 24
-        symbol, ops, _info = local_point_symmetry(
-            sub_sc,
-            defect_frac_coords=sub_sc.lattice.get_fractional_coords(sub_cart + 1.5 * offset_direction),
-        )
-        assert len(ops) < 24  # spuriously lowered (currently C3v)
+        for offset_magnitude, expected_n_ops in [(1.0, 24), (1.5, 24), (2.0, "<24")]:
+            symbol, ops, _info = local_point_symmetry(
+                sub_sc,
+                defect_frac_coords=sub_sc.lattice.get_fractional_coords(
+                    sub_cart + offset_magnitude * offset_direction
+                ),
+            )
+            if expected_n_ops == 24:
+                assert symbol == "Td", f"{offset_magnitude} Å: expected Td, got {symbol}"
+                assert len(ops) == 24
+            else:  # beyond ceiling -- spuriously lowered (currently C3v)
+                assert len(ops) < 24, f"{offset_magnitude} Å: expected lowered symmetry, got {symbol}"
+                assert symbol == "C3v"
+                assert len(ops) == 6
+
+    def test_local_symmetry_symprec_monotonicity(self):
+        """
+        Determined local point symmetries should be non-decreasing with
+        ``symprec``, outside the warned too-small-supercell regime (see the
+        ``local_point_symmetry`` docstring).
+
+        Swept here for the historically regression-prone `displaced-motif` edge
+        cases -- split/displaced interstitials whose recorded sites sit ~1 Å+
+        from their symmetry centres, recovered only via the beyond-coverage
+        certified ops recentring re-runs.
+        """
+        from doped.utils.symmetry import local_point_symmetry
+
+        ZGO_thermo = loadfn(os.path.join(EXAMPLE_DIR, "ZGO/ZGO_thermo.json.gz"))
+        STO_thermo = loadfn(os.path.join(self.SrTiO3_DATA_DIR, "STO_wo_Al_thermo.json.gz"))
+        edge_cases = {  # (thermo, entry name): expected symbols per symprec swept below
+            (ZGO_thermo, "Zn_i_Td_+2"): ["Cs", "C2v", "C2v", "C2v", "C2v", "C2v"],  # split interstitial,
+            # with recorded site ~1.2 Å off the motif symmetry centre
+            (STO_thermo, "Int_Sr_1_2"): ["C4v", "C4v", "C4v", "D4h", "D4h", "D4h"],
+            (STO_thermo, "Int_Sr_1_1"): ["C4v", "C4v", "D4h", "D4h", "D4h", "D4h"],
+        }
+        symprecs = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]  # symprec = 1.0 excluded; too-small warned regime
+        for (thermo, entry_name), expected_symbols in edge_cases.items():
+            entry = thermo.defect_entries[entry_name]
+            orders = []
+            for symprec, expected_symbol in zip(symprecs, expected_symbols, strict=True):
+                with warnings.catch_warnings(record=True) as w:
+                    symbol, ops, _info = local_point_symmetry(
+                        entry.defect_supercell,
+                        entry.bulk_supercell,
+                        defect_frac_coords=entry.sc_defect_frac_coords,
+                        symprec=symprec,
+                    )
+                assert not w, f"{entry_name} @ {symprec}: {[str(warning.message) for warning in w]}"
+                assert symbol == expected_symbol, f"{entry_name} @ {symprec}: {symbol}"
+                orders.append(len(ops))
+            assert orders == sorted(orders), f"{entry_name}: non-monotonic group orders {orders}"
 
     def test_bulk_defect_compatibility_checks(self):
         """
@@ -3286,7 +3562,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 i in str(w[-1].message)
                 for i in [
                     "There are mismatching INCAR tags for your defect and bulk calculations",
-                    "[('ADDGRID', False, True), ('ENCUT', 500.0, 450.0)]",
+                    "[('ENCUT', 500.0, 450.0), ('ADDGRID', False, True)]",
                 ]
             )
 
@@ -3378,6 +3654,66 @@ class DefectsParsingTestCase(unittest.TestCase):
                 "The defect and bulk supercells are not the same size, having volumes of 513790.5 and "
                 "2241.3 Å^3 respectively." in str(warning.message)
                 for warning in w
+            )
+
+    def test_calculation_comparison_functions(self):
+        """
+        Test the public ``compare_incar_tags``, ``compare_kpoints`` and
+        ``compare_potcar_symbols`` functions in ``doped.utils.parsing``.
+        """
+        # ``compare_incar_tags`` compares in both directions, taking the VASP default for missing tags:
+        assert compare_incar_tags({"ENCUT": 500, "LHFCALC": True}, {"ENCUT": 500}, warn=False) == [
+            ("LHFCALC", True, False)
+        ]
+        assert compare_incar_tags({"ENCUT": 500}, {"ENCUT": 500, "LHFCALC": True}, warn=False) == [
+            ("LHFCALC", False, True)
+        ]
+        # and is order-independent for mixed string/numeric values:
+        assert compare_incar_tags({"ENCUT": "500"}, {"ENCUT": 500}) == []
+        assert compare_incar_tags({"ENCUT": 500}, {"ENCUT": "500"}) == []
+        # trailing ``INCAR`` comments (which ``VASP`` writes into the ``vasprun.xml`` value) are ignored:
+        assert compare_incar_tags({"PREC": "Accurate  ! precision level"}, {"PREC": "Accurate"}) == []
+        # ``VASP`` leading-character abbreviations are resolved where unambiguous:
+        assert compare_incar_tags({"PREC": "A"}, {"PREC": "Accurate"}) == []
+        assert compare_incar_tags({"LREAL": "A"}, {"LREAL": "Auto"}) == []
+        assert compare_incar_tags({"PRECFOCK": "N"}, {"PRECFOCK": "Normal"}) == []
+        # but not for tags where this would be ambiguous (e.g. ``GGA``: ``LI``/``LIBXC``):
+        assert compare_incar_tags({"GGA": "LI"}, {"GGA": "LIBXC"}, warn=False) == [("GGA", "LI", "LIBXC")]
+
+        # ``compare_kpoints`` is insensitive to k-point ordering within each list, and to arg order:
+        kpts = [[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]]
+        diff_kpts = [[0.0, 0.0, 0.0], [0.25, 0.25, 0.25]]
+        assert compare_kpoints(kpts, kpts[::-1]) == []
+        assert compare_kpoints(kpts, diff_kpts, warn=False)
+        assert compare_kpoints(diff_kpts, kpts, warn=False)
+        # matching input ``KPOINTS`` objects are taken to match, even if the k-point lists differ
+        # (e.g. due to different ``ISYM``):
+        gamma_2x2x2 = Kpoints.gamma_automatic((2, 2, 2))
+        assert compare_kpoints(kpts, diff_kpts, kpoints_1=gamma_2x2x2, kpoints_2=gamma_2x2x2) == []
+
+        # ``compare_potcar_symbols`` is one-way; extra elements in the superset are not flagged...
+        # (e.g. extrinsic species in defect supercells):
+        bulk_symbols = [{"titel": "PAW_PBE Zn 06Sep2000"}, {"titel": "PAW_PBE S 08Apr2002"}]
+        defect_symbols = [*bulk_symbols, {"titel": "PAW_PBE Al 08Apr2002"}]
+        assert compare_potcar_symbols(defect_symbols, bulk_symbols) == []
+        assert compare_potcar_symbols(bulk_symbols, defect_symbols, warn=False) == [
+            bulk_symbols,
+            defect_symbols,
+        ]
+        # ...unless ``symbols_1_is_superset = False``, when the check is performed in both directions:
+        assert compare_potcar_symbols(
+            defect_symbols, bulk_symbols, warn=False, symbols_1_is_superset=False
+        ) == [defect_symbols, bulk_symbols]  # returned lists still in (1, 2) order
+        # which makes no difference with ``only_matching_elements`` (unshared elements skipped anyway):
+        for symbols_1_is_superset in [True, False]:
+            assert (
+                compare_potcar_symbols(
+                    defect_symbols,
+                    bulk_symbols,
+                    only_matching_elements=True,
+                    symbols_1_is_superset=symbols_1_is_superset,
+                )
+                == []
             )
 
     def test_checking_defect_bulk_cell_definitions(self):
@@ -3934,9 +4270,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         bulk ``symprec=0.01`` (which previously caused false periodicity
         breaking warnings).
         """
+        # the site sits ~0.013 Å off its ideal C4v position, with the stabilising operations' images
+        # spread continuously over 0-0.013 Å; ~0.0065 Å symprec tolerance:
         symprec_settings_and_expected_syms = [
             ({"bulk_symprec": 0.01}, "C4v", "C4v"),
-            ({"bulk_symprec": 0.008}, "Cs", "C4v"),
+            ({"bulk_symprec": 0.008}, "C4v", "C4v"),
             ({"bulk_symprec": 0.005}, "Cs", "C4v"),
             ({"bulk_symprec": 0.0025}, "C1", "C4v"),
             ({"symprec": 0.01}, "C4v", "Cs"),

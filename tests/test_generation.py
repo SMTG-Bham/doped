@@ -43,13 +43,20 @@ from doped.core import (
     Vacancy,
     _falling_back_to_common_oxi_states_warning,
 )
-from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
+from doped.generation import (
+    DefectsGenerator,
+    get_bond_centre_sites,
+    get_defect_name_from_defect,
+    get_defect_name_from_entry,
+    get_interstitial_sites,
+)
 from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure, StructureMatcher_scan_stol
 from doped.utils.supercells import get_min_image_distance, min_dist
 from doped.utils.symmetry import (
     get_BCS_conventional_structure,
     get_min_dist_between_equiv_sites,
     get_spglib_conv_structure,
+    group_order_from_schoenflies,
     summed_dist,
     swap_axes,
     translate_structure,
@@ -93,16 +100,37 @@ def _check_defect_entry(
     if defect_entry.charge_state == 0:
         # test defect name re-determination, with relaxed & unrelaxed symmetry determination (fine even in
         # periodicity-breaking supercells, via local isometry analyses in
-        # ``point_symmetry_from_defect_entry``), with no warnings;
+        # ``point_symmetry_from_defect_entry``); for defective host supercells, ``doped`` detects when the
+        # local analysis is unreliable, warning and falling back to the global configuration symmetry of
+        # the defect supercell (which can exceed the site symmetry) -- see its docstring:
         with warnings.catch_warnings(record=True) as w:
             relaxed_defect_name = get_defect_name_from_entry(defect_entry)
-            assert relaxed_defect_name == get_defect_name_from_defect(defect_entry.defect)
-            assert relaxed_defect_name == get_defect_name_from_entry(defect_entry, relaxed=False)
+            unrelaxed_defect_name = get_defect_name_from_entry(defect_entry, relaxed=False)
+            assert unrelaxed_defect_name == get_defect_name_from_defect(defect_entry.defect)
         _print_warning_info(w)
+        allowed_warning_substrings = ["cannot be determined from the local environment"]
+        if get_min_image_distance(defect_gen.bulk_supercell) < 8:  # the supercell-too-small warning
+            # legitimately fires for deliberately-tiny test cells (e.g. the 5.11 Å min-image AgCu cell)
+            allowed_warning_substrings.append(
+                "The supercell is too small for the defect local environment"
+            )
+        host_symmetry_breaking = defect_entry.calculation_metadata.get(
+            "host symmetry breaking beyond local radius"
+        )
+        assert bool(host_symmetry_breaking) == any(
+            "beyond the local symmetry analysis radius" in str(warning.message) for warning in w
+        )  # flag & warning in tandem, only for defective host supercells
+        if host_symmetry_breaking:
+            allowed_warning_substrings.append("beyond the local symmetry analysis radius")
+        if relaxed_defect_name != unrelaxed_defect_name:  # only w/flagged defective-host entries where...
+            assert host_symmetry_breaking  # ...the configuration symmetry strictly exceeds site symmetry:
+            assert group_order_from_schoenflies(
+                relaxed_defect_name.split("_")[-2]
+            ) > group_order_from_schoenflies(unrelaxed_defect_name.split("_")[-2])
         assert not [
             warning
             for warning in w
-            if "cannot be determined from the local environment" not in str(warning.message)
+            if not any(substring in str(warning.message) for substring in allowed_warning_substrings)
         ]
 
         assert np.allclose(
@@ -1584,39 +1612,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 },
                 "probability_threshold": 0.0075,
             },
-            {
-                "input_parameters": {
-                    "charge_state": 8,
-                    "max_host_oxi_magnitude": 2,
-                    "oxi_probability": 0.024,
-                    "oxi_state": 6,
-                },
-                "probability": 0.00028617856063833296,
-                "probability_factors": {
-                    "charge_state_magnitude": 0.25,
-                    "charge_state_vs_max_host_charge": 0.19078570709222198,
-                    "oxi_probability": 0.024,
-                    "oxi_state_vs_max_host_charge": 0.25,
-                },
-                "probability_threshold": 0.0075,
-            },
-            {
-                "input_parameters": {
-                    "charge_state": 5,
-                    "max_host_oxi_magnitude": 2,
-                    "oxi_probability": 0.003,
-                    "oxi_state": 3,
-                },
-                "probability": 0.0001957433820584432,
-                "probability_factors": {
-                    "charge_state_magnitude": 0.34199518933533946,
-                    "charge_state_vs_max_host_charge": 0.3028534321386899,
-                    "oxi_probability": 0.003,
-                    "oxi_state_vs_max_host_charge": 0.6299605249474366,
-                },
-                "probability_threshold": 0.0075,
-            },
-        ]
+        ]  # entries with probability ≤ 10% of threshold (charges +8, +5 here) are pruned from the log
 
         # test extrinsic with a dict, with a list as value:
         extrinsic_input = {"Te": ["Se", "S"]}
@@ -2059,33 +2055,101 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         # explicitly test defect entry charge state log:
         assert CdTe_defect_gen.defect_entries["v_Cd_-1"].charge_state_guessing_log == [
-            {
-                "input_parameters": {"charge_state": -2},
-                "probability_factors": {"oxi_probability": 1},
-                "probability": 1,
+            {  # sorted by probability; vacant-site effective 'oxidation states' probability scheme
+                "input_parameters": {
+                    "charge_state": -1,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 1.0,
+                    "oxi_state": 1,
+                },
+                "probability": 1.0,
+                "probability_factors": {
+                    "charge_state_magnitude": 1.0,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 1.0,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
                 "probability_threshold": 0.0075,
-                "padding": 1,
             },
             {
-                "input_parameters": {"charge_state": -1},
-                "probability_factors": {"oxi_probability": 1},
+                "input_parameters": {
+                    "charge_state": 0,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 1.0,
+                    "oxi_state": 2,
+                },
                 "probability": 1,
+                "probability_factors": {
+                    "charge_state_magnitude": 1,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 1.0,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
                 "probability_threshold": 0.0075,
-                "padding": 1,
             },
             {
-                "input_parameters": {"charge_state": 0},
-                "probability_factors": {"oxi_probability": 1},
-                "probability": 1,
+                "input_parameters": {
+                    "charge_state": -2,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 1.0,
+                    "oxi_state": 0,
+                },
+                "probability": 0.6299605249474366,
+                "probability_factors": {
+                    "charge_state_magnitude": 0.6299605249474366,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 1.0,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
                 "probability_threshold": 0.0075,
-                "padding": 1,
             },
             {
-                "input_parameters": {"charge_state": 1},
-                "probability_factors": {"oxi_probability": 1},
-                "probability": 1,
+                "input_parameters": {
+                    "charge_state": 1,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.25,
+                    "oxi_state": 3,
+                },
+                "probability": 0.15749013123685915,
+                "probability_factors": {
+                    "charge_state_magnitude": 1.0,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 0.25,
+                    "oxi_state_vs_max_host_charge": 0.6299605249474366,
+                },
                 "probability_threshold": 0.0075,
-                "padding": 1,
+            },
+            {  # near-miss entries (probability > 10% of threshold) retained in the log:
+                "input_parameters": {
+                    "charge_state": -3,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.00390625,
+                    "oxi_state": -1,
+                },
+                "probability": 0.0011830212192917575,
+                "probability_factors": {
+                    "charge_state_magnitude": 0.4807498567691361,
+                    "charge_state_vs_max_host_charge": 0.6299605249474366,
+                    "oxi_probability": 0.00390625,
+                    "oxi_state_vs_max_host_charge": 1.0,
+                },
+                "probability_threshold": 0.0075,
+            },
+            {
+                "input_parameters": {
+                    "charge_state": 2,
+                    "max_host_oxi_magnitude": 2,
+                    "oxi_probability": 0.00390625,
+                    "oxi_state": 4,
+                },
+                "probability": 0.0009765625,
+                "probability_factors": {
+                    "charge_state_magnitude": 0.6299605249474366,
+                    "charge_state_vs_max_host_charge": 1.0,
+                    "oxi_probability": 0.00390625,
+                    "oxi_state_vs_max_host_charge": 0.3968502629920499,
+                },
+                "probability_threshold": 0.0075,
             },
         ]
         assert CdTe_defect_gen.defect_entries["Cd_Te_0"].charge_state_guessing_log == [
@@ -3067,6 +3131,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
     def cd_i_CdTe_supercell_defect_gen_check(self, cd_i_defect_gen):
         self._general_defect_gen_check(cd_i_defect_gen)
+        assert any(  # host symmetry-breaking beyond the local analysis radius (pre-existing Cd_i) detected
+            entry.calculation_metadata.get("host symmetry breaking beyond local radius")
+            for entry in cd_i_defect_gen.defect_entries.values()
+        )
         assert self.cd_i_CdTe_supercell_defect_gen_info in cd_i_defect_gen._defect_generator_info()
         assert cd_i_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
@@ -3191,6 +3259,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert "_i_" not in output  # no interstitials generated
 
         self._general_defect_gen_check(N_diamond_defect_gen)
+        assert any(  # host symmetry-breaking beyond the local analysis radius (pre-existing N_C) detected
+            entry.calculation_metadata.get("host symmetry breaking beyond local radius")
+            for entry in N_diamond_defect_gen.defect_entries.values()
+        )
 
         # save reduced defect gen to json
         reduced_N_diamond_defect_gen = self._reduce_to_one_defect_each(N_diamond_defect_gen)
@@ -3338,8 +3410,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         zns_defect_gen, output = self._generate_and_test_no_warnings(
             self.non_diagonal_ZnS, charge_state_gen_kwargs={"probability_threshold": 0.1}
         )
-        assert zns_defect_gen.charge_state_gen_kwargs == {"probability_threshold": 0.1}  # check
-        # attribute set
+        assert zns_defect_gen.charge_state_gen_kwargs == {"probability_threshold": 0.1}  # check attr
 
         assert self.zns_defect_gen_info not in output
         for prev_string, new_string in [
@@ -3365,34 +3436,22 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         self.zns_defect_gen_check(zns_defect_gen, check_info=False)
 
-        # test adjusting padding with Sb2S2Te6:
-        sb2si2te6_defect_gen, output = self._generate_and_test_no_warnings(
-            self.sb2si2te6, charge_state_gen_kwargs={"padding": 2}
+        # test deprecated `padding` kwarg with Sb2Si2Te6; now ignored with a deprecation warning:
+        sb2si2te6_defect_gen, output, w = self._generate_and_test_no_warnings(
+            self.sb2si2te6, charge_state_gen_kwargs={"padding": 2}, return_warnings=True
         )
+        assert len(w) == 1
+        assert issubclass(w[-1].category, DeprecationWarning)
+        assert "The `padding` option (for vacancy charge state guessing) was removed in doped v4.0" in str(
+            w[-1].message
+        )  # TODO: Remove (all this) in v4.1
         self._general_defect_gen_check(sb2si2te6_defect_gen)
         assert sb2si2te6_defect_gen.structure == self.sb2si2te6
-        assert self.sb2si2te6_defect_gen_info not in output  # changed
-
-        post_vacancy_info_output = self.sb2si2te6_defect_gen_info.split("Substitutions")[1]
-        # after vacancies, the same:
-        assert (
-            post_vacancy_info_output in output
-            or post_vacancy_info_output.replace("0.347", "0.348") in output
+        assert (  # output unchanged from default, as `padding` is ignored:
+            self.sb2si2te6_defect_gen_info in output
+            or self.sb2si2te6_defect_gen_info.replace("0.347", "0.348") in output
         )
-
-        assert (  # different charge states than when max_sites = -1 is used:
-            (
-                """Vacancies    Guessed Charges     Conv. Cell Coords    Wyckoff
------------  ------------------  -------------------  ---------
-v_Si         [+2,+1,0,-1,-2,-3]  [0.000,0.000,0.445]  6c
-v_Sb         [+2,+1,0,-1,-2,-3]  [0.000,0.000,0.166]  6c
-v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
-\n"""
-            )
-            in output
-        )
-
-        assert sb2si2te6_defect_gen.charge_state_gen_kwargs == {"padding": 2}  # check attribute set
+        assert sb2si2te6_defect_gen.charge_state_gen_kwargs == {}  # `padding` popped from kwargs
 
     def test_unknown_oxi_states(self):
         """
@@ -3786,19 +3845,21 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         self._general_defect_gen_check(defect_gen)
 
         for i in [  # includes adsorbate sites now -- these have been manually checked
+            # the Wyckoff letters distinguish the three distinct C3v axes of this P3m1 slab cell:
+            # 1a = (0,0,z), 1b = (1/3,2/3,z), 1c = (2/3,1/3,z)
             "Na_i_C3v_Cd2.71Te2.71Cd4.25a  [+1,0]             [0.000,0.000,0.501]  1a",
-            "Na_i_C3v_Cd2.71Te2.71Cd4.25b  [+1,0]             [0.667,0.333,0.335]  1a",
-            "Na_i_C3v_Cd2.71Te2.71Cd4.25c  [+1,0]             [0.333,0.667,0.668]  1a",
+            "Na_i_C3v_Cd2.71Te2.71Cd4.25b  [+1,0]             [0.667,0.333,0.335]  1c",
+            "Na_i_C3v_Cd2.71Te2.71Cd4.25c  [+1,0]             [0.333,0.667,0.668]  1b",
             "Na_i_C3v_Cd2.83Te3.27Cd5.42a  [+1,0]             [0.000,0.000,0.564]  1a",
-            "Na_i_C3v_Cd2.83Te3.27Cd5.42b  [+1,0]             [0.667,0.333,0.397]  1a",
-            "Na_i_C3v_Cd4.25Te4.25Cd6.28a  [+1,0]             [0.333,0.667,0.168]  1a",
-            "Na_i_C3v_Cd4.25Te4.25Cd6.28b  [+1,0]             [0.667,0.333,0.835]  1a",
-            "Na_i_C3v_Cd7.57Te7.57Cd8.02   [+1,0]             [0.333,0.667,0.001]  1a",
-            "Na_i_C3v_Cd7.57Te7.57Te8.02   [+1,0]             [0.667,0.333,0.001]  1a",
+            "Na_i_C3v_Cd2.83Te3.27Cd5.42b  [+1,0]             [0.667,0.333,0.397]  1c",
+            "Na_i_C3v_Cd4.25Te4.25Cd6.28a  [+1,0]             [0.333,0.667,0.168]  1b",
+            "Na_i_C3v_Cd4.25Te4.25Cd6.28b  [+1,0]             [0.667,0.333,0.835]  1c",
+            "Na_i_C3v_Cd7.57Te7.57Cd8.02   [+1,0]             [0.333,0.667,0.001]  1b",
+            "Na_i_C3v_Cd7.57Te7.57Te8.02   [+1,0]             [0.667,0.333,0.001]  1c",
             "Na_i_C3v_Te2.00               [+1,0]             [0.000,0.000,0.226]  1a",
             "Na_i_C3v_Te2.83Cd3.27Te5.42a  [+1,0]             [0.000,0.000,0.439]  1a",
-            "Na_i_C3v_Te2.83Cd3.27Te5.42b  [+1,0]             [0.333,0.667,0.606]  1a",
-            "Na_i_C3v_Te3.34               [+1,0]             [0.667,0.333,0.226]  1a",
+            "Na_i_C3v_Te2.83Cd3.27Te5.42b  [+1,0]             [0.333,0.667,0.606]  1b",
+            "Na_i_C3v_Te3.34               [+1,0]             [0.667,0.333,0.226]  1c",
             "Na_i_Cs_Cd2.71Te2.71Cd4.25a   [+1,0]             [0.333,0.167,0.418]  3d",
             "Na_i_Cs_Cd2.71Te2.71Cd4.25b   [+1,0]             [0.167,0.333,0.585]  3d",
             "Na_i_Cs_Te3.06                [+1,0]             [0.500,0.500,0.226]  3d",
@@ -3832,13 +3893,32 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         bcc_distorted_oct_site = "H_i_D4h          [0]                [0.000,0.000,0.500]  6b"
         bcc_D3d_site = "H_i_D3d          [0]                [0.250,0.250,0.250]  8c"
 
-        # by default, only D2d site generated, which relaxes to the stable octahedral site anyway (point
-        # of support for our default settings; https://github.com/SMTG-Bham/doped/issues/140):
+        # by default, D2d site generated (which relaxes to the stable octahedral site anyway; point of
+        # support for our default settings; https://github.com/SMTG-Bham/doped/issues/140), along with the
+        # D3d site, which is the nearest-neighbour bond centre (included by default for hydrogen), and the
+        # (distorted) octahedral D4h site, which is the bond centre of the second-nearest-neighbour Fe-Fe
+        # bonds (2.87 Å, 1.15 x the nearest-neighbour bond length; within the default ``bond_tol`` of 0.2):
+        assert len(defect_gen.defect_entries) == 3
+        assert bcc_default_voronoi_site in output
+        assert bcc_D3d_site in output
+        assert bcc_distorted_oct_site in output
+
+        # only the D2d site without bond-centre sites:
+        defect_gen, output = self._generate_and_test_no_warnings(
+            bcc_fe,
+            generate_supercell=False,
+            interstitial_elements=["H"],
+            substitution_elements=[],
+            vacancy_elements=[],
+            neutral_only=True,
+            interstitial_gen_kwargs={"include_bond_centres": False},
+            min_image_distance=2.86,
+        )
         assert len(defect_gen.defect_entries) == 1
         assert bcc_default_voronoi_site in output
 
         # test enforcing inclusion of unique Wyckoff positions; canonical distorted octahedral site now
-        # included, along with D3d site:
+        # included, along with D3d site (not duplicated by the equivalent bond-centre site):
         defect_gen, output = self._generate_and_test_no_warnings(
             bcc_fe,
             generate_supercell=False,
@@ -3876,3 +3956,46 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         assert bcc_default_voronoi_site in output
         assert bcc_D3d_site in output
         assert bcc_distorted_oct_site not in output
+
+    def test_bond_centre_interstitial_sites(self):
+        """
+        Test generation of bond-centre interstitial sites, which are included
+        by default for hydrogen interstitials.
+        """
+        prim_si = self.conv_si.get_primitive_structure()
+        bond_centre_sites = get_bond_centre_sites(prim_si)
+        assert len(bond_centre_sites) == 1  # single Si-Si bond-centre site
+        bond_centre_fpos, multiplicity, equiv_fpos = bond_centre_sites[0]
+        assert multiplicity == len(equiv_fpos) == 4  # 4 bonds per 2-atom primitive cell
+        assert np.allclose(  # midpoint of Si-Si bond:
+            prim_si.lattice.get_all_distances(bond_centre_fpos, prim_si.frac_coords), min_dist(prim_si) / 2
+        )
+        n_voronoi_sites = len(get_interstitial_sites(prim_si, min_dist=0.5))
+        assert len(get_interstitial_sites(prim_si, min_dist=0.5, include_bond_centres=True)) == (
+            n_voronoi_sites + 1
+        )
+
+        # ``bond_tol`` is passed through to ``get_bond_centre_sites``; in Sb2Se3, the default (0.2) also
+        # includes the (intra-ribbon) 2.96 Å Sb-Se bond, which is excluded with ``bond_tol=0.1``:
+        prim_sb2se3 = Structure.from_file(
+            f"{data_dir}/Sb2Se3_bulk_supercell_POSCAR"
+        ).get_primitive_structure()
+        assert len(get_bond_centre_sites(prim_sb2se3)) == 5
+        assert len(get_bond_centre_sites(prim_sb2se3, bond_tol=0.1)) == 4
+        assert len(get_interstitial_sites(prim_sb2se3, min_dist=0.5, include_bond_centres=True)) == (
+            len(get_interstitial_sites(prim_sb2se3, min_dist=0.5, include_bond_centres=True, bond_tol=0.1))
+            + 1
+        )
+
+        # included by default for hydrogen in ``DefectsGenerator``:
+        defect_gen, output = self._generate_and_test_no_warnings(
+            self.conv_si,
+            extrinsic="H",
+            interstitial_elements=["H"],
+            substitution_elements=[],
+            vacancy_elements=[],
+            neutral_only=True,
+        )
+        assert "H_i_D3d_Si1.18_0" in defect_gen.defect_entries
+        assert "[0.125,0.125,0.125]  16c" in output
+        assert len(defect_gen.defect_entries) == n_voronoi_sites + 1

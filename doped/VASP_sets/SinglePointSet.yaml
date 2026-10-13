@@ -1,0 +1,6 @@
+INCAR:  # These settings are applied on top of the relaxation settings, for single-point calculations
+  EDIFF: 1e-6  # tight EDIFF for final energy and converged DOS
+  EDIFFG: null  # no ionic relaxation, remove to avoid confusion
+  IBRION: -1  # no ionic relaxation
+  NSW: 0  # no ionic relaxation
+  POTIM: null  # no ionic relaxation, remove to avoid confusion

@@ -31,9 +31,11 @@ from doped.utils.symmetry import (
     get_all_equiv_sites,
     get_primitive_structure,
     get_sga,
+    get_spglib_conv_structure,
     is_periodic_image_old,
     point_symmetry_from_site,
     point_symmetry_from_structure,
+    swap_axes,
 )
 
 data_dir = os.path.join(os.path.dirname(__file__), "data")
@@ -90,8 +92,14 @@ class ComplexDefectGenerationTest(unittest.TestCase):
         )
 
         # this tests that defect multiplicities are as expected
-        for defect_name, defect_entry in self.Ga2O3_defect_gen.defect_entries.items():
-            _check_defect_entry(defect_entry, defect_name, self.Ga2O3_defect_gen)
+        conventional_structure, _conv_sga = get_spglib_conv_structure(
+            get_sga(self.Ga2O3_defect_gen.primitive_structure.copy().remove_oxidation_states())
+        )
+        reoriented_conv_structure = swap_axes(
+            conventional_structure, self.Ga2O3_defect_gen._BilbaoCS_conv_cell_vector_mapping
+        )
+        for name, defect_entry in self.Ga2O3_defect_gen.defect_entries.items():
+            _check_defect_entry(defect_entry, name, self.Ga2O3_defect_gen, reoriented_conv_structure)
 
         # check that the wrong result is obtained with the standard pymatgen-analysis-defects approach:
         for defect_entry_name in ["v_Ga_0", "Ga_O_0"]:
@@ -173,7 +181,7 @@ class ComplexDefectGenerationTest(unittest.TestCase):
             )
 
         assert any(
-            "Some input defect sites are less than 0.1" in str(warning.message)  # no Å/Å codepoint issues
+            "Some input defect sites are less than 0.1" in str(warning.message)  # no Å codepoint issues
             for warning in w
         )
 
@@ -186,7 +194,7 @@ class ComplexDefectGenerationTest(unittest.TestCase):
             )
 
         assert not any(
-            "Some input defect sites are less than 0.1" in str(warning.message)  # no Å/Å codepoint issues
+            "Some input defect sites are less than 0.1" in str(warning.message)  # no Å codepoint issues
             for warning in w
         )
 
@@ -208,7 +216,9 @@ class MoleculeMatcherTest(unittest.TestCase):
         )
         assert are_equivalent_molecules(self.mol, translated_mol)
         assert np.isclose(KabschMatcher(self.mol).fit(translated_mol)[-1], 0)
-        assert not is_periodic_image_old(_get_molecule_coords(self.mol), _get_molecule_coords(translated_mol))
+        assert not is_periodic_image_old(
+            _get_molecule_coords(self.mol), _get_molecule_coords(translated_mol)
+        )
 
     def test_rotation_invariance(self):
         """
@@ -263,7 +273,9 @@ class MoleculeMatcherTest(unittest.TestCase):
         periodically_shifted_frac_coords[0] = periodically_shifted_frac_coords[0] + np.array([3, -2, 1])
         assert is_coord_subset_pbc(orig_frac_coords, periodically_shifted_frac_coords)
         assert is_periodic_image_old(orig_frac_coords, periodically_shifted_frac_coords)
-        assert not is_periodic_image_old(orig_frac_coords, periodically_shifted_frac_coords, same_image=True)
+        assert not is_periodic_image_old(
+            orig_frac_coords, periodically_shifted_frac_coords, same_image=True
+        )
 
         # test permutation invariance:
         permuted_frac_coords = np.array([orig_frac_coords[i] for i in [1, 2, 0]])
@@ -343,7 +355,11 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 interstitial_sites=[subdict["interstitial_site"]],
             )
             orig_split_vacancy_symm = point_symmetry_from_structure(
-                orig_split_vacancy, info_dict["bulk_supercell"], relaxed=True, verbose=False
+                orig_split_vacancy,
+                info_dict["bulk_supercell"],
+                relaxed=True,
+                verbose=False,
+                parse_complex=True,
             )
             assert orig_split_vacancy_symm == subdict["unrelaxed_split_vac_symm"]
 
@@ -365,6 +381,7 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
                 info_dict["bulk_supercell"],
                 verbose=False,
+                parse_complex=True,
             )
             assert relaxed_symm == subdict["relaxed_split_vac_symm"]
 
@@ -459,7 +476,11 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 interstitial_sites=[subdict["interstitial_site"]],
             )
             orig_split_vacancy_symm = point_symmetry_from_structure(
-                orig_split_vacancy, info_dict["bulk_supercell"], relaxed=True, verbose=False
+                orig_split_vacancy,
+                info_dict["bulk_supercell"],
+                relaxed=True,
+                verbose=False,
+                parse_complex=True,
             )
             assert orig_split_vacancy_symm == subdict["unrelaxed_split_vac_symm"]
 
@@ -482,6 +503,7 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
                 info_dict["bulk_supercell"],
                 verbose=False,
+                parse_complex=True,
             )
             assert relaxed_symm == subdict["relaxed_split_vac_symm"]
 
@@ -599,7 +621,11 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                     interstitial_sites=[subdict["interstitial_site"]],
                 )
                 orig_split_vacancy_symm = point_symmetry_from_structure(
-                    orig_split_vacancy, info_dict["bulk_supercell"], relaxed=True, verbose=False
+                    orig_split_vacancy,
+                    info_dict["bulk_supercell"],
+                    relaxed=True,
+                    verbose=False,
+                    parse_complex=True,
                 )
                 assert orig_split_vacancy_symm == subdict["unrelaxed_split_vac_symm"]
 
@@ -617,6 +643,7 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                     Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
                     info_dict["bulk_supercell"],
                     verbose=False,
+                    parse_complex=True,
                 )
                 assert relaxed_symm == subdict["relaxed_split_vac_symm"]
 

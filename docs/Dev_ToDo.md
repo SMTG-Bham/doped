@@ -4,12 +4,10 @@
 - Parsing
 
 ## Post-processing / analysis / plotting
-- Better automatic defect formation energy plot colour handling (set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
-  - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in our chempot heatmap plotting)
-  - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
-  - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy!
-  - Separate `dist_tol` for interstitials vs (inequivalent) vacancies/substitutions? (See Xinwei chat) Any other options on this front?
-  - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this?
+- `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in our chempot heatmap plotting)
+- Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks.
+- Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy! (Unless combined with the degeneracy-weighted formation energy option)
+- Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this?
 - Charge corrections for polarons; code there, just need to allow inputs of bare calculation outputs (and then can extend to allow polaron input file generation and parsing/plotting). Then update ``ShakeNBreak_Polaron_Workflow`` example with this too.
 - Kumagai GKFO and CC diagram corrections. Implemented in `pydefect` and relatively easy to port?
 
@@ -38,13 +36,13 @@
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!
 
-## SK To-Do for next update:
-- Finish ``prune_to_expected_polymorphs`` testing and handling of new ``mp-api`` behaviour with default thermo types (may need to update requirement); https://github.com/materialsproject/api/issues/1104, https://github.com/materialsproject/api/pull/1087 -- drafts in SK shelved changes 
+## SK To-Do for next update: 
 - It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe. Keep old code for reference at the bottom maybe? With delta_VBM/CBM as a function example 
   - Ideally, would implement the general ``scan()`` function and then showcase it in the tutorials?
 - Tutorials general structure clean-up?
 - Update all tutorial notebooks to use latest codebase
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks. TODO in ``doped.chemical_potentials``.
-- Re-run pytest timings (with proper heavy-test skipping now, updated pmg `LOCPOT` parsing, many test changes etc)
+- Re-run pytest timings (with proper heavy-test skipping now, updated pmg `LOCPOT` parsing, many test changes/additions etc)
+- Adversarial/ultra review on all changes
 - Remove SnB/doped co-dependent develop-branch pin in GH actions testing.
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.

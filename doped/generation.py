@@ -47,7 +47,7 @@ from doped.core import (
     get_oxi_probabilities,
     guess_and_set_oxi_states_with_timeout,
 )
-from doped.utils import parsing, pool_manager, supercells, symmetry
+from doped.utils import _signed_charge, parsing, pool_manager, supercells, symmetry
 from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
 from doped.utils.parsing import reorder_s2_like_s1
 from doped.utils.plotting import format_defect_name
@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from ase.atoms import Atoms
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
+_H_INTERSTITIAL_GEN_KWARGS = {"min_dist": 0.5, "include_bond_centres": True}  # H defaults
 
 core._logger.setLevel(logging.CRITICAL)  # avoid unnecessary pymatgen-analysis-defects warnings about
 # oxi states (already handled within doped)
@@ -455,8 +456,8 @@ def get_defect_name_from_entry(
             ``True``.
         **kwargs:
             Additional keyword arguments to pass to
-            |point_symmetry_from_defect_entry|, such as ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor`` or ``verbose``.
+            |point_symmetry_from_defect_entry|, such as ``dist_tol_factor``
+            or ``verbose``.
 
     Returns:
         str: Defect name.
@@ -928,17 +929,16 @@ def charge_state_probability(
     oxidation states (i.e. how 'charged' the host is).
 
     Disfavours large (absolute) charge states, low probability oxidation states
-    and greater charge/oxidation state magnitudes than that of the host. This
-    charge state probability function is primarily intended for substitutions
-    and interstitials, while the ``get_vacancy_charge_states()`` function is
-    used for vacancies.
-
+    and greater charge/oxidation state magnitudes than that of the host.
     Specifically, the overall probability is given by the product of these
     probability factors:
 
     - The probability of the corresponding oxidation state of the defect
-      element (e.g. Na_i^+1 has Na in the +1 oxidation state), as given by its
-      prevalence in the ICSD.
+      element (e.g. Na_i^+1 has Na in the +1 oxidation state), typically given
+      by its prevalence in the ICSD (for substitutions & interstitials), or the
+      vacancy oxidation state probability function (described in the
+      :func:`guess_defect_charge_states` docstring; implemented in
+      ``_get_vacancy_oxi_states``).
     - The magnitude of the charge state; with a probability function:
       ``1/|charge_state|^(2/3)``
     - The magnitude of the charge state relative to the max host oxidation
@@ -973,13 +973,14 @@ def charge_state_probability(
         ``return_log`` is ``False``, otherwise a dictionary of input & computed
         values used to determine charge state probability.
     """
-    # for defect charge states; 0 to +/-2 likely, 3-4 less likely, 5-6 v unlikely, >=7 unheard of
-
-    # incorporates oxidation state probabilities and overall defect site charge
+    # Incorporates oxidation state probabilities and overall defect site charge
     # (and thus by proxy the cationic/anionic identity of the substituting site)
-    # Thought about incorporating the oxi state probabilities (i.e. reducibility/oxidisability)
-    # of the neighbouring elements to this (particularly for vacancies), but no clear-cut
-    # cases where this would actually improve performance
+    # Incorporating the oxi state probabilities (i.e. reducibility/oxidisability) of the neighbouring
+    # elements could potentially help (particularly for vacancies), but no clear-cut cases where this would
+    # actually improve performance, and adds significant complexity
+    # In future, one could consider using an electrostatic penalty function, particularly for defect
+    # complexes, but would introduce some complexity... For now, onus is on the user to screen candidate
+    # defect complexes appropriately
 
     def _defect_vs_host_charge(charge_state: int, host_charge: int) -> float:
         if abs(charge_state) <= abs(host_charge):
@@ -1005,8 +1006,7 @@ def charge_state_probability(
             ** (2 / 3),
         },
     }
-    # product of charge_state_guessing_log["probability_factors"].values()
-    charge_state_guessing_log["probability"] = (
+    charge_state_guessing_log["probability"] = (  # product of probability_factors
         float(np.prod(list(charge_state_guessing_log["probability_factors"].values())))
         if charge_state != 0
         else 1
@@ -1018,53 +1018,51 @@ def charge_state_probability(
     return charge_state_guessing_log["probability"]
 
 
-def get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
+def get_defect_site_orig_oxi_state(defect: Defect) -> int:
     """
-    Get the estimated charge states for a vacancy defect, which is from
-    +/-``padding`` to the fully-ionised vacancy charge state (a.k.a. the
-    vacancy oxidation state).
+    Get the oxidation state of the original (bulk) site at the defect position
+    in the host structure.
 
-    e.g. vacancies in Sb2O5 (https://doi.org/10.1021/acs.chemmater.3c03257),
-    the fully-ionised charge states for ``V_Sb`` and ``V_O`` are -5 and +2
-    respectively (i.e. the negative of the elemental oxidation states in
-    Sb2O5), so the estimated charge states would be from +1 to -5 for ``V_Sb``
-    and from +2 to -1 for ``V_O`` for the default ``padding`` of 1.
+    This is the oxidation state of the original bulk site for vacancies and
+    substitutions -- for vacancies, taken as the negative of
+    ``Vacancy.oxi_state`` (the fully-ionised vacancy charge state), to account
+    for possible user-specified vacancy oxidation states -- or 0 for
+    interstitials (no original bulk site occupant).
 
-    This probability function was found to give optimal performance in terms of
-    efficiency and completeness when tested against other approaches (see the
-    ``doped`` JOSS paper: https://doi.org/10.21105/joss.06433) but of course
-    may not be perfect in all cases, so make sure to critically consider the
-    estimated charge states for your system!
+    Note that this requires oxidation states to be assigned to
+    ``defect.structure`` for substitutions, and ``defect.oxi_state`` for
+    vacancies).
 
     Args:
-        vacancy (|Defect|): A ``doped`` ``Vacancy`` object.
-        padding (int):
-            Padding for vacancy charge states, such that the vacancy charge
-            states are set to ``range(vacancy oxi state, padding)`` if vacancy
-            oxidation state is negative, or to
-            ``range(-padding, vacancy oxi state)`` if positive.
-            Default is 1.
+        defect (|Defect|): A ``doped`` |Defect| object.
 
     Returns:
-        list[int]: A list of estimated charge states for the defect.
+        int:
+            Oxidation state of the original (bulk) site at the defect position,
+            rounded to the nearest integer (for possible mixed-valence cases).
     """
-    if not isinstance(vacancy.oxi_state, int | float):
-        raise ValueError(
-            f"Vacancy oxidation state (= {vacancy.oxi_state}) is not an integer or float (needed for "
-            f"charge state guessing)! Please manually set the vacancy oxidation state."
-        )
-    if vacancy.oxi_state > 0:
-        return list(range(-padding, int(vacancy.oxi_state) + 1))  # from -1 to oxi_state
-    if vacancy.oxi_state < 0:
-        return list(range(int(vacancy.oxi_state), padding + 1))  # from oxi_state to +1
-
-    # oxi_state is 0
-    return list(range(-padding, padding + 1))  # from -1 to +1 for default
+    if defect.defect_type == core.DefectType.Vacancy:
+        if not isinstance(defect.oxi_state, int | float):
+            raise ValueError(
+                f"Vacancy oxidation state (= {defect.oxi_state}) is not an integer or float (needed for "
+                f"charge state guessing)! Please manually set the vacancy oxidation state."
+            )
+        return -round(defect.oxi_state)  # Vacancy.oxi_state is the negative of the site oxi state
+    if defect.defect_type == core.DefectType.Substitution:  # bulk site oxi state:
+        return round(defect.structure[defect.defect_site_index].specie.oxi_state)
+    return 0  # interstitial; no original site occupant; neutral
 
 
 def _get_possible_oxi_states(defect: Defect) -> dict:
     """
-    Get the possible oxidation states and probabilities for a defect.
+    Get the possible oxidation states and corresponding probabilities for a
+    |Defect|.
+
+    For substitutions and interstitials, these are the oxidation states of the
+    defect element and their probabilities as given by their prevalence in the
+    ICSD, while for vacancies, these are the effective 'oxidation states' of
+    the vacant site and corresponding probabilities (see
+    ``_get_vacancy_oxi_states()``).
 
     Args:
         defect (|Defect|): A ``doped`` |Defect| object.
@@ -1074,10 +1072,42 @@ def _get_possible_oxi_states(defect: Defect) -> dict:
             A dictionary with possible oxidation states as keys and their
             probabilities as values.
     """
+    if defect.defect_type == core.DefectType.Vacancy:  # throws informative error if invalid oxi_state:
+        return _get_vacancy_oxi_states(get_defect_site_orig_oxi_state(defect))
     return {
         int(k): prob
         for k, prob in get_oxi_probabilities(defect.site.specie.symbol).items()
         if prob > 0.001  # at least 0.1% occurrence
+    }
+
+
+def _get_vacancy_oxi_states(orig_oxi: int) -> dict:
+    """
+    Get the effective 'oxidation states' and probabilities for a vacant site.
+
+    Vacant site oxidation states between the original site oxidation state
+    (i.e. the neutral vacancy) and zero (i.e. the fully-ionised vacancy) are
+    assigned 100% probability, while those outside this range are assigned
+    Gaussian-decaying probabilities (corresponding to Boltzmann-weighted
+    quadratic energy cost of additional charge; ∝exp(-Δq²)) of ``(1/4)^(Δ²)``
+    (``= exp(-Δ²·ln4)``) where ``Δ`` is the difference to the closest oxidation
+    state in the 100% probability range, +1 if sign-reversed with respect to
+    the original site oxidation state (i.e. effectively anionic on a cation
+    site or vice versa; beyond 'fully-ionised').
+
+    Args:
+        orig_oxi (int): Oxidation state of the original (now vacant) site.
+
+    Returns:
+        dict:
+            A dictionary with possible vacant site oxidation states as keys
+            and their probabilities as values.
+    """
+    lower, upper = min(orig_oxi, 0), max(orig_oxi, 0)  # 100% probability range of vacant site oxi states
+    # oxi state probability = exp(-Δ²·ln4) = (1/4)^(Δ²); Δ = distance from 100% range, +1 if sign-reversed:
+    return {
+        oxi: 0.25 ** ((max(lower - oxi, oxi - upper, 0) + (oxi * orig_oxi < 0)) ** 2)  # (1/4)^(Δ²)
+        for oxi in range(lower - 10, upper + 11)
     }
 
 
@@ -1096,7 +1126,7 @@ def _get_charge_states(
 
 
 def _guess_complex_charge_states(
-    defect_complex: DefectComplex, probability_threshold: float = 0.0075, padding: int = 1
+    defect_complex: DefectComplex, probability_threshold: float = 0.0075
 ) -> tuple[list[int], list[dict]]:
     r"""
     Guess the possible stable charge states of a defect `complex`, from those
@@ -1119,9 +1149,6 @@ def _guess_complex_charge_states(
         probability_threshold (float):
             Probability threshold for including charge states, applied both to
             the constituents and to the combined probabilities. (Default: 0.0075)
-        padding (int):
-            Padding for constituent vacancy charge states; see
-            ``guess_defect_charge_states``. (Default: 1)
 
     Returns:
         tuple[list[int], list[dict]]:
@@ -1136,7 +1163,6 @@ def _guess_complex_charge_states(
             guess_defect_charge_states(
                 constituent,
                 probability_threshold=probability_threshold,
-                padding=padding,
                 return_log=True,
             ),
         )
@@ -1199,7 +1225,6 @@ def _guess_complex_charge_states(
             },
             "probability": probability,
             "probability_threshold": probability_threshold,
-            "padding": padding,
         }
         for charge_state, (probability, combo, _combo_probability) in sorted(
             distribution.items(), key=lambda item: item[1][0], reverse=True
@@ -1210,7 +1235,7 @@ def _guess_complex_charge_states(
 
 
 def guess_defect_charge_states(
-    defect: Defect, probability_threshold: float = 0.0075, padding: int = 1, return_log: bool = False
+    defect: Defect, probability_threshold: float = 0.0075, return_log: bool = False
 ) -> list[int] | tuple[list[int], list[dict]]:
     """
     Guess the possible stable charge states of a defect.
@@ -1223,12 +1248,28 @@ def guess_defect_charge_states(
     ``probability_threshold``.
 
     Disfavours large (absolute) charge states, low probability oxidation states
-    and greater charge/oxidation state magnitudes than that of the host. Note
-    that neutral charge states are always included.
+    and greater charge/oxidation state magnitudes than that of the host. The
+    neutral charge state is always included, as well as the fully-ionised
+    charge state (a.k.a. the natural charge state / 'defect oxidation state',
+    i.e. the simple oxidation state difference) for intrinsic defects. If no
+    charge states have probabilities above ``probability_threshold``, the most
+    probable charge state is included, and if the resulting charge state range
+    is only {0} (e.g. for elemental systems) or the defect is a homovalent
+    substitution then (-1, 0, +1) at minimum is included.
 
-    For specific details on the probability functions employed, see the
-    ``charge_state_probability`` (for substitutions and interstitials) and
-    ``get_vacancy_charge_states()`` (for vacancies) functions.
+    For substitutions and interstitials, the oxidation state probabilities are
+    those of the corresponding defect element (as given by their prevalence in
+    the ICSD), while for vacancies, effective 'oxidation states' of the vacant
+    site are used, with 100% probability for oxidation states between that of
+    the original site (i.e. the neutral vacancy) and zero (i.e. the
+    fully-ionised vacancy), and Gaussian-decaying probabilities (corresponding
+    to Boltzmann-weighted quadratic energy cost of additional charge;
+    ∝exp(-Δq²)) of ``(1/4)^(Δ²)`` (``= exp(-Δ²·ln4)``) where ``Δ`` is the
+    difference to the closest oxidation state in the 100% probability range, +1
+    if sign-reversed with respect to the original site oxidation state (i.e.
+    effectively anionic on a cation site or vice versa; beyond
+    'fully-ionised'). For specific details on the probability functions
+    employed, see the :func:`charge_state_probability()` function.
 
     For a defect `complex`, the charge states are instead combined from those of
     its constituent point defects; see ``_guess_complex_charge_states``.
@@ -1240,159 +1281,108 @@ def guess_defect_charge_states(
     the estimated charge states for your system!
 
     Args:
-        defect (|Defect|): ``doped`` |Defect| object.
+        defect (|Defect|):
+            ``doped`` |Defect| object. Note that ``defect.structure`` must have
+            oxidation states assigned (e.g. with
+            ``add_oxidation_state_by_element()``) for charge state guessing;
+            this is handled automatically when generating defects with
+            |DefectsGenerator|.
         probability_threshold (float):
-            Probability threshold for including defect charge states (for
-            substitutions and interstitials). Default is 0.0075.
-        padding (int):
-            Padding for vacancy charge states, such that the vacancy charge
-            states are set to ``range(vacancy oxi state, padding)`` if vacancy
-            oxidation state is negative, or to
-            ``range(-padding, vacancy oxi state)`` if positive. Default is 1.
+            Probability threshold for including defect charge states. Default
+            is 0.0075.
         return_log (bool):
-            If true, returns a tuple of the defect charge states and a list of
-            dictionaries of input & computed values used to determine charge
-            state probability. Default is ``False``.
+            If ``True``, returns a tuple of the defect charge states and a list
+            of dictionaries of input & computed values used to determine charge
+            state probabilities, including near-miss charge states (with
+            probabilities above 10% of ``probability_threshold``). Default is
+            ``False``.
 
     Returns:
         List of defect charge states (int) or a tuple of the defect charge
         states (list) and a list of dictionaries of input & computed values
         used to determine charge state probability.
     """
-    # Could consider bandgap magnitude as well, by pulling from Materials Project. Smaller gaps mean
-    # extreme charge states less likely. Would rather avoid having to query the database here though,
-    # as could give inconsistent results depending on whether the user generated defects with internet
-    # access or not (i.e. MP access or not). Will keep in mind.
+    # Could consider band gap magnitude as well, by pulling from Materials Project. Smaller gaps mean
+    # extreme charge states less likely. Would mean querying the MP database here though; not ideal.
     if isinstance(defect, DefectComplex):  # combine the constituent point defect charge states
         charge_states, charge_state_guessing_log = _guess_complex_charge_states(
-            defect, probability_threshold=probability_threshold, padding=padding
+            defect, probability_threshold=probability_threshold
         )
         return (charge_states, charge_state_guessing_log) if return_log else charge_states
 
-    if defect.defect_type == core.DefectType.Vacancy:
-        # Set defect charge state: from +/-1 to defect oxi state
-        vacancy_charge_states = get_vacancy_charge_states(defect, padding=padding)
-        if return_log:
-            charge_state_guessing_log = [
-                {
-                    "input_parameters": {
-                        "charge_state": int(charge_state),
-                    },
-                    "probability_factors": {"oxi_probability": 1},
-                    "probability": 1,
-                    "probability_threshold": probability_threshold,
-                    "padding": padding,
-                }
-                for charge_state in vacancy_charge_states
-            ]
-            return (vacancy_charge_states, charge_state_guessing_log)
-
-        return vacancy_charge_states
-
+    orig_oxi = get_defect_site_orig_oxi_state(defect)  # checks vacancy oxi state validity first
+    max_host_oxi_magnitude = round(max(abs(site.specie.oxi_state) for site in defect.structure))
     possible_oxi_states = _get_possible_oxi_states(defect)
-    max_host_oxi_magnitude = int(max(abs(site.specie.oxi_state) for site in defect.structure))
-    if defect.defect_type == core.DefectType.Substitution:
-        orig_oxi = int(defect.structure[defect.defect_site_index].specie.oxi_state)
-    else:  # interstitial
-        orig_oxi = 0
     possible_charge_states = _get_charge_states(
         possible_oxi_states, orig_oxi, max_host_oxi_magnitude, return_log=True
-    )
+    )  # compute charge state probabilities based on doped heuristic scoring functions
+    possible_charge_states = {  # prune negligible entries (e.g. vacancy oxi state tails), for a tidy log
+        k: v for k, v in possible_charge_states.items() if v["probability"] > 0.1 * probability_threshold
+    }
 
+    # checks; ensure fully-ionised included, and...
+    ensure_pm1 = False  # ...ensure at least (-1, 0, +1)? (homovalent substitutions, {0} charge ranges)
+    if defect.defect_type in (core.DefectType.Substitution, core.DefectType.Interstitial):
+        # if defect element is present in host structure (i.e. intrinsic), ensure fully-ionised included:
+        defect_el_oxi_states = [
+            site.specie.oxi_state
+            for site in defect.structure
+            if site.specie.symbol == defect.site.specie.symbol
+        ]
+        if defect_el_oxi_states:
+            defect_el_oxi_in_struct = round(float(np.mean(defect_el_oxi_states)))
+            defect_oxi_state = defect_el_oxi_in_struct - orig_oxi  # fully-ionised / natural charge state
+            charge_state_list = [
+                k for k, v in possible_charge_states.items() if v["probability"] > probability_threshold
+            ]
+            lower, upper = (
+                (min(charge_state_list), max(charge_state_list)) if charge_state_list else (0, 0)
+            )
+            if not lower <= defect_oxi_state <= upper:
+                possible_charge_states[defect_oxi_state] = charge_state_probability(
+                    defect_oxi_state,
+                    defect_el_oxi_in_struct,
+                    1,  # 100% oxidation state probability
+                    max_host_oxi_magnitude,
+                    return_log=True,
+                )
+            ensure_pm1 = (  # antisite of two equal oxi state elements, with one-sided charge range?
+                defect.defect_type == core.DefectType.Substitution
+                and defect_oxi_state == 0
+                and (lower >= 0 or upper <= 0)
+            )
+
+    # determine charge state range from probability dict and chosen threshold:
     if charge_state_list := [
         k for k, v in possible_charge_states.items() if v["probability"] > probability_threshold
     ]:
-        charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
-    else:
-        charge_state_range = (0, 0)
-
-    # check if defect element (interstitial/substitution) is present in structure (i.e. intrinsic
-    # interstitial or antisite):
-    defect_el_sites_in_struct = [
-        site for site in defect.structure if site.specie.symbol == defect.site.specie.symbol
-    ]
-    defect_el_oxi_in_struct = (
-        int(np.mean([site.specie.oxi_state for site in defect_el_sites_in_struct]))
-        if defect_el_sites_in_struct
-        else None
-    )
-
-    if (
-        defect.defect_type == core.DefectType.Substitution
-        and defect_el_oxi_in_struct is not None
-        and defect_el_oxi_in_struct - orig_oxi
-        not in range(charge_state_range[0], charge_state_range[1] + 1)
-    ):
-        # if simple antisite oxidation state difference not included, recheck with bumped up oxi_state
-        # probability for the oxi_state of the substitution atom in the structure
-        # should really be included unless it gives an absolute charge state >= 5, so set oxi_state
-        # probability to 100%
-        possible_charge_states[defect_el_oxi_in_struct - orig_oxi] = charge_state_probability(
-            defect_el_oxi_in_struct - orig_oxi,
-            defect_el_oxi_in_struct,
-            1,
-            max_host_oxi_magnitude,
-            return_log=True,
+        charge_state_range = (min(charge_state_list), max(charge_state_list))
+    else:  # no charge states over threshold; take most probable with probability > 0.1*threshold, or 0
+        over_log_threshold = [
+            k for k, v in possible_charge_states.items() if v["probability"] > 0.1 * probability_threshold
+        ]  # (only the injected fully-ionised entry can be below this, having skipped the earlier pruning)
+        most_likely_charge_state = max(
+            over_log_threshold, key=lambda k: possible_charge_states[k]["probability"], default=0
         )
-
-    if (
-        defect.defect_type == core.DefectType.Interstitial
-        and defect_el_oxi_in_struct is not None
-        and defect_el_oxi_in_struct not in range(charge_state_range[0], charge_state_range[1] + 1)
-    ):
-        # if oxidation state of interstitial element in the host structure is not included, include it!
-        possible_charge_states[defect_el_oxi_in_struct] = charge_state_probability(
-            defect_el_oxi_in_struct - orig_oxi,
-            defect_el_oxi_in_struct,
-            1,
-            max_host_oxi_magnitude,
-            return_log=True,
-        )
-
-    sorted_charge_state_dict = dict(
-        sorted(possible_charge_states.items(), key=lambda x: x[1]["probability"], reverse=True)
-    )
-
-    if charge_state_list := [
-        k for k, v in sorted_charge_state_dict.items() if v["probability"] > probability_threshold
-    ]:
-        charge_state_range = (int(min(charge_state_list)), int(max(charge_state_list)))
-    else:
-        # if no charge states are included, take most probable (if probability > 0.1*threshold)
-        charge_state_list = [
-            k
-            for k, v in sorted_charge_state_dict.items()
-            if v["probability"] > 0.1 * probability_threshold
-        ]
-
-        most_likely_charge_state = charge_state_list[0] if charge_state_list else 0
-
         charge_state_range = (most_likely_charge_state, most_likely_charge_state)
 
-    if (
-        defect.defect_type == core.DefectType.Substitution
-        and defect_el_oxi_in_struct is not None
-        and defect_el_oxi_in_struct - orig_oxi == 0
-        and (charge_state_range[0] >= 0 or charge_state_range[1] <= 0)
-    ) or (charge_state_range[0] == 0 and charge_state_range[1] == 0):
-        # if defect is an antisite of two equal oxi state elements, or if range is 0, ensure at least
-        # (-1, 0, +1) included
+    if ensure_pm1 or charge_state_range == (0, 0):  # ensure at least (-1, 0, +1) included for these cases:
         charge_state_range = (min(charge_state_range[0], -1), max(charge_state_range[1], 1))
-        for charge_state, probability_dict in sorted_charge_state_dict.items():
-            if charge_state in (-1, 0, 1):
+        for charge_state in (-1, 0, 1):
+            if probability_dict := possible_charge_states.get(charge_state):
                 probability_dict["probability"] = 1
 
     # set charge_state_range to min/max of range, ensuring range is extended to 0:
     charge_state_range = (min(charge_state_range[0], 0), max(charge_state_range[1], 0))
-
     guessed_charge_states = list(range(charge_state_range[0], charge_state_range[1] + 1))
 
-    for probability_dict in sorted_charge_state_dict.values():
+    for probability_dict in possible_charge_states.values():
         probability_dict["probability_threshold"] = probability_threshold
 
-    if return_log:
-        return guessed_charge_states, list(sorted_charge_state_dict.values())
-
+    if return_log:  # sorted by (final) probability, so forced-inclusion (probability = 1) entries at top:
+        return guessed_charge_states, sorted(
+            possible_charge_states.values(), key=lambda d: d["probability"], reverse=True
+        )
     return guessed_charge_states
 
 
@@ -1772,18 +1762,17 @@ class DefectsGenerator(MSONable):
         charge states, low probability oxidation states and/or greater
         charge/oxidation state magnitudes than that of the host are
         disfavoured. This can be controlled using the ``probability_threshold``
-        (default = 0.0075) or ``padding`` (default = 1) keys in the
-        ``charge_state_gen_kwargs`` parameter, which are passed to the
-        ``guess_defect_charge_states()`` function. The input and computed
-        values used to guess charge state probabilities are provided in the
-        ``DefectEntry.charge_state_guessing_log`` attributes. See docs for
-        examples of modifying the generated charge states, and the docstrings
-        of ``charge_state_probability()`` & ``get_vacancy_charge_states()`` for
-        more details on the charge state guessing algorithm. The ``doped``
-        algorithm was found to give optimal performance in terms of efficiency
-        and completeness (see JOSS paper), but of course may not be perfect in
-        all cases, so make sure to critically consider the estimated charge
-        states for your system!
+        (default = 0.0075) key in the ``charge_state_gen_kwargs`` parameter,
+        which is passed to the :func:`guess_defect_charge_states()` function.
+        The input and computed values used to guess charge state probabilities
+        are provided in the ``DefectEntry.charge_state_guessing_log``
+        attributes. See docs for examples of modifying the generated charge
+        states, and the :func:`charge_state_probability()` docstring for more
+        details on the charge state guessing algorithm. The ``doped`` algorithm
+        was found to give optimal performance in terms of efficiency and
+        completeness (see JOSS paper), but of course may not be perfect in all
+        cases, so make sure to critically consider the estimated charge states
+        for your system!
 
         Note that Wyckoff letters can depend on the ordering of elements in the
         conventional standard structure, for which doped uses the ``spglib``
@@ -1831,10 +1820,8 @@ class DefectsGenerator(MSONable):
                 Default is ``True``.
             charge_state_gen_kwargs (dict):
                 Keyword arguments to pass to the ``guess_defect_charge_states``
-                function (such as ``probability_threshold`` (default = 0.0075,
-                used for substitutions and interstitials) and ``padding``
-                (default = 1, used for vacancies)) to control defect charge
-                state generation.
+                function (such as ``probability_threshold``; default = 0.0075)
+                to control defect charge state generation.
             supercell_gen_kwargs (dict):
                 Keyword arguments to pass to the ``get_ideal_supercell_matrix``
                 function (such as ``min_image_distance`` (default = 10),
@@ -1843,16 +1830,17 @@ class DefectsGenerator(MSONable):
                 supercell output (default = False), or ``force_diagonal``
                 (default = False)).
             interstitial_gen_kwargs (dict, bool):
-                Keyword arguments to be passed to
-                :func:`~doped.generation.get_interstitial_sites()` (such as
+                Keyword arguments for :func:`get_interstitial_sites()` (such as
                 ``min_dist`` (0.9 Å, or 0.5 Å for Hydrogen), ``clustering_tol``
                 (0.8 Å), ``symm_pref_dist_factor`` (0.85), ``stol`` (0.32),
                 ``tight_stol`` (0.02), ``symprec`` (0.01), ``vacuum_radius``
-                (1.5 * bulk bond length), ``include_unique_wyckoffs`` (False)
-                -- see its docstring, parentheses indicate default values), or
-                ``InterstitialGenerator`` (where only ``min_dist`` is used) if
-                ``interstitial_coords`` is specified. If set to ``False``,
-                interstitial generation will be skipped entirely.
+                (1.5 * bulk bond length), ``include_unique_wyckoffs`` (False),
+                ``include_bond_centres`` (False, or True for Hydrogen),
+                ``bond_tol`` (0.2) -- see its docstring, parentheses indicate
+                default values), or ``InterstitialGenerator`` (where only
+                ``min_dist`` is used) if ``interstitial_coords`` is specified.
+                If set to ``False``, interstitial generation will be skipped
+                entirely.
             target_frac_coords (list):
                 Defects are placed at the closest equivalent site to these
                 fractional coordinates in the generated supercells. Default is
@@ -1877,8 +1865,7 @@ class DefectsGenerator(MSONable):
                   ``get_primitive_structure``, defect object initialisation
                   etc. Default is ``0.01``.
                 - Keyword arguments for ``get_all_equiv_sites``, such as
-                  ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
-                  and ``verbose``.
+                  ``dist_tol_factor``.
 
         Key attributes:
             defect_entries (dict):
@@ -1935,8 +1922,19 @@ class DefectsGenerator(MSONable):
         self.prim_interstitial_coords_mult_and_equiv_coords: list[tuple] = []
         self.generate_supercell = generate_supercell
         self.charge_state_gen_kwargs = (
-            charge_state_gen_kwargs if charge_state_gen_kwargs is not None else {}
+            dict(charge_state_gen_kwargs) if charge_state_gen_kwargs is not None else {}
         )
+        if "padding" in self.charge_state_gen_kwargs:  # TODO: remove in v4.1
+            warnings.warn(
+                "The `padding` option (for vacancy charge state guessing) was removed in doped v4.0, with "
+                "vacancy charge states now determined by the same probability-based scheme as other "
+                "defects (see the `guess_defect_charge_states()` docstring) -- ignoring `padding`; use "
+                "`probability_threshold` to control the guessed charge state ranges.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            del self.charge_state_gen_kwargs["padding"]
+
         self.supercell_gen_kwargs: dict[str, Any] = {
             "min_image_distance": 10.0,  # same as current pymatgen-analysis-defects `min_length` ( = 10)
             "min_atoms": 50,  # different from current pymatgen-analysis-defects `min_atoms` ( = 80)
@@ -2278,16 +2276,13 @@ class DefectsGenerator(MSONable):
         pbar.update(5)  # 30% of progress bar
 
     def _generate_interstitials(self, pbar: tqdm):
-        if (
-            self.interstitial_gen_kwargs is False or self.kwargs.get("interstitial_elements", True) == []
-        ):  # skip interstitials
-            return
+        if self.interstitial_gen_kwargs is False or self.kwargs.get("interstitial_elements", True) == []:
+            return  # skip interstitials
 
-        interstitial_gen_kwargs: dict[str, Any] = (
-            self.interstitial_gen_kwargs if isinstance(self.interstitial_gen_kwargs, dict) else {}
-        )
-        interstitial_gen_kwargs["symprec"] = self.symprec
-        self.interstitial_gen_kwargs = interstitial_gen_kwargs
+        self.interstitial_gen_kwargs = interstitial_gen_kwargs = {
+            **(self.interstitial_gen_kwargs if isinstance(self.interstitial_gen_kwargs, dict) else {}),
+            "symprec": self.symprec,
+        }
 
         pbar.set_description("Generating interstitials")
         if self.interstitial_coords:
@@ -2300,11 +2295,7 @@ class DefectsGenerator(MSONable):
                     equiv_coords=True,
                     symprec=self.symprec,
                     dist_tol_factor=self.kwargs.get("dist_tol_factor", 1.0),
-                    fixed_symprec_and_dist_tol_factor=self.kwargs.get(
-                        "fixed_symprec_and_dist_tol_factor", False
-                    ),
-                    verbose=self.kwargs.get("verbose", False),
-                )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
+                )  # equiv_coords=True
                 assert isinstance(equiv_frac_coords_in_prim, list | np.ndarray)
                 self.prim_interstitial_coords_mult_and_equiv_coords.append(
                     (
@@ -2325,24 +2316,21 @@ class DefectsGenerator(MSONable):
 
         self.defects["interstitials"] = []
         for el in self.kwargs.get("interstitial_elements", self._element_list):
-            if el == "H" and "min_dist" not in interstitial_gen_kwargs and not self.interstitial_coords:
-                # Hydrogen present, min_dist not set, and no manually-specified interstitial sites;
-                # so re-generate interstitial sites for Hydrogen with min_dist = 0.5
-                ig = InterstitialGenerator(min_dist=0.5)
-                H_sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
-                    host_structure=self.primitive_structure,
-                    min_dist=0.5,
-                    **interstitial_gen_kwargs,
-                )
-                cand_sites, multiplicity, equiv_fpos = zip(
-                    *H_sorted_sites_mul_and_equiv_fpos, strict=False
+            if (
+                el == "H"
+                and not self.interstitial_coords
+                and (H_gen_kwargs := {**_H_INTERSTITIAL_GEN_KWARGS, **interstitial_gen_kwargs})
+                != interstitial_gen_kwargs
+            ):
+                # Hydrogen present, H-specific generation defaults not overridden, and no manually
+                # specified interstitial sites; so re-generate interstitial sites for H with these settings
+                interstitial_gen_kwargs = H_gen_kwargs
+                sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
+                    self.primitive_structure, **H_gen_kwargs
                 )
 
-            else:
-                ig = InterstitialGenerator(interstitial_gen_kwargs.get("min_dist", 0.9))
-                cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
-
-            inter_generator = ig.generate(
+            cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
+            inter_generator = InterstitialGenerator(interstitial_gen_kwargs.get("min_dist", 0.9)).generate(
                 self.primitive_structure,
                 insertions={el: cand_sites},
                 multiplicities={el: multiplicity},
@@ -2351,10 +2339,8 @@ class DefectsGenerator(MSONable):
                 symprec=self.symprec,
             )
             self.defects["interstitials"].extend(
-                [
-                    Interstitial._from_pmg_defect(inter, bulk_oxi_states=self._bulk_oxi_states)
-                    for inter in inter_generator
-                ]
+                Interstitial._from_pmg_defect(inter, bulk_oxi_states=self._bulk_oxi_states)
+                for inter in inter_generator
             )
 
             # check if any manually-specified interstitials were skipped due to min_dist and
@@ -2498,7 +2484,7 @@ class DefectsGenerator(MSONable):
             for charge in charge_states:
                 defect_entry = deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
                 defect_entry.charge_state = charge
-                defect_entry.name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
+                defect_entry.name = f"{defect_name_wout_charge}_{_signed_charge(charge)}"
                 self.defect_entries[defect_entry.name] = defect_entry
 
             pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
@@ -3115,7 +3101,7 @@ class DefectsGenerator(MSONable):
             name
             for charge in charge_states
             for name in matching_entry_names_wout_charge
-            if name.endswith(f"_{'+' if charge > 0 else ''}{charge}")
+            if name.endswith(f"_{_signed_charge(charge)}")
         ]
 
     def add_charge_states(self, defect_entry_name: str, charge_states: list | int):
@@ -3150,9 +3136,7 @@ class DefectsGenerator(MSONable):
             for charge in charge_states:
                 defect_entry = deepcopy(previous_defect_entry)
                 defect_entry.charge_state = charge
-                defect_entry.name = (
-                    f"{defect_entry.name.rsplit('_', 1)[0]}_{'+' if charge > 0 else ''}{charge}"
-                )
+                defect_entry.name = f"{defect_entry.name.rsplit('_', 1)[0]}_{_signed_charge(charge)}"
                 self.defect_entries[defect_entry.name] = defect_entry
 
         # sort defects and defect entries for deterministic behaviour:
@@ -3751,6 +3735,70 @@ def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
     return stol * (structure.volume / len(structure)) ** (1 / 3)
 
 
+def get_bond_centre_sites(
+    host_structure: Structure, bond_tol: float = 0.2, symprec: float = 0.01
+) -> list[tuple[np.ndarray, int, list[np.ndarray]]]:
+    """
+    Get the symmetry-inequivalent bond-centre sites (i.e. midpoints of nearest-
+    neighbour bonds) in ``host_structure``.
+
+    Bond-centre sites are often favoured by hydrogen interstitials (e.g. in
+    covalent semiconductors), but are excluded by the Voronoi approach in
+    ``get_interstitial_sites`` (as they lie close to host atoms and are
+    unlikely for most interstitial species, other than Hydrogen).
+
+    Bonds are taken as pairs of sites separated by no more than
+    ``(1 + bond_tol)`` times the shortest bond length of either site (i.e. its
+    distance to its nearest neighbour, of any species). Bonds to hydrogen are
+    excluded.
+
+    Args:
+        host_structure (|Structure|): Host structure.
+        bond_tol (float):
+            Fractional tolerance for bond lengths, relative to the shortest
+            bond length of each site, to include for bond centre sites.
+            Default is 0.2.
+        symprec (float):
+            Symmetry precision for (symmetry-)equivalent site determination.
+            Default is 0.01.
+
+    Returns:
+        list[tuple[np.ndarray, int, list[np.ndarray]]]:
+            List of ``(frac_coords, multiplicity, equiv_frac_coords)`` for each
+            symmetry-inequivalent bond-centre site, as in the output of
+            ``get_interstitial_sites``.
+    """
+    r = 2 * (host_structure.volume / len(host_structure)) ** (1 / 3)  # ~2x mean site spacing
+    while not all(all_neighbours := host_structure.get_all_neighbors(r)):  # need a neighbour for each site
+        r *= 1.5
+    shortest_bonds = [min(nbr.nn_distance for nbr in neighbours) for neighbours in all_neighbours]
+    if (bond_cutoff := (1 + bond_tol) * max(shortest_bonds)) > r:
+        all_neighbours = host_structure.get_all_neighbors(bond_cutoff)
+
+    bond_centre_sites: list[tuple[np.ndarray, int, list[np.ndarray]]] = []
+    for i, (site, neighbours) in enumerate(zip(host_structure, all_neighbours, strict=True)):
+        for neighbour in neighbours:
+            if "H" in {site.specie.symbol, neighbour.specie.symbol} or neighbour.nn_distance > (
+                1 + bond_tol
+            ) * max(shortest_bonds[i], shortest_bonds[neighbour.index]):
+                continue  # not bonded, or bonded to H (bond centres of bonds to H are not meaningful)
+            bond_centre = host_structure.lattice.get_fractional_coords(
+                (site.coords + neighbour.coords) / 2
+            )
+            if any(  # each bond is found from both ends, and symmetry-equivalent bonds already included
+                np.min(host_structure.lattice.get_all_distances(equiv_fpos, bond_centre)) < 0.1
+                for *_, equiv_fpos in bond_centre_sites
+            ):
+                continue
+            equiv_fpos = symmetry.get_all_equiv_sites(
+                bond_centre, host_structure, symprec=symprec, just_frac_coords=True
+            )
+            equiv_fpos = sorted(cast("list[np.ndarray]", equiv_fpos), key=symmetry._frac_coords_sort_func)
+            bond_centre_sites.append((equiv_fpos[0], len(equiv_fpos), equiv_fpos))
+
+    return bond_centre_sites
+
+
 @lru_cache(maxsize=int(1e4))
 def get_interstitial_sites(
     host_structure: Structure,
@@ -3762,6 +3810,8 @@ def get_interstitial_sites(
     symprec: float = 0.01,
     vacuum_radius: float | None = None,
     include_unique_wyckoffs: bool = False,
+    include_bond_centres: bool = False,
+    bond_tol: float = 0.2,
 ) -> list:
     """
     Generate candidate interstitial sites using Voronoi analysis.
@@ -3795,6 +3845,10 @@ def get_interstitial_sites(
       distance from the host atoms, if its ``min_dist`` is no more than
       no more than ``symm_pref_dist_factor`` (0.85 by default) times the largest
       possible ``min_dist`` (distanceto the host atoms).
+    - If ``include_bond_centres`` is ``True``, add bond-centre sites (see
+      ``get_bond_centre_sites``), excluding any within ``min_dist`` of host
+      atoms or coinciding with the sites above (i.e. within the distance
+      equivalent of ``tight_stol``; see ``get_stol_equiv_dist``).
 
     (Parameters mentioned here can be supplied via ``interstitial_gen_kwargs``
     as noted in the args section below.)
@@ -3815,8 +3869,10 @@ def get_interstitial_sites(
 
     You can see what Cartesian distance the chosen ``stol`` corresponds to
     using the ``get_stol_equiv_dist`` function. Note that you will likely want
-    to reduce ``min_dist`` for hydrogen interstitials! (This is done by default
-    with |DefectsGenerator|, reducing it to 0.5 Å for Hydrogen.)
+    to reduce ``min_dist`` and include bond-centre sites for hydrogen
+    interstitials! (This is done by default with |DefectsGenerator|, reducing
+    ``min_dist`` to 0.5 Å and setting ``include_bond_centres = True`` for
+    Hydrogen.)
 
     Args:
         host_structure (|Structure|): Host structure.
@@ -3853,6 +3909,17 @@ def get_interstitial_sites(
             but will increase the number of candidate interstitials and is
             not expected to locate lower-energy sites compared to the default
             Voronoi approach in most cases. Defaults to ``False``.
+        include_bond_centres (bool):
+            Include bond-centre sites (i.e. midpoints of nearest-neighbour
+            bonds; see ``get_bond_centre_sites``) in the set of candidate
+            interstitial sites. These are often favoured by hydrogen
+            interstitials, but are excluded by the Voronoi generation approach.
+            Defaults to ``False`` (but set to ``True`` for Hydrogen by default
+            in |DefectsGenerator|).
+        bond_tol (float):
+            Fractional bond length tolerance for determining bond-centre sites,
+            if ``include_bond_centres`` is ``True`` (see
+            ``get_bond_centre_sites``). Default is 0.2.
 
 
     Returns:
@@ -3897,12 +3964,6 @@ def get_interstitial_sites(
         sites_list.extend(wyckoff_candidate_frac_coords)
 
     sites_array = remove_collisions(sites_list, structure=host_structure, min_dist=min_dist)
-    if sites_array.size == 0:
-        warnings.warn(
-            f"No interstitial sites found after removing those within {min_dist} Å of host atoms!"
-        )
-        return []
-
     site_frac_coords_array = symmetry.doped_cluster_frac_coords(
         sites_array,
         host_structure,
@@ -3931,7 +3992,6 @@ def get_interstitial_sites(
                         frac_coords,
                         host_structure,
                         symprec=symprec,
-                        return_symprec_and_dist_tol_factor=False,
                     ),
                 )
             ]
@@ -4034,11 +4094,31 @@ def get_interstitial_sites(
                 else symmetry_favoured_site_mul_and_equiv_fpos
             )
 
+    # bond-centre sites are added after grouping, as they could otherwise be dropped in favour of nearby
+    # (higher-symmetry, further from host atoms) candidate sites by the looser site grouping above:
+    if include_bond_centres:
+        cand_fpos = [fpos for *_, equiv_fpos in cand_site_mul_and_equiv_fpos_list for fpos in equiv_fpos]
+        for bond_centre_site_mul_and_equiv_fpos in get_bond_centre_sites(
+            host_structure, bond_tol=bond_tol, symprec=symprec
+        ):
+            bond_centre_fpos = bond_centre_site_mul_and_equiv_fpos[0]
+            cand_dists = host_structure.lattice.get_all_distances(cand_fpos, bond_centre_fpos)
+            if (
+                remove_collisions([bond_centre_fpos], structure=host_structure, min_dist=min_dist).size
+                and np.min(cand_dists, initial=np.inf) > tight_dist
+            ):  # not coinciding with other candidates or within min_dist of host atoms
+                cand_site_mul_and_equiv_fpos_list.append(bond_centre_site_mul_and_equiv_fpos)
+
     sorted_sites_mul_and_equiv_fpos = []
     for _cand_site, multiplicity, equiv_fpos in cand_site_mul_and_equiv_fpos_list:
         # take site with equiv_fpos sorted by symmetry._frac_coords_sort_func:
         sorted_equiv_fpos = sorted(equiv_fpos, key=symmetry._frac_coords_sort_func)
         ideal_cand_site = sorted_equiv_fpos[0]
         sorted_sites_mul_and_equiv_fpos.append((ideal_cand_site, multiplicity, sorted_equiv_fpos))
+
+    if not sorted_sites_mul_and_equiv_fpos:
+        warnings.warn(
+            f"No interstitial sites found after removing those within {min_dist} Å of host atoms!"
+        )
 
     return sorted_sites_mul_and_equiv_fpos
