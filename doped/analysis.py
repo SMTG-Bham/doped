@@ -19,6 +19,10 @@ import numpy as np
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn
 from mp_api.client import MPRester
+from pymatgen.analysis.defects.corrections.freysoldt import (
+    _get_dielectric_tensor,
+    get_spherically_averaged_dielectric,
+)
 from pymatgen.core import Element
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Structure
@@ -94,63 +98,7 @@ def _custom_formatwarning(
 warnings.formatwarning = _custom_formatwarning
 _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
-_aniso_dielectric_but_outcar_problem_warning = (
-    "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
-    "_anisotropic_ Kumagai eFNV charge correction) "
-)
-# Neither new nor old pymatgen FNV correction can do anisotropic dielectrics (while new sxdefectalign can)
-_aniso_dielectric_but_using_locpot_warning = (
-    "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) charge "
-    "correction developed for _isotropic_ materials will be applied here, which corresponds to using the "
-    "effective isotropic average of the supplied anisotropic dielectric. This could lead to significant "
-    "errors for very anisotropic systems and/or relatively small supercells!"
-)
-
 _BULK_FOLDER_PATTERN = "bulk"
-
-
-def _convert_dielectric_to_tensor(dielectric: float | np.ndarray | list) -> np.ndarray:
-    # check if dielectric in required 3x3 matrix format
-    if not isinstance(dielectric, float | int):
-        dielectric = np.array(dielectric)
-        if dielectric.shape == (3,):
-            dielectric = np.diag(dielectric)
-        elif dielectric.shape != (3, 3):
-            raise ValueError(
-                f"Dielectric constant must be a float/int or a 3x1 matrix or 3x3 matrix, "
-                f"got type {type(dielectric)} and shape {dielectric.shape}"
-            )
-
-    else:
-        dielectric = np.eye(3) * dielectric
-
-    return dielectric  # TODO: Can use _get_dielectric_tensor in next pymatgen-analysis-defects release
-
-
-def _convert_anisotropic_dielectric_to_isotropic_spherical_average(
-    aniso_dielectric: np.ndarray | list,
-) -> float:
-    r"""
-    Convert an anisotropic dielectric tensor to the equivalent isotropic
-    dielectric constant, as the spherical average of the directional response:
-    :math:`1/\bar{\epsilon} = \langle 1/(\hat{g}^T \epsilon \hat{g}) \rangle`
-    over unit vectors :math:`\hat{g}`.
-
-    This is the isotropic dielectric used by ``sxdefectalign`` for the isolated
-    self-energy and alignment terms of the anisotropic FNV correction, and is
-    exact for the spherically-averaged potential of a point charge
-    (:math:`q/\bar{\epsilon}r`) and so the energy of spherical charge
-    distributions in anisotropic media. It lies between the harmonic and
-    arithmetic means of the eigenvalues :math:`\lambda_i`, and is computed as
-    :math:`\sqrt{\det\epsilon} / R_F(1/\lambda_1, 1/\lambda_2, 1/\lambda_3)`,
-    with :math:`R_F` the Carlson symmetric elliptic integral.
-    """
-    from scipy.special import elliprf
-    # TODO: Can use get_spherically_averaged_dielectric in next pymatgen-analysis-defects release
-
-    aniso_dielectric = np.asarray(aniso_dielectric, dtype=float)
-    eigvals = np.linalg.eigvalsh((aniso_dielectric + aniso_dielectric.T) / 2)
-    return float(np.sqrt(np.prod(eigvals)) / elliprf(*(1 / eigvals)))
 
 
 def check_and_set_defect_entry_name(
@@ -835,6 +783,12 @@ class DefectsParser:
         calculations. Note that the bulk and defect supercells should have the
         same definitions/basis sets (for site-matching and finite-size charge
         corrections to work appropriately).
+
+        Finite-size charge corrections are computed with the Kumagai-Oba (eFNV)
+        scheme by default (recommended, being more robust and efficient), using
+        the ``OUTCAR(.gz)`` files in the defect and bulk folders. If these are
+        not present (or cannot be parsed), the Freysoldt (FNV) scheme is used
+        instead, if ``LOCPOT(.gz)`` files are present.
 
         Args:
             output_path (PathLike):
@@ -1887,94 +1841,52 @@ def _handle_charge_correction_errors(
             Additional keyword arguments, such as
             ``shallow_charge_stability_tolerance``.
     """
-    FNV_correction_errors: list[tuple[str, float]] = []
-    eFNV_correction_errors: list[tuple[str, float]] = []
     defect_thermo = DefectThermodynamics(
         list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
     )
+    shallow_tol = kwargs.get(
+        "shallow_charge_stability_tolerance",
+        min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
+    )
+    fmt = ".3f" if error_tolerance >= 0.01 else ".2e"  # meV rounding if tol >= 10 meV, else sci notation
+    correction_errors: dict[tuple, list[str]] = {("Freysoldt", "FNV"): [], ("Kumagai", "eFNV"): []}
 
     for name, defect_entry in defect_dict.items():
-        # first check if it's a stable defect:
-        fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
+        # no charge correction warnings for unstable charge states (we avoid prune_to_stable_entries()
+        # here, as this would require two |DefectThermodynamics| inits):
+        window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
+        if window < 0 or (defect_entry.is_shallow and window < shallow_tol):
+            continue
+        for (long_name, _), errors in correction_errors.items():
+            err = defect_entry.corrections_metadata.get(f"{long_name.lower()}_charge_correction_error", 0)
+            if err > error_tolerance:
+                errors.append(f"{name}: {err:{fmt}} eV")
 
-        if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method here
-            defect_entry.is_shallow  # as this would require two |DefectThermodynamics| inits...
-            and fermi_stability_window
-            < kwargs.get(
-                "shallow_charge_stability_tolerance",
-                min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
+    for (long_name, short_name), errors in correction_errors.items():
+        if errors:
+            errors_str = "\n".join(errors)
+            warnings.warn(
+                f"Estimated error in the {long_name} ({short_name}) charge correction for certain defects "
+                f"is greater than the `error_tolerance` (= {error_tolerance:{fmt}} eV):\n{errors_str}\n"
+                f"You may want to check the accuracy of the corrections by plotting the site potential "
+                f"differences (using `defect_entry.get_{long_name.lower()}_correction()` with "
+                f"`plot=True`). Large errors are often due to unstable or shallow defect charge states "
+                f"(which can't be accurately modelled with the supercell approach). If these errors are "
+                f"not acceptable, you may need to use a larger supercell for more accurate energies."
             )
-        ):
-            continue  # no charge correction warnings for unstable charge states
-
-        for correction_type, correction_error_list in [
-            ("freysoldt", FNV_correction_errors),
-            ("kumagai", eFNV_correction_errors),
-        ]:
-            if (
-                defect_entry.corrections_metadata.get(f"{correction_type}_charge_correction_error", 0)
-                > error_tolerance
-            ):
-                correction_error_list.append(
-                    (
-                        name,
-                        defect_entry.corrections_metadata[f"{correction_type}_charge_correction_error"],
-                    )
-                )
-
-    def _call_multiple_corrections_tolerance_warning(correction_errors, type="FNV"):
-        long_name = "Freysoldt" if type == "FNV" else "Kumagai"
-        if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
-            error_tol_string = f"{error_tolerance:.3f}"
-            correction_errors_string = "\n".join(
-                f"{name}: {error:.3f} eV" for name, error in correction_errors
-            )
-        else:  # else give in scientific notation:
-            error_tol_string = f"{error_tolerance:.2e}"
-            correction_errors_string = "\n".join(
-                f"{name}: {error:.2e} eV" for name, error in correction_errors
-            )
-
-        warnings.warn(
-            f"Estimated error in the {long_name} ({type}) charge correction for certain defects is "
-            f"greater than the `error_tolerance` (= {error_tol_string} eV):"
-            f"\n{correction_errors_string}\n"
-            f"You may want to check the accuracy of the corrections by plotting the site potential "
-            f"differences (using `defect_entry.get_{long_name.lower()}_correction()` with "
-            f"`plot=True`). Large errors are often due to unstable or shallow defect charge states "
-            f"(which can't be accurately modelled with the supercell approach). If these errors are "
-            f"not acceptable, you may need to use a larger supercell for more accurate energies."
-        )
-
-    for correction_errors, type in [
-        (FNV_correction_errors, "FNV"),
-        (eFNV_correction_errors, "eFNV"),
-    ]:
-        if correction_errors:
-            _call_multiple_corrections_tolerance_warning(correction_errors, type=type)
 
     # check if same type of charge correction was used in each case or not:
-    if (
-        len(
-            {
-                k
-                for defect_entry in defect_dict.values()
-                for k in defect_entry.corrections
-                if k.endswith("_charge_correction")
-            }
-        )
-        > 1
-    ):
+    charge_correction_types = {
+        k for entry in defect_dict.values() for k in entry.corrections if k.endswith("_charge_correction")
+    }
+    if len(charge_correction_types) > 1:
         warnings.warn(
             "Beware: The Freysoldt (FNV) charge correction scheme has been used for some defects, "
-            "while the Kumagai (eFNV) scheme has been used for others. For _isotropic_ materials, "
-            "this should be fine, and the results should be the same regardless (assuming a "
-            "relatively well-converged supercell size), while for _anisotropic_ materials this could "
-            "lead to some quantitative inaccuracies. You can use the "
-            "`DefectThermodynamics.get_formation_energies()` method to print out the calculated "
-            "charge corrections for all defects, and/or visualise the charge corrections using "
-            "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to "
-            "check."
+            "while the Kumagai (eFNV) scheme has been used for others. For a relatively well-converged "
+            "supercell size, this should be ok, but can introduce errors at small-to-medium supercells. "
+            "You can use the DefectThermodynamics.get_formation_energies()` method to print out the "
+            "calculated charge corrections for all defects, and/or visualise the charge corrections using "
+            "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to check."
         )
     # note that we also check if multiple charge corrections have been applied to the same defect
     # within the charge correction functions (with _check_if_multiple_finite_size_corrections())
@@ -2298,6 +2210,12 @@ class DefectParser:
         definitions/basis sets (for site-matching and finite-size charge
         corrections to work appropriately).
 
+        Finite-size charge corrections are computed with the Kumagai-Oba (eFNV)
+        scheme by default (recommended, being more robust and efficient), using
+        the ``OUTCAR(.gz)`` files in the defect and bulk folders. If these are
+        not present (or cannot be parsed), the Freysoldt (FNV) scheme is used
+        instead, if ``LOCPOT(.gz)`` files are present.
+
         Args:
             defect_path (PathLike):
                 Path to defect supercell folder (containing at least
@@ -2528,7 +2446,7 @@ class DefectParser:
 
         # check if charge corrections are possible, and apply if so (and ``skip_corrections = False``):
         if dielectric is not None:
-            dp.defect_entry.calculation_metadata["dielectric"] = _convert_dielectric_to_tensor(dielectric)
+            dp.defect_entry.calculation_metadata["dielectric"] = _get_dielectric_tensor(dielectric).copy()
 
         elif not skip_corrections and charge_state != 0:
             warnings.warn(
@@ -2549,12 +2467,10 @@ class DefectParser:
         return dp
 
     def _check_and_load_appropriate_charge_correction_data(self):
-        dielectric = self.defect_entry.calculation_metadata["dielectric"]
         bulk_path = self.defect_entry.calculation_metadata["bulk_path"]
         defect_path = self.defect_entry.calculation_metadata["defect_path"]
 
-        # determine charge correction to use, based on what output files are available (`LOCPOT`s or
-        # `OUTCAR`s), and whether the supplied dielectric is isotropic or not
+        # determine charge correction scheme, based on output files available (`LOCPOT`s or `OUTCAR`s)
         def _check_folder_for_file_match(folder, filename):
             return os.path.isdir(folder) and any(
                 filename.lower() in folder_filename.lower() for folder_filename in os.listdir(folder)
@@ -2571,9 +2487,9 @@ class DefectParser:
             or _check_folder_for_file_match(bulk_path, "LOCPOT")
         )
 
-        # regardless, try parsing OUTCAR files first (quickest, more robust for cases where defect
+        # regardless, try parsing OUTCAR files first (quickest, and more robust for cases where defect
         # charge is localised somewhat off the (auto-determined) defect site (e.g. split-interstitials
-        # etc) and also works regardless of isotropic/anisotropic), falling back to LOCPOTs (FNV):
+        # etc)), falling back to LOCPOTs (FNV):
         kumagai_exc = None
         if efnv_data_available:
             try:
@@ -2591,9 +2507,8 @@ class DefectParser:
                 )
             else:
                 warnings.warn(
-                    f"`OUTCAR` files (needed to compute the Kumagai eFNV charge correction for "
-                    f"_anisotropic_ and isotropic systems) in the defect or bulk folder were unable "
-                    f"to be parsed, giving the following error message:"
+                    f"`OUTCAR` files (needed to compute the Kumagai (eFNV) charge correction) in the "
+                    f"defect or bulk folder were unable to be parsed, giving the following error message:"
                     f"\n{kumagai_exc}\n"
                     f"-> Charge corrections will not be applied for this defect."
                 )
@@ -2614,24 +2529,6 @@ class DefectParser:
                 f"\n{freysoldt_exc}\n-> Charge corrections will not be applied for this defect."
             )
             return True
-
-        # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
-        if not np.allclose(np.diag(dielectric), dielectric[0, 0], rtol=0.2):
-            # convert anisotropic dielectric to its spherical average (better approximation than the
-            # pymatgen default): -- TODO: Remove with next pmg-defects release
-            self.defect_entry.calculation_metadata["dielectric"] = (
-                _convert_anisotropic_dielectric_to_isotropic_spherical_average(dielectric)
-            )
-            warnings.warn(
-                _aniso_dielectric_but_outcar_problem_warning
-                + (
-                    "are missing from the defect or bulk folder.\n"
-                    if kumagai_exc is None
-                    else "in the defect or bulk folder were unable to be parsed, giving the following "
-                    f"error message:\n{kumagai_exc}\n"
-                )
-                + _aniso_dielectric_but_using_locpot_warning
-            )
 
         return False
 
@@ -3101,7 +2998,5 @@ def shallow_dopant_binding_energy(
 
     rydberg_in_eV = sc.physical_constants["Rydberg constant times hc in eV"][0]
 
-    eff_dielectric = _convert_anisotropic_dielectric_to_isotropic_spherical_average(
-        _convert_dielectric_to_tensor(dielectric)
-    )
+    eff_dielectric = get_spherically_averaged_dielectric(dielectric)
     return rydberg_in_eV * (eff_mass / eff_dielectric**2)  # in eV

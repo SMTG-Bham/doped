@@ -23,7 +23,7 @@ dependencies = [
     "numpy>=1.21.0",
     "pymatgen-core>=2026.8.30",  # basis-independent ``get_point_group_symbol()``
     # requires spglib >= 2.5
-    "pymatgen-analysis-defects>=2023.8.22",
+    "pymatgen-analysis-defects>=2026.10.16",  # anisotropic FNV & ``get_spherically_averaged_dielectric``
     "mp-api>=0.45",  # for Materials Project queries via ``mp_api.client.MPRester``
     "shakenbreak>=3.4.5",  # parameter re-ordering for ``get_defect_type_...`` functions
     "pandas",

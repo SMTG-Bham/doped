@@ -4,25 +4,26 @@ systems.
 
 The charge-correction methods implemented are:
 
-1. Extended FNV (eFNV) / Kumagai correction for isotropic and anistropic
-   systems. This is the recommended default as it works regardless of system
-   (an)isotropy, has a more efficient implementation and tends to be more
-   robust in cases of small supercells.
+1. Extended FNV (eFNV) / Kumagai correction for isotropic and anisotropic
+   systems. This is the recommended default as it has a more efficient
+   implementation and tends to be more robust in cases of small supercells.
    Includes:
 
-       a) anisotropic PC energy (optionally multiple PCs).
-       b) potential alignment by atomic site averaging outside the defect
-          region.
+       a) anisotropic point-charge (PC) energy (optionally multiple PCs).
+       b) potential alignment by averaging atomic site potential differences,
+          in a sampling region away from the defect.
 
-2. Freysoldt (FNV) correction for isotropic systems. Only recommended if eFNV
-   correction fails for some reason. Includes:
+2. Freysoldt (FNV) correction for isotropic and anisotropic systems (with
+   anisotropic screening treated as in ``sxdefectalign``). Only recommended if
+   eFNV correction fails for some reason. Includes:
 
-       a) point-charge (PC) energy.
-       b) potential alignment by planar averaging.
+       a) anisotropic point-charge energy.
+       b) potential alignment by planar averaging the volumetric potential
+          difference, in planar regions furthest from the defect.
 
 If you use the corrections implemented in this module, please cite:
 
-    Kumagai and Oba, Phys. Rev. B. 89, 195205 (2014) for the eFNV correction
+    Kumagai and Oba, Phys. Rev. B. 2014 for the eFNV correction
     or
     Freysoldt, Neugebauer, and Van de Walle, Phys. Rev. Lett. 2009 for FNV.
 
@@ -53,7 +54,7 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.util.typing import PathLike
 
-from doped.analysis import _convert_dielectric_to_tensor
+from doped.analysis import _custom_formatwarning
 from doped.utils import vise_handling
 from doped.utils.parsing import (
     _get_bulk_supercell,
@@ -67,6 +68,8 @@ from doped.utils.parsing import (
 )
 from doped.utils.plotting import doped_plot_style, format_defect_name
 from doped.utils.supercells import _get_min_image_distance_from_matrix, _get_unwrapped_complex_fc
+
+warnings.formatwarning = _custom_formatwarning
 
 
 def _monty_decode_nested_dicts(d):
@@ -139,13 +142,19 @@ def get_freysoldt_correction(
     **kwargs,
 ) -> CorrectionResult:
     """
-    Function to compute the `isotropic` Freysoldt (FNV) correction for the
-    input defect_entry.
+    Function to compute the Freysoldt (FNV) correction for the input
+    defect_entry.
 
     This function `does not` add the correction to ``defect_entry.corrections``
     (but the ``defect_entry.get_freysoldt_correction`` method does). If this
     correction is used, please cite Freysoldt's original paper;
     10.1103/PhysRevLett.102.016402.
+
+    Anisotropic dielectric screening is treated as in ``sxdefectalign``, using
+    the full dielectric tensor for the periodic (lattice) energy of the model
+    charge and its planar-averaged long-range potential, and the spherical
+    average of the dielectric tensor for the isolated energy and the G = 0
+    (alignment) term.
 
     The defect coordinates are taken as the relaxed defect site by default
     (``DefectEntry.defect_supercell_site``) -- which is the bulk site for vacancies,
@@ -213,7 +222,7 @@ def get_freysoldt_correction(
         **kwargs:
             Additional kwargs to pass to the ``pymatgen-analysis-defects``
             ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
-            ``mad_tol``, ``q_model``, ``step``, ``defect_frac_coords``).
+            ``mad_tol``, ``q_model``, ``defect_frac_coords``).
 
     Returns:
         ``CorrectionResults`` (summary of the corrections applied and
@@ -226,7 +235,6 @@ def get_freysoldt_correction(
 
     if dielectric is None:
         dielectric = _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
-    dielectric = _convert_dielectric_to_tensor(dielectric)
 
     defect_locpot = defect_locpot or _get_and_check_metadata(
         defect_entry, "defect_locpot_dict", "Defect LOCPOT"
@@ -623,7 +631,6 @@ def get_kumagai_correction(
 
     if dielectric is None:
         dielectric = _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
-    dielectric = _convert_dielectric_to_tensor(dielectric)
 
     core_potentials_dict = {}
     for key, outcar in zip(["defect", "bulk"], [defect_outcar, bulk_outcar], strict=False):
@@ -684,7 +691,7 @@ def get_kumagai_correction(
         charge=defect_entry.charge_state,
         calc_results=defect_calc_results_for_eFNV,
         perfect_calc_results=bulk_calc_results_for_eFNV,
-        dielectric_tensor=dielectric,
+        dielectric_tensor=freysoldt._get_dielectric_tensor(dielectric),
         defect_coords=defect_coords,
         defect_region_radius=defect_region_radius,
         excluded_indices=excluded_indices,

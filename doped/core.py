@@ -111,8 +111,9 @@ class DefectEntry(thermo.DefectEntry):
         _sc_entry_energy: float | None = None,
     ):
         """
-        Subclass of the ``pymatgen-analysis-defects`` ``DefectEntry`` class,
-        with additional attributes used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects``
+        :class:`~pymatgen.analysis.defects.thermo.DefectEntry` class, with
+        additional attributes used by ``doped``.
 
         Core Attributes:
             defect:
@@ -352,13 +353,23 @@ class DefectEntry(thermo.DefectEntry):
         **kwargs,
     ) -> utils.CorrectionResult:
         """
-        Compute the `isotropic` Freysoldt (FNV) correction for the
-        defect_entry.
+        Compute the Freysoldt (FNV) correction for the ``DefectEntry``.
+
+        Note that the Kumagai-Oba (eFNV) correction
+        (``get_kumagai_correction()``) is generally recommended over FNV, being
+        more robust and efficient (and is used by default when parsing, if
+        ``OUTCAR`` files are available).
 
         The correction is added to the ``defect_entry.corrections`` dictionary
         (to be used in following formation energy calculations). If this
         correction is used, please cite Freysoldt's original paper;
         10.1103/PhysRevLett.102.016402.
+
+        Anisotropic dielectric screening is treated as in ``sxdefectalign``,
+        using the full dielectric tensor for the periodic (lattice) energy of
+        the model charge and its planar-averaged long-range potential, and the
+        spherical average of the dielectric tensor for the isolated energy and
+        the G = 0 (alignment) term.
 
         The charge correction error is estimated by computing the average
         standard deviation of the planar-averaged potential difference in the
@@ -438,7 +449,7 @@ class DefectEntry(thermo.DefectEntry):
             **kwargs:
                 Additional kwargs to pass to the ``pymatgen-analysis-defects``
                 ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
-                ``mad_tol``, ``q_model``, ``step``, ``defect_frac_coords``).
+                ``mad_tol``, ``q_model``, ``defect_frac_coords``).
 
         Returns:
             ``utils.CorrectionResults`` (summary of the corrections applied and
@@ -509,7 +520,9 @@ class DefectEntry(thermo.DefectEntry):
         """
         Compute the Kumagai (eFNV) finite-size charge correction for the
         defect_entry. Compatible with both isotropic/cubic and anisotropic
-        systems.
+        systems. This is the recommended charge correction scheme in ``doped``
+        (used by default when parsing, if ``OUTCAR`` files are available),
+        being more robust and efficient than the Freysoldt (FNV) scheme.
 
         The correction is added to the ``defect_entry.corrections`` dictionary
         (to be used in following formation energy calculations).
@@ -2259,8 +2272,9 @@ class Defect(core.Defect):
         **doped_kwargs,
     ):
         """
-        Subclass of the ``pymatgen-analysis-defects`` ``Defect`` class, with
-        additional attributes and methods used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects``
+        :class:`~pymatgen.analysis.defects.core.Defect` class, with additional
+        attributes and methods used by ``doped``.
 
         Args:
             structure (|Structure|):
@@ -3082,8 +3096,9 @@ def doped_defect_from_pmg_defect(
 class Vacancy(Defect, core.Vacancy):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of the ``pymatgen-analysis-defects`` ``Vacancy`` class, with
-        additional attributes and methods used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects``
+        :class:`~pymatgen.analysis.defects.core.Vacancy` class, with additional
+        attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
 
@@ -3098,8 +3113,9 @@ class Vacancy(Defect, core.Vacancy):
 class Substitution(Defect, core.Substitution):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of the ``pymatgen-analysis-defects`` ``Substitution`` class,
-        with additional attributes and methods used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects``
+        :class:`~pymatgen.analysis.defects.core.Substitution` class, with
+        additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
 
@@ -3114,8 +3130,9 @@ class Substitution(Defect, core.Substitution):
 class Interstitial(Defect, core.Interstitial):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of the ``pymatgen-analysis-defects`` ``Interstitial`` class,
-        with additional attributes and methods used by ``doped``.
+        Subclass of the ``pymatgen-analysis-defects``
+        :class:`~pymatgen.analysis.defects.core.Interstitial` class, with
+        additional attributes and methods used by ``doped``.
 
         If ``multiplicity`` is not set in ``kwargs``, then it will be
         automatically calculated using ``get_multiplicity``. Keyword arguments
