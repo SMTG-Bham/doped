@@ -53,8 +53,8 @@ def _get_sorted_nn_distances(structure, frac_coords, n_neighbours=12):
     Get the sorted nearest-neighbour distances around a given fractional
     coordinate position in a structure.
 
-    Returns the ``n_neighbours`` shortest distances from the position to
-    atoms in the structure (accounting for PBC).
+    Returns the ``n_neighbours`` shortest distances from the position to atoms
+    in the structure (accounting for PBC).
     """
     all_dists = structure.lattice.get_all_distances(structure.frac_coords, [frac_coords]).ravel()
     # exclude zero distances (for interstitial/substitution defects)
@@ -100,10 +100,10 @@ def _site_matching_input_entry(defect_entry, stenciled_supercell, defect_site):
     For a `split` defect -- whose halves are equally valid defect sites --
     ``defect_site_from_structures`` can pick a different half for the stenciled
     cell than the input entry did, which shifts the whole distance-to-defect
-    axis by the split separation (2.3 Å for ``Se_i_C2``) and makes the two
-    less comparable (e.g. when analysing displacement fields). Here we
-    distinguish by their sorted neighbour distances, and choose that which best
-    matches the original defect site choice.
+    axis by the split separation (2.3 Å for ``Se_i_C2``) and makes the two less
+    comparable (e.g. when analysing displacement fields). Here we distinguish
+    by their sorted neighbour distances, and choose that which best matches the
+    original defect site choice.
     """
     # This will likely become unnecessary when defect complexes support is added
     input_nn_dists = _get_sorted_nn_distances(
@@ -330,11 +330,12 @@ class DefectStencilingTest(unittest.TestCase):
         reference_fn=None,
     ):
         """
-        Common loop for Se stenciling tests. Iterates over all defect entries
-        with matching reference supercell files, runs
-        ``get_defect_in_supercell``, checks for no unexpected warnings,
-        validates the stenciled supercell, and checks bulk consistency across
-        defects.
+        Common loop for Se stenciling tests.
+
+        Iterates over all defect entries with matching reference supercell
+        files, runs ``get_defect_in_supercell``, checks for no unexpected
+        warnings, validates the stenciled supercell, and checks bulk
+        consistency across defects.
 
         Args:
             target_supercell (Structure):
@@ -404,6 +405,7 @@ class DefectStencilingTest(unittest.TestCase):
         "Note that the atomic position basis..." warnings), but updated
         pre-stenciling re-orientation now returns tile-matching supercells.
         """
+
         # Note: Direct structure comparisons are the most sensitive tests here, and can break with
         # updated edge-site handling -- which may be fine if _validate_stenciled_supercell passes.
         # stenciled.to(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")  # update refs
@@ -472,6 +474,7 @@ class DefectStencilingTest(unittest.TestCase):
         relaxations and comparing to directly-generated defects (see
         https://doi.org/10.1039/D4EE04647A).
         """
+
         # Note: Direct structure comparisons are the most sensitive tests here, and can break with
         # updated edge-site handling -- which may be fine if _validate_stenciled_supercell passes.
         # stenciled.to(f"{self.Se_example_dir}/{name}_222_Exp_Stenciled_POSCAR")  # update refs

@@ -128,10 +128,10 @@ def warn_once(message: str, category: type[Warning] = UserWarning, key: Any = No
     Emit ``message`` as a warning at most once per unique ``(message, category,
     key)``, unless ``warn_once.cache_clear()`` is called.
 
-    Unlike Python's default "show once per location" behaviour, this is
-    immune to the ``__warningregistry__`` being reset whenever the warning
-    filters are mutated (which dependencies such as ``pandas`` do internally,
-    defeating the default dedup when warning repeatedly in a loop -- e.g. over
+    Unlike Python's default "show once per location" behaviour, this is immune
+    to the ``__warningregistry__`` being reset whenever the warning filters are
+    mutated (which dependencies such as ``pandas`` do internally, defeating the
+    default dedup when warning repeatedly in a loop -- e.g. over
     temperatures/conditions).
 
     ``key`` is an optional `cheap` hashable used to check if the warning has

@@ -1219,9 +1219,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         ``get_entries_in_chemsys`` / ``get_entries`` helpers (and onto the
         underlying ``MPRester`` query).
 
-        Here we use ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}``
-        to restrict the MP query to GGA/GGA+U thermo entries, and verify that
-        the resulting entries differ from the default (GGA/GGA+U/R2SCAN) query.
+        Here we use ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}`` to
+        restrict the MP query to GGA/GGA+U thermo entries, and verify that the
+        resulting entries differ from the default (GGA/GGA+U/R2SCAN) query.
         """
         cp_default = chemical_potentials.CompetingPhases(  # GGA/GGA+U/R2SCAN
             "ZrO2", energy_above_hull=0.03, api_key=api_key
@@ -1785,11 +1785,10 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         Co-doping competing phases (entries containing more than one extrinsic
         species, e.g. ``KInO2``) should only be generated when
         ``codoping=True`` (which also forces
-        ``single_extrinsic_phase_limits=False``).
-        ``full_phase_diagram=True`` includes all phases on the MP phase diagram
-        (within ``energy_above_hull``) rather than only those potentially
-        bordering the host, so increases both the intrinsic and extrinsic entry
-        counts.
+        ``single_extrinsic_phase_limits=False``). ``full_phase_diagram=True``
+        includes all phases on the MP phase diagram (within
+        ``energy_above_hull``) rather than only those potentially bordering the
+        host, so increases both the intrinsic and extrinsic entry counts.
         """
         cases = [
             # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
@@ -2776,7 +2775,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         Test warnings for mismatching INCAR settings.
 
-        No warnings for ZrO2 / La_ZrO2 already checked in ``self.test_general_cpa_reloading()`` above.
+        No warnings for ZrO2 / La_ZrO2 already checked in
+        ``self.test_general_cpa_reloading()`` above.
         """
         # convert to mismatching O2 calc:
         shutil.move(
@@ -2839,7 +2839,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         Test warnings for mismatching POTCAR settings.
 
-        No warnings for ZrO2 / La_ZrO2 already checked in ``self.test_general_cpa_reloading()`` above.
+        No warnings for ZrO2 / La_ZrO2 already checked in
+        ``self.test_general_cpa_reloading()`` above.
         """
         # convert to mismatching O2 calc, with fake "O_h" POTCAR:
         shutil.move(

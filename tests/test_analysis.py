@@ -3054,8 +3054,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         Previously this was handled by attempting to stencil the relaxed defect
         geometry into a periodicity-restoring supercell (giving e.g. ``C2h``
         for ``O_i_D4h_0`` here if not attempted), which was slower and not
-        guaranteed to succeed (e.g. for the ZnS supercell above, with
-        mis-matching lattice definitions).
+        guaranteed to succeed (e.g. for the ZnS supercell above, with mis-
+        matching lattice definitions).
         """
         bulk = Structure.from_file(f"{self.YTOS_EXAMPLE_DIR}/Bulk/POSCAR")
         primitive = get_primitive_structure(bulk)

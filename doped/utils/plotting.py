@@ -46,6 +46,7 @@ recognised_pre_vacancy_strings = sorted(
 """
 Recognised substrings which precede the element symbol in vacancy defect names.
 """
+
 recognised_post_vacancy_strings = sorted(
     ["_v", "v", "_vac", "_Vac", "vac", "Vac", "va", "Va", "_va", "_Va"],
     key=len,
@@ -54,6 +55,7 @@ recognised_post_vacancy_strings = sorted(
 """
 Recognised substrings which follow the element symbol in vacancy defect names.
 """
+
 recognised_pre_interstitial_strings = sorted(
     ["i", "i_", "Int", "int", "Int_", "int_", "Inter", "inter", "Inter_", "inter_"],
     key=len,
@@ -63,6 +65,7 @@ recognised_pre_interstitial_strings = sorted(
 Recognised substrings which precede the element symbol in interstitial defect
 names.
 """
+
 recognised_post_interstitial_strings = sorted(
     ["_i", "_int", "_Int", "int", "Int", "inter", "Inter", "_inter", "_Inter"],
     key=len,
@@ -72,6 +75,7 @@ recognised_post_interstitial_strings = sorted(
 Recognised substrings which follow the element symbol in interstitial defect
 names.
 """
+
 # _trimmable_defect_type_strings is the subset of the above strings which are trimmed from defect names
 # when identifying the constituent elements, removing marker letters which could otherwise be misread as
 # element symbols (e.g. "V" / "I" / "In" in "Vac" / "Int"). Strings starting/ending with a lowercase "i"
@@ -329,6 +333,7 @@ thin lines on white backgrounds) via the Glasbey et al (2007) method, as
 implemented in https://github.com/lmcinnes/glasbey, registered as the
 ``petroff10_extended_40`` ``matplotlib`` colormap with ``doped``.
 """
+
 with contextlib.suppress(ValueError):  # already registered (e.g. re-import)
     colormaps.register(ListedColormap(PETROFF10_EXTENDED_40, name="petroff10_extended_40"))
 
@@ -427,7 +432,8 @@ def _resolve_color_grouping(
     is escalated (``"element"`` (skipped by default) -> ``"type"`` (default
     initialisation) -> ``"site"``) while the palette would contain only a
     single colour group (e.g. a system with only one defect type), so that a
-    range of colours is used by default, rather than variants of a single colour.
+    range of colours is used by default, rather than variants of a single
+    colour.
     """
     _check_color_grouping(color_grouping)
     granularities = ("element", "type", "site")
@@ -442,13 +448,13 @@ def _resolve_color_grouping(
 
 def _color_group_key(defect, color_grouping: str = "type") -> str:
     """
-    The palette colour key for a defect: its defect type (``Defect.name``),
-    or its extrinsic element if extrinsic and ``color_grouping="element"`` --
-    so e.g. ``F_O`` and ``F_i`` share a base colour.
+    The palette colour key for a defect: its defect type (``Defect.name``), or
+    its extrinsic element if extrinsic and ``color_grouping="element"`` -- so
+    e.g. ``F_O`` and ``F_i`` share a base colour.
 
-    ``color_grouping="site"`` keys on the defect `group` name, which is
-    handled by the callers as it is not a property of the defect itself (i.e.
-    defect clustering).
+    ``color_grouping="site"`` keys on the defect `group` name, which is handled
+    by the callers as it is not a property of the defect itself (i.e. defect
+    clustering).
     """
     if color_grouping == "element" and (extrinsic_element := _extrinsic_element(defect)):
         return extrinsic_element
@@ -2403,10 +2409,10 @@ def _box_overlap_fraction(b1: tuple, b2: tuple, x_buf: float = 0.0, y_buf: float
     """
     Quantify how much two label boxes ``(x_min, x_max, y_min, y_max)`` overlap.
 
-    Returns the overlapping area as a fraction (``0.0``--``1.0``) of the smaller
-    box's area, padding each box by ``x_buf``/``y_buf`` (consistent with
-    :func:`_boxes_overlap`). ``0.0`` means no overlap, a small value means a
-    slight clip, and ``1.0`` means one box fully covers the other. This lets
+    Returns the overlapping area as a fraction (``0.0``--``1.0``) of the
+    smaller box's area, padding each box by ``x_buf``/``y_buf`` (consistent
+    with :func:`_boxes_overlap`). ``0.0`` means no overlap, a small value means
+    a slight clip, and ``1.0`` means one box fully covers the other. This lets
     the label placement optimiser prefer slight overlaps over full overlaps
     when some overlap is unavoidable.
     """

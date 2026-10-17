@@ -1,8 +1,7 @@
 r"""
 Helper functions for setting up PHS analysis.
 
-Contains modified versions of functions from ``pydefect`` and ``vise``
-(https://github.com/kumagai-group/pydefect / vise).
+Contains modified versions of functions from ``pydefect`` and ``vise``.
 """
 
 import warnings

@@ -548,6 +548,7 @@ LinkageMethod = Literal["single", "complete", "average", "weighted", "centroid",
 """
 Allowed ``method`` values for ``scipy``'s hierarchical ``linkage``.
 """
+
 FclusterCriterion = Literal["inconsistent", "distance", "maxclust", "monocrit", "maxclust_monocrit"]
 """
 Allowed ``criterion`` values for ``scipy``'s ``fcluster``.

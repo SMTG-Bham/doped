@@ -6,9 +6,9 @@ mutation guards.
 The core contract is the Python data-model invariant: ``a == b`` implies
 ``hash(a) == hash(b)`` (hashes may be coarser than equality -- collisions are
 resolved by ``__eq__`` -- but (ideally) not finer, else ``set``/``dict``/cache
-lookups silently break). Where hashes are deliberately finer than
-tolerance-based equality (near-equal coordinates), that is documented at the
-definition site and not asserted here.
+lookups silently break). Where hashes are deliberately finer than tolerance-
+based equality (near-equal coordinates), that is documented at the definition
+site and not asserted here.
 """
 
 import copy

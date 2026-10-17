@@ -571,8 +571,8 @@ def _get_soap_vecs_for_guess(
     """
     Get per-site SOAP vectors for ``structure``, using ``dscribe``.
 
-    If ``species`` is ``None``, uses the sorted element list of ``struct``
-    only for the set of possible species in the SOAP vectors. When comparing
+    If ``species`` is ``None``, uses the sorted element list of ``struct`` only
+    for the set of possible species in the SOAP vectors. When comparing
     structures with different sets of species, one should pass the `union` of
     their elements for ``species``, so that SOAP vectors are comparable. Extra
     elements not present in ``struct`` are allowed in ``species`` (their SOAP

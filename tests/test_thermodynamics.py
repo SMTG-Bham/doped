@@ -2,11 +2,12 @@
 Tests for the ``doped.thermodynamics`` module, primarily focusing on the
 |DefectThermodynamics| class.
 
-Note that tests for the ``FermiSolver`` classes are in the separate ``test_fermisolver.py`` file,
-which also indirectly tests much of this core ``doped.thermodynamics`` / |DefectThermodynamics|
-functionality.
+Note that tests for the ``FermiSolver`` classes are in the separate
+``test_fermisolver.py`` file, which also indirectly tests much of this core
+``doped.thermodynamics`` / |DefectThermodynamics| functionality.
 
-Tests for ``DefectThermodynamics.plot()`` are in the separate ``test_plotting.py`` file.
+Tests for ``DefectThermodynamics.plot()`` are in the separate
+``test_plotting.py`` file.
 """
 
 import os

@@ -108,6 +108,7 @@ MPRESTER_PROPERTY_DATA = (
 Entry properties to request from the Materials Project API, populated in
 ``entry.data``.
 """
+
 MPRESTER_SUMMARY_DATA = (
     "material_id",  # required so we can map docs back to entries via MPID
     "band_gap",
@@ -119,6 +120,7 @@ MPRESTER_SUMMARY_DATA = (
 Fields to request from the Materials Project summary documents, attached to
 ``entry.data["summary"]``.
 """
+
 
 default_get_entries_kwargs: dict[str, Any] = {"property_data": list(MPRESTER_PROPERTY_DATA)}
 """
@@ -1636,8 +1638,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
 
         When no structure exists in the entry (e.g. MP-missing bulk represented
         by a hull-energy |ComputedEntry|), emits a ``UserWarning`` and supplies
-        a nominal large-cell |Structure| so that ``INCAR`` and ``POTCAR``
-        files can still be written.
+        a nominal large-cell |Structure| so that ``INCAR`` and ``POTCAR`` files
+        can still be written.
         """
         categorised_entries = [
             (self.nonmetallic_entries, "non-metals"),

@@ -63,21 +63,25 @@ default_potcar_dict = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/PotcarSet.yaml
 """
 Default ``POTCAR`` symbol for each element, from |PotcarSet.yaml|.
 """
+
 default_relax_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/RelaxSet.yaml"))
 """
 Default ``INCAR`` and ``KPOINTS`` settings for geometry relaxations, from
 |RelaxSet.yaml|.
 """
+
 default_HSE_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/HSESet.yaml"))
 """
 ``INCAR`` settings for hybrid DFT calculations (HSE06 by default), from
 |HSESet.yaml|.
 """
+
 default_defect_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/DefectSet.yaml"))
 """
 ``INCAR`` settings specific to defect supercell calculations, from
 |DefectSet.yaml|.
 """
+
 default_defect_relax_set = copy.deepcopy(default_relax_set)
 default_defect_relax_set = deep_dict_update(
     default_defect_relax_set, default_defect_set
@@ -86,13 +90,13 @@ default_defect_relax_set = deep_dict_update(
 Default ``INCAR`` and ``KPOINTS`` settings for defect supercell relaxations;
 ``default_relax_set`` updated with ``default_defect_set``.
 """
+
 _ = default_defect_relax_set["INCAR"].pop("EDIFF_PER_ATOM")  # remove EDIFF_PER_ATOM and use defect EDIFF
 singlepoint_incar_settings = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/SinglePointSet.yaml"))["INCAR"]
 """
 ``INCAR`` setting overrides for single-point (static) calculations, applied on
 top of the relaxation settings, from |SinglePointSet.yaml|.
 """
-
 
 _potcar_setup_warning = (  # appended to with ", so ..." by the callers
     "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
@@ -2886,8 +2890,8 @@ class DefectsSet(MSONable):
         Set the value of a specific key (defect name) in the ``defect_sets``
         dictionary.
 
-        Note that other |DefectsSet| attributes, like ``self.soc`` (whether
-        to perform SOC calculations) and ``self.bulk_vasp...`` are not changed.
+        Note that other |DefectsSet| attributes, like ``self.soc`` (whether to
+        perform SOC calculations) and ``self.bulk_vasp...`` are not changed.
         """
         # check the input, must be a ``DefectRelaxSet`` object:
         if not isinstance(value, DefectRelaxSet):

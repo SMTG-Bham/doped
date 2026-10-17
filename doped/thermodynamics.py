@@ -122,10 +122,10 @@ def _parse_limit(chempots: dict, limit: str | None = None):
 def _get_limits_to_plot(chempots: dict, composition: str | Composition | None = None) -> list[str]:
     """
     Get the default chemical potential limits for plotting: the most anion-rich
-    (i.e. most-electronegative-rich) and most cation-rich (i.e.
-    most-electropositive-rich) limits for the host ``composition``, in the
-    order they appear in ``chempots["limits"]`` and de-duplicated if they
-    correspond to the same limit (e.g. for elemental systems).
+    (i.e. most-electronegative-rich) and most cation-rich (i.e. most-
+    electropositive-rich) limits for the host ``composition``, in the order
+    they appear in ``chempots["limits"]`` and de-duplicated if they correspond
+    to the same limit (e.g. for elemental systems).
 
     If ``composition`` is not provided, it is auto-determined from the limit
     names in ``chempots`` (see
@@ -490,10 +490,10 @@ def _group_defects_by_distance(
 
     Takes a (hashable) ``tuple`` of |DefectEntry| objects so that results can
     be cached w/``functools.lru_cache``. Indices (rather than the entry
-    objects) are returned so that cache hits -- possible from equal-hashing
-    but distinct entries, whose un-hashed state (e.g. ``calculation_metadata``)
-    may differ -- never return previously-cached entry objects; the public
-    wrapper rebuilds ``{cluster index: {DefectEntry, ...}}``.
+    objects) are returned so that cache hits -- possible from equal-hashing but
+    distinct entries, whose un-hashed state (e.g. ``calculation_metadata``) may
+    differ -- never return previously-cached entry objects; the public wrapper
+    rebuilds ``{cluster index: {DefectEntry, ...}}``.
     """
     reference_entry = entry_list[0]
     bulk_structure = reference_entry.defect.structure
@@ -5676,8 +5676,8 @@ class FermiSolver(MSONable):
         ``self.defect_thermodynamics.bulk_dos``, for use with the ``py-sc-
         fermi`` backend (``None`` if not activated).
 
-        Re-derived automatically if ``self.defect_thermodynamics.bulk_dos``
-        is reassigned.
+        Re-derived automatically if ``self.defect_thermodynamics.bulk_dos`` is
+        reassigned.
         """
         fdos = self.defect_thermodynamics.bulk_dos
         if self._DOS is None or not isinstance(fdos, FermiDos):  # py-sc-fermi backend not activated

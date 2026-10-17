@@ -958,8 +958,8 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         In this case, the defect folder/entry names match the old ``doped``
         format, with e.g. ``sub_1_Br_on_Se_-1`` and ``inter_2_O_0`` etc.
 
-        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which
-        are removed by including site info, but some (``inter_11_H_X``) which
+        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which are
+        removed by including site info, but some (``inter_11_H_X``) which
         aren't, so ``_a`` & ``_b`` are appended to those names.
         """
         fig = self.Se_ext_no_pnict_thermo.plot(include_site_info=True)
