@@ -814,7 +814,6 @@ def charge_state_probability(
         ``return_log`` is ``False``, otherwise a dictionary of input & computed
         values used to determine charge state probability.
     """
-
     # Incorporates oxidation state probabilities and overall defect site charge
     # (and thus by proxy the cationic/anionic identity of the substituting site)
     # Incorporating the oxi state probabilities (i.e. reducibility/oxidisability) of the neighbouring

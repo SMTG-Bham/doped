@@ -2860,8 +2860,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             for i in [
                 "There are mismatching POTCAR symbols",
                 "Where ZrO2 was used as the reference entry calculation.",
-                "O2: [[{'titel': 'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}], "
-                "[{'titel': 'PAW_PBE O 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
+                (
+                    "O2: [[{'titel': 'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}], "
+                    "[{'titel': 'PAW_PBE O 08Apr2002', 'hash': None, 'summary_stats': {}}]]"
+                ),
             ]
         )
         self._general_cpa_check(cpa)
@@ -2904,39 +2906,63 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             )
         _print_warning_info(w)  # for debugging
         for expected_warning in [
-            f"Multiple `vasprun.xml` files found in competing phase directory: "
-            f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0",
-            f"vasprun.xml file at {data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
-            f" is corrupted/incomplete. Attempting to continue parsing but may fail!",
-            "There are mismatching INCAR tags for (some of) your competing phases calculations which are "
-            "likely to cause errors in the parsed results (energies & thus chemical potential limits). "
-            "Found the following differences:\n"
-            "(in the format: 'Entries: (INCAR tag, value in entry calculation, value in reference "
-            "calculation))':\n",
-            "['Ag', 'AgBr', 'Bi', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3', 'Sn']:\n[('HFSCREEN', "
-            "0.2, 0.207), ('ADDGRID', True, False), ('LASPH', True, False)]",
+            (
+                f"Multiple `vasprun.xml` files found in competing phase directory: "
+                f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0"
+            ),
+            (
+                f"vasprun.xml file at {data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
+                f" is corrupted/incomplete. Attempting to continue parsing but may fail!"
+            ),
+            (
+                "There are mismatching INCAR tags for (some of) your competing phases calculations which "
+                "are likely to cause errors in the parsed results (energies & thus chemical potential "
+                "limits). Found the following differences:\n"
+                "(in the format: 'Entries: (INCAR tag, value in entry calculation, value in reference "
+                "calculation))':\n"
+            ),
+            (
+                "['Ag', 'AgBr', 'Bi', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3', 'Sn']:\n"
+                "[('HFSCREEN', 0.2, 0.207), ('ADDGRID', True, False), ('LASPH', True, False)]"
+            ),
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
-            "In general, the same INCAR settings should be used in all final calculations for these tags "
-            "which can affect energies!",
-            "There are mismatching POTCAR symbols for (some of) your competing phases calculations which "
-            "are likely to cause errors in the parsed results (energies & thus chemical potential "
-            "limits). Found the following differences:",
+            (
+                "In general, the same INCAR settings should be used in all final calculations for these "
+                "tags which can affect energies!"
+            ),
+            (
+                "There are mismatching POTCAR symbols for (some of) your competing phases calculations "
+                "which are likely to cause errors in the parsed results (energies & thus chemical "
+                "potential limits). Found the following differences:"
+            ),
             "(in the format: (entry POTCARs, reference POTCARs)):",
-            "Bi: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
-            "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
-            "Cs3Bi2Br9: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
-            "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
+            (
+                "Bi: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
+                "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]"
+            ),
+            (
+                "Cs3Bi2Br9: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
+                "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]"
+            ),
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
-            "In general, the same POTCAR settings should be used in all final calculations for these tags "
-            "which can affect energies!",
-            "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull of "
-            "0.0171 eV/atom.",
-            "Formally, this means that (based on the supplied athermal calculation data) the host "
-            "material is unstable and so has no chemical potential limits; though in reality the host may "
-            "be stabilised by temperature effects etc, or just a metastable phase.",
-            "Here we will determine a single chemical potential 'limit' corresponding to the least "
-            "unstable (i.e. closest) point on the convex hull for the host material, as an approximation "
-            "for the true chemical potentials.",
+            (
+                "In general, the same POTCAR settings should be used in all final calculations for these "
+                "tags which can affect energies!"
+            ),
+            (
+                "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull "
+                "of 0.0171 eV/atom."
+            ),
+            (
+                "Formally, this means that (based on the supplied athermal calculation data) the host "
+                "material is unstable and so has no chemical potential limits; though in reality the "
+                "host may be stabilised by temperature effects etc, or just a metastable phase."
+            ),
+            (
+                "Here we will determine a single chemical potential 'limit' corresponding to the least "
+                "unstable (i.e. closest) point on the convex hull for the host material, "
+                "as an approximation for the true chemical potentials."
+            ),
         ]:
             print(expected_warning)
             assert any(expected_warning in str(warning.message) for warning in w)

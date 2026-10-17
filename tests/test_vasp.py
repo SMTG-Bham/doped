@@ -183,8 +183,10 @@ class DefectDictSetTest(unittest.TestCase):
         assert all(
             i in dds.__repr__()
             for i in [
-                f"doped DefectDictSet with supercell composition {struct.composition}. "
-                "Available attributes",
+                (
+                    f"doped DefectDictSet with supercell composition {struct.composition}. "
+                    "Available attributes"
+                ),
                 "nelect",
                 "incar",
                 "Available methods",
@@ -1361,8 +1363,10 @@ class DefectsSetTest(unittest.TestCase):
             i in defects_set.__repr__()
             for i in [
                 "doped DefectsSet for bulk composition",
-                f", with {len(defects_set.defect_entries)} defect entries in self.defect_entries. "
-                "Available attributes:\n",
+                (
+                    f", with {len(defects_set.defect_entries)} defect entries in self.defect_entries. "
+                    "Available attributes:\n"
+                ),
                 "bulk_vasp_gam",
                 "soc",
                 "Available methods:\n",

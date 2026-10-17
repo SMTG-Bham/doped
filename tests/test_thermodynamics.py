@@ -3433,9 +3433,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
         for info_substring in [
             "Chemical potential heatmap plotting requires 3-D data",
-            "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
-            "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.7229",
+            (
+                "number of elements in the chemical system (4) minus the number of fixed chemical "
+                "potentials (0) must be equal to 3. The following chemical potentials will additionally "
+                "be constrained to their mean (centroid) values in the chemical stability region: {'Y': "
+                "np.float64(-4.7229"
+            ),
         ]:
             assert info_substring in output
         assert not w
@@ -3451,9 +3454,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         plot, output, w = _run_func_and_capture_stdout_warnings(ytos_cpa.plot_chempot_heatmap)
         for info_substring in [
             "Chemical potential heatmap plotting requires 3-D data",
-            "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
-            "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.7229",
+            (
+                "number of elements in the chemical system (4) minus the number of fixed chemical "
+                "potentials (0) must be equal to 3. The following chemical potentials will additionally "
+                "be constrained to their mean (centroid) values in the chemical stability region: {'Y': "
+                "np.float64(-4.7229"
+            ),
         ]:
             assert info_substring in output
         assert not w

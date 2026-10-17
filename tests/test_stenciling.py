@@ -405,7 +405,6 @@ class DefectStencilingTest(unittest.TestCase):
         "Note that the atomic position basis..." warnings), but updated
         pre-stenciling re-orientation now returns tile-matching supercells.
         """
-
         # Note: Direct structure comparisons are the most sensitive tests here, and can break with
         # updated edge-site handling -- which may be fine if _validate_stenciled_supercell passes.
         # stenciled.to(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")  # update refs
@@ -474,7 +473,6 @@ class DefectStencilingTest(unittest.TestCase):
         relaxations and comparing to directly-generated defects (see
         https://doi.org/10.1039/D4EE04647A).
         """
-
         # Note: Direct structure comparisons are the most sensitive tests here, and can break with
         # updated edge-site handling -- which may be fine if _validate_stenciled_supercell passes.
         # stenciled.to(f"{self.Se_example_dir}/{name}_222_Exp_Stenciled_POSCAR")  # update refs

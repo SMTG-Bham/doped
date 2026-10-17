@@ -394,10 +394,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             any(i in str(warn.message) for warn in recorded_warnings)
             for i in [
                 "Warning(s) encountered when parsing Te_Cd_+1 at ",
-                "The total energies of the provided (bulk) `OUTCAR` (-218.565 eV), used to obtain the "
-                "atomic core potentials for the eFNV correction, and the `vasprun.xml` (-218.518 eV), "
-                "used for energies and structures, do not match. Please make sure the "
-                "correct file combination is being used!",
+                (
+                    "The total energies of the provided (bulk) `OUTCAR` (-218.565 eV), used to obtain the "
+                    "atomic core potentials for the eFNV correction, and the `vasprun.xml` (-218.518 eV), "
+                    "used for energies and structures, do not match. Please make sure the "
+                    "correct file combination is being used!"
+                ),
             ]
         )  # mismatched OUTCAR and vasprun energies warning
 
@@ -737,8 +739,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             "There are mismatching KPOINTS for (some of) your defect and bulk calculations ",
             "Found the following differences:",
             "(in the format: (defect kpoints, bulk kpoints)):",
-            "Int_Te_3_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, "
-            "0.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [0.5, 0.5, 0.5]], [[0.0, 0.0, 0.0]]]",
+            (
+                "Int_Te_3_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, "
+                "0.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [0.5, 0.5, 0.5]], [[0.0, 0.0, 0.0]]]"
+            ),
             "v_Cd_0: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
             "Int_Te_3_Unperturbed_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
             "In general, the same KPOINTS settings should be used",

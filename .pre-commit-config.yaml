@@ -13,7 +13,7 @@ repos:
 
   # Lint and format, isort, docstrings...
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.15  # keep in sync with locally installed ruff (rev must be a specific tag)
+    rev: v0.17.1  # keep in sync with locally installed ruff (rev must be a specific tag)
     hooks:
       - id: ruff
         <<: *skip_docs
@@ -33,7 +33,7 @@ repos:
         <<: *skip_docs
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.1.0
+    rev: v2.4.0
     hooks:
       - id: mypy
         <<: *skip_docs
@@ -45,7 +45,7 @@ repos:
 
   # Check typos:
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.2
+    rev: v2.4.3
     hooks:
       - id: codespell
         stages: [pre-commit,commit-msg]
