@@ -6,6 +6,9 @@
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.06433/status.svg)](https://doi.org/10.21105/joss.06433)
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/SMTG-Bham/doped)
 
+<!-- workshop-announcement: start; remove after 16 Dec 2026 -->
+> **Workshop:** Computational Methods for Defects in Solids, Cambridge, UK, 6–8 Jan 2027. Talk abstracts due 23 Nov; registration open until 16 Dec. [Details](https://aichemy.ac.uk/event/computational-methods-for-defects-in-solids-workshop)
+<!-- workshop-announcement: end -->
 <a href="https://doped.readthedocs.io/en/latest/"><img align="right" width="150" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/Images/doped_v2_logo.png" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping."></a>`doped` is a Python software for the generation, pre-/post-processing and analysis of defect supercell calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet powerful and fully-customisable manner.
 `doped` is open-source, developed by members of the [Simulation of Advanced Materials](https://sam-lab.net) lab at
 Cambridge, the Scanlon group at Birmingham, the Walsh group at Imperial College and contributors from across the globe.

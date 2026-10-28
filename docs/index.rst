@@ -9,6 +9,14 @@
 .. image:: https://joss.theoj.org/papers/10.21105/joss.06433/status.svg
    :target: https://doi.org/10.21105/joss.06433
 
+.. workshop-announcement: start; remove after 16 Dec 2026
+
+.. note::
+   **Workshop:** Computational Methods for Defects in Solids, Cambridge, UK, 6–8 Jan 2027. Talk abstracts due
+   23 Nov; registration open until 16 Dec.
+   `Details <https://aichemy.ac.uk/event/computational-methods-for-defects-in-solids-workshop/>`__
+
+.. workshop-announcement: end
 .. raw:: html
 
    <br><br>
