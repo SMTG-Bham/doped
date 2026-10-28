@@ -9,6 +9,10 @@
 .. image:: https://joss.theoj.org/papers/10.21105/joss.06433/status.svg
    :target: https://doi.org/10.21105/joss.06433
 
+.. raw:: html
+
+   <br><br>
+
 .. workshop-announcement: start; remove after 16 Dec 2026
 
 .. note::
@@ -19,7 +23,6 @@
 .. workshop-announcement: end
 .. raw:: html
 
-   <br><br>
    <img src="https://raw.githubusercontent.com/SMTG-Bham/doped/develop/docs/Images/doped_v2_logo.png" align="right" width="200" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
 
 

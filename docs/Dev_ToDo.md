@@ -46,4 +46,4 @@
 - Adversarial/ultra review on all changes
 - Remove SnB/doped co-dependent develop-branch pin in GH actions testing (and any other co-dependencies).
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.
-- After modelling workshop (January 2027), remove advertisement badge.
+- After modelling workshop (January 2027), remove advertisement badge (from doped, SnB, SAM repos)
