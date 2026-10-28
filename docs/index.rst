@@ -105,6 +105,7 @@ Studies using ``doped``, so far
 ===============================
 
 - N\.-R. Skogemyr **First-Principles Defect Thermodynamics of MgSnN₂: Origin and Suppression of Unintentional n-Type Conductivity** `MSc Thesis, Linköping University <https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510>`__ 2026
+- M\. J. Brady et al. **High Defect Formation Energies Limit Ionic Conductivity in Na₃Ga₂Li₃F₁₂ and Na₃Al₂Li₃F₁₂** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.6c01542>`__ 2026
 - N\. Singh, V. Agarwal and D. Ghosh **Deep Learning the Defect Landscape: Long-Timescale Vacancy Dynamics in Lead-Free Double Perovskites** `ACS Applied Energy Materials <https://doi.org/10.1021/acsaem.6c02409>`__ 2026
 - H\. Lee et al. **Identification and Structural Decomposition of Hidden Defect Configurations: A Case Study of Charged Oxygen Divacancies in HfO₂** `arXiv <https://doi.org/10.48550/arXiv.2610.04892>`__ 2026
 - L\. D. Salzer et al. **DFT reveals why Mo substitution enables multi-electron redox in Wadsley–Roth Mo** :sub:`x` **W** :sub:`1-x` **Nb₁₂O₃₃** `Journal of Materials Chemistry A <https://doi.org/10.1039/D6TA05468D>`__ 2026
