@@ -3,6 +3,7 @@ Tests for the GPAW interface in ``doped.io.gpaw``.
 """
 
 import os
+import runpy
 import shutil
 import unittest
 from pathlib import Path
@@ -73,8 +74,32 @@ class GPAWTest(unittest.TestCase):
 
         with open(os.path.join(self.output_dir, "relax.py")) as f:
             content = f.read()
-            assert "mode=LCAO(basis='dzp')" in content
+            assert "mode=LCAO()" in content
+            assert "basis='dzp'" in content
             assert "from gpaw import GPAW, PW, LCAO, FD" in content
+
+        assert gpaw_settings == {"mode": {"name": "lcao", "basis": "dzp"}}
+
+    def test_gpaw_defect_relax_set_kwargs(self):
+        with pytest.raises(TypeError, match=r"unexpected_setting.*gpaw_settings"):
+            DefectRelaxSet(self.structure, unexpected_setting=True)
+
+        alias_set = DefectRelaxSet(self.structure, charge=-1)
+        alias_set.write_input(self.output_dir)
+        assert "charge=-1" in (Path(self.output_dir) / "relax.py").read_text()
+
+        # An explicit charge_state still takes precedence, including the neutral state.
+        explicit_set = DefectRelaxSet(self.structure, charge_state=0, charge=-1)
+        explicit_set.write_input(self.output_dir)
+        assert "charge=0" in (Path(self.output_dir) / "relax.py").read_text()
+
+    def test_gpaw_lcao_conflicting_basis(self):
+        relax_set = DefectRelaxSet(
+            self.structure,
+            gpaw_settings={"mode": {"name": "lcao", "basis": "dzp"}, "basis": "sz"},
+        )
+        with pytest.raises(ValueError, match="Conflicting basis settings"):
+            relax_set.write_input(self.output_dir)
 
     def test_gpaw_singlepoint_set(self):
         singlepoint_set = DefectRelaxSet(
@@ -126,6 +151,8 @@ class GPAWTest(unittest.TestCase):
         from doped.io.gpaw.inputs import DefectsSet
 
         defect_gen = DefectsGenerator(self.structure)
+        with pytest.raises(TypeError, match=r"unexpected_setting.*gpaw_settings"):
+            DefectsSet(defect_gen, unexpected_setting=True)
         defects_set = DefectsSet(defect_gen, gpaw_settings={"mode": {"name": "pw", "ecut": 500}})
         assert len(defects_set.defect_sets) == len(defect_gen.defect_entries)
 
@@ -448,3 +475,49 @@ class GPAWTest(unittest.TestCase):
                 atol=1e-3,
                 err_msg=f"Graphene 2D Kumagai calculation failed for {defect_name}!",
             )
+
+
+@pytest.mark.parametrize(
+    "gpaw_settings",
+    [
+        {"mode": {"name": "lcao", "basis": "dzp"}},
+        {"mode": {"name": "lcao"}, "basis": {"Cu": "dzp"}},
+        {"mode": "lcao", "basis": "dzp"},
+        {"mode": {"name": "lcao", "basis": "dzp"}, "basis": "dzp"},
+    ],
+)
+def test_lcao_script_initializes_gpaw(gpaw_settings, tmp_path, monkeypatch):
+    """
+    Execute the generated script with real GPAW input validation, without an
+    SCF calculation or restart-file write.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    from ase import Atoms
+
+    real_gpaw = gpaw.GPAW
+
+    def make_calculator(*args, **kwargs):
+        calc = real_gpaw(*args, **kwargs)
+        monkeypatch.setattr(calc, "write", lambda *args, **kwargs: None)
+        return calc
+
+    monkeypatch.setattr(gpaw, "GPAW", make_calculator)
+    monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 0.0)
+    monkeypatch.chdir(tmp_path)
+    structure = Structure.from_file(Path(gpaw_data_dir).parent / "Cu_prim_POSCAR")
+    DefectRelaxSet(structure, gpaw_settings=gpaw_settings, calculation_type="singlepoint").write_input(
+        tmp_path
+    )
+
+    namespace = runpy.run_path(str(tmp_path / "singlepoint.py"))
+    calc = namespace["calc"]
+    try:
+        # GPAW 25.x uses a dict; 26.x exposes a Parameters object and normalises a string basis.
+        basis = calc.parameters["basis"] if isinstance(calc.parameters, dict) else calc.parameters.basis
+        if isinstance(basis, dict) and set(basis) == {"default"}:
+            basis = basis["default"]
+        assert basis == gpaw_settings.get("basis", "dzp")
+    finally:
+        if hasattr(calc, "close"):
+            calc.close()
+        namespace["atoms"].calc = None

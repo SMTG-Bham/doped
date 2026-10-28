@@ -87,6 +87,15 @@ Site-resolved initial magnetic moments can be set through
 ``gpaw_settings={"initial_magnetic_moments": [...]}``. For example, an isolated
 triplet O2 reference can be initialised with ``[1.0, 1.0]``.
 
+For LCAO calculations, supply the basis as a GPAW calculator setting, for
+example ``gpaw_settings={"mode": {"name": "lcao"}, "basis": "dzp"}``.
+The nested form ``{"mode": {"name": "lcao", "basis": "dzp"}}`` is also
+accepted; the generated script passes ``basis`` to ``GPAW``, separately from
+``LCAO()``. Conflicting nested and top-level basis settings raise ``ValueError``.
+Calculator settings belong in ``gpaw_settings``; unrecognised keyword
+arguments to ``DefectRelaxSet`` raise ``TypeError``. The ``charge`` keyword
+remains an alias for ``charge_state``, with ``charge_state`` taking precedence.
+
 Running the calculations
 ------------------------
 

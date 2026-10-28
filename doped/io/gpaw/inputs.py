@@ -91,12 +91,21 @@ class DefectRelaxSet:
                 Type of calculation script to generate. Supported values are
                 "relax" (default) and "singlepoint".
             **kwargs:
-                Additional keyword arguments.
+                ``charge`` is accepted as an alias for ``charge_state``.
+                Other keyword arguments raise ``TypeError``; GPAW calculator
+                settings must be supplied in ``gpaw_settings``.
         """
+        charge = kwargs.pop("charge", None)
+        if kwargs:
+            raise TypeError(
+                f"Unexpected keyword argument(s) for DefectRelaxSet: {', '.join(sorted(kwargs))}. "
+                "Pass GPAW calculator settings in gpaw_settings."
+            )
+
         self.defect_entry = defect_entry
         self.charge_state = charge_state
         if self.charge_state is None:
-            self.charge_state = kwargs.get("charge")  # Catch it if passed as kwarg
+            self.charge_state = charge
         if self.charge_state is None and isinstance(self.defect_entry, DefectEntry):
             self.charge_state = self.defect_entry.charge_state
 
@@ -105,8 +114,6 @@ class DefectRelaxSet:
 
         self.gpaw_settings = gpaw_settings or {}
         self.calculation_type = calculation_type
-        # note that unrecognised ``**kwargs`` are silently swallowed here (only ``charge`` is consumed,
-        # above), rather than raising as ``doped``'s VASP input sets do. See the GPAW tracking issue:
         self.kwargs = kwargs
 
         if isinstance(self.defect_entry, Structure):
@@ -187,12 +194,15 @@ class DefectRelaxSet:
                 f"Unsupported optimizer {optimizer!r}. Choose one of: {sorted(supported_optimizers)}"
             )
 
-        # Prepare mode string; note that the ``mode`` sub-parameters are written through unvalidated, so
-        # arguments which the GPAW mode classes do not accept give a script which fails at runtime. In
-        # particular ``LCAO(basis=...)`` raises ``TypeError`` in GPAW, so generated LCAO scripts are
-        # invalid (and ``tests/test_gpaw.py`` asserts that string). See the GPAW tracking issue:
+        # ``basis`` belongs to GPAW, not LCAO. Accept the existing nested form as well as the native
+        # top-level setting, without silently choosing between conflicting basis specifications.
         if isinstance(mode_params, dict):
             name = mode_params.pop("name", "pw")
+            if name.lower() == "lcao" and "basis" in mode_params:
+                basis = mode_params.pop("basis")
+                if "basis" in settings and settings["basis"] != basis:
+                    raise ValueError("Conflicting basis settings in gpaw_settings and its mode dictionary")
+                settings["basis"] = basis
             args = ", ".join([f"{k}={v!r}" for k, v in mode_params.items()])
             mode_str = f"{name.upper()}({args})"
         else:
