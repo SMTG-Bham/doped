@@ -10,11 +10,14 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from ase import Atoms
 from pymatgen.core.structure import Structure
 from test_utils import gpaw_data_dir
 
-from doped.io.gpaw.inputs import DefectRelaxSet
-from doped.io.gpaw.outputs import _find_gpaw_output
+from doped.generation import DefectsGenerator
+from doped.io import get_calculation_outputs
+from doped.io.gpaw.inputs import DefectRelaxSet, DefectsSet
+from doped.io.gpaw.outputs import _find_gpaw_output, get_potentials_from_input
 from doped.parsing import DefectParser, DefectsParser
 
 
@@ -159,9 +162,6 @@ class GPAWTest(unittest.TestCase):
         for a full ``DefectsGenerator`` output and writing them to the
         ``<defect name>/`` folder structure, as with VASP.
         """
-        from doped.generation import DefectsGenerator
-        from doped.io.gpaw.inputs import DefectsSet
-
         defect_gen = DefectsGenerator(self.structure)
         with pytest.raises(TypeError, match=r"unexpected_setting.*gpaw_settings"):
             DefectsSet(defect_gen, unexpected_setting=True)
@@ -327,8 +327,6 @@ class GPAWTest(unittest.TestCase):
         as those parsed up-front.
         """
         pytest.importorskip("gpaw")
-        from doped.io import get_calculation_outputs
-        from doped.io.gpaw.outputs import get_potentials_from_input
 
         gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         gpaw_bulk_dir = os.path.join(gpaw_mgo_dir, "bulk")
@@ -368,7 +366,6 @@ class GPAWTest(unittest.TestCase):
         parsed with ``doped``'s generic machinery.
         """
         pytest.importorskip("gpaw")
-        from doped.io import get_calculation_outputs
 
         gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         bulk_outputs = get_calculation_outputs(
@@ -401,7 +398,6 @@ class GPAWTest(unittest.TestCase):
         GPAW calculations.
         """
         pytest.importorskip("gpaw")
-        from doped.parsing import DefectsParser
 
         gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         dp = DefectsParser(  # default ``processes``, so this also covers the multiprocessing path
@@ -505,7 +501,6 @@ def test_basis_script_initializes_gpaw(gpaw_settings, tmp_path, monkeypatch):
     SCF calculation or restart-file write.
     """
     gpaw = pytest.importorskip("gpaw")
-    from ase import Atoms
 
     real_gpaw = gpaw.GPAW
 

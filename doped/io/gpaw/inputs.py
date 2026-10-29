@@ -22,6 +22,7 @@ import os
 from typing import Any, Literal
 
 from pymatgen.core.structure import Structure
+from pymatgen.io.cif import CifWriter
 from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry, _get_bulk_supercell, _get_defect_supercell
@@ -142,8 +143,6 @@ class DefectRelaxSet:
             filename = f"{self.calculation_type}.py"
 
         # Write structure to a file
-        from pymatgen.io.cif import CifWriter
-
         writer = CifWriter(self.defect_supercell)  # no symprec arg -- reduces supercells to primitives
         writer.write_file(os.path.join(output_path, structure_filename))
 
