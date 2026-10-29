@@ -30,7 +30,7 @@ from doped.core import (
     _get_defect_supercell_frac_coords,
 )
 from doped.generation import DefectsGenerator, _custom_formatwarning, get_defect_name_from_entry
-from doped.io.inputs import DefectsSetBase
+from doped.io.inputs import DefectsSetBase, _get_bulk_folder_name
 from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, _signed_charge
 
 if TYPE_CHECKING:
@@ -1520,10 +1520,9 @@ class DefectRelaxSet(MSONable):
             if bulk_supercell is None:
                 return
 
-            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._write_vasp_xxx_files(
-                f"{output_path}/{formula}_bulk",
+                f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
                 subfolder,
                 poscar=True,
                 rattle=False,
@@ -1644,10 +1643,9 @@ class DefectRelaxSet(MSONable):
             if bulk_supercell is None:
                 return
 
-            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._write_vasp_xxx_files(
-                f"{output_path}/{formula}_bulk",
+                f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
                 subfolder,
                 poscar=True,
                 rattle=False,
@@ -1778,10 +1776,9 @@ class DefectRelaxSet(MSONable):
             if bulk_supercell is None:
                 return
 
-            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._write_vasp_xxx_files(
-                f"{output_path}/{formula}_bulk",
+                f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
                 subfolder,
                 poscar=True,
                 rattle=False,
@@ -1913,11 +1910,10 @@ class DefectRelaxSet(MSONable):
             if bulk_supercell is None:
                 return
 
-            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
             # get output dir: (folder above defect_dir if defect_dir is a subfolder)
             output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
             self._write_vasp_xxx_files(
-                f"{output_path}/{formula}_bulk",
+                f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
                 subfolder,
                 poscar=True,
                 rattle=False,

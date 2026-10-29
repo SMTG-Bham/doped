@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, cast
 
 from monty.json import MSONable
 from monty.serialization import dumpfn
+from pymatgen.core.structure import Structure
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
@@ -34,6 +35,17 @@ from doped.utils import _doped_obj_properties_methods, _signed_charge, get_mp_co
 
 if TYPE_CHECKING:
     from doped.generation import DefectsGenerator
+
+
+def _get_bulk_folder_name(bulk_supercell: Structure) -> str:
+    """
+    Get the default name of the reference bulk supercell calculation folder,
+    ``"{formula}_bulk"`` (e.g. ``"CdTe_bulk"``), for all calculator backends.
+
+    This matches the default ``bulk_path`` search of |DefectsParser|.
+    """
+    formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+    return f"{formula}_bulk"
 
 
 class DefectsSetBase(MSONable, ABC):

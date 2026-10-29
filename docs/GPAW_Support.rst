@@ -46,15 +46,21 @@ Input generation
 
 The calculator settings are supplied as a dictionary. Settings consumed by the
 input generator, such as ``optimizer`` and ``fmax``, are not passed on to the
-GPAW calculator.
+GPAW calculator. :class:`~doped.io.gpaw.inputs.DefectsSet` writes the inputs
+for all defects from a :class:`~doped.generation.DefectsGenerator` (or a
+dictionary/list of ``DefectEntry`` objects), with ``structure.cif`` and a
+``relax.py`` GPAW script in a ``<defect name>/`` folder for each, and a static
+``singlepoint.py`` reference calculation for the bulk supercell in
+``{formula}_bulk/`` (e.g. ``MgO_bulk/``):
 
 .. code-block:: python
 
    from pymatgen.core import Structure
 
-   from doped.io.gpaw import DefectRelaxSet
+   from doped.generation import DefectsGenerator
+   from doped.io.gpaw import DefectsSet
 
-   structure = Structure.from_file("POSCAR")
+   defect_gen = DefectsGenerator(Structure.from_file("MgO_POSCAR"))
    gpaw_settings = {
        "mode": {"name": "pw", "ecut": 400},
        "xc": "PBE",
@@ -63,6 +69,18 @@ GPAW calculator.
        "fmax": 0.05,
    }
 
+   defects_set = DefectsSet(defect_gen, gpaw_settings=gpaw_settings)
+   defects_set.write_files()
+
+Inputs for an individual supercell can be generated with
+:class:`~doped.io.gpaw.inputs.DefectRelaxSet`, from a
+:class:`~doped.core.DefectEntry` or ``Structure``:
+
+.. code-block:: python
+
+   from doped.io.gpaw import DefectRelaxSet
+
+   structure = Structure.from_file("POSCAR")
    relax_set = DefectRelaxSet(
        structure,
        charge_state=1,
@@ -83,9 +101,14 @@ single-point inputs can be generated with ``calculation_type="singlepoint"``:
    )
    singlepoint_set.write_input("v_Mg_+1_singlepoint")
 
-Site-resolved initial magnetic moments can be set through
-``gpaw_settings={"initial_magnetic_moments": [...]}``. For example, an isolated
-triplet O2 reference can be initialised with ``[1.0, 1.0]``.
+Initial magnetic moments can be set per element, with
+``gpaw_settings={"initial_magnetic_moments": {"Fe": 4.0}}`` (unlisted elements
+are set to zero), or per site with a list of one value per atom (e.g.
+``[1.0, 1.0]`` for an isolated triplet O2 reference). ``DefectsSet`` requires
+the per-element form, as defect and bulk supercells differ in composition.
+
+To specify the basis setting (e.g. for LCAO calculations), supply the basis as a
+GPAW calculator setting, e.g. ``gpaw_settings={"mode": {"name": "lcao"}, "basis": "dzp"}``.
 
 Running the calculations
 ------------------------
@@ -115,7 +138,7 @@ stores the parsed entries in ``defect_dict``:
 
    parser = DefectsParser(
        output_path=".",
-       bulk_path="bulk",
+       bulk_path="MgO_bulk",
        dielectric=8.8963,
        calculator="gpaw",
    )
@@ -136,7 +159,7 @@ been applied):
    entry.corrections_metadata.pop("kumagai_charge_correction", None)
    entry.get_freysoldt_correction(
        defect_planar_averaged_potentials="v_Mg_+1",  # the calculation directories
-       bulk_planar_averaged_potentials="bulk",
+       bulk_planar_averaged_potentials="MgO_bulk",
    )
 
 Chemical potentials and formation energies
@@ -153,7 +176,7 @@ limits:
    from doped.io import get_calculation_outputs
    from doped.thermodynamics import DefectThermodynamics
 
-   bulk_entry = get_calculation_outputs("bulk", calculator="gpaw").get_computed_entry()
+   bulk_entry = get_calculation_outputs("MgO_bulk", calculator="gpaw").get_computed_entry()
 
    # phase_entries should contain consistently calculated elemental and
    # competing-phase entries.

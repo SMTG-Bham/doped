@@ -22,10 +22,11 @@ import os
 from typing import Any, Literal
 
 from pymatgen.core.structure import Structure
+from pymatgen.io.cif import CifWriter
 from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry, _get_bulk_supercell, _get_defect_supercell
-from doped.io.inputs import DefectsSetBase
+from doped.io.inputs import DefectsSetBase, _get_bulk_folder_name
 
 # ``doped`` accesses the competing phase functions below directly on this backend module (and
 # ``write_input_sets`` is the documented protocol name a user would reach for), so they are intercepted
@@ -86,17 +87,28 @@ class DefectRelaxSet:
                 - "spinpol": True
                 - "fmax": 0.05
                 - "optimizer": "BFGS"
-                - "initial_magnetic_moments": None
+                - "initial_magnetic_moments": None; one value per site in a
+                  list matching the structure order, or a ``{element: moment}``
+                  dict (unlisted elements set to zero)
             calculation_type (str):
                 Type of calculation script to generate. Supported values are
                 "relax" (default) and "singlepoint".
             **kwargs:
-                Additional keyword arguments.
+                ``charge`` is accepted as an alias for ``charge_state``.
+                Other keyword arguments raise ``TypeError``; GPAW calculator
+                settings must be supplied in ``gpaw_settings``.
         """
+        charge = kwargs.pop("charge", None)
+        if kwargs:
+            raise TypeError(
+                f"Unexpected keyword argument(s) for DefectRelaxSet: {', '.join(sorted(kwargs))}. "
+                "Pass GPAW calculator settings in gpaw_settings."
+            )
+
         self.defect_entry = defect_entry
         self.charge_state = charge_state
         if self.charge_state is None:
-            self.charge_state = kwargs.get("charge")  # Catch it if passed as kwarg
+            self.charge_state = charge
         if self.charge_state is None and isinstance(self.defect_entry, DefectEntry):
             self.charge_state = self.defect_entry.charge_state
 
@@ -105,9 +117,6 @@ class DefectRelaxSet:
 
         self.gpaw_settings = gpaw_settings or {}
         self.calculation_type = calculation_type
-        # note that unrecognised ``**kwargs`` are silently swallowed here (only ``charge`` is consumed,
-        # above), rather than raising as ``doped``'s VASP input sets do. See the GPAW tracking issue:
-        self.kwargs = kwargs
 
         if isinstance(self.defect_entry, Structure):
             self.defect_supercell = self.defect_entry
@@ -123,6 +132,10 @@ class DefectRelaxSet:
         """
         Writes the input files (structure and script) to a directory.
         """
+        # Generate the Python script first, so that invalid settings raise before anything is written
+        structure_filename = "structure.cif"
+        script_content = self._generate_script(structure_filename)
+
         if make_dir_if_not_present:
             os.makedirs(output_path, exist_ok=True)
         elif not os.path.isdir(output_path):
@@ -132,16 +145,8 @@ class DefectRelaxSet:
             filename = f"{self.calculation_type}.py"
 
         # Write structure to a file
-        structure_filename = "structure.cif"
-
-        from pymatgen.io.cif import CifWriter
-
-        # Do not use symprec arg inside CifWriter. It reduces supercells to primitives.
-        writer = CifWriter(self.defect_supercell)
+        writer = CifWriter(self.defect_supercell)  # no symprec arg -- reduces supercells to primitives
         writer.write_file(os.path.join(output_path, structure_filename))
-
-        # Generate Python script
-        script_content = self._generate_script(structure_filename)
 
         with open(os.path.join(output_path, filename), "w") as f:
             f.write(script_content)
@@ -162,6 +167,10 @@ class DefectRelaxSet:
         initial_magnetic_moments = settings.pop("initial_magnetic_moments", None)
 
         magnetic_moments_line = ""
+        if isinstance(initial_magnetic_moments, dict):  # {element: moment}, expanded for this supercell
+            initial_magnetic_moments = [
+                initial_magnetic_moments.get(site.specie.symbol, 0.0) for site in self.defect_supercell
+            ]
         if initial_magnetic_moments is not None:
             if len(initial_magnetic_moments) != len(self.defect_supercell):
                 raise ValueError(
@@ -172,27 +181,26 @@ class DefectRelaxSet:
                 f"atoms.set_initial_magnetic_moments({list(initial_magnetic_moments)!r})\n"
             )
 
-        # Determine charge
         charge = self.charge_state or 0
-
-        # Determine spinpol (default True for defects if not specified)
         spinpol = settings.pop("spinpol", True)
 
         # Relaxation params
         fmax = settings.pop("fmax", 0.05)
-
         supported_optimizers = {"BFGS", "FIRE", "LBFGS", "QuasiNewton"}
         if self.calculation_type == "relax" and optimizer not in supported_optimizers:
             raise ValueError(
                 f"Unsupported optimizer {optimizer!r}. Choose one of: {sorted(supported_optimizers)}"
             )
 
-        # Prepare mode string; note that the ``mode`` sub-parameters are written through unvalidated, so
-        # arguments which the GPAW mode classes do not accept give a script which fails at runtime. In
-        # particular ``LCAO(basis=...)`` raises ``TypeError`` in GPAW, so generated LCAO scripts are
-        # invalid (and ``tests/test_gpaw.py`` asserts that string). See the GPAW tracking issue:
+        # ``basis`` belongs to GPAW, not to the mode classes (none of ``PW``/``LCAO``/``FD`` accept it).
+        # Accept the existing nested form as well as the native top-level setting:
         if isinstance(mode_params, dict):
             name = mode_params.pop("name", "pw")
+            if "basis" in mode_params:
+                basis = mode_params.pop("basis")
+                if "basis" in settings and settings["basis"] != basis:
+                    raise ValueError("Conflicting basis settings in gpaw_settings and its mode dictionary")
+                settings["basis"] = basis
             args = ", ".join([f"{k}={v!r}" for k, v in mode_params.items()])
             mode_str = f"{name.upper()}({args})"
         else:
@@ -254,8 +262,8 @@ print(f"Final Energy: {{energy}} eV")
 class DefectsSet(DefectsSetBase):
     r"""
     Generate GPAW calculation input files for all defect supercells in a
-    :class:`~doped.generation.DefectsGenerator` output (or any set of
-    |DefectEntry|\ s), in the ``<defect name>/`` folder structure.
+    |DefectsGenerator| output (or any set of |DefectEntry|\ s), in the
+    ``<defect name>/`` folder structure.
 
     The calculator-agnostic orchestration (naming, folder structure,
     multiprocessed writing and provenance serialisation) comes from
@@ -279,13 +287,22 @@ class DefectsSet(DefectsSetBase):
                 inputs; see :class:`~doped.io.inputs.DefectsSetBase`.
             gpaw_settings (dict):
                 ``GPAW`` settings for the generated calculation scripts; see
-                :class:`DefectRelaxSet`. Default is ``None``.
+                :class:`DefectRelaxSet`. If using ``initial_magnetic_moments``,
+                it must be given as a per-element dict (``{element: moment}``).
+                Default is ``None``.
             calculation_type (str):
                 Type of calculation script to generate, ``"relax"`` (default)
                 or ``"singlepoint"``.
             **kwargs:
                 Additional keyword arguments for :class:`DefectRelaxSet`.
         """
+        initial_magnetic_moments = (gpaw_settings or {}).get("initial_magnetic_moments")
+        if initial_magnetic_moments is not None and not isinstance(initial_magnetic_moments, dict):
+            raise ValueError(
+                "`initial_magnetic_moments` must be a {element: moment} dict with `DefectsSet`. Use "
+                "`DefectRelaxSet` directly if you wish to use site-resolved initial magnetic moments."
+            )
+
         self.gpaw_settings = gpaw_settings
         self.calculation_type = calculation_type
         super().__init__(defect_entries, **kwargs)
@@ -312,12 +329,13 @@ class DefectsSet(DefectsSetBase):
         defect_input_set.write_input(os.path.join(output_path, defect_species), **dict(write_kwargs))
 
         if bulk:  # write the neutral bulk reference once, with the same settings
-            bulk_folder = bulk if isinstance(bulk, str) else "bulk"
+            bulk_supercell = _get_bulk_supercell(defect_input_set.defect_entry)
+            bulk_folder = bulk if isinstance(bulk, str) else _get_bulk_folder_name(bulk_supercell)
             DefectRelaxSet(
-                _get_bulk_supercell(defect_input_set.defect_entry),
+                bulk_supercell,
                 charge_state=0,
                 gpaw_settings=defect_input_set.gpaw_settings,
-                calculation_type=defect_input_set.calculation_type,
+                calculation_type="singlepoint",  # static reference (nothing to relax)
             ).write_input(os.path.join(output_path, bulk_folder), **dict(write_kwargs))
 
     def write_files(  # type: ignore[override]  # narrows the base signature's ``**kwargs``
@@ -336,9 +354,9 @@ class DefectsSet(DefectsSetBase):
                 Folder in which to create the defect calculation folders.
                 Default is the current directory (".").
             bulk (bool, str):
-                Whether to also write inputs for the reference bulk supercell
-                calculation; a string is used as the folder name (default
-                ``"bulk"``). Default is ``True``.
+                Whether to also write inputs for the (singlepoint) reference
+                bulk supercell calculation; a string is used as the folder name
+                (default ``"{formula}_bulk"``). Default is ``True``.
             processes (int):
                 Number of processes to use for multiprocessed file writing.
                 Default (``None``) sets this automatically.

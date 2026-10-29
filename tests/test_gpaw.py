@@ -3,17 +3,21 @@ Tests for the GPAW interface in ``doped.io.gpaw``.
 """
 
 import os
+import runpy
 import shutil
 import unittest
 from pathlib import Path
 
 import numpy as np
 import pytest
+from ase import Atoms
 from pymatgen.core.structure import Structure
 from test_utils import gpaw_data_dir
 
-from doped.io.gpaw.inputs import DefectRelaxSet
-from doped.io.gpaw.outputs import _find_gpaw_output
+from doped.generation import DefectsGenerator
+from doped.io import get_calculation_outputs
+from doped.io.gpaw.inputs import DefectRelaxSet, DefectsSet
+from doped.io.gpaw.outputs import _find_gpaw_output, get_potentials_from_input
 from doped.parsing import DefectParser, DefectsParser
 
 
@@ -73,8 +77,44 @@ class GPAWTest(unittest.TestCase):
 
         with open(os.path.join(self.output_dir, "relax.py")) as f:
             content = f.read()
-            assert "mode=LCAO(basis='dzp')" in content
+            assert "mode=LCAO()" in content
+            assert "basis='dzp'" in content
             assert "from gpaw import GPAW, PW, LCAO, FD" in content
+
+        assert gpaw_settings == {"mode": {"name": "lcao", "basis": "dzp"}}
+
+    def test_gpaw_defect_relax_set_kwargs(self):
+        with pytest.raises(TypeError, match=r"unexpected_setting.*gpaw_settings"):
+            DefectRelaxSet(self.structure, unexpected_setting=True)
+
+        alias_set = DefectRelaxSet(self.structure, charge=-1)
+        alias_set.write_input(self.output_dir)
+        assert "charge=-1" in (Path(self.output_dir) / "relax.py").read_text()
+
+        # An explicit charge_state still takes precedence, including the neutral state.
+        explicit_set = DefectRelaxSet(self.structure, charge_state=0, charge=-1)
+        explicit_set.write_input(self.output_dir)
+        assert "charge=0" in (Path(self.output_dir) / "relax.py").read_text()
+
+    def test_gpaw_lcao_conflicting_basis(self):
+        relax_set = DefectRelaxSet(
+            self.structure,
+            gpaw_settings={"mode": {"name": "lcao", "basis": "dzp"}, "basis": "sz"},
+        )
+        with pytest.raises(ValueError, match="Conflicting basis settings"):
+            relax_set.write_input(self.output_dir)
+
+    def test_gpaw_invalid_settings_write_nothing(self):
+        # invalid settings raise before the output folder is created or any file is written:
+        output_path = os.path.join(self.output_dir, "new_folder")
+        for gpaw_settings, match in [
+            ({"mode": {"name": "pw", "basis": "dzp"}, "basis": "sz"}, "Conflicting basis settings"),
+            ({"optimizer": "MDMin"}, "Unsupported optimizer"),
+            ({"initial_magnetic_moments": [1.0] * (len(self.structure) + 1)}, "one value per atom"),
+        ]:
+            with pytest.raises(ValueError, match=match):
+                DefectRelaxSet(self.structure, gpaw_settings=gpaw_settings).write_input(output_path)
+            assert not os.path.exists(output_path)
 
     def test_gpaw_singlepoint_set(self):
         singlepoint_set = DefectRelaxSet(
@@ -116,23 +156,36 @@ class GPAWTest(unittest.TestCase):
         with pytest.raises(ValueError, match="one value per atom"):
             invalid_set.write_input(self.output_dir)
 
+        # per-element moments are expanded for the structure, with unlisted elements set to zero:
+        structure = self.structure * (2, 1, 1)
+        structure.replace(0, "Ni")
+        DefectRelaxSet(structure, gpaw_settings={"initial_magnetic_moments": {"Ni": 2.0}}).write_input(
+            self.output_dir
+        )
+        script = (Path(self.output_dir) / "relax.py").read_text()
+        assert f"atoms.set_initial_magnetic_moments({[2.0] + [0.0] * (len(structure) - 1)!r})" in script
+
     def test_gpaw_defects_set(self):
         """
         Test the generic ``DefectsSet`` workflow for GPAW: building input sets
         for a full ``DefectsGenerator`` output and writing them to the
         ``<defect name>/`` folder structure, as with VASP.
         """
-        from doped.generation import DefectsGenerator
-        from doped.io.gpaw.inputs import DefectsSet
-
         defect_gen = DefectsGenerator(self.structure)
+        with pytest.raises(TypeError, match=r"unexpected_setting.*gpaw_settings"):
+            DefectsSet(defect_gen, unexpected_setting=True)
         defects_set = DefectsSet(defect_gen, gpaw_settings={"mode": {"name": "pw", "ecut": 500}})
         assert len(defects_set.defect_sets) == len(defect_gen.defect_entries)
 
         defects_set.write_files(output_path=self.output_dir, processes=1)
         written = set(os.listdir(self.output_dir))
         assert set(defect_gen.defect_entries) <= written  # one folder per defect, doped-named
-        assert "bulk" in written  # the neutral bulk reference, written once
+        assert "Cu_bulk" in written  # the neutral bulk reference, written once
+        # static reference, regardless of the defects' ``calculation_type``:
+        assert sorted(os.listdir(os.path.join(self.output_dir, "Cu_bulk"))) == [
+            "singlepoint.py",
+            "structure.cif",
+        ]
         assert any(name.endswith(".json.gz") for name in written)  # provenance
 
         defect_species = next(iter(defect_gen.defect_entries))
@@ -142,6 +195,20 @@ class GPAWTest(unittest.TestCase):
             script = script_file.read()
         assert "mode=PW(ecut=500)" in script  # settings forwarded to each defect
         assert f"charge={defect_gen.defect_entries[defect_species].charge_state}" in script
+
+        with pytest.raises(ValueError, match="dict with `DefectsSet`"):
+            DefectsSet(defect_gen, gpaw_settings={"initial_magnetic_moments": [1.0]})
+
+        # per-element moments are expanded for each defect (and the bulk) supercell, which differ in size:
+        magmom_dir = os.path.join(self.output_dir, "magmoms")
+        DefectsSet(defect_gen, gpaw_settings={"initial_magnetic_moments": {"Cu": 1.0}}).write_files(
+            output_path=magmom_dir, processes=1
+        )
+        scripts = dict.fromkeys(defect_gen.defect_entries, "relax.py") | {"Cu_bulk": "singlepoint.py"}
+        for folder, script_name in scripts.items():
+            n_atoms = len(Structure.from_file(os.path.join(magmom_dir, folder, "structure.cif")))
+            script = (Path(magmom_dir) / folder / script_name).read_text()
+            assert f"atoms.set_initial_magnetic_moments({[1.0] * n_atoms!r})" in script
 
     def test_find_gpaw_output(self):
         calc_dir = os.path.join(self.output_dir, "calculation")
@@ -288,8 +355,6 @@ class GPAWTest(unittest.TestCase):
         as those parsed up-front.
         """
         pytest.importorskip("gpaw")
-        from doped.io import get_calculation_outputs
-        from doped.io.gpaw.outputs import get_potentials_from_input
 
         gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         gpaw_bulk_dir = os.path.join(gpaw_mgo_dir, "bulk")
@@ -329,7 +394,6 @@ class GPAWTest(unittest.TestCase):
         parsed with ``doped``'s generic machinery.
         """
         pytest.importorskip("gpaw")
-        from doped.io import get_calculation_outputs
 
         gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         bulk_outputs = get_calculation_outputs(
@@ -362,7 +426,6 @@ class GPAWTest(unittest.TestCase):
         GPAW calculations.
         """
         pytest.importorskip("gpaw")
-        from doped.parsing import DefectsParser
 
         gpaw_mgo_dir = os.path.join(gpaw_data_dir, "MgO")
         dp = DefectsParser(  # default ``processes``, so this also covers the multiprocessing path
@@ -394,7 +457,7 @@ class GPAWTest(unittest.TestCase):
             # metadata the GPAW-specific parser does not provide:
             run_metadata = entry.calculation_metadata["run_metadata"]
             assert run_metadata["defect_gpaw_parameters"]["mode"]["name"] == "pw"
-            assert run_metadata["bulk_gpaw_parameters"]["charge"] == 0
+            assert run_metadata["bulk_gpaw_parameters"].get("charge", 0) == 0  # GPAW >= 26 omits defaults
             # the bulk & defect calculations here differ only in charge, which is excluded:
             assert entry.calculation_metadata["mismatching_gpaw_parameters"] is False
             assert entry.calculation_metadata["relaxed point symmetry"]
@@ -448,3 +511,49 @@ class GPAWTest(unittest.TestCase):
                 atol=1e-3,
                 err_msg=f"Graphene 2D Kumagai calculation failed for {defect_name}!",
             )
+
+
+@pytest.mark.parametrize(
+    "gpaw_settings",
+    [
+        {"mode": {"name": "lcao", "basis": "dzp"}},
+        {"mode": {"name": "lcao"}, "basis": {"Cu": "dzp"}},
+        {"mode": "lcao", "basis": "dzp"},
+        {"mode": {"name": "lcao", "basis": "dzp"}, "basis": "dzp"},
+        {"mode": {"name": "pw", "basis": "dzp"}},
+    ],
+)
+def test_basis_script_initializes_gpaw(gpaw_settings, tmp_path, monkeypatch):
+    """
+    Execute the generated script with real GPAW input validation, without an
+    SCF calculation or restart-file write.
+    """
+    gpaw = pytest.importorskip("gpaw")
+
+    real_gpaw = gpaw.GPAW
+
+    def make_calculator(*args, **kwargs):
+        calc = real_gpaw(*args, **kwargs)
+        monkeypatch.setattr(calc, "write", lambda *args, **kwargs: None)
+        return calc
+
+    monkeypatch.setattr(gpaw, "GPAW", make_calculator)
+    monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 0.0)
+    monkeypatch.chdir(tmp_path)
+    structure = Structure.from_file(Path(gpaw_data_dir).parent / "Cu_prim_POSCAR")
+    DefectRelaxSet(structure, gpaw_settings=gpaw_settings, calculation_type="singlepoint").write_input(
+        tmp_path
+    )
+
+    namespace = runpy.run_path(str(tmp_path / "singlepoint.py"))
+    calc = namespace["calc"]
+    try:
+        # GPAW 25.x uses a dict; 26.x exposes a Parameters object and normalises a string basis.
+        basis = calc.parameters["basis"] if isinstance(calc.parameters, dict) else calc.parameters.basis
+        if isinstance(basis, dict) and set(basis) == {"default"}:
+            basis = basis["default"]
+        assert basis == gpaw_settings.get("basis", "dzp")
+    finally:
+        if hasattr(calc, "close"):
+            calc.close()
+        namespace["atoms"].calc = None

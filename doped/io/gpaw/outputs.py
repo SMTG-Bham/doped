@@ -355,7 +355,10 @@ def get_calculation_outputs(
     gpw_file = _find_gpaw_output(path, subfolder)
     calc = GPAW(gpw_file, txt=None)
     try:
-        charge = calc.parameters.get("charge") or 0
+        parameters = (
+            calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
+        )  # retain GPAW<26 compatibility
+        charge = parameters.get("charge") or 0  # parameters only holds explicitly-set, non-default values
         band_gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
         eigenvalues = {}
         for spin_index, spin in enumerate((Spin.up, Spin.down)[: calc.get_number_of_spins()]):
@@ -378,7 +381,7 @@ def get_calculation_outputs(
             energy=calc.get_potential_energy(),
             calculator="gpaw",
             directory=str(path),
-            converged_electronic=bool(getattr(calc.scf, "converged", True)),
+            converged_electronic=bool(getattr(getattr(calc, "scf", None), "converged", True)),
             # a ``.gpw`` restart file holds the final state only, with no ionic-step history to check:
             converged_ionic=None,
             efermi=efermi,
@@ -397,7 +400,7 @@ def get_calculation_outputs(
                 for axis, potentials in _get_planar_averaged_potential_from_calc(calc).items()
             },
             site_potentials=_get_site_potentials_from_calc(calc),
-            run_metadata={"gpaw_parameters": dict(calc.parameters)},
+            run_metadata={"gpaw_parameters": parameters},
         )
     finally:
         if hasattr(calc, "close"):
