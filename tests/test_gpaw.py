@@ -156,6 +156,15 @@ class GPAWTest(unittest.TestCase):
         with pytest.raises(ValueError, match="one value per atom"):
             invalid_set.write_input(self.output_dir)
 
+        # per-element moments are expanded for the structure, with unlisted elements set to zero:
+        structure = self.structure * (2, 1, 1)
+        structure.replace(0, "Ni")
+        DefectRelaxSet(structure, gpaw_settings={"initial_magnetic_moments": {"Ni": 2.0}}).write_input(
+            self.output_dir
+        )
+        script = (Path(self.output_dir) / "relax.py").read_text()
+        assert f"atoms.set_initial_magnetic_moments({[2.0] + [0.0] * (len(structure) - 1)!r})" in script
+
     def test_gpaw_defects_set(self):
         """
         Test the generic ``DefectsSet`` workflow for GPAW: building input sets
@@ -171,7 +180,12 @@ class GPAWTest(unittest.TestCase):
         defects_set.write_files(output_path=self.output_dir, processes=1)
         written = set(os.listdir(self.output_dir))
         assert set(defect_gen.defect_entries) <= written  # one folder per defect, doped-named
-        assert "bulk" in written  # the neutral bulk reference, written once
+        assert "Cu_bulk" in written  # the neutral bulk reference, written once
+        # static reference, regardless of the defects' ``calculation_type``:
+        assert sorted(os.listdir(os.path.join(self.output_dir, "Cu_bulk"))) == [
+            "singlepoint.py",
+            "structure.cif",
+        ]
         assert any(name.endswith(".json.gz") for name in written)  # provenance
 
         defect_species = next(iter(defect_gen.defect_entries))
@@ -181,6 +195,20 @@ class GPAWTest(unittest.TestCase):
             script = script_file.read()
         assert "mode=PW(ecut=500)" in script  # settings forwarded to each defect
         assert f"charge={defect_gen.defect_entries[defect_species].charge_state}" in script
+
+        with pytest.raises(ValueError, match="dict with `DefectsSet`"):
+            DefectsSet(defect_gen, gpaw_settings={"initial_magnetic_moments": [1.0]})
+
+        # per-element moments are expanded for each defect (and the bulk) supercell, which differ in size:
+        magmom_dir = os.path.join(self.output_dir, "magmoms")
+        DefectsSet(defect_gen, gpaw_settings={"initial_magnetic_moments": {"Cu": 1.0}}).write_files(
+            output_path=magmom_dir, processes=1
+        )
+        scripts = dict.fromkeys(defect_gen.defect_entries, "relax.py") | {"Cu_bulk": "singlepoint.py"}
+        for folder, script_name in scripts.items():
+            n_atoms = len(Structure.from_file(os.path.join(magmom_dir, folder, "structure.cif")))
+            script = (Path(magmom_dir) / folder / script_name).read_text()
+            assert f"atoms.set_initial_magnetic_moments({[1.0] * n_atoms!r})" in script
 
     def test_find_gpaw_output(self):
         calc_dir = os.path.join(self.output_dir, "calculation")
@@ -429,7 +457,7 @@ class GPAWTest(unittest.TestCase):
             # metadata the GPAW-specific parser does not provide:
             run_metadata = entry.calculation_metadata["run_metadata"]
             assert run_metadata["defect_gpaw_parameters"]["mode"]["name"] == "pw"
-            assert run_metadata["bulk_gpaw_parameters"]["charge"] == 0
+            assert run_metadata["bulk_gpaw_parameters"].get("charge", 0) == 0  # GPAW >= 26 omits defaults
             # the bulk & defect calculations here differ only in charge, which is excluded:
             assert entry.calculation_metadata["mismatching_gpaw_parameters"] is False
             assert entry.calculation_metadata["relaxed point symmetry"]
