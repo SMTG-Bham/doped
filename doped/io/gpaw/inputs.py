@@ -191,11 +191,11 @@ class DefectRelaxSet:
                 f"Unsupported optimizer {optimizer!r}. Choose one of: {sorted(supported_optimizers)}"
             )
 
-        # ``basis`` belongs to GPAW, not LCAO. Accept the existing nested form as well as the native
-        # top-level setting, without silently choosing between conflicting basis specifications.
+        # ``basis`` belongs to GPAW, not to the mode classes (none of ``PW``/``LCAO``/``FD`` accept it).
+        # Accept the existing nested form as well as the native top-level setting:
         if isinstance(mode_params, dict):
             name = mode_params.pop("name", "pw")
-            if name.lower() == "lcao" and "basis" in mode_params:
+            if "basis" in mode_params:
                 basis = mode_params.pop("basis")
                 if "basis" in settings and settings["basis"] != basis:
                     raise ValueError("Conflicting basis settings in gpaw_settings and its mode dictionary")
