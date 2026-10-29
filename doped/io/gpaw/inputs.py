@@ -71,7 +71,6 @@ class DefectDictSet:
         charge_state: int | None = None,
         gpaw_settings: dict[str, Any] | None = None,
         calculation_type: Literal["relax", "singlepoint"] = "relax",
-        **kwargs,
     ):
         """
         Args:
@@ -97,8 +96,6 @@ class DefectDictSet:
                 (``relax.py``) continues from the last frame of ``relax.traj``
                 if present (e.g. when resubmitting a timed-out calculation),
                 otherwise starting from ``structure.cif``.
-            **kwargs:
-                To remove.
         """
         charge = kwargs.pop("charge", None)
         if kwargs:
@@ -288,7 +285,6 @@ class DefectsSet(DefectsSetBase):
         defect_entries,
         gpaw_settings: dict[str, Any] | None = None,
         calculation_type: Literal["relax", "singlepoint"] = "relax",
-        **kwargs,
     ):
         r"""
         Args:
@@ -303,8 +299,6 @@ class DefectsSet(DefectsSetBase):
             calculation_type (str):
                 Type of calculation script to generate, ``"relax"`` (default)
                 or ``"singlepoint"``.
-            **kwargs:
-                Additional keyword arguments for :class:`DefectRelaxSet`.
         """
         initial_magnetic_moments = (gpaw_settings or {}).get("initial_magnetic_moments")
         if initial_magnetic_moments is not None and not isinstance(initial_magnetic_moments, dict):
@@ -315,7 +309,7 @@ class DefectsSet(DefectsSetBase):
 
         self.gpaw_settings = gpaw_settings
         self.calculation_type = calculation_type
-        super().__init__(defect_entries, **kwargs)
+        super().__init__(defect_entries)
 
     def _defect_input_set(self, defect_entry: DefectEntry) -> DefectDictSet:
         """
