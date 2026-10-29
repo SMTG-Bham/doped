@@ -89,7 +89,7 @@ jobs:
   test-gpaw:
     # GPAW support (``doped.io.gpaw``) needs GPAW itself to read ``.gpw`` outputs, and GPAW builds a C
     # extension against libxc/BLAS/LAPACK/FFTW (with no Windows support), so its tests run in one Linux job
-    # rather than across the matrix above. Without GPAW installed, ``tests/test_gpaw.py`` skips entirely.
+    # rather than across the matrix above (where the ``tests/test_gpaw.py`` tests which need GPAW skip).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,7 +103,11 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libxc-dev libblas-dev liblapack-dev libfftw3-dev
           python -m pip install --upgrade pip
           pip install --no-deps git+https://github.com/SMTG-Bham/ShakeNBreak@develop
-          pip install -e ".[tests,gpaw]"
+          # GPAW 26.7 compiles its ``.c`` sources as C++, but with Python's default C compiler unless one
+          # is set (failing with ``algorithm: No such file or directory``), hence ``CC=g++``. ``ase``
+          # 3.29.0's ``.gpw`` reader sets ``ndarray.shape``, deprecated in NumPy 2.5, which the test config
+          # treats as an error; drop the ``numpy`` pin at the next ``ase`` release (TODO):
+          CC=g++ pip install -e ".[tests,gpaw]" "numpy<2.5"
 
       - name: Check GPAW is importable  # the GPAW tests skip without it, so a broken install must fail here
         run: python -c "import gpaw; print(gpaw.__version__)"
