@@ -169,6 +169,7 @@ class DefectDictSet:
         xc = settings.pop("xc", "PBE")
         kpts = settings.pop("kpts", {"size": (1, 1, 1), "gamma": True})
         txt = settings.pop("txt", "gpaw_output.txt")
+        txt = os.fspath(txt) if isinstance(txt, os.PathLike) else txt  # e.g. ``Path``, as a plain string
         convergence = settings.pop("convergence", {})
         optimizer = settings.pop("optimizer", "BFGS")
         initial_magnetic_moments = settings.pop("initial_magnetic_moments", None)
@@ -315,7 +316,6 @@ class DefectsSet(DefectsSetBase):
             charge_state=defect_entry.charge_state,
             gpaw_settings=self.gpaw_settings,
             calculation_type=self.calculation_type,
-            **self.kwargs,
         )
 
     @staticmethod
@@ -337,10 +337,10 @@ class DefectsSet(DefectsSetBase):
                 calculation_type="singlepoint",  # static reference (nothing to relax)
             ).write_input(os.path.join(output_path, bulk_folder), **dict(write_kwargs))
 
-    def write_files(  # type: ignore[override]  # narrows the base signature's ``**kwargs``
+    def write_files(  # type: ignore[override]  # narrows the base signature's ``bulk`` (to a bool)
         self,
         output_path: PathLike = ".",
-        bulk: bool | str = True,
+        bulk: bool = True,
         processes: int | None = None,
         **kwargs,
     ):
@@ -352,10 +352,10 @@ class DefectsSet(DefectsSetBase):
             output_path (PathLike):
                 Folder in which to create the defect calculation folders.
                 Default is the current directory (".").
-            bulk (bool, str):
+            bulk (bool):
                 Whether to also write inputs for the (singlepoint) reference
-                bulk supercell calculation; a string is used as the folder name
-                (default ``"{formula}_bulk"``). Default is ``True``.
+                bulk supercell calculation, to ``{formula}_bulk``. Default is
+                ``True``.
             processes (int):
                 Number of processes to use for multiprocessed file writing.
                 Default (``None``) sets this automatically.
