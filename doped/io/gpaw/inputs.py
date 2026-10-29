@@ -129,6 +129,10 @@ class DefectRelaxSet:
         """
         Writes the input files (structure and script) to a directory.
         """
+        # Generate the Python script first, so that invalid settings raise before anything is written
+        structure_filename = "structure.cif"
+        script_content = self._generate_script(structure_filename)
+
         if make_dir_if_not_present:
             os.makedirs(output_path, exist_ok=True)
         elif not os.path.isdir(output_path):
@@ -138,16 +142,10 @@ class DefectRelaxSet:
             filename = f"{self.calculation_type}.py"
 
         # Write structure to a file
-        structure_filename = "structure.cif"
-
         from pymatgen.io.cif import CifWriter
 
-        # Do not use symprec arg inside CifWriter. It reduces supercells to primitives.
-        writer = CifWriter(self.defect_supercell)
+        writer = CifWriter(self.defect_supercell)  # no symprec arg -- reduces supercells to primitives
         writer.write_file(os.path.join(output_path, structure_filename))
-
-        # Generate Python script
-        script_content = self._generate_script(structure_filename)
 
         with open(os.path.join(output_path, filename), "w") as f:
             f.write(script_content)
