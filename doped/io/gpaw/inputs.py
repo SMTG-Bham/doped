@@ -10,7 +10,7 @@ unavailable with GPAW:
   ``write_*_files()``), so ``CompetingPhases(..., calculator="gpaw")`` is
   not supported.
 - Default calculation parameters live hard-coded in
-  ``DefectRelaxSet._generate_script()``, rather than in data files
+  ``DefectDictSet._generate_script()``, rather than in data files
   alongside this module (as with ``doped/io/vasp/VASP_sets``), so they
   cannot be inspected or overridden as a set.
 
@@ -58,10 +58,10 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-class DefectRelaxSet:
+class DefectDictSet:
     """
-    Class for generating input files (Python scripts) for GPAW defect
-    relaxation.
+    Class for generating the input files (``structure.cif`` and a GPAW Python
+    script) for a single defect supercell calculation with GPAW.
     """
 
     def __init__(
@@ -268,10 +268,10 @@ class DefectsSet(DefectsSetBase):
     The calculator-agnostic orchestration (naming, folder structure,
     multiprocessed writing and provenance serialisation) comes from
     :class:`~doped.io.inputs.DefectsSetBase`; this only builds and writes the
-    per-defect :class:`DefectRelaxSet`\ s.
+    per-defect :class:`DefectDictSet`\ s.
     """
 
-    _input_set_name = "DefectRelaxSet"
+    _input_set_name = "DefectDictSet"
 
     def __init__(
         self,
@@ -287,7 +287,7 @@ class DefectsSet(DefectsSetBase):
                 inputs; see :class:`~doped.io.inputs.DefectsSetBase`.
             gpaw_settings (dict):
                 ``GPAW`` settings for the generated calculation scripts; see
-                :class:`DefectRelaxSet`. If using ``initial_magnetic_moments``,
+                :class:`DefectDictSet`. If using ``initial_magnetic_moments``,
                 it must be given as a per-element dict (``{element: moment}``).
                 Default is ``None``.
             calculation_type (str):
@@ -300,18 +300,18 @@ class DefectsSet(DefectsSetBase):
         if initial_magnetic_moments is not None and not isinstance(initial_magnetic_moments, dict):
             raise ValueError(
                 "`initial_magnetic_moments` must be a {element: moment} dict with `DefectsSet`. Use "
-                "`DefectRelaxSet` directly if you wish to use site-resolved initial magnetic moments."
+                "`DefectDictSet` directly if you wish to use site-resolved initial magnetic moments."
             )
 
         self.gpaw_settings = gpaw_settings
         self.calculation_type = calculation_type
         super().__init__(defect_entries, **kwargs)
 
-    def _defect_input_set(self, defect_entry: DefectEntry) -> DefectRelaxSet:
+    def _defect_input_set(self, defect_entry: DefectEntry) -> DefectDictSet:
         """
-        Build the :class:`DefectRelaxSet` for a single defect entry.
+        Build the :class:`DefectDictSet` for a single defect entry.
         """
-        return DefectRelaxSet(
+        return DefectDictSet(
             defect_entry=defect_entry,
             charge_state=defect_entry.charge_state,
             gpaw_settings=self.gpaw_settings,
@@ -330,8 +330,8 @@ class DefectsSet(DefectsSetBase):
 
         if bulk:  # write the neutral bulk reference once, with the same settings
             bulk_supercell = _get_bulk_supercell(defect_input_set.defect_entry)
-            bulk_folder = bulk if isinstance(bulk, str) else _get_bulk_folder_name(bulk_supercell)
-            DefectRelaxSet(
+            bulk_folder = _get_bulk_folder_name(bulk_supercell)
+            DefectDictSet(
                 bulk_supercell,
                 charge_state=0,
                 gpaw_settings=defect_input_set.gpaw_settings,
@@ -362,6 +362,6 @@ class DefectsSet(DefectsSetBase):
                 Default (``None``) sets this automatically.
             **kwargs:
                 Additional keyword arguments for
-                :meth:`DefectRelaxSet.write_input`.
+                :meth:`DefectDictSet.write_input`.
         """
         super().write_files(output_path=output_path, bulk=bulk, processes=processes, **kwargs)
