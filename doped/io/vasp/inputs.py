@@ -1520,7 +1520,7 @@ class DefectRelaxSet(MSONable):
             if bulk_supercell is None:
                 return
 
-            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) or "."
             self._write_vasp_xxx_files(
                 f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
                 subfolder,
@@ -1643,7 +1643,7 @@ class DefectRelaxSet(MSONable):
             if bulk_supercell is None:
                 return
 
-            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) or "."
             self._write_vasp_xxx_files(
                 f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
                 subfolder,
@@ -1776,7 +1776,7 @@ class DefectRelaxSet(MSONable):
             if bulk_supercell is None:
                 return
 
-            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) or "."
             self._write_vasp_xxx_files(
                 f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
                 subfolder,
@@ -1911,7 +1911,7 @@ class DefectRelaxSet(MSONable):
                 return
 
             # get output dir: (folder above defect_dir if defect_dir is a subfolder)
-            output_path = os.path.dirname(defect_dir) if "/" in defect_dir else "."
+            output_path = os.path.dirname(defect_dir) or "."
             self._write_vasp_xxx_files(
                 f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
                 subfolder,
