@@ -114,7 +114,6 @@ class DefectRelaxSet:
 
         self.gpaw_settings = gpaw_settings or {}
         self.calculation_type = calculation_type
-        self.kwargs = kwargs
 
         if isinstance(self.defect_entry, Structure):
             self.defect_supercell = self.defect_entry
