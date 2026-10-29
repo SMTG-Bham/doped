@@ -9,9 +9,11 @@ import runpy
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from ase import Atoms
 from ase.io import read
 from ase.io.trajectory import Trajectory
 from pymatgen.core.structure import Structure
@@ -25,7 +27,7 @@ from test_utils import (
 from doped.generation import DefectsGenerator
 from doped.io import get_calculation_outputs
 from doped.io.gpaw.inputs import DefectDictSet, DefectsSet
-from doped.io.gpaw.outputs import _find_gpaw_output, get_potentials_from_input
+from doped.io.gpaw.outputs import _find_gpaw_output, get_competing_phase_entry, get_potentials_from_input
 from doped.io.inputs import _get_bulk_folder_name
 from doped.parsing import DefectParser, DefectsParser
 from doped.thermodynamics import DefectThermodynamics
@@ -536,3 +538,96 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
         fig, warnings = self._correction_plot("Mg_i_Td_+2", fnv=True)
         _check_warnings(warnings, [("(FNV) charge correction for defect Mg_i_Td_+2 is",)])
         return fig
+
+
+def test_competing_phase_entry_real_gpaw():
+    """
+    Read the shipped neutral restart without loading defect potentials.
+    """
+    pytest.importorskip("gpaw")
+    from monty.json import MontyDecoder, MontyEncoder
+
+    path = Path(gpaw_data_dir) / "MgO" / "bulk"
+    entry = get_competing_phase_entry(path)
+    assert entry.composition.reduced_formula == "MgO"
+    assert entry.energy == pytest.approx(73.25088079545509, abs=1e-6)
+    assert entry.data["folder"] == str(path)
+    assert entry.data["nsites"] == len(entry.structure)
+    assert entry.data["gpaw_parameters"]["mode"]["name"] == "pw"
+    assert "converged_ionic" not in entry.data
+    # The entry contains no live GPAW/MPI objects and can be serialised for later analysis.
+    roundtrip = MontyDecoder().decode(MontyEncoder().encode(entry))
+    assert roundtrip.energy == entry.energy
+    assert roundtrip.structure == entry.structure
+
+
+@pytest.mark.parametrize("new_parameters", [False, True])
+def test_competing_phase_analyzer_gpaw(tmp_path, monkeypatch, new_parameters):
+    """
+    Check discovery, elemental references and chemical potentials with
+    synthetic GPAW outputs.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    from doped.chemical_potentials import CompetingPhasesAnalyzer
+
+    atoms_and_energies = {
+        "MgO": (Atoms("MgO", positions=[[0, 0, 0], [2, 2, 2]], cell=[4, 4, 4], pbc=True), -12.0),
+        "Mg": (Atoms("Mg", cell=[3, 3, 3], pbc=True), -1.0),
+        "O2": (Atoms("O2", positions=[[0, 0, 0], [0, 0, 1.2]], cell=[12, 12, 12], pbc=True), -6.0),
+    }
+    opened = []
+
+    class PhaseCalculator:
+        def __init__(self, filename, **kwargs):
+            phase = Path(filename).parent.name
+            self.atoms, self.energy = atoms_and_energies[phase]
+            parameters = {"mode": {"name": "pw", "ecut": 400}, "xc": "PBE"}
+            self.parameters = SimpleNamespace(todict=lambda: parameters) if new_parameters else parameters
+            self.scf = SimpleNamespace(converged=True)
+            self.closed = False
+            opened.append(self)
+
+        def get_atoms(self):
+            return self.atoms.copy()
+
+        def get_potential_energy(self):
+            return self.energy
+
+        def get_magnetic_moment(self):
+            return 2.0 if self.atoms.get_chemical_formula() == "O2" else 0.0
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(gpaw, "GPAW", PhaseCalculator)
+    for phase in atoms_and_energies:
+        folder = tmp_path / phase
+        folder.mkdir()
+        (folder / "singlepoint.gpw").touch()
+
+    analyzer = CompetingPhasesAnalyzer("MgO", entries=tmp_path, calculator="gpaw", processes=1)
+    assert len(analyzer.entries) == 3
+    assert analyzer.chempots["elemental_refs"] == {"Mg": -1.0, "O": -3.0}
+    limits = list(analyzer.chempots["limits_wrt_el_refs"].values())
+    np.testing.assert_allclose(sorted((mu["Mg"], mu["O"]) for mu in limits), [(-8, 0), (0, -8)])
+    assert set(analyzer.parsed_folders) == {str(tmp_path / phase) for phase in atoms_and_energies}
+    assert all(calc.closed for calc in opened)
+    assert len(analyzer.get_formation_energy_df()) == 3
+
+
+def test_competing_phase_entry_rejects_charge_and_closes(tmp_path, monkeypatch):
+    """
+    Do not use charged defect energies as neutral competing phases; close on
+    errors too.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    path = tmp_path / "singlepoint.gpw"
+    path.touch()
+    calc = SimpleNamespace(parameters={"charge": 1}, atoms=Atoms("H"))
+    closed = []
+    calc.close = lambda: closed.append(True)
+    monkeypatch.setattr(gpaw, "GPAW", lambda *args, **kwargs: calc)
+    with pytest.raises(ValueError, match="must be neutral"):
+        get_competing_phase_entry(path)
+    assert closed == [True]
+    assert calc.atoms.calc is None

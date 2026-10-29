@@ -15,8 +15,6 @@ Not implemented, and so unavailable with GPAW:
   the ``.gpw`` files, but are not yet mapped to ``pymatgen``'s format.
 - ``get_fermi_dos()``: bulk DOS parsing, for Fermi level / carrier
   concentration analysis (``FermiSolver``).
-- ``get_competing_phase_entry()``: competing phase parsing, for chemical
-  potential analysis (``CompetingPhasesAnalyzer``).
 - Occupation-based band edges, see
   :func:`_get_eigenvalue_properties_from_calc`.
 
@@ -30,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.ase import AseAtomsAdaptor
@@ -37,16 +36,13 @@ from pymatgen.util.typing import PathLike
 
 from doped.io.outputs import CalculationOutputs
 
-# ``doped`` accesses these two remaining unimplemented protocol names directly (rather than probing
+# ``doped`` accesses the remaining unimplemented protocol name directly (rather than probing
 # with ``getattr(backend, name, default)``), so they are intercepted here to fail informatively rather
 # than with an obscure ``AttributeError``. The optional, ``getattr``-probed protocol names
 # (``SUBFOLDER_PRIORITY``, ``MISMATCH_WARNING_SPECS``, ``check_entry_compatibility``,
 # ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
 # ``AttributeError``, so that those features degrade gracefully as intended:
-_UNIMPLEMENTED_BACKEND_ATTRS = (
-    "get_competing_phase_entry",
-    "get_fermi_dos",
-)
+_UNIMPLEMENTED_BACKEND_ATTRS = ("get_fermi_dos",)
 
 
 def __getattr__(name: str) -> Any:
@@ -58,11 +54,8 @@ def __getattr__(name: str) -> Any:
     if name in _UNIMPLEMENTED_BACKEND_ATTRS:
         raise NotImplementedError(
             f"`{__name__}.{name}` is not implemented; GPAW support in `doped` is experimental, and "
-            f"does not yet cover competing phase or bulk DOS parsing. Defect & bulk supercells are "
-            f'parsed as usual, with `DefectsParser(..., calculator="gpaw")`. For competing phases or '
-            f"a bulk DOS, build the `pymatgen` `ComputedStructureEntry` / `FermiDos` objects yourself "
-            f'(e.g. from `get_calculation_outputs(..., calculator="gpaw")`) and pass them to '
-            f"`CompetingPhasesAnalyzer` / `DefectThermodynamics` directly. See the GPAW tracking issue."
+            f"does not yet cover bulk DOS parsing. For a bulk DOS, build a `pymatgen` `FermiDos` "
+            f"object yourself and pass it to `DefectThermodynamics` directly. See the GPAW tracking issue."
         )
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -402,6 +395,69 @@ def get_calculation_outputs(
             site_potentials=_get_site_potentials_from_calc(calc),
             run_metadata={"gpaw_parameters": parameters},
         )
+    finally:
+        if hasattr(calc, "close"):
+            calc.close()
+        if getattr(calc, "atoms", None) is not None:
+            calc.atoms.calc = None
+
+
+def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None) -> ComputedStructureEntry:
+    """
+    Parse a neutral competing-phase calculation for
+    ``CompetingPhasesAnalyzer``.
+
+    Only the structure, energy and calculation metadata are read. Electrostatic
+    potentials and orbital data, needed for defect analysis, are not loaded.
+
+    Args:
+        path (PathLike): Calculation directory or a GPAW ``.gpw`` restart file.
+        subfolder (PathLike): Optional calculation subfolder. Default is ``None``.
+
+    Returns:
+        ComputedStructureEntry: The uncorrected total energy and structure, with
+        GPAW parameters, formula, volume, atom count, source folder and available
+        electronic convergence / magnetization information in ``entry.data``.
+        Ionic convergence is not reported: restart files have no ionic-step
+        history. Band gaps are omitted pending occupation-based band edges.
+    """
+    from gpaw import GPAW
+
+    gpw_file = _find_gpaw_output(path, subfolder)
+    calc = GPAW(gpw_file, txt=None)
+    try:
+        parameters = (
+            calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
+        )
+        if parameters.get("charge", 0):
+            raise ValueError("Competing-phase calculations must be neutral (GPAW charge must be zero)")
+
+        structure = _structure_from_calc(calc)
+        entry = ComputedStructureEntry(structure, calc.get_potential_energy(), parameters=parameters)
+        elements = sorted(el.symbol for el in entry.composition.elements)
+        summary = {}
+        with contextlib.suppress(Exception):  # optional for incomplete / non-spin-polarised outputs
+            summary["total_magnetization"] = calc.get_magnetic_moment()
+        entry.data.update(
+            {
+                "calculator": "gpaw",
+                "gpaw_parameters": parameters,
+                "formula_pretty": entry.composition.reduced_formula,
+                "nsites": len(structure),
+                "volume": structure.volume,
+                "energy_per_atom": entry.energy_per_atom,
+                "elements": elements,
+                "nelements": len(elements),
+                "summary": summary,
+                "folder": str(Path(gpw_file).parent),
+            }
+        )
+        if (scf := getattr(calc, "scf", None)) is not None and hasattr(scf, "converged"):
+            entry.data["converged_electronic"] = bool(scf.converged)
+        kpts = parameters.get("kpts")
+        if isinstance(kpts, dict) and kpts.get("size") is not None:
+            entry.data["kpoints"] = [list(kpts["size"])]
+        return entry
     finally:
         if hasattr(calc, "close"):
             calc.close()
