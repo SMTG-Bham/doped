@@ -87,7 +87,9 @@ class DefectRelaxSet:
                 - "spinpol": True
                 - "fmax": 0.05
                 - "optimizer": "BFGS"
-                - "initial_magnetic_moments": None
+                - "initial_magnetic_moments": None; one value per site in a
+                  list matching the structure order, or a ``{element: moment}``
+                  dict (unlisted elements set to zero)
             calculation_type (str):
                 Type of calculation script to generate. Supported values are
                 "relax" (default) and "singlepoint".
@@ -165,6 +167,10 @@ class DefectRelaxSet:
         initial_magnetic_moments = settings.pop("initial_magnetic_moments", None)
 
         magnetic_moments_line = ""
+        if isinstance(initial_magnetic_moments, dict):  # {element: moment}, expanded for this supercell
+            initial_magnetic_moments = [
+                initial_magnetic_moments.get(site.specie.symbol, 0.0) for site in self.defect_supercell
+            ]
         if initial_magnetic_moments is not None:
             if len(initial_magnetic_moments) != len(self.defect_supercell):
                 raise ValueError(
@@ -175,15 +181,11 @@ class DefectRelaxSet:
                 f"atoms.set_initial_magnetic_moments({list(initial_magnetic_moments)!r})\n"
             )
 
-        # Determine charge
         charge = self.charge_state or 0
-
-        # Determine spinpol (default True for defects if not specified)
         spinpol = settings.pop("spinpol", True)
 
         # Relaxation params
         fmax = settings.pop("fmax", 0.05)
-
         supported_optimizers = {"BFGS", "FIRE", "LBFGS", "QuasiNewton"}
         if self.calculation_type == "relax" and optimizer not in supported_optimizers:
             raise ValueError(
@@ -260,8 +262,8 @@ print(f"Final Energy: {{energy}} eV")
 class DefectsSet(DefectsSetBase):
     r"""
     Generate GPAW calculation input files for all defect supercells in a
-    :class:`~doped.generation.DefectsGenerator` output (or any set of
-    |DefectEntry|\ s), in the ``<defect name>/`` folder structure.
+    |DefectsGenerator| output (or any set of |DefectEntry|\ s), in the
+    ``<defect name>/`` folder structure.
 
     The calculator-agnostic orchestration (naming, folder structure,
     multiprocessed writing and provenance serialisation) comes from
@@ -285,13 +287,22 @@ class DefectsSet(DefectsSetBase):
                 inputs; see :class:`~doped.io.inputs.DefectsSetBase`.
             gpaw_settings (dict):
                 ``GPAW`` settings for the generated calculation scripts; see
-                :class:`DefectRelaxSet`. Default is ``None``.
+                :class:`DefectRelaxSet`. If using ``initial_magnetic_moments``,
+                it must be given as a per-element dict (``{element: moment}``).
+                Default is ``None``.
             calculation_type (str):
                 Type of calculation script to generate, ``"relax"`` (default)
                 or ``"singlepoint"``.
             **kwargs:
                 Additional keyword arguments for :class:`DefectRelaxSet`.
         """
+        initial_magnetic_moments = (gpaw_settings or {}).get("initial_magnetic_moments")
+        if initial_magnetic_moments is not None and not isinstance(initial_magnetic_moments, dict):
+            raise ValueError(
+                "`initial_magnetic_moments` must be a {element: moment} dict with `DefectsSet`. Use "
+                "`DefectRelaxSet` directly if you wish to use site-resolved initial magnetic moments."
+            )
+
         self.gpaw_settings = gpaw_settings
         self.calculation_type = calculation_type
         super().__init__(defect_entries, **kwargs)
