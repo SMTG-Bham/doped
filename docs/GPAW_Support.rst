@@ -31,15 +31,13 @@ Workflow
 
 The GPAW workflow follows the usual ``doped`` sequence:
 
-#. Generate defect supercells with
-   :class:`~doped.generation.DefectsGenerator`.
+#. Generate defect supercells with |DefectsGenerator|.
 #. Write ``structure.cif`` and GPAW Python inputs with
    :class:`~doped.io.gpaw.inputs.DefectsSet`.
 #. Run the GPAW calculations locally or through a scheduler.
-#. Parse the bulk and defect ``.gpw`` restart files with
-   :class:`~doped.parsing.DefectsParser` (with ``calculator="gpaw"``).
-#. Analyse the resulting :class:`~doped.core.DefectEntry` objects with
-   :class:`~doped.thermodynamics.DefectThermodynamics`.
+#. Parse the bulk and defect ``.gpw`` restart files with |DefectsParser| (with
+   ``calculator="gpaw"``).
+#. Analyse the resulting |DefectEntry| objects with |DefectThermodynamics|.
 
 Input generation
 ----------------
@@ -47,11 +45,10 @@ Input generation
 The calculator settings are supplied as a dictionary. Settings consumed by the
 input generator, such as ``optimizer`` and ``fmax``, are not passed on to the
 GPAW calculator. :class:`~doped.io.gpaw.inputs.DefectsSet` writes the inputs
-for all defects from a :class:`~doped.generation.DefectsGenerator` (or a
-dictionary/list of ``DefectEntry`` objects), with ``structure.cif`` and a
-``relax.py`` GPAW script in a ``<defect name>/`` folder for each, and a static
-``singlepoint.py`` reference calculation for the bulk supercell in
-``{formula}_bulk/`` (e.g. ``MgO_bulk/``):
+for all defects from a |DefectsGenerator| (or a dictionary/list of
+|DefectEntry| objects), with ``structure.cif`` and a ``relax.py`` GPAW script in
+a ``<defect name>/`` folder for each, and a static ``singlepoint.py`` reference
+calculation for the bulk supercell in ``{formula}_bulk/`` (e.g. ``MgO_bulk/``):
 
 .. code-block:: python
 
@@ -72,16 +69,16 @@ dictionary/list of ``DefectEntry`` objects), with ``structure.cif`` and a
    defects_set = DefectsSet(defect_gen, gpaw_settings=gpaw_settings)
    defects_set.write_files()
 
-Inputs for an individual supercell can be generated with
-:class:`~doped.io.gpaw.inputs.DefectRelaxSet`, from a
-:class:`~doped.core.DefectEntry` or ``Structure``:
+Inputs for an individual supercell |Structure| (e.g.
+``DefectEntry.defect_supercell``) can be generated with
+:class:`~doped.io.gpaw.inputs.DefectDictSet`:
 
 .. code-block:: python
 
-   from doped.io.gpaw import DefectRelaxSet
+   from doped.io.gpaw import DefectDictSet
 
    structure = Structure.from_file("POSCAR")
-   relax_set = DefectRelaxSet(
+   relax_set = DefectDictSet(
        structure,
        charge_state=1,
        gpaw_settings=gpaw_settings,
@@ -93,7 +90,7 @@ single-point inputs can be generated with ``calculation_type="singlepoint"``:
 
 .. code-block:: python
 
-   singlepoint_set = DefectRelaxSet(
+   singlepoint_set = DefectDictSet(
        structure,
        charge_state=1,
        gpaw_settings=gpaw_settings,
@@ -120,6 +117,10 @@ parallel, for example:
 
    mpirun -np 8 gpaw python relax.py
 
+If a relaxation is interrupted (e.g. by the job time limit), rerunning
+``relax.py`` continues from the last step in ``relax.traj``. Delete
+``relax.traj`` to restart from ``structure.cif``.
+
 Converge the plane-wave cutoff, k-point sampling, supercell size, smearing and
 relaxation settings for the material being studied. The example settings are
 chosen to demonstrate the workflow and are not universal production settings.
@@ -127,10 +128,9 @@ chosen to demonstrate the workflow and are not universal production settings.
 Parsing and charge corrections
 ------------------------------
 
-GPAW calculations are parsed with ``doped``'s usual
-:class:`~doped.parsing.DefectsParser`, by setting ``calculator="gpaw"``. It
-finds recognised GPAW restart files inside each calculation directory and
-stores the parsed entries in ``defect_dict``:
+GPAW calculations are parsed with ``doped``'s usual |DefectsParser|, by setting
+``calculator="gpaw"``. It finds recognised GPAW restart files inside each
+calculation directory and stores the parsed entries in ``defect_dict``:
 
 .. code-block:: python
 
@@ -189,9 +189,8 @@ limits:
    defect_thermodynamics.plot(limit="O-rich")
 
 The complete MgO example prepares Mg structures obtained from the
-:class:`~doped.chemical_potentials.CompetingPhases` workflow and an isolated
-triplet O2 reference, then generates Mg-rich and O-rich formation-energy
-diagrams.
+|CompetingPhases| workflow and an isolated triplet O2 reference, then generates
+Mg-rich and O-rich formation-energy diagrams.
 
 Anisotropic and two-dimensional systems
 ---------------------------------------
