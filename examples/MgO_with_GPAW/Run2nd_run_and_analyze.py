@@ -23,13 +23,13 @@ def main():
     print("Parsing MgO defect calculations...")
     defect_parser = DefectsParser(
         output_path=calculation_dir,
-        bulk_path="bulk",
+        bulk_path="MgO_bulk",
         dielectric=DIELECTRIC,
         calculator="gpaw",
     )
 
     print("Building GPAW-consistent Mg/O chemical potentials...")
-    bulk_entry = get_gpaw_entry(calculation_dir / "bulk")
+    bulk_entry = get_gpaw_entry(calculation_dir / "MgO_bulk")
     phase_dir = calculation_dir / "CompetingPhases_GPAW"
     phase_entries = [get_gpaw_entry(path) for path in sorted(phase_dir.iterdir()) if path.is_dir()]
     chempots = get_doped_chempots_from_entries(

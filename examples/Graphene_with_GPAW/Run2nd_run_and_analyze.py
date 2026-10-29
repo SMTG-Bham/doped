@@ -16,7 +16,7 @@ def main():
     print("Parsing graphene defect calculations...")
     parser = DefectsParser(
         output_path=calculation_dir,
-        bulk_path="bulk",
+        bulk_path="C_bulk",
         dielectric=DIELECTRIC,
         calculator="gpaw",
     )

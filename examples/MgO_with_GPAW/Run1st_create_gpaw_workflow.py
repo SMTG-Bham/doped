@@ -4,7 +4,7 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 
 from doped.generation import DefectsGenerator
-from doped.io.gpaw import DefectRelaxSet
+from doped.io.gpaw import DefectDictSet, DefectsSet
 
 
 def write_competing_phase_inputs(gpaw_settings):
@@ -46,7 +46,7 @@ def write_competing_phase_inputs(gpaw_settings):
             )
 
         print(f"Setting up competing phase {phase_name}...")
-        phase_set = DefectRelaxSet(
+        phase_set = DefectDictSet(
             phase_structure,
             charge_state=0,
             gpaw_settings=phase_settings,
@@ -79,37 +79,18 @@ def main():
 
     print("Writing GPAW input files...")
 
-    # Setup Bulk using the finalized API parameters
-    bulk_set = DefectRelaxSet(
-        defect_gen.bulk_supercell,
-        charge_state=0,
-        gpaw_settings=gpaw_settings,
-    )
-    bulk_set.write_input("bulk")
+    # Write a ``<defect name>/relax.py`` relaxation for each defect, and a static reference calculation for
+    # the bulk supercell (``MgO_bulk/singlepoint.py``):
+    DefectsSet(defect_gen, gpaw_settings=gpaw_settings).write_files()
 
-    # Setup Defects
     for defect_name, defect_entry in defect_gen.defect_entries.items():
-        # Example of filtering defects:
-        # if "v_Mg" not in defect_name and "Mg_O" not in defect_name:
-        #     continue
-
-        print(f"Setting up {defect_name}...")
-
-        # Pass the entry directly, and use the gpaw_settings dictionary
-        defect_set = DefectRelaxSet(
-            defect_entry,
-            charge_state=defect_entry.charge_state,
-            gpaw_settings=gpaw_settings,
-        )
-        defect_set.write_input(defect_name)
-
         # Create a true static single-point example for the Mg_O +1 state
         if "Mg_O" in defect_name and defect_entry.charge_state == 1:
             unrelaxed_name = defect_name + "_unrelaxed"
             print(f"Setting up {unrelaxed_name}...")
 
-            singlepoint_set = DefectRelaxSet(
-                defect_entry,
+            singlepoint_set = DefectDictSet(
+                defect_entry.defect_supercell,
                 charge_state=defect_entry.charge_state,
                 gpaw_settings=gpaw_settings,
                 calculation_type="singlepoint",

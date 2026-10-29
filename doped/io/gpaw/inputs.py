@@ -67,17 +67,18 @@ class DefectDictSet:
 
     def __init__(
         self,
-        defect_entry: DefectEntry | Structure,
-        charge_state: int | None = None,
+        structure: Structure,
+        charge_state: int = 0,
         gpaw_settings: dict[str, Any] | None = None,
         calculation_type: Literal["relax", "singlepoint"] = "relax",
     ):
         """
         Args:
-            defect_entry (DefectEntry, Structure):
-                doped/pymatgen DefectEntry or Structure object.
+            structure (|Structure|):
+                ``pymatgen`` |Structure| object of the defect supercell.
             charge_state (int):
-                Charge state of the defect. Overrides DefectEntry.charge_state.
+                Charge state of the defect, which sets GPAW's ``charge``
+                parameter. Default is 0.
             gpaw_settings (dict):
                 Dictionary of GPAW settings. Defaults used if not specified:
                 - "mode": {"name": "pw", "ecut": 400}
@@ -86,7 +87,7 @@ class DefectDictSet:
                 - "txt": "gpaw_output.txt"
                 - "spinpol": True
                 - "fmax": 0.05
-                - "optimizer": "BFGS"
+                - "optimizer": "BFGS" (any ``ase.optimize`` optimizer)
                 - "initial_magnetic_moments": None; one value per site in a
                   list matching the structure order, or a ``{element: moment}``
                   dict (unlisted elements set to zero)
@@ -97,30 +98,15 @@ class DefectDictSet:
                 if present (e.g. when resubmitting a timed-out calculation),
                 otherwise starting from ``structure.cif``.
         """
-        charge = kwargs.pop("charge", None)
-        if kwargs:
-            raise TypeError(
-                f"Unexpected keyword argument(s) for DefectRelaxSet: {', '.join(sorted(kwargs))}. "
-                "Pass GPAW calculator settings in gpaw_settings."
-            )
-
-        self.defect_entry = defect_entry
-        self.charge_state = charge_state
-        if self.charge_state is None:
-            self.charge_state = charge
-        if self.charge_state is None and isinstance(self.defect_entry, DefectEntry):
-            self.charge_state = self.defect_entry.charge_state
-
+        if "charge" in (gpaw_settings or {}):  # would be repeated in the generated ``GPAW()`` call
+            raise ValueError("Set the charge with `charge_state`, not gpaw_settings['charge'].")
         if calculation_type not in {"relax", "singlepoint"}:
             raise ValueError("calculation_type must be 'relax' or 'singlepoint'")
 
+        self.structure = structure
+        self.charge_state = charge_state
         self.gpaw_settings = gpaw_settings or {}
         self.calculation_type = calculation_type
-
-        if isinstance(self.defect_entry, Structure):
-            self.defect_supercell = self.defect_entry
-        elif isinstance(self.defect_entry, DefectEntry):
-            self.defect_supercell = _get_defect_supercell(self.defect_entry)
 
     def write_input(
         self,
@@ -152,7 +138,7 @@ class DefectDictSet:
             )
 
         # Write structure to a file
-        writer = CifWriter(self.defect_supercell)  # no symprec arg -- reduces supercells to primitives
+        writer = CifWriter(self.structure)  # no symprec arg -- reduces supercells to primitives
         writer.write_file(os.path.join(output_path, structure_filename))
 
         with open(os.path.join(output_path, filename), "w") as f:
@@ -177,19 +163,18 @@ class DefectDictSet:
         magnetic_moments_line = ""
         if isinstance(initial_magnetic_moments, dict):  # {element: moment}, expanded for this supercell
             initial_magnetic_moments = [
-                initial_magnetic_moments.get(site.specie.symbol, 0.0) for site in self.defect_supercell
+                initial_magnetic_moments.get(site.specie.symbol, 0.0) for site in self.structure
             ]
         if initial_magnetic_moments is not None:
-            if len(initial_magnetic_moments) != len(self.defect_supercell):
+            if len(initial_magnetic_moments) != len(self.structure):
                 raise ValueError(
                     "initial_magnetic_moments must contain one value per atom "
-                    f"({len(self.defect_supercell)} values required)"
+                    f"({len(self.structure)} values required)"
                 )
             magnetic_moments_line = (
                 f"atoms.set_initial_magnetic_moments({list(initial_magnetic_moments)!r})\n"
             )
 
-        charge = self.charge_state or 0
         spinpol = settings.pop("spinpol", True)
 
         # Relaxation params
@@ -202,7 +187,11 @@ class DefectDictSet:
             if "basis" in mode_params:
                 basis = mode_params.pop("basis")
                 if "basis" in settings and settings["basis"] != basis:
-                    raise ValueError("Conflicting basis settings in gpaw_settings and its mode dictionary")
+                    raise ValueError(
+                        f"Conflicting basis settings: {basis!r} in gpaw_settings['mode'] and "
+                        f"{settings['basis']!r} in gpaw_settings['basis']. Set the basis in one place "
+                        "only (preferably gpaw_settings['basis'])."
+                    )
                 settings["basis"] = basis
             args = ", ".join([f"{k}={v!r}" for k, v in mode_params.items()])
             mode_str = f"{name.upper()}({args})"
@@ -214,13 +203,19 @@ class DefectDictSet:
         if settings:
             other_kwargs = ",\n    " + ",\n    ".join([f"{k}={v!r}" for k, v in settings.items()])
 
-        optimizer_import = (
-            f"from ase.optimize import {optimizer}\n" if self.calculation_type == "relax" else ""
-        )
         if self.calculation_type == "relax":
+            optimizer_import = f"from ase.optimize import {optimizer}\n"
+            # Continue from the last frame of a previous (e.g. timed-out) relaxation if present:
+            read_structure = (
+                "frames = read('relax.traj', ':') if os.path.isfile('relax.traj') and "
+                # runs interrupted before the first step may leave empty or header-only trajectories,
+                # depending on the ASE version:
+                "os.path.getsize('relax.traj') else []\n"
+                f"atoms = frames[-1] if frames else read('{structure_filename}')"
+            )
             calculation_block = f"""
 # Relaxation
-dyn = {optimizer}(atoms, trajectory='relax.traj')
+dyn = {optimizer}(atoms, trajectory='relax.traj', append_trajectory=True)
 dyn.run(fmax={fmax})
 
 # Save the final state
@@ -228,6 +223,8 @@ energy = atoms.get_potential_energy()
 calc.write('relaxed.gpw')
 """
         else:
+            optimizer_import = ""
+            read_structure = f"atoms = read('{structure_filename}')"
             calculation_block = """
 # Static single-point calculation
 energy = atoms.get_potential_energy()
@@ -235,22 +232,24 @@ calc.write('singlepoint.gpw')
 """
 
         return f"""
+import os
+
 from ase.io import read
 from gpaw import GPAW, PW, LCAO, FD
 {optimizer_import}
 
 # Read structure
-atoms = read('{structure_filename}')
+{read_structure}
 {magnetic_moments_line}
 
 # Setup calculator
 calc = GPAW(
     mode={mode_str},
-    xc='{xc}',
+    xc={xc!r},
     kpts={kpts},
-    txt='{txt}',
+    txt={txt!r},
     convergence={convergence},
-    charge={charge},
+    charge={self.charge_state},
     spinpol={spinpol}{other_kwargs}
 )
 
@@ -312,7 +311,7 @@ class DefectsSet(DefectsSetBase):
         Build the :class:`DefectDictSet` for a single defect entry.
         """
         return DefectDictSet(
-            defect_entry=defect_entry,
+            _get_defect_supercell(defect_entry),
             charge_state=defect_entry.charge_state,
             gpaw_settings=self.gpaw_settings,
             calculation_type=self.calculation_type,
@@ -321,21 +320,10 @@ class DefectsSet(DefectsSetBase):
     @staticmethod
     def _write_defect(args: tuple) -> None:
         """
-        Write the GPAW input files for a single defect (and, for the last
-        defect, the reference bulk supercell).
+        Write the GPAW input files for a single defect.
         """
-        defect_species, defect_input_set, output_path, bulk, write_kwargs = args
+        defect_species, defect_input_set, output_path, _bulk, write_kwargs = args
         defect_input_set.write_input(os.path.join(output_path, defect_species), **dict(write_kwargs))
-
-        if bulk:  # write the neutral bulk reference once, with the same settings
-            bulk_supercell = _get_bulk_supercell(defect_input_set.defect_entry)
-            bulk_folder = _get_bulk_folder_name(bulk_supercell)
-            DefectDictSet(
-                bulk_supercell,
-                charge_state=0,
-                gpaw_settings=defect_input_set.gpaw_settings,
-                calculation_type="singlepoint",  # static reference (nothing to relax)
-            ).write_input(os.path.join(output_path, bulk_folder), **dict(write_kwargs))
 
     def write_files(  # type: ignore[override]  # narrows the base signature's ``bulk`` (to a bool)
         self,
@@ -363,4 +351,11 @@ class DefectsSet(DefectsSetBase):
                 Additional keyword arguments for
                 :meth:`DefectDictSet.write_input`.
         """
-        super().write_files(output_path=output_path, bulk=bulk, processes=processes, **kwargs)
+        super().write_files(output_path=output_path, bulk=False, processes=processes, **kwargs)
+        if bulk:  # write the neutral bulk reference once, with the same settings
+            bulk_supercell = _get_bulk_supercell(next(iter(self.defect_entries.values())))
+            DefectDictSet(
+                bulk_supercell,
+                gpaw_settings=self.gpaw_settings,
+                calculation_type="singlepoint",  # static reference (nothing to relax)
+            ).write_input(os.path.join(output_path, _get_bulk_folder_name(bulk_supercell)), **kwargs)

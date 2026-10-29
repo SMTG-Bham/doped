@@ -5,7 +5,7 @@ from pathlib import Path
 from pymatgen.core import Structure
 
 from doped.generation import DefectsGenerator
-from doped.io.gpaw import DefectRelaxSet
+from doped.io.gpaw import DefectsSet
 
 
 def main():
@@ -27,23 +27,10 @@ def main():
         "fmax": 0.05,
     }
 
-    print("Writing bulk GPAW input...")
-    bulk_set = DefectRelaxSet(
-        defect_generator.bulk_supercell,
-        charge_state=0,
-        gpaw_settings=gpaw_settings,
-    )
-    bulk_set.write_input("bulk")
-
-    print("Writing defect GPAW inputs...")
-    for defect_name, defect_entry in defect_generator.defect_entries.items():
-        print(f"Setting up {defect_name}...")
-        defect_set = DefectRelaxSet(
-            defect_entry,
-            charge_state=defect_entry.charge_state,
-            gpaw_settings=gpaw_settings,
-        )
-        defect_set.write_input(defect_name)
+    # Write a ``<defect name>/relax.py`` relaxation for each defect, and a static reference calculation for
+    # the bulk supercell (``C_bulk/singlepoint.py``):
+    print("Writing GPAW inputs...")
+    DefectsSet(defect_generator, gpaw_settings=gpaw_settings).write_files()
 
     print("Graphene GPAW workflow setup complete.")
 
