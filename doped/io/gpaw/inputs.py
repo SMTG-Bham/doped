@@ -335,7 +335,7 @@ class DefectsSet(DefectsSetBase):
                 bulk_supercell,
                 charge_state=0,
                 gpaw_settings=defect_input_set.gpaw_settings,
-                calculation_type=defect_input_set.calculation_type,
+                calculation_type="singlepoint",  # static reference (nothing to relax)
             ).write_input(os.path.join(output_path, bulk_folder), **dict(write_kwargs))
 
     def write_files(  # type: ignore[override]  # narrows the base signature's ``**kwargs``
