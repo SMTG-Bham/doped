@@ -26,7 +26,7 @@ from pymatgen.io.cif import CifWriter
 from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry, _get_bulk_supercell, _get_defect_supercell
-from doped.io.inputs import DefectsSetBase
+from doped.io.inputs import DefectsSetBase, _get_bulk_folder_name
 
 # ``doped`` accesses the competing phase functions below directly on this backend module (and
 # ``write_input_sets`` is the documented protocol name a user would reach for), so they are intercepted
@@ -329,9 +329,10 @@ class DefectsSet(DefectsSetBase):
         defect_input_set.write_input(os.path.join(output_path, defect_species), **dict(write_kwargs))
 
         if bulk:  # write the neutral bulk reference once, with the same settings
-            bulk_folder = bulk if isinstance(bulk, str) else "bulk"
+            bulk_supercell = _get_bulk_supercell(defect_input_set.defect_entry)
+            bulk_folder = bulk if isinstance(bulk, str) else _get_bulk_folder_name(bulk_supercell)
             DefectRelaxSet(
-                _get_bulk_supercell(defect_input_set.defect_entry),
+                bulk_supercell,
                 charge_state=0,
                 gpaw_settings=defect_input_set.gpaw_settings,
                 calculation_type=defect_input_set.calculation_type,
@@ -353,9 +354,9 @@ class DefectsSet(DefectsSetBase):
                 Folder in which to create the defect calculation folders.
                 Default is the current directory (".").
             bulk (bool, str):
-                Whether to also write inputs for the reference bulk supercell
-                calculation; a string is used as the folder name (default
-                ``"bulk"``). Default is ``True``.
+                Whether to also write inputs for the (singlepoint) reference
+                bulk supercell calculation; a string is used as the folder name
+                (default ``"{formula}_bulk"``). Default is ``True``.
             processes (int):
                 Number of processes to use for multiprocessed file writing.
                 Default (``None``) sets this automatically.
