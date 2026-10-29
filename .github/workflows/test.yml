@@ -103,7 +103,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libxc-dev libblas-dev liblapack-dev libfftw3-dev
           python -m pip install --upgrade pip
           pip install --no-deps git+https://github.com/SMTG-Bham/ShakeNBreak@develop
-          pip install -e ".[tests,gpaw]"
+          CC=g++ pip install -e ".[tests,gpaw]"
 
       - name: Check GPAW is importable  # the GPAW tests skip without it, so a broken install must fail here
         run: python -c "import gpaw; print(gpaw.__version__)"
