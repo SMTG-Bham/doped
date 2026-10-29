@@ -101,6 +101,18 @@ class GPAWTest(unittest.TestCase):
         with pytest.raises(ValueError, match="Conflicting basis settings"):
             relax_set.write_input(self.output_dir)
 
+    def test_gpaw_invalid_settings_write_nothing(self):
+        # invalid settings raise before the output folder is created or any file is written:
+        output_path = os.path.join(self.output_dir, "new_folder")
+        for gpaw_settings, match in [
+            ({"mode": {"name": "pw", "basis": "dzp"}, "basis": "sz"}, "Conflicting basis settings"),
+            ({"optimizer": "MDMin"}, "Unsupported optimizer"),
+            ({"initial_magnetic_moments": [1.0] * (len(self.structure) + 1)}, "one value per atom"),
+        ]:
+            with pytest.raises(ValueError, match=match):
+                DefectRelaxSet(self.structure, gpaw_settings=gpaw_settings).write_input(output_path)
+            assert not os.path.exists(output_path)
+
     def test_gpaw_singlepoint_set(self):
         singlepoint_set = DefectRelaxSet(
             self.structure,
@@ -484,9 +496,10 @@ class GPAWTest(unittest.TestCase):
         {"mode": {"name": "lcao"}, "basis": {"Cu": "dzp"}},
         {"mode": "lcao", "basis": "dzp"},
         {"mode": {"name": "lcao", "basis": "dzp"}, "basis": "dzp"},
+        {"mode": {"name": "pw", "basis": "dzp"}},
     ],
 )
-def test_lcao_script_initializes_gpaw(gpaw_settings, tmp_path, monkeypatch):
+def test_basis_script_initializes_gpaw(gpaw_settings, tmp_path, monkeypatch):
     """
     Execute the generated script with real GPAW input validation, without an
     SCF calculation or restart-file write.
