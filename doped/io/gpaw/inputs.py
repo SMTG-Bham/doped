@@ -19,6 +19,7 @@ See the GPAW tracking issue.
 
 import copy
 import os
+import warnings
 from typing import Any, Literal
 
 from pymatgen.core.structure import Structure
@@ -92,11 +93,12 @@ class DefectDictSet:
                   dict (unlisted elements set to zero)
             calculation_type (str):
                 Type of calculation script to generate. Supported values are
-                "relax" (default) and "singlepoint".
+                "relax" (default) and "singlepoint". The relaxation script
+                (``relax.py``) continues from the last frame of ``relax.traj``
+                if present (e.g. when resubmitting a timed-out calculation),
+                otherwise starting from ``structure.cif``.
             **kwargs:
-                ``charge`` is accepted as an alias for ``charge_state``.
-                Other keyword arguments raise ``TypeError``; GPAW calculator
-                settings must be supplied in ``gpaw_settings``.
+                To remove.
         """
         charge = kwargs.pop("charge", None)
         if kwargs:
@@ -143,6 +145,14 @@ class DefectDictSet:
 
         if filename is None:
             filename = f"{self.calculation_type}.py"
+
+        trajectory = os.path.join(output_path, "relax.traj")
+        if self.calculation_type == "relax" and os.path.exists(trajectory):
+            warnings.warn(
+                f"{trajectory} already exists, so the relaxation will continue from its last frame (if "
+                f"any) rather than the newly-written {structure_filename}. Delete it to start from "
+                f"{structure_filename}."
+            )
 
         # Write structure to a file
         writer = CifWriter(self.defect_supercell)  # no symprec arg -- reduces supercells to primitives
