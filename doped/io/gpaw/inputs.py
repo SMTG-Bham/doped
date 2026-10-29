@@ -193,11 +193,6 @@ class DefectDictSet:
 
         # Relaxation params
         fmax = settings.pop("fmax", 0.05)
-        supported_optimizers = {"BFGS", "FIRE", "LBFGS", "QuasiNewton"}
-        if self.calculation_type == "relax" and optimizer not in supported_optimizers:
-            raise ValueError(
-                f"Unsupported optimizer {optimizer!r}. Choose one of: {sorted(supported_optimizers)}"
-            )
 
         # ``basis`` belongs to GPAW, not to the mode classes (none of ``PW``/``LCAO``/``FD`` accept it).
         # Accept the existing nested form as well as the native top-level setting:
