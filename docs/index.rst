@@ -12,6 +12,17 @@
 .. raw:: html
 
    <br><br>
+
+.. workshop-announcement: start; remove after 16 Dec 2026
+
+.. note::
+   **Workshop:** Computational Methods for Defects in Solids, Cambridge, UK, 6–8 Jan 2027. Talk abstracts due
+   23 Nov; registration open until 16 Dec.
+   `Details <https://aichemy.ac.uk/event/computational-methods-for-defects-in-solids-workshop/>`__
+
+.. workshop-announcement: end
+.. raw:: html
+
    <img src="https://raw.githubusercontent.com/SMTG-Bham/doped/develop/docs/Images/doped_v2_logo.png" align="right" width="200" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
 
 
@@ -105,6 +116,12 @@ Studies using ``doped``, so far
 ===============================
 
 - N\.-R. Skogemyr **First-Principles Defect Thermodynamics of MgSnN₂: Origin and Suppression of Unintentional n-Type Conductivity** `MSc Thesis, Linköping University <https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510>`__ 2026
+- C\. Morel et al. **Mechanochemically Disordered Li₂Ta₂OCl₁₀ Oxyhalide Unlocks Superionic Conductivity (>10 mS.cm⁻¹)** `Advanced Energy Materials <https://doi.org/10.1002/aenm.71736>`__ 2026
+- M\. J. Brady et al. **High Defect Formation Energies Limit Ionic Conductivity in Na₃Ga₂Li₃F₁₂ and Na₃Al₂Li₃F₁₂** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.6c01542>`__ 2026
+- N\. Singh, V. Agarwal and D. Ghosh **Deep Learning the Defect Landscape: Long-Timescale Vacancy Dynamics in Lead-Free Double Perovskites** `ACS Applied Energy Materials <https://doi.org/10.1021/acsaem.6c02409>`__ 2026
+- H\. Lee et al. **Identification and Structural Decomposition of Hidden Defect Configurations: A Case Study of Charged Oxygen Divacancies in HfO₂** `arXiv <https://doi.org/10.48550/arXiv.2610.04892>`__ 2026
+- L\. D. Salzer et al. **DFT reveals why Mo substitution enables multi-electron redox in Wadsley–Roth Mo** :sub:`x` **W** :sub:`1-x` **Nb₁₂O₃₃** `Journal of Materials Chemistry A <https://doi.org/10.1039/D6TA05468D>`__ 2026
+- M\. W. Swift et al. **Copper–vacancy center in gallium oxide: A telecom quantum defect** `Applied Physics Letters <https://doi.org/10.1063/5.0350234>`__ 2026
 - K\. Li, J. Yang, Y. Zhai and H. Li **Disentangling cation–polyanion coupling reveals which anion motion dominates cation transport in solid electrolytes** `Nature Communications <https://doi.org/10.1038/s41467-026-77273-x>`__ 2026
 - J\. Yi et al. **Thermal cycling–induced nitriding increases energy-storage density in titanate ferroelectric films** `Science <https://doi.org/10.1126/science.aeb5274>`__ 2026
 - J\. Zhou et al. **Antimony sulfide photovoltaics with high open-circuit voltage not limited by self-trapped excitons** `Nature Communications <https://doi.org/10.1038/s41467-026-76845-1>`__ 2026

@@ -2,6 +2,7 @@
 Tests for the ``doped.utils.configurations`` module.
 """
 
+import contextlib
 import os
 import tempfile
 import unittest
@@ -20,7 +21,6 @@ from doped.utils.configurations import (
     apply_s2_to_s1_transformation,
     get_dQ,
     get_path_structures,
-    get_s2_like_s1,
     get_transformation_from_s2_to_s1,
     orient_s2_like_s1,
     write_path_structures,
@@ -32,8 +32,8 @@ from doped.utils.mappings import (
     _nearest_neighbour_site_mapping,
     check_atom_mapping_far_from_defect,
     find_missing_idx,
+    get_half_max_face_distance,
     get_site_mappings,
-    get_wigner_seitz_radius,
 )
 from doped.utils.supercells import min_dist
 from doped.utils.symmetry import get_clean_structure, point_symmetry_from_structure, summed_dist
@@ -166,7 +166,7 @@ class TestGetDQ(ConfigurationsTestCase):
 
 class TestOrientS2LikeS1(ConfigurationsTestCase):
     """
-    Tests for ``orient_s2_like_s1`` / ``get_s2_like_s1``.
+    Tests for ``orient_s2_like_s1``.
     """
 
     def test_reorientation_reduces_dQ(self):
@@ -199,12 +199,6 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
             self.V_Se_m2_supercell
         )
         assert np.isclose(min_dist(V_Se_m2_like_m1), min_dist(self.V_Se_m2_supercell), atol=1e-3)
-
-    def test_get_s2_like_s1_alias(self):
-        """
-        ``get_s2_like_s1`` is just an alias for ``orient_s2_like_s1``.
-        """
-        assert get_s2_like_s1 is orient_s2_like_s1
 
     def test_verbose_prints_dQ_info(self):
         """
@@ -321,10 +315,10 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
         ``check_mapping`` check should raise a warning.
 
         Here we simulate a basis mismatch by applying a large (non-rigid)
-        shear-like perturbation to the upper half of ``V_Se^-2``, which
-        cannot be resolved by any rigid transformation applied during re-
-        orientation -> leaves significant residual displacements at sites
-        far from the cell centre.
+        shear-like perturbation to the upper half of ``V_Se^-2``, which cannot
+        be resolved by any rigid transformation applied during re- orientation
+        -> leaves significant residual displacements at sites far from the cell
+        centre.
         """
         perturbed = self.V_Se_m2_supercell.copy()
         for i, site in enumerate(perturbed):
@@ -363,11 +357,11 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
         """
         bulk = self.Se_intrinsic_thermo["vac_1_Se_-1"].bulk_supercell
         defect_coords = np.array([0.5, 0.5, 0.5])
-        ws_radius = get_wigner_seitz_radius(bulk.lattice)
-        far_indices = [  # sites outside the defect Wigner-Seitz radius
+        far_radius = get_half_max_face_distance(bulk.lattice)
+        far_indices = [  # sites far from the defect
             i
             for i in range(len(bulk))
-            if bulk.lattice.get_all_distances(bulk[i].frac_coords, defect_coords).ravel()[0] > ws_radius
+            if bulk.lattice.get_all_distances(bulk[i].frac_coords, defect_coords).ravel()[0] > far_radius
         ]
 
         def _displace_fraction(fraction, magnitude):
@@ -506,6 +500,17 @@ class TestGetTransformationAndApply(ConfigurationsTestCase):
         # ``s2_like_s1`` lattice often matches ``struct2``, as here, but not guaranteed (may change in
         # future):
         assert np.allclose(out_s2_like_s1.lattice.matrix, rotated_V_Se_m2.lattice.matrix)
+
+        out_lattice = apply_s2_to_s1_transformation(  # a |Lattice| can also be given directly
+            self.V_Se_m1_supercell,
+            rotated_V_Se_m2,
+            supercell_matrix,
+            trans_vector,
+            mapping,
+            new_lattice=self.V_Se_m1_supercell.lattice,
+        )
+        np.testing.assert_allclose(out_lattice.lattice.matrix, out_struct1.lattice.matrix, atol=1e-6)
+        np.testing.assert_allclose(out_lattice.frac_coords, out_struct1.frac_coords, atol=1e-6)
 
         # all three output structures should have the same composition and be
         # symmetry-equivalent (same point group and min distance):
@@ -661,10 +666,10 @@ class TestGetPathStructures(ConfigurationsTestCase):
         with ``reorient=False``) and a warning should be raised indicating re-
         orientation was required.
 
-        With ``reorient=True`` on mismatched inputs, ``struct2`` should be
-        re-oriented (matching the ``reorient=None`` re-oriented output) but
-        `no` re-orientation warning should be raised (user explicitly requested
-        re-orientation).
+        With ``reorient=True`` on mismatched inputs, ``struct2`` should be re-
+        oriented (matching the ``reorient=None`` re-oriented output) but `no`
+        re-orientation warning should be raised (user explicitly requested re-
+        orientation).
         """
         result, _, w = _run_func_and_capture_stdout_warnings(
             get_path_structures, self.V_Se_m1_supercell, self.V_Se_m2_supercell
@@ -733,8 +738,8 @@ class TestGetPathStructures(ConfigurationsTestCase):
         with a warning raised (mentioning the small mass-weighted atomic
         displacement).
 
-        Here ``struct2`` is ``struct1`` shifted by one primitive lattice
-        vector (a symmetry-equivalent configuration in the supercell), so
+        Here ``struct2`` is ``struct1`` shifted by one primitive lattice vector
+        (a symmetry-equivalent configuration in the supercell), so
         ``orient_s2_like_s1`` would map it back onto ``struct1`` exactly
         (ΔQ_after ~ 0).
         """
@@ -879,8 +884,8 @@ class TestWritePathStructures(TestGetPathStructures):
         CC mode write (``displacements`` set) creates two ``PES_1`` and
         ``PES_2`` subfolders with ``delQ_<x>`` subfolders.
 
-        Re-reading the POSCARs, ``ΔQ`` from each endpoint should scale
-        linearly with ``|d|`` for both ``PES_1`` and ``PES_2``.
+        Re-reading the POSCARs, ``ΔQ`` from each endpoint should scale linearly
+        with ``|d|`` for both ``PES_1`` and ``PES_2``.
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = os.path.join(tmpdir, "CC_test")
@@ -1013,31 +1018,24 @@ class TestWritePathStructures(TestGetPathStructures):
         The default output directory is ``"NEB"`` for NEB mode, and
         ``"Configuration_Coordinate"`` for CC mode.
         """
-        original_cwd = os.getcwd()
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                os.chdir(tmpdir)
-                neb_result = write_path_structures(
-                    self.V_Se_m1_supercell, self.V_Se_m2_like_m1, n_images=2
-                )
-                assert os.path.isdir("NEB")
-                # NEB mode returns a single dict:
-                assert isinstance(neb_result, dict)
-                assert list(neb_result) == ["00", "01", "02"]
+        with tempfile.TemporaryDirectory() as tmpdir, contextlib.chdir(tmpdir):
+            neb_result = write_path_structures(self.V_Se_m1_supercell, self.V_Se_m2_like_m1, n_images=2)
+            assert os.path.isdir("NEB")
+            # NEB mode returns a single dict:
+            assert isinstance(neb_result, dict)
+            assert list(neb_result) == ["00", "01", "02"]
 
-                cc_result = write_path_structures(
-                    self.V_Se_m1_supercell,
-                    self.V_Se_m2_like_m1,
-                    displacements=[0.0, 1.0],
-                )
-                assert os.path.isdir("Configuration_Coordinate")
-                # CC mode returns a tuple of two dicts:
-                assert isinstance(cc_result, tuple)
-                assert len(cc_result) == 2
-                assert list(cc_result[0]) == ["delQ_0.0", "delQ_1.0"]
-                assert list(cc_result[1]) == ["delQ_0.0", "delQ_1.0"]
-        finally:
-            os.chdir(original_cwd)
+            cc_result = write_path_structures(
+                self.V_Se_m1_supercell,
+                self.V_Se_m2_like_m1,
+                displacements=[0.0, 1.0],
+            )
+            assert os.path.isdir("Configuration_Coordinate")
+            # CC mode returns a tuple of two dicts:
+            assert isinstance(cc_result, tuple)
+            assert len(cc_result) == 2
+            assert list(cc_result[0]) == ["delQ_0.0", "delQ_1.0"]
+            assert list(cc_result[1]) == ["delQ_0.0", "delQ_1.0"]
 
 
 class TestSmartRound(unittest.TestCase):

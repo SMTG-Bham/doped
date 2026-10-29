@@ -245,7 +245,9 @@ class GPAWTest(unittest.TestCase):
             json_filename=False,
         )
         corrections = {k: e.corrections["kumagai_charge_correction"] for k, e in dp.defect_dict.items()}
-        expected_corrections = {"v_C_+1": -2.92459981, "C_i_C3v_+4": -46.09056677, "N_C_-2": -2.31309662}
+        # defect region radius reduced to sample the 3 furthest sites (2D slab), with Ewald sums evaluated
+        # in the eps^-1/2-scaled frame (converged w.r.t. ``accuracy``, unlike in the original frame here):
+        expected_corrections = {"v_C_+1": -0.88637699, "C_i_C3v_+4": -41.31807622, "N_C_-2": 5.56857059}
         assert corrections == pytest.approx(expected_corrections, abs=1e-3)
 
 

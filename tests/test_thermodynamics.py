@@ -2,11 +2,12 @@
 Tests for the ``doped.thermodynamics`` module, primarily focusing on the
 |DefectThermodynamics| class.
 
-Note that tests for the ``FermiSolver`` classes are in the separate ``test_fermisolver.py`` file,
-which also indirectly tests much of this core ``doped.thermodynamics`` / |DefectThermodynamics|
-functionality.
+Note that tests for the ``FermiSolver`` classes are in the separate
+``test_fermisolver.py`` file, which also indirectly tests much of this core
+``doped.thermodynamics`` / |DefectThermodynamics| functionality.
 
-Tests for ``DefectThermodynamics.plot()`` are in the separate ``test_plotting.py`` file.
+Tests for ``DefectThermodynamics.plot()`` are in the separate
+``test_plotting.py`` file.
 """
 
 import os
@@ -23,7 +24,7 @@ import pandas as pd
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
-from pymatgen.electronic_structure.dos import FermiDos
+from pymatgen.electronic_structure.dos import Dos, FermiDos
 from test_utils import (
     EXAMPLE_DIR,
     STYLE,
@@ -1757,7 +1758,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert list(sym_degen_df.loc[("Int_F", "-1")]) == ["C4v", "Cs", 4.0, 1, 4.0, 2.0]
 
         sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
-            YTOS_defect_thermo.get_symmetries_and_degeneracies, bulk_symprec=0.008
+            YTOS_defect_thermo.get_symmetries_and_degeneracies, bulk_symprec=0.005
         )
         assert list(sym_degen_df.loc[("Int_F", "-1")]) == ["Cs", "C4v", 0.25, 1, 0.25, 8.0]
 
@@ -3435,9 +3436,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
         for info_substring in [
             "Chemical potential heatmap plotting requires 3-D data",
-            "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
-            "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.719",
+            (
+                "number of elements in the chemical system (4) minus the number of fixed chemical "
+                "potentials (0) must be equal to 3. The following chemical potentials will additionally "
+                "be constrained to their mean (centroid) values in the chemical stability region: {'Y': "
+                "np.float64(-4.7229"
+            ),
         ]:
             assert info_substring in output
         assert not w
@@ -3453,9 +3457,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         plot, output, w = _run_func_and_capture_stdout_warnings(ytos_cpa.plot_chempot_heatmap)
         for info_substring in [
             "Chemical potential heatmap plotting requires 3-D data",
-            "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
-            "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.719",
+            (
+                "number of elements in the chemical system (4) minus the number of fixed chemical "
+                "potentials (0) must be equal to 3. The following chemical potentials will additionally "
+                "be constrained to their mean (centroid) values in the chemical stability region: {'Y': "
+                "np.float64(-4.7229"
+            ),
         ]:
             assert info_substring in output
         assert not w
@@ -3502,7 +3509,7 @@ def test_shallow_dopant_binding_energy():
         eff_mass=cu2sise3_conductivity_eff_mass,
         dielectric=[[8.73, 0, -0.48], [0.0, 7.78, 0], [-0.48, 0, 10.11]],
     )
-    assert np.isclose(cu2sise3_shallow_acceptor_binding_energy, 0.0739, atol=0.001)
+    assert np.isclose(cu2sise3_shallow_acceptor_binding_energy, 0.0730, atol=1e-4)
 
     # another quick example; Cs₂TiBr₆ using values from https://doi.org/10.1021/acs.jpclett.2c02436
     assert np.isclose(shallow_dopant_binding_energy((2.7 * 0.9) / (2.7 + 0.9), 3.84), 0.62, atol=0.01)
@@ -3813,7 +3820,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                         site_competition=site_competition,
                         lean=True,
                     )
-                    assert list(lean_df["Defect"]) == v.names
+                    assert list(lean_df["Defect"]) == list(v.names)
                     assert np.allclose(lean_df["Charge"], v.charges)
                     assert np.allclose(
                         v.conc_fn(fermi_level, temperature),
@@ -4910,3 +4917,95 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ax.legend()
 
         return f
+
+
+class ScissorDosMgOTestCase(unittest.TestCase):
+    """
+    Tests for the ``scissor_dos`` function using the (VASP) MgO bulk DOS,
+    focusing on rigid shifts (``delta_VBM == delta_CBM``) and gap changes below
+    half the (coarse, 0.14 eV) DOS grid spacing, which previously caused
+    issues.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.MgO_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "MgO")
+        cls.mgo_fermi_dos = get_fermi_dos(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_DOS_vasprun.xml.gz"))
+
+        cls.grid_spacing = float(np.median(np.diff(np.asarray(cls.mgo_fermi_dos.energies))))
+
+    def test_scissor_dos_rigid_shift_preserves_gap(self):
+        """
+        With ``delta_VBM == delta_CBM`` (here both 0.5 eV), the gap change
+        (``delta_CBM - delta_VBM``) is zero, so ``scissor_dos`` rigidly shifts
+        the whole DOS: the band gap is unchanged while both band edges move by
+        the requested shift (previously raised a ``KeyError``), with no
+        warnings.
+        """
+        orig_gap = self.mgo_fermi_dos.get_gap(tol=1e-8)
+        orig_cbm, orig_vbm = self.mgo_fermi_dos.get_cbm_vbm()
+
+        shift = 0.5
+        scissored_dos, _output, w = _run_func_and_capture_stdout_warnings(
+            scissor_dos, self.mgo_fermi_dos, delta_VBM=shift, delta_CBM=shift, verbose=False
+        )
+        assert not w  # no (spurious) gap-mismatch warning, despite the coarse MgO DOS grid
+
+        # ensuring that the band gap is unchanged after a rigid shift:
+        assert np.isclose(scissored_dos.get_gap(tol=1e-8), orig_gap, atol=1e-4)
+
+        new_cbm, new_vbm = scissored_dos.get_cbm_vbm()
+        assert np.isclose(new_vbm - orig_vbm, shift, atol=1e-4)
+        assert np.isclose(new_cbm - orig_cbm, shift, atol=1e-4)
+
+        assert isinstance(scissored_dos, FermiDos)
+
+    def test_scissor_dos_coarse_grid_gap_change(self):
+        """
+        The ``scissor_dos`` band gap consistency checks should allow for the
+        DOS grid spacing (0.14 eV here), so a standard gap opening on a coarse
+        DOS grid does not give a spurious ``scissor_dos`` error warning.
+        """
+        scissored_dos, _output, w = _run_func_and_capture_stdout_warnings(
+            scissor_dos, self.mgo_fermi_dos, delta_CBM=0.5, verbose=False
+        )
+        assert not w
+        gap_change = scissored_dos.get_gap(tol=1e-8) - self.mgo_fermi_dos.get_gap(tol=1e-8)
+        assert np.isclose(gap_change, 0.5, atol=self.grid_spacing)  # inserted points: grid resolution
+
+    def test_scissor_dos_sub_grid_gap_change(self):
+        """
+        A band gap change below half the DOS grid spacing adds/removes no grid
+        points (previously raised a ``KeyError``), but the conduction band
+        states should still be shifted by exactly the requested amount, with
+        the valence band unchanged and no warnings.
+        """
+        sub_grid_gap_change = self.grid_spacing / 3
+        scissored_dos, _output, w = _run_func_and_capture_stdout_warnings(
+            scissor_dos, self.mgo_fermi_dos, delta_CBM=sub_grid_gap_change, verbose=False
+        )
+        assert not w
+
+        orig_dos = self.mgo_fermi_dos
+        assert len(scissored_dos.energies) == len(orig_dos.energies)  # no grid points added/removed
+        energy_shifts = scissored_dos.energies - orig_dos.energies
+        has_states = orig_dos.get_densities() > 1e-8  # non-zero DOS
+        conduction_band = orig_dos.energies - orig_dos.efermi > orig_dos.get_gap(tol=1e-8) / 2
+        assert np.allclose(energy_shifts[has_states & conduction_band], sub_grid_gap_change)
+        assert np.allclose(energy_shifts[has_states & ~conduction_band], 0)  # valence band unchanged
+
+    def test_scissor_dos_plain_dos(self):
+        """
+        ``scissor_dos`` should also accept (and return) a plain ``Dos`` object
+        (previously raised an ``AttributeError``, as ``Dos`` has no
+        ``structure``), giving the same result as for a ``FermiDos``.
+        """
+        fermi_dos = self.mgo_fermi_dos
+        dos = Dos(fermi_dos.efermi, fermi_dos.energies, fermi_dos.densities)
+        for kwargs in [{"delta_VBM": 0.2, "delta_CBM": 0.2}, {"delta_VBM": -0.1, "delta_CBM": 0.5}]:
+            scissored_dos = scissor_dos(dos, verbose=False, **kwargs)
+            scissored_fermi_dos = scissor_dos(fermi_dos, verbose=False, **kwargs)
+            assert type(scissored_dos) is Dos
+            assert np.isclose(scissored_dos.efermi, scissored_fermi_dos.efermi)
+            assert np.allclose(scissored_dos.energies, scissored_fermi_dos.energies)
+            assert np.allclose(scissored_dos.get_densities(), scissored_fermi_dos.get_densities())

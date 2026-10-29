@@ -58,6 +58,10 @@ from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_str
 _ignore_pmg_warnings()
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
+"""
+Equilibrium bond lengths (in Å) of the diatomic gaseous elements, used when
+generating molecule-in-a-box structures.
+"""
 
 # TODO: Update chemical potentials tutorial notebook for new code/function names. Show example of
 #  combining entries from a previously parsed CPA with a new one (i.e. similar functionality to previous
@@ -68,7 +72,7 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 # Show example of generating `NKRED` folders for competing phases, and mention in docstrings.
 # TODO: Use Codex and Claude to review the full new module
 
-MPRESTER_PROPERTY_DATA = (  # properties to pull for Materials Project entries
+MPRESTER_PROPERTY_DATA = (
     "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
     "formula_pretty",
     "energy_above_hull",
@@ -79,6 +83,11 @@ MPRESTER_PROPERTY_DATA = (  # properties to pull for Materials Project entries
     "nelements",
     "elements",
 )
+"""
+Entry properties to request from the Materials Project API, populated in
+``entry.data``.
+"""
+
 MPRESTER_SUMMARY_DATA = (
     "material_id",  # required so we can map docs back to entries via MPID
     "band_gap",
@@ -86,8 +95,17 @@ MPRESTER_SUMMARY_DATA = (
     "theoretical",
     "database_IDs",  # dict, possibly with an "icsd" key with list of ICSD entry codes
 )
+"""
+Fields to request from the Materials Project summary documents, attached to
+``entry.data["summary"]``.
+"""
+
 
 default_get_entries_kwargs: dict[str, Any] = {"property_data": list(MPRESTER_PROPERTY_DATA)}
+"""
+Default keyword arguments for Materials Project entry queries; any user-
+supplied ``kwargs`` take precedence over these.
+"""
 
 
 def _attach_summary_data_to_entries(
@@ -1607,8 +1625,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
 
         When no structure exists in the entry (e.g. MP-missing bulk represented
         by a hull-energy |ComputedEntry|), emits a ``UserWarning`` and supplies
-        a nominal large-cell |Structure| so that ``INCAR`` and ``POTCAR``
-        files can still be written.
+        a nominal large-cell |Structure| so that ``INCAR`` and ``POTCAR`` files
+        can still be written.
         """
         categorised_entries = [
             (self.nonmetallic_entries, "non-metals"),
@@ -1643,7 +1661,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
     def get_kpoint_convergence_sets(self, **kwargs) -> dict[str, Any]:
         r"""
         Generate calculation input sets for `k`-point convergence testing of
-        the competing phases, using PBEsol (GGA) DFT by default.
+        the competing phases, using GGA DFT by default.
 
         Dispatches to the ``get_kpoint_convergence_sets()`` function of the
         ``doped.io`` input-generation backend for ``self.calculator`` -- see
@@ -2217,10 +2235,8 @@ class ChemicalPotentialGrid(MSONable):
         if n_dims == 1:  # 1D space (e.g. a binary system, or two limits of a multinary system); stable
             # chemical potential range is just a line segment, for which barycentric and Cartesian grids
             cartesian = False  # are identical -> "hull" = the segment endpoints,
-            order = np.argsort(
-                ind_vars[:, int(np.argmax(spans))]
-            )  # sorted along the largest-span μ coordinate
-            hull_idx = np.array([order[0], order[-1]])
+            span_coords = ind_vars[:, int(np.argmax(spans))]  # largest-span μ coordinate
+            hull_idx = np.array([np.argmin(span_coords), np.argmax(span_coords)])
         else:
             hull = ConvexHull(ind_vars)  # convex hull of the vertices
             hull_idx = hull.vertices  # indices of the hull points
@@ -3831,6 +3847,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
         filename: PathLike | None = None,
         style_file: PathLike | None = None,
+        ax: plt.Axes | None = None,
         **kwargs,
     ) -> plt.Figure:
         """
@@ -3938,6 +3955,14 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 Path to a mplstyle file to use for the plot. If ``None``
                 (default), uses the default ``doped`` style (from
                 ``doped/utils/doped.mplstyle``).
+            ax (plt.Axes):
+                ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+                figures), rather than creating a new figure, in which case the
+                parent ``Figure`` of the ``Axes`` is returned (and saved, if
+                ``filename`` is set). Creating the figure within the
+                ``doped_plot_style()`` context manager (from
+                ``doped.utils.plotting``) applies the ``doped`` plot style to
+                the whole figure. Default: None.
             **kwargs:
                 Additional keyword arguments to pass to
                 ``ChemicalPotentialGrid.get_grid()``, such as ``n_points``
@@ -3962,6 +3987,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             label_positions=label_positions,
             filename=filename,
             style_file=style_file,
+            ax=ax,
             **kwargs,
         )
 
@@ -4058,6 +4084,7 @@ def plot_chempot_heatmap(
     label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
     filename: PathLike | None = None,
     style_file: PathLike | None = None,
+    ax: plt.Axes | None = None,
     **kwargs,
 ) -> plt.Figure:
     """
@@ -4178,6 +4205,14 @@ def plot_chempot_heatmap(
             Path to a mplstyle file to use for the plot. If ``None``
             (default), uses the default ``doped`` style (from
             ``doped/utils/doped.mplstyle``).
+        ax (plt.Axes):
+            ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+            figures), rather than creating a new figure, in which case the
+            parent ``Figure`` of the ``Axes`` is returned (and saved, if
+            ``filename`` is set). Creating the figure within the
+            ``doped_plot_style()`` context manager (from
+            ``doped.utils.plotting``) applies the ``doped`` plot style to the
+            whole figure. Default: None.
         **kwargs:
             Additional keyword arguments to pass to
             ``ChemicalPotentialGrid.get_grid()``, such as ``n_points``
@@ -4296,7 +4331,8 @@ def plot_chempot_heatmap(
 
     # Create plot
     with doped_plot_style(style_file):
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots() if ax is None else (ax.figure.figure, ax)  # user ``ax``; root ``Figure``
+        user_texts = set(ax.texts)  # pre-existing (e.g. panel labels on user ``ax``); not to be nudged
         vmin = cbar_range[0] if cbar_range else None
         vmax = cbar_range[1] if cbar_range else None
         if vmax is None and np.isclose(values_inside.max(), 0, atol=3e-2):  # extend to 0 if close
@@ -4312,7 +4348,7 @@ def plot_chempot_heatmap(
             vmin=vmin,
             vmax=vmax,
         )
-        cbar = fig.colorbar(dep_mu)
+        cbar = fig.colorbar(dep_mu, ax=ax)  # take colorbar space from ``ax`` only
 
         # Set plot limits and labels
         xmax, ymax = points_inside.max(axis=0)
@@ -4352,7 +4388,7 @@ def plot_chempot_heatmap(
             _plot_competing_phase_lines(  # plot competing phase lines and labels
                 composition, ax, cpd, fixed_elements, independent_elts, label_positions
             )
-            _nudge_labels_inside_axes(ax, padding)  # adjust label positions to stay within plot bounds
+            _nudge_labels_inside_axes(ax, padding, exclude=user_texts)  # keep labels within plot bounds
 
         if filename:
             fig.savefig(filename, bbox_inches="tight", dpi=600)
@@ -4528,16 +4564,19 @@ def _add_line_labels(
         )
 
 
-def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None) -> None:
+def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None, exclude: set | None = None) -> None:
     """
-    Adjust label positions to ensure they stay within plot bounds.
+    Adjust label positions to ensure they stay within plot bounds (ignoring any
+    ``Text`` artists in ``exclude``, e.g. pre-existing user labels).
     """
     xlim, ylim = ax.get_xlim(), ax.get_ylim()
     x_padding = padding or (xlim[1] - xlim[0]) * 0.1
     y_padding = padding or (ylim[1] - ylim[0]) * 0.1
 
     latexified_labels = {
-        artist.get_text(): artist for artist in ax.get_children() if isinstance(artist, plt.Text)
+        artist.get_text(): artist
+        for artist in ax.get_children()
+        if isinstance(artist, plt.Text) and artist not in (exclude or ())
     }
     for text in latexified_labels.values():
         bbox = text.get_window_extent().transformed(ax.transData.inverted())

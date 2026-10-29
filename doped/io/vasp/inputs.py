@@ -9,12 +9,13 @@ import os
 import warnings
 from functools import lru_cache
 from importlib import resources
+from math import ceil
 from typing import TYPE_CHECKING
 
 import numpy as np
 from monty.io import zopen
 from monty.json import MSONable
-from monty.serialization import loadfn
+from monty.serialization import dumpfn, loadfn
 from pymatgen.core import SETTINGS
 from pymatgen.core.entries import ComputedEntry
 from pymatgen.core.periodic_table import Element
@@ -31,7 +32,7 @@ from doped.core import (
 )
 from doped.generation import DefectsGenerator, _custom_formatwarning, get_defect_name_from_entry
 from doped.io.inputs import DefectsSetBase, _get_bulk_folder_name
-from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, _signed_charge
+from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, _signed_charge, warn_once
 
 if TYPE_CHECKING:
     from doped.chemical_potentials import CompetingPhases
@@ -49,66 +50,108 @@ def deep_dict_update(d: dict, u: dict) -> dict:
     return d
 
 
-MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-default_potcar_dict = loadfn(os.path.join(MODULE_DIR, "VASP_sets/VASP_PotcarSet.yaml"))["POTCAR"]
-default_relax_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/VASP_RelaxSet.yaml"))
-default_HSE_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/VASP_HSESet.yaml"))
-default_defect_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/VASP_DefectSet.yaml"))
-pbesol_convrg_set = loadfn(  # just INCAR settings; for competing phase k-point convergence testing
-    os.path.join(MODULE_DIR, "VASP_sets/VASP_PBEsol_ConvergenceSet.yaml")
-)
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+default_potcar_dict = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/VASP_PotcarSet.yaml"))["POTCAR"]
+"""
+Default ``POTCAR`` symbol for each element, from |PotcarSet.yaml|.
+"""
+
+default_relax_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/VASP_RelaxSet.yaml"))
+"""
+Default ``INCAR`` and ``KPOINTS`` settings for geometry relaxations, from
+|RelaxSet.yaml|.
+"""
+
+default_HSE_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/VASP_HSESet.yaml"))
+"""
+``INCAR`` settings for hybrid DFT calculations (HSE06 by default), from
+|HSESet.yaml|.
+"""
+
+default_defect_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/VASP_DefectSet.yaml"))
+"""
+``INCAR`` settings specific to defect supercell calculations, from
+|DefectSet.yaml|.
+"""
+
+convergence_set = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/VASP_ConvergenceSet.yaml"))
+"""
+``INCAR`` settings used for the ``k``-point convergence calculations of
+competing phases, from |ConvergenceSet.yaml|.
+"""
+
 default_defect_relax_set = copy.deepcopy(default_relax_set)
 default_defect_relax_set = deep_dict_update(
     default_defect_relax_set, default_defect_set
 )  # defect set is just INCAR settings
+"""
+Default ``INCAR`` and ``KPOINTS`` settings for defect supercell relaxations;
+``default_relax_set`` updated with ``default_defect_set``.
+"""
+
 _ = default_defect_relax_set["INCAR"].pop("EDIFF_PER_ATOM")  # remove EDIFF_PER_ATOM and use defect EDIFF
-singlepoint_incar_settings = {
-    "EDIFF": 1e-6,  # tight EDIFF for final energy and converged DOS
-    "EDIFFG": None,  # no ionic relaxation, remove to avoid confusion
-    "IBRION": -1,  # no ionic relaxation
-    "NSW": 0,  # no ionic relaxation
-    "POTIM": None,  # no ionic relaxation, remove to avoid confusion
-}
+singlepoint_incar_settings = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/VASP_SinglePointSet.yaml"))[
+    "INCAR"
+]
+"""
+``INCAR`` setting overrides for single-point (static) calculations, applied on
+top of the relaxation settings, from |SinglePointSet.yaml|.
+"""
+
+_potcar_setup_warning = (  # appended to with ", so ..." by the callers
+    "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
+    "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting this up). "
+    "This is required to generate `POTCAR` files and set the `NELECT` and `NUPDOWN` `INCAR` tags"
+)
+_PBE_POTCAR_FUNCTIONALS = ("PBE_64", "PBE_54", "PBE_52", "PBE")  # newest first; VASP recommends latest
+
+
+def _first_available_potcar_functional(symbols: tuple, functionals: list[str]) -> str | None:
+    r"""
+    Return the first functional in ``functionals`` for which ``POTCAR``\s can
+    be generated for ``symbols``, or ``None`` if none of them work.
+    """
+    for functional in functionals:
+        with contextlib.suppress(OSError):  # ``FileNotFoundError`` if library/symbol unavailable
+            _get_potcar(symbols, potcar_functional=functional)
+            return functional
+
+    return None
 
 
 def _test_potcar_functional_choice(potcar_functional: str = "PBE", symbols: list | None = None):
     """
-    Check if the potcar functional choice needs to be changed to match those
-    available.
+    Check if the ``POTCAR`` functional choice needs to be changed to match
+    those available.
+
+    ``"PBE"`` (the ``doped`` default) chooses whichever ``PBE`` ``POTCAR``
+    library is installed, and is resolved newest-first (``PBE_64`` ->
+    ``PBE_54`` -> ``PBE_52`` -> ``PBE``).
     """
-    test_potcar = None
-    if symbols is None:
-        symbols = ["Mg"]
-    try:
-        test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
-    except (OSError, RuntimeError) as e:  # updated to RuntimeError in pymatgen 2024.5.1
-        if not potcar_functional.startswith("PBE"):
-            raise e
+    symbol_tuple = tuple(symbols or ["Mg"])  # hashable, for ``_get_potcar`` caching
+    if potcar_functional == "PBE":  # the default; resolve newest-first rather than taking it literally
+        candidates = list(_PBE_POTCAR_FUNCTIONALS)
+    elif potcar_functional.startswith("PBE"):  # requested choice first, then the other PBE libraries
+        candidates = list(dict.fromkeys([potcar_functional, *_PBE_POTCAR_FUNCTIONALS]))
+    else:  # no PBE fallbacks for non-PBE choices (e.g. ``LDA``), to avoid silently switching functional
+        candidates = [potcar_functional]
 
-        test_pbe_potcar_strings = ["PBE", "PBE_52", "PBE_54", "PBE_64", potcar_functional]
-        # user potcar functional tested last so error message matches this
-        for pbe_potcar_string in test_pbe_potcar_strings:  # try other functional choices
-            with contextlib.suppress(OSError, RuntimeError):
-                potcar_functional = pbe_potcar_string
-                test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
-                break
+    if (functional := _first_available_potcar_functional(symbol_tuple, candidates)) is not None:
+        if functional != potcar_functional != "PBE":
+            warn_once(
+                f"The requested ``POTCAR`` functional ({potcar_functional}) was not found in your VASP "
+                f"pseudopotential directory, so {functional} is being used instead. Note that ``POTCAR`` "
+                f"choices should be consistent between all calculations being compared.",
+                key=(potcar_functional, functional),
+            )
+        return functional
 
-        if test_potcar is None:
-            # issue might be with just one of the symbols, so loop through and find the first one that
-            # breaks for all, to ensure informative error message
-            for symbol in symbols:
-                for i, pbe_potcar_string in enumerate(test_pbe_potcar_strings):
-                    try:
-                        potcar_functional = pbe_potcar_string
-                        test_potcar = _get_potcar((symbol,), potcar_functional=potcar_functional)
-                        break
-                    except (OSError, RuntimeError) as single_pot_exc:
-                        if i + 1 == len(test_pbe_potcar_strings):  # failed with all
-                            raise single_pot_exc
+    # none worked; the issue may be with just one symbol, so re-test individually and raise for the failure
+    for symbol in symbol_tuple:
+        if _first_available_potcar_functional((symbol,), candidates) is None:
+            return _get_potcar((symbol,), potcar_functional=potcar_functional)  # raises
 
-            raise e  # should already have been raised at this point
-
-    return potcar_functional
+    return _get_potcar(symbol_tuple, potcar_functional=potcar_functional)  # raises
 
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up POTCAR writing
@@ -121,28 +164,20 @@ def _get_potcar(potcar_symbols, potcar_functional) -> Potcar:
     return copy.copy(_cached_potcar(potcar_symbols, potcar_functional))
 
 
-class DopedKpoints(Kpoints):
+def _kspacing_kpts(structure: Structure, kspacing: float | str | None) -> tuple[int, ...] | None:
     """
-    Custom implementation of ``Kpoints`` to handle encoding errors that can
-    happen on some old HPCs/Linux systems.
+    Get the Γ-centred k-point mesh which ``VASP`` generates for ``structure``
+    from an ``INCAR`` ``KSPACING`` setting (in Å⁻¹), being ``N_i = max(1,
+    ceil(|b_i|/KSPACING))`` for the reciprocal lattice vectors ``b_i``
+    (matching the implementation in ``pymatgen.io.validation``).
 
-    If an encoding error occurs upon file writing, then changes Γ to Gamma and
-    Å to Angstrom in the ``KPOINTS`` comment.
+    Returns ``None`` if ``kspacing`` is not a positive number; i.e. unset, or
+    ``pymatgen``'s ``"auto"`` setting left unresolved (being determined from
+    the band gap).
     """
-
-    def __repr__(self):
-        """
-        Returns a string representation of the Kpoints object, with encoding
-        error handling.
-        """
-        try:
-            with open(os.devnull, "w") as f:  # os.devnull for cross-platform null device
-                f.write(self.comment)  # breaks if encoding error will occur, so we rewrite
-            return super().__repr__()
-
-        except UnicodeEncodeError:
-            self.comment = self.comment.replace("Å⁻³", "Angstrom^(-3)").replace("Γ", "Gamma")
-            return super().__repr__()
+    if not isinstance(kspacing, float | int) or kspacing <= 0:
+        return None
+    return tuple(max(1, ceil(b / kspacing)) for b in structure.lattice.reciprocal_lattice.abc)
 
 
 class DopedDictSet(VaspInputSet):
@@ -150,7 +185,7 @@ class DopedDictSet(VaspInputSet):
     Modified version of ``pymatgen`` |VaspInputSet|, to have more robust
     ``POTCAR`` handling, expedited I/O (particularly for ``POTCAR`` generation,
     which can be slow when generating many folders), ensure ``POSCAR`` atom
-    sorting, avoid encoding issues with ``KPOINTS`` comments etc.
+    sorting etc.
     """
 
     def __init__(
@@ -170,22 +205,32 @@ class DopedDictSet(VaspInputSet):
             structure (|Structure|):
                 ``pymatgen`` |Structure| object for the input structure file.
             user_incar_settings (dict):
-                Dictionary of user INCAR settings (AEXX, NCORE etc.) to
-                override default ``INCAR`` settings. Note that any flags that
-                aren't numbers or ``True/False`` need to be input as strings
-                with quotation marks (e.g. ``{"ALGO": "All"}``).
+                Dictionary of user ``INCAR`` settings (``AEXX``, ``NCORE``
+                etc.). ``DopedDictSet`` applies no default ``INCAR`` settings
+                of its own (unlike ``DefectDictSet``), so these become the
+                ``INCAR`` settings, aside from ``KPAR``/``NELECT`` set
+                according to ``auto_kpar``/``charge_state``. Note that any
+                flags which aren't numbers or ``True/False`` need to be input
+                as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
                 (default: None)
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 |VaspInputSet| format) e.g., ``{"reciprocal_density": 123}``,
-                or a ``Kpoints`` object. Default is Gamma-only.
+                or a ``Kpoints`` object. No default; either this or
+                ``KSPACING`` in ``user_incar_settings`` must be set (unlike
+                ``DefectDictSet``, which defaults to a ``reciprocal_density``
+                of 100 [kpoints/Å⁻³]). Generated meshes are Γ-centred by
+                default (``force_gamma = True``, unlike ``pymatgen``'s default
+                of ``False``).
             user_potcar_functional (str):
-                ``POTCAR`` functional to use. Default is "PBE" and if this
-                fails, tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default ``POTCAR``\s, e.g. {"Li": "Li_sv"}. See
-                ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-                ``POTCAR`` set.
+                |PotcarSet.yaml| for the default ``POTCAR`` set.
             auto_kpar (bool):
                 If ``True``, and ``KPAR`` is not set in
                 ``user_incar_settings``, attempts to set ``KPAR`` to a
@@ -198,9 +243,11 @@ class DopedDictSet(VaspInputSet):
                 Comment line to use for ``POSCAR`` file. Default is structure
                 formula.
             charge_state (int):
-                Total charge of the structure (just to determine if warnings
-                should be thrown in the case of ``INCAR`` write attempts
-                without ``POTCAR`` information -- where ``NELECT``
+                Total charge of the structure, used to set ``NELECT`` in the
+                ``INCAR`` (if non-zero), and to determine whether errors should
+                be thrown for ``INCAR`` write attempts without ``POTCAR``
+                information -- where ``NELECT`` cannot be set. Default is 0
+                (neutral).
             **kwargs:
                 Additional kwargs to pass to |VaspInputSet|.
         """
@@ -215,7 +262,10 @@ class DopedDictSet(VaspInputSet):
                 ediff = scaled_ediff(
                     len(structure),
                     ediff_per_atom=ediff_per_atom,
-                    max_ediff=np.inf,  # use whatever user has set
+                    # only cap ``EDIFF`` when using the default ``EDIFF_PER_ATOM``; otherwise user setting:
+                    max_ediff=(
+                        1e-4 if ediff_per_atom == default_relax_set["INCAR"]["EDIFF_PER_ATOM"] else np.inf
+                    ),
                 )
                 if ediff > 1e-3:
                     warnings.warn(
@@ -272,25 +322,31 @@ class DopedDictSet(VaspInputSet):
     def incar(self):
         """
         Returns the ``Incar`` object generated from the |VaspInputSet| config,
-        with a warning if ``KPAR > 1`` and only one k-point, and with
-        ``NELECT`` set according to ``self.charge_state`` if it is non-zero (or
-        throws a warning for non-zero charge states with no ``POTCAR``
-        information available to set ``NELECT`` appropriately).
+        with ``KPAR`` reset to 1 (with a warning) if it was set and the k-point
+        mesh is Γ-only, and with ``NELECT`` set according to
+        ``self.charge_state`` if it is non-zero (raising an error for non-zero
+        charge states with no ``POTCAR`` information available to set
+        ``NELECT``).
         """
         incar_obj = super().incar
 
-        if "KPAR" not in incar_obj and self.auto_kpar:  # determine appropriate KPAR setting
-            if len(self.kpoints.kpts[0]):  # k-point mesh
-                num_kpts_2_or_4_or_more = sum(i == 2 or i >= 4 for i in self.kpoints.kpts[0])
+        if (kpoints := self.kpoints) is not None:  # ``None`` if ``KSPACING`` is set in the ``INCAR``,...
+            kpts: tuple[int, ...] | None = tuple(kpoints.kpts[0])
+        else:  # ...where ``VASP`` generates the k-point mesh itself, as predicted by ``_kspacing_kpts``:
+            kpts = _kspacing_kpts(self.structure, incar_obj.get("KSPACING"))
+
+        if kpts:  # k-point mesh known
+            if "KPAR" not in incar_obj and self.auto_kpar:  # determine appropriate KPAR setting
+                num_kpts_2_or_4_or_more = sum(i == 2 or i >= 4 for i in kpts)
                 if num_kpts_2_or_4_or_more == 1:
                     incar_obj["KPAR"] = "2  # 2 or >=4 k-points in one direction"
                 elif num_kpts_2_or_4_or_more >= 2:
                     incar_obj["KPAR"] = "4  # 2 or >=4 k-points in at least two directions"
 
-        elif "KPAR" in incar_obj and np.prod(self.kpoints.kpts[0]) == 1:
-            # check KPAR setting is reasonable for number of KPOINTS
-            warnings.warn("KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1")
-            incar_obj["KPAR"] = "1  # Only one k-point (Γ-only)"
+            elif "KPAR" in incar_obj and np.prod(kpts) == 1:
+                # check KPAR setting is reasonable for number of KPOINTS
+                warnings.warn("KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1")
+                incar_obj["KPAR"] = "1  # Only one k-point (Γ-only)"
 
         try:
             # getting NELECT can take time with many file IO calls, so only call once
@@ -342,10 +398,14 @@ class DopedDictSet(VaspInputSet):
     @property
     def kpoints(self):
         """
-        Return ``kpoints`` object with comment.
+        Return ``kpoints`` object with comment, or ``None`` if ``KSPACING`` is
+        set in the ``INCAR`` -- in which case ``VASP`` generates the k-point
+        mesh itself and no ``KPOINTS`` file is written.
         """
-        pmg_kpoints = super().kpoints
-        doped_kpoints = DopedKpoints.from_dict(pmg_kpoints.as_dict())
+        doped_kpoints = super().kpoints  # new object each access, so safe to set comment in place
+        if doped_kpoints is None:  # ``KSPACING`` set in ``INCAR``, no ``KPOINTS`` file
+            return None
+
         kpt_density = self.config_dict.get("KPOINTS", {}).get("reciprocal_density", False)
         if (
             isinstance(self.user_kpoints_settings, dict)
@@ -483,7 +543,8 @@ class DopedDictSet(VaspInputSet):
                 with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
                     pot_spec_file.write("\n".join(self.potcar_symbols))
 
-                self.kpoints.write_file(f"{output_path}/KPOINTS")
+                if (doped_kpoints := self.kpoints) is not None:  # ``None`` if ``KSPACING`` set in INCAR
+                    doped_kpoints.write_file(f"{output_path}/KPOINTS")
                 self.poscar.write_file(f"{output_path}/POSCAR")
 
         else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs/POTCARs
@@ -501,8 +562,8 @@ class DopedDictSet(VaspInputSet):
                 else:
                     self.potcar.write_file(f"{output_path}/POTCAR")
 
-            if kpoints:
-                self.kpoints.write_file(f"{output_path}/KPOINTS")
+            if kpoints and (doped_kpoints := self.kpoints) is not None:  # ``None`` if ``KSPACING`` set
+                doped_kpoints.write_file(f"{output_path}/KPOINTS")
 
             if poscar:
                 self.poscar.write_file(f"{output_path}/POSCAR")
@@ -514,26 +575,19 @@ class DopedDictSet(VaspInputSet):
         """
         potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
         if not potcars:
-            potcar_warning_string = (
-                "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
-                "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
-                "this up). This is required to generate `POTCAR` files and set the `NELECT` and "
-                "`NUPDOWN` `INCAR` tags"
-            )
             if poscar:
                 if self.charge_state != 0:
-                    warnings.warn(  # snb is hidden flag for ShakeNBreak (as the POSCARs aren't
-                        # unperturbed in that case)
-                        f"{potcar_warning_string}, so only {'' if snb else '(unperturbed) '}`POSCAR` and "
+                    warnings.warn(  # snb -> ShakeNBreak hidden flag (POSCARs aren't unperturbed for it)
+                        f"{_potcar_setup_warning}, so only {'' if snb else '(unperturbed) '}`POSCAR` and "
                         f"`KPOINTS` files will be generated."
                     )
                     return False
 
             elif self.charge_state != 0:  # only KPOINTS can be written so no good
-                raise ValueError(f"{potcar_warning_string}, so no input files will be generated.")
+                raise ValueError(f"{_potcar_setup_warning}, so no input files will be generated.")
 
             # if at this point, means charge_state == 0, so neutral INCAR can be generated
-            warnings.warn(f"{potcar_warning_string}, so `POTCAR` files will not be generated.")
+            warnings.warn(f"{_potcar_setup_warning}, so `POTCAR` files will not be generated.")
 
             return False
 
@@ -577,27 +631,31 @@ class DefectDictSet(DopedDictSet):
             user_incar_settings (dict):
                 Dictionary of user ``INCAR`` settings (AEXX, NCORE etc.) to
                 override default settings. Highly recommended to look at output
-                ``INCAR``\s or the ``VASP_RelaxSet.yaml`` and
-                ``VASP_DefectSet.yaml`` files in the
-                ``doped/io/vasp/VASP_sets`` folder, to see what the default
-                ``INCAR`` settings are. Note that any flags that aren't numbers
-                or ``True/False`` need to be input as strings with quotation
-                marks (e.g. ``{"ALGO": "All"}``). Default is ``None``.
+                ``INCAR``\s or |RelaxSet.yaml|, |DefectSet.yaml| and
+                |HSESet.yaml| (applied by default, unless ``LHFCALC = False``),
+                to see what the default ``INCAR`` settings are. Note that any
+                flags which aren't numbers or ``True/False`` need to be input
+                as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
+                (default: None)
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 |VaspInputSet| format) e.g., ``{"reciprocal_density": 123}``,
                 or a ``Kpoints`` object. Default is Gamma-centred,
                 ``reciprocal_density = 100`` [kpoints/Å⁻³].
             user_potcar_functional (str):
-                ``POTCAR`` functional to use. Default is "PBE" and if this
-                fails, tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default ``POTCAR``\s, e.g. ``{"Li": "Li_sv"}``.
-                See ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the
-                default ``POTCAR`` set.
+                See |PotcarSet.yaml| for the default ``POTCAR`` set.
             poscar_comment (str):
-                Comment line to use for ``POSCAR`` files. Default is defect
-                name, fractional coordinates of initial site and charge state.
+                Comment line to use for ``POSCAR`` files. Default is the
+                structure formula and charge state (``DefectRelaxSet`` instead
+                passes down the defect name, fractional coordinates of the
+                initial site and charge state).
             **kwargs:
                 Additional kwargs to pass to |VaspInputSet|.
         """
@@ -729,6 +787,7 @@ class DefectRelaxSet(MSONable):
         user_kpoints_settings: dict | Kpoints | None = None,
         user_potcar_functional: str = "PBE",
         user_potcar_settings: dict | None = None,
+        poscar_comment: str | None = None,
         **kwargs,
     ):
         r"""
@@ -771,10 +830,11 @@ class DefectRelaxSet(MSONable):
         the defect calculations, for the later calculation of defect formation
         energies.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -791,7 +851,9 @@ class DefectRelaxSet(MSONable):
                 supercell) for which to generate ``DefectDictSet``\s for.
             charge_state (int):
                 Charge state of the defect. Overrides
-                ``DefectEntry.charge_state`` if |DefectEntry| is input.
+                ``DefectEntry.charge_state`` if |DefectEntry| is input; for
+                |Structure| input with no |DefectEntry| charge state to fall
+                back on, defaults to 0.
             soc (bool):
                 Whether to generate the :attr:`DefectRelaxSet.vasp_ncl`
                 ``DefectDictSet`` attribute for spin-orbit coupling
@@ -802,12 +864,12 @@ class DefectRelaxSet(MSONable):
             user_incar_settings (dict):
                 Dictionary of user ``INCAR`` settings (AEXX, NCORE etc.) to
                 override default settings. Highly recommended to look at output
-                ``INCAR``\s or the ``VASP_RelaxSet.yaml`` and
-                ``VASP_DefectSet.yaml`` files in the
-                ``doped/io/vasp/VASP_sets`` folder, to see what the default
-                ``INCAR`` settings are. Note that any flags that aren't numbers
-                or ``True/False`` need to be input as strings with quotation
-                marks (e.g. ``{"ALGO": "All"}``). Default is ``None``.
+                ``INCAR``\s or |RelaxSet.yaml|, |DefectSet.yaml| and
+                |HSESet.yaml| (applied by default, unless ``LHFCALC = False``),
+                to see what the default ``INCAR`` settings are. Note that any
+                flags which aren't numbers or ``True/False`` need to be input
+                as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
+                (default: None)
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 |VaspInputSet| format) e.g., ``{"reciprocal_density": 123}``,
@@ -816,12 +878,20 @@ class DefectRelaxSet(MSONable):
                 for ``vasp_gam``). Default is Gamma-centred,
                 ``reciprocal_density = 100`` [kpoints/Å⁻³].
             user_potcar_functional (str):
-                ``POTCAR`` functional to use. Default is "PBE" and if this
-                fails, tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default ``POTCAR``\s, e.g. ``{"Li": "Li_sv"}``.
-                See ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the
-                default ``POTCAR`` set.
+                See |PotcarSet.yaml| for the default ``POTCAR`` set.
+            poscar_comment (str):
+                Comment to write at the top of the ``POSCAR`` files. Default is
+                the defect entry name, defect frac coords and charge state (if
+                inputting a |DefectEntry| object), or the formula of the input
+                structure and charge state (if inputting a |Structure| object).
+                For the bulk supercell, it's ``"{formula} -- Bulk"``.
             **kwargs: Additional kwargs to pass to ``DefectDictSet``.
 
         Key Attributes:
@@ -837,13 +907,6 @@ class DefectRelaxSet(MSONable):
                 defined), otherwise from ``defect_entry.bulk_entry.structure``
                 if inputting a |DefectEntry| object, or ``None`` if inputting
                 a |Structure| object.
-            poscar_comment (str):
-                Comment to write at the top of the ``POSCAR`` files. Default is
-                the defect entry name, defect frac coords and charge state (if
-                inputting a |DefectEntry| object), or the formula of the
-                input structure and charge state (if inputting a |Structure|
-                object), for defects. For the bulk supercell, it's
-                ``"{formula} - Bulk"``.
             Input parameters are also set as attributes.
         """
         if not isinstance(defect_entry, DefectEntry | Structure):
@@ -856,11 +919,11 @@ class DefectRelaxSet(MSONable):
         self.user_kpoints_settings = user_kpoints_settings or {}
         self.user_potcar_functional = user_potcar_functional
         self.user_potcar_settings = user_potcar_settings or {}
-        self.dict_set_kwargs = kwargs or {}
+        self.kwargs = kwargs or {}
 
         if isinstance(self.defect_entry, Structure):
             self.defect_supercell = self.defect_entry
-            self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
+            self.poscar_comment = poscar_comment or (
                 f"{self.defect_supercell.formula} {_signed_charge(self.charge_state)}"
             )
             self.bulk_supercell = None
@@ -889,7 +952,7 @@ class DefectRelaxSet(MSONable):
             else:
                 name = self.defect_supercell.formula
 
-            self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
+            self.poscar_comment = poscar_comment or (
                 f"{name} {approx_coords} {_signed_charge(self.charge_state)}"
             )
 
@@ -912,10 +975,11 @@ class DefectRelaxSet(MSONable):
         ``vasp_std`` calculations with multiple `k`-points are required
         (determined from kpoints settings).
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` for GGA)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -934,7 +998,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=self.poscar_comment,
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     def _check_vstd_kpoints(
@@ -973,10 +1037,11 @@ class DefectRelaxSet(MSONable):
         a warning if the input kpoint settings correspond to a Γ-only kpoint
         mesh (in which case ``vasp_gam`` should be used).
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` for GGA)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1000,7 +1065,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=self.poscar_comment,
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     @property
@@ -1012,15 +1077,17 @@ class DefectRelaxSet(MSONable):
         hybrid DFT calculations, following the doped recommended defect
         calculation workflow (see docs). By default, sets ``NKRED(X,Y,Z)`` to 2
         or 3 in the directions for which the k-point grid is divisible by this
-        factor. Returns ``None`` and a warning if the input kpoint settings
+        factor. Returns ``None`` with a warning if the input kpoint settings
         correspond to a Γ-only kpoint mesh (in which case ``vasp_gam`` should
-        be used) or for GGA calculations (if ``LHFCALC`` is set to ``False`` in
-        user_incar_settings, in which case ``vasp_std`` should be used).
+        be used), and ``None`` for GGA calculations (if ``LHFCALC`` is set to
+        ``False`` in ``user_incar_settings``, in which case ``vasp_std`` should
+        be used).
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1057,9 +1124,8 @@ class DefectRelaxSet(MSONable):
                     break
 
                 for idx, nkred_key in enumerate(["NKREDX", "NKREDY", "NKREDZ"]):
-                    if kpt_mesh[idx] % k == 0:
+                    if kpt_mesh[idx] % k == 0:  # set for _all_ divisible directions
                         nkred_dict[nkred_key] = k
-                        break
 
             incar_settings = copy.deepcopy(self.user_incar_settings)
             if nkred_dict["NKRED"] is not None:
@@ -1086,7 +1152,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=self.poscar_comment,
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     @property
@@ -1095,15 +1161,16 @@ class DefectRelaxSet(MSONable):
         ``DefectDictSet`` for a VASP defect supercell single-point calculation
         with spin-orbit coupling (SOC) included (i.e. ``LSORBIT = True``),
         using ``vasp_ncl``. If ``DefectRelaxSet.soc`` is ``False``, then this
-        returns ``None`` and a warning. If the ``soc`` parameter is not set
-        when initializing ``DefectRelaxSet``, then this is set to ``True`` for
-        defect supercells with a max atomic number (Z) >= 31 (i.e. further down
-        the periodic table than Zn), otherwise ``False``.
+        returns ``None``. If the ``soc`` parameter is not set when initializing
+        ``DefectRelaxSet``, then this is set to ``True`` for defect supercells
+        with a max atomic number (Z) >= 31 (i.e. further down the periodic
+        table than Zn), otherwise ``False``.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1129,7 +1196,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=self.poscar_comment,
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     def _check_bulk_supercell_and_warn(self):
@@ -1162,10 +1229,11 @@ class DefectRelaxSet(MSONable):
         SOC included) workflow, to obtain rough formation energy estimates and
         flag any potential issues with defect calculations early on.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1176,8 +1244,7 @@ class DefectRelaxSet(MSONable):
         (chemical potential) calculations -- this will be automatically checked
         upon defect & competing phases parsing in ``doped``.
         """
-        bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
-        if bulk_supercell is None:
+        if (bulk_supercell := self._check_bulk_supercell_and_warn()) is None:
             return None
 
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
@@ -1191,7 +1258,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=f"{bulk_supercell.formula} -- Bulk",
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     @property
@@ -1217,10 +1284,11 @@ class DefectRelaxSet(MSONable):
         obtain rough formation energy estimates and flag any potential issues
         with defect calculations early on.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1231,8 +1299,7 @@ class DefectRelaxSet(MSONable):
         (chemical potential) calculations -- this will be automatically checked
         upon defect & competing phases parsing in ``doped``.
         """
-        bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
-        if bulk_supercell is None:
+        if (bulk_supercell := self._check_bulk_supercell_and_warn()) is None:
             return None
 
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
@@ -1247,7 +1314,7 @@ class DefectRelaxSet(MSONable):
                 user_potcar_functional=self.user_potcar_functional,
                 user_potcar_settings=self.user_potcar_settings,
                 poscar_comment=f"{bulk_supercell.formula} -- Bulk",
-                **self.dict_set_kwargs,
+                **self.kwargs,
             )
         )
 
@@ -1259,11 +1326,11 @@ class DefectRelaxSet(MSONable):
         ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the HF exchange
         part of the hybrid DFT calculation. By default, sets ``NKRED(X,Y,Z)``
         to 2 or 3 in the directions for which the k-point grid is divisible by
-        this factor. Returns ``None`` and a warning if the input kpoint
+        this factor. Returns ``None`` with a warning if the input kpoint
         settings correspond to a Γ-only kpoint mesh (in which case
-        ``(bulk_)vasp_gam`` should be used) or for GGA calculations (if
-        ``LHFCALC`` is set to ``False`` in ``user_incar_settings``, in which
-        case ``(bulk_)vasp_std`` should be used).
+        ``(bulk_)vasp_gam`` should be used), and ``None`` for GGA calculations
+        (if ``LHFCALC`` is set to ``False`` in ``user_incar_settings``, in
+        which case ``(bulk_)vasp_std`` should be used).
 
         The bulk supercell only needs to be calculated once with the same
         settings as the final defect calculations, which is ``vasp_std`` if we
@@ -1280,10 +1347,11 @@ class DefectRelaxSet(MSONable):
         obtain rough formation energy estimates and flag any potential issues
         with defect calculations early on.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1294,24 +1362,17 @@ class DefectRelaxSet(MSONable):
         (chemical potential) calculations -- this will be automatically checked
         upon defect & competing phases parsing in ``doped``.
         """
-        bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
-        if bulk_supercell is None:
+        if (bulk_supercell := self._check_bulk_supercell_and_warn()) is None:
             return None
 
-        # check NKRED by running through ``vasp_nkred_std``:
-        nkred_defect_dict_set = self.vasp_nkred_std
-
-        if nkred_defect_dict_set is None:
+        if (nkred_defect_dict_set := self.vasp_nkred_std) is None:  # check and get NKRED settings
             return None
 
-        if any("VASP_PSP_DIR" in i for i in SETTINGS):  # POTCARs available
-            user_incar_settings = copy.deepcopy(self.user_incar_settings)
-            user_incar_settings.update(singlepoint_incar_settings)
-            user_incar_settings.update(  # add NKRED settings
-                {k: v for k, v in nkred_defect_dict_set.incar.as_dict().items() if "NKRED" in k}
-            )
-        else:
-            user_incar_settings = {}
+        user_incar_settings = copy.deepcopy(self.user_incar_settings)
+        user_incar_settings.update(singlepoint_incar_settings)
+        user_incar_settings.update(  # add NKRED settings; from the input settings rather than...
+            {k: v for k, v in nkred_defect_dict_set.user_incar_settings.items() if "NKRED" in k}
+        )  # ...``.incar``, which requires ``POTCAR``s (to set ``NELECT``) for charged defect supercells
 
         return DefectDictSet(
             bulk_supercell,
@@ -1321,7 +1382,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=f"{bulk_supercell.formula} -- Bulk",
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     @property
@@ -1330,15 +1391,16 @@ class DefectRelaxSet(MSONable):
         ``DefectDictSet`` for VASP `bulk` supercell single-point calculations
         with spin-orbit coupling (SOC) included (i.e. ``LSORBIT = True``),
         using ``vasp_ncl``. If ``DefectRelaxSet.soc`` is ``False``, then this
-        returns ``None`` and a warning. If the ``soc`` parameter is not set
-        when initializing ``DefectRelaxSet``, then this is set to ``True`` when
-        the defect supercell has a max atomic number (Z) >= 31 (i.e. further
-        down the periodic table than Zn), otherwise ``False``.
+        returns ``None``. If the ``soc`` parameter is not set when initializing
+        ``DefectRelaxSet``, then this is set to ``True`` when the defect
+        supercell has a max atomic number (Z) >= 31 (i.e. further down the
+        periodic table than Zn), otherwise ``False``.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1349,8 +1411,7 @@ class DefectRelaxSet(MSONable):
         (chemical potential) calculations -- this will be automatically checked
         upon defect & competing phases parsing in ``doped``.
         """
-        bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
-        if bulk_supercell is None:
+        if (bulk_supercell := self._check_bulk_supercell_and_warn()) is None:
             return None
 
         if not self.soc:
@@ -1368,7 +1429,7 @@ class DefectRelaxSet(MSONable):
             user_potcar_functional=self.user_potcar_functional,
             user_potcar_settings=self.user_potcar_settings,
             poscar_comment=f"{bulk_supercell.formula} -- Bulk",
-            **self.dict_set_kwargs,
+            **self.kwargs,
         )
 
     def _get_output_path(self, defect_dir: PathLike | None = None, subfolder: PathLike | None = None):
@@ -1387,8 +1448,8 @@ class DefectRelaxSet(MSONable):
     def _write_vasp_xxx_files(self, defect_dir, subfolder, poscar, rattle, vasp_xxx_attribute, **kwargs):
         output_path = self._get_output_path(defect_dir, subfolder)
 
-        stdev = d_min = None
-        if rattle:
+        stdev, d_min = kwargs.pop("stdev", None), kwargs.pop("d_min", None)  # user-specified, if given
+        if rattle and (stdev is None or d_min is None):
             if isinstance(self.defect_entry, Structure):
                 trial_structures = [self.defect_entry, self.defect_entry * 2]
             else:
@@ -1399,10 +1460,11 @@ class DefectRelaxSet(MSONable):
                 ]
             for trial_structure in trial_structures:
                 distance_matrix = trial_structure.distance_matrix
-                sorted_distances = np.sort(distance_matrix[distance_matrix > 0.8].flatten())
-                if len(sorted_distances) > 0:
-                    stdev = 0.1 * sorted_distances[0]
-                    d_min = 0.8 * sorted_distances[0]
+                distances = distance_matrix[distance_matrix > 0.8]
+                if distances.size > 0:
+                    min_distance = distances.min()
+                    stdev = 0.1 * min_distance if stdev is None else stdev
+                    d_min = 0.8 * min_distance if d_min is None else d_min
                     break
 
         vasp_xxx_attribute.write_input(
@@ -1414,9 +1476,31 @@ class DefectRelaxSet(MSONable):
             **kwargs,  # kwargs to allow POTCAR testing on GH Actions
         )
 
-        if "bulk" not in defect_dir and isinstance(self.defect_entry, DefectEntry):
-            # not a bulk supercell, and DefectEntry provenance to write:
-            self.defect_entry.to_json(f"{output_path}/{self.defect_entry.name}.json.gz")
+        if not str(defect_dir).endswith("_bulk") and isinstance(self.defect_entry, DefectEntry):
+            # not a bulk supercell folder, and DefectEntry provenance to write (to the defect folder):
+            self.defect_entry.to_json(f"{defect_dir}/{self.defect_entry.name}_DefectEntry.json.gz")
+
+    def _write_bulk_files(self, defect_dir, subfolder, vasp_xxx_attribute, **kwargs):
+        """
+        Write the bulk supercell input files to
+        ``"{formula}_bulk/{subfolder}"``, in the parent folder of
+        ``defect_dir``, for the ``bulk=True`` option of the
+        ``write_gam``/``write_std``/``write_nkred_std``/``write_ncl`` methods.
+
+        Does nothing if the bulk supercell is unavailable.
+        """
+        if (bulk_supercell := self._check_bulk_supercell_and_warn()) is None:
+            return
+
+        output_path = os.path.dirname(defect_dir) or "."
+        self._write_vasp_xxx_files(
+            f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
+            subfolder,
+            poscar=True,
+            rattle=False,
+            vasp_xxx_attribute=vasp_xxx_attribute,
+            **kwargs,
+        )
 
     def write_gam(
         self,
@@ -1437,10 +1521,11 @@ class DefectRelaxSet(MSONable):
         for a single-point calculation of the bulk supercell are also written
         to ``"{formula}_bulk/{subfolder}"``.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1502,7 +1587,9 @@ class DefectRelaxSet(MSONable):
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         if defect_dir is None:
             defect_dir = self._get_output_path()  # handles Structure input & unset DefectEntry.name
@@ -1516,19 +1603,7 @@ class DefectRelaxSet(MSONable):
             **kwargs,
         )
         if bulk:
-            bulk_supercell = self._check_bulk_supercell_and_warn()
-            if bulk_supercell is None:
-                return
-
-            output_path = os.path.dirname(defect_dir) or "."
-            self._write_vasp_xxx_files(
-                f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
-                subfolder,
-                poscar=True,
-                rattle=False,
-                vasp_xxx_attribute=self.bulk_vasp_gam,
-                **kwargs,
-            )
+            self._write_bulk_files(defect_dir, subfolder, self.bulk_vasp_gam, **kwargs)
 
     def write_std(
         self,
@@ -1557,10 +1632,11 @@ class DefectRelaxSet(MSONable):
         Returns None and a warning if the input kpoint settings correspond to a
         Γ-only kpoint mesh (in which case ``vasp_gam`` should be used).
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1622,7 +1698,9 @@ class DefectRelaxSet(MSONable):
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         if self.vasp_std is None:  # warns user if vasp_std is None
             return
@@ -1639,19 +1717,7 @@ class DefectRelaxSet(MSONable):
             **kwargs,
         )
         if bulk:
-            bulk_supercell = self._check_bulk_supercell_and_warn()
-            if bulk_supercell is None:
-                return
-
-            output_path = os.path.dirname(defect_dir) or "."
-            self._write_vasp_xxx_files(
-                f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
-                subfolder,
-                poscar=True,
-                rattle=False,
-                vasp_xxx_attribute=self.bulk_vasp_std,
-                **kwargs,
-            )
+            self._write_bulk_files(defect_dir, subfolder, self.bulk_vasp_std, **kwargs)
 
     def write_nkred_std(
         self,
@@ -1684,10 +1750,11 @@ class DefectRelaxSet(MSONable):
         GGA calculations (if ``LHFCALC`` is set to ``False`` in
         user_incar_settings, in which case ``vasp_std`` should be used).
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1750,7 +1817,9 @@ class DefectRelaxSet(MSONable):
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         if self.vasp_nkred_std is None:  # warn user if vasp_nkred_std is None
             warnings.warn(
@@ -1772,19 +1841,7 @@ class DefectRelaxSet(MSONable):
             **kwargs,
         )
         if bulk:
-            bulk_supercell = self._check_bulk_supercell_and_warn()
-            if bulk_supercell is None:
-                return
-
-            output_path = os.path.dirname(defect_dir) or "."
-            self._write_vasp_xxx_files(
-                f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
-                subfolder,
-                poscar=True,
-                rattle=False,
-                vasp_xxx_attribute=self.bulk_vasp_nkred_std,
-                **kwargs,
-            )
+            self._write_bulk_files(defect_dir, subfolder, self.bulk_vasp_nkred_std, **kwargs)
 
     def write_ncl(
         self,
@@ -1816,10 +1873,11 @@ class DefectRelaxSet(MSONable):
         calculation of the bulk supercell are also written to
         "{formula}_bulk/{subfolder}".
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -1884,7 +1942,9 @@ class DefectRelaxSet(MSONable):
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         if self.vasp_ncl is None:
             warnings.warn(
@@ -1906,20 +1966,7 @@ class DefectRelaxSet(MSONable):
             **kwargs,
         )
         if bulk:
-            bulk_supercell = self._check_bulk_supercell_and_warn()
-            if bulk_supercell is None:
-                return
-
-            # get output dir: (folder above defect_dir if defect_dir is a subfolder)
-            output_path = os.path.dirname(defect_dir) or "."
-            self._write_vasp_xxx_files(
-                f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
-                subfolder,
-                poscar=True,
-                rattle=False,
-                vasp_xxx_attribute=self.bulk_vasp_ncl,
-                **kwargs,
-            )
+            self._write_bulk_files(defect_dir, subfolder, self.bulk_vasp_ncl, **kwargs)
 
     def write_all(
         self,
@@ -1928,6 +1975,7 @@ class DefectRelaxSet(MSONable):
         rattle: bool = True,
         vasp_gam: bool | None = None,
         bulk: bool | str = False,
+        relax_set_json: bool = False,
         **kwargs,
     ):
         r"""
@@ -1983,10 +2031,11 @@ class DefectRelaxSet(MSONable):
         is required). If ``bulk = "all"``, then the input files for all VASP
         calculations in the workflow are written to the bulk supercell folder.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -2063,10 +2112,16 @@ class DefectRelaxSet(MSONable):
                 ``bulk = "all"`` then the input files for all ``VASP``
                 calculations in the workflow (``vasp_gam``, ``vasp_nkred_std``,
                 ``vasp_std``, ``vasp_ncl`` (if applicable)) are written to the
-                bulk supercell folder.
-                (Default: False)
+                bulk supercell folder. Default is ``False``.
+            relax_set_json (bool):
+                If ``True``, the ``DefectRelaxSet`` object is also written to a
+                ``{defect name}_DefectRelaxSet.json.gz`` file in the defect
+                folder, for calculation provenance (reloadable with
+                ``DefectRelaxSet.from_json()``). Default is ``False``.
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
         # check `bulk` input:
         bulk_vasp = []
@@ -2128,6 +2183,44 @@ class DefectRelaxSet(MSONable):
                 bulk=any("vasp_ncl" in vasp_type for vasp_type in bulk_vasp),
                 **kwargs,
             )
+
+        if relax_set_json:  # write this ``DefectRelaxSet`` to json in the defect folder, for provenance
+            name = self._get_output_path()  # defect name, or formula & charge for ``Structure`` input
+            defect_dir = self._get_output_path(defect_dir)
+            # folder already created by the ``write_...()`` calls above, unless none were written (i.e.
+            # Γ-only with ``soc=False`` and ``vasp_gam=False``):
+            os.makedirs(defect_dir, exist_ok=True)
+            self.to_json(f"{defect_dir}/{name}_DefectRelaxSet.json.gz")
+
+    def to_json(self, filename: PathLike | None = None):
+        """
+        Save the ``DefectRelaxSet`` object to a json file, which can be
+        reloaded with ``DefectRelaxSet.from_json()`` (or ``loadfn()`` from
+        ``monty.serialization``).
+
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
+        Args:
+            filename (PathLike):
+                Filename to save ``json`` file as. If ``None``, set as
+                ``{defect name}_DefectRelaxSet.json.gz``.
+        """
+        dumpfn(self, filename or f"{self._get_output_path()}_DefectRelaxSet.json.gz")
+
+    @classmethod
+    def from_json(cls, filename: PathLike) -> "DefectRelaxSet":
+        """
+        Load a ``DefectRelaxSet`` object from a ``json(.gz)`` file.
+
+        Args:
+            filename (PathLike):
+                Filename of json file to load a ``DefectRelaxSet`` object from.
+
+        Returns:
+            ``DefectRelaxSet`` object
+        """
+        return loadfn(filename)
 
     def __repr__(self):
         """
@@ -2200,9 +2293,11 @@ class DefectsSet(DefectsSetBase):
         the final defect calculations, for the later calculation of defect
         formation energies.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` settings,
-        and ``VASP_PotcarSet.yaml`` for the default ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
@@ -2233,12 +2328,12 @@ class DefectsSet(DefectsSetBase):
             user_incar_settings (dict):
                 Dictionary of user ``INCAR`` settings (AEXX, NCORE etc.) to
                 override default settings. Highly recommended to look at output
-                ``INCAR``\s or the ``VASP_RelaxSet.yaml`` and
-                ``VASP_DefectSet.yaml`` files in the
-                ``doped/io/vasp/VASP_sets`` folder, to see what the default
-                ``INCAR`` settings are. Note that any flags that aren't numbers
-                or ``True/False`` need to be input as strings with quotation
-                marks (e.g. ``{"ALGO": "All"}``). Default is ``None``.
+                ``INCAR``\s or |RelaxSet.yaml|, |DefectSet.yaml| and
+                |HSESet.yaml| (applied by default, unless ``LHFCALC = False``),
+                to see what the default ``INCAR`` settings are. Note that any
+                flags which aren't numbers or ``True/False`` need to be input as
+                strings with quotation marks (e.g. ``{"ALGO": "All"}``).
+                (default: None)
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 |VaspInputSet| format) e.g., ``{"reciprocal_density": 123}``,
@@ -2247,12 +2342,14 @@ class DefectsSet(DefectsSetBase):
                 for ``vasp_gam``). Default is Gamma-centred,
                 ``reciprocal_density = 100`` [kpoints/Å⁻³].
             user_potcar_functional (str):
-                ``POTCAR`` functional to use. Default is "PBE" and if this
-                fails, tries "PBE_52", then "PBE_54".
+                ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+                whichever ``PBE`` ``POTCAR`` library is installed, resolved
+                newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+                ``PBE``); if a specific library is requested but unavailable,
+                the others are tried in this same order.
             user_potcar_settings (dict):
                 Override the default ``POTCAR``\s, e.g. ``{"Li": "Li_sv"}``.
-                See ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the
-                default ``POTCAR`` set.
+                See |PotcarSet.yaml| for the default ``POTCAR`` set.
             **kwargs: Additional kwargs to pass to each ``DefectRelaxSet()``.
 
         Key Attributes:
@@ -2292,11 +2389,14 @@ class DefectsSet(DefectsSetBase):
             json_obj (dict | |DefectsGenerator|):
                 Either the |DefectsGenerator| object if input
                 ``defect_entries`` is a |DefectsGenerator| object, otherwise
-                the ``defect_entries`` dictionary, which will be written to
-                file when ``write_files()`` is called, to aid calculation
-                provenance.
+                the ``defect_entries`` dictionary. Used in place of
+                ``defect_entries`` when serialising (``as_dict()`` /
+                ``to_json()``), so that defect generation provenance is
+                retained where possible.
             json_name (PathLike):
-                Name of the ``JSON`` file to save the ``json_obj`` to.
+                Default filename for saving this |DefectsSet| to ``JSON``
+                (i.e. ``{Chemical Formula}_DefectsSet.json.gz``), used by
+                ``to_json()`` and ``write_files()``.
 
             Input parameters are also set as attributes.
         """
@@ -2372,8 +2472,45 @@ class DefectsSet(DefectsSetBase):
             rattle=kwargs.pop("rattle", True),
             vasp_gam=kwargs.pop("vasp_gam", None),
             bulk=bulk,
+            relax_set_json=kwargs.pop("relax_set_json", False),
             **kwargs,
         )
+
+    def _defect_sets_to_write(self, write_kwargs: dict) -> dict:
+        r"""
+        Get the ``DefectRelaxSet``\s to write in :meth:`write_files`.
+
+        If ``POTCAR``\s are not set up, the ``INCAR``\s for charged defects
+        cannot be written (``NELECT`` cannot be determined), so these are skipped
+        (with a warning), unless ``poscar = True`` in which case only their
+        ``POSCAR`` and ``KPOINTS`` files are written.
+        """
+        defect_sets = self.defect_sets
+        poscar = write_kwargs.get("poscar", False)
+        if not any("VASP_PSP_DIR" in i for i in SETTINGS) and (  # no `NELECT` for charged defects
+            charged := [name for name, drs in defect_sets.items() if drs.charge_state != 0]
+        ):
+            if not poscar:
+                defect_sets = {k: v for k, v in defect_sets.items() if k not in charged}
+                if not defect_sets:  # only charged defects, so nothing writable
+                    raise ValueError(
+                        f"{_potcar_setup_warning}, so no input files will be generated (all defects in "
+                        f"this `DefectsSet` are charged). Set `poscar=True` to write their `POSCAR` and "
+                        f"`KPOINTS` files."
+                    )
+
+            warnings.warn(
+                f"{_potcar_setup_warning}, so the `INCAR`s for the {len(charged)} charged defects "
+                + (
+                    "cannot be written; only `POSCAR` and `KPOINTS` files will be generated for these "
+                    "folders."
+                    if poscar
+                    else "cannot be written; these folders will be skipped (set `poscar=True` to write "
+                    "their `POSCAR` and `KPOINTS` files)."
+                )
+            )
+
+        return defect_sets
 
     def write_files(  # type: ignore[override]  # deliberately extends the base signature
         self,
@@ -2383,6 +2520,7 @@ class DefectsSet(DefectsSetBase):
         vasp_gam: bool | None = None,
         bulk: bool | str = True,
         processes: int | None = None,
+        relax_set_json: bool = False,
         **kwargs,
     ):
         r"""
@@ -2443,17 +2581,18 @@ class DefectsSet(DefectsSetBase):
         (gam/std/ncl) are written to the bulk supercell folder, or if
         ``bulk = False``, then no bulk folder is created.
 
-        The |DefectEntry| objects are also written to ``json.gz`` files in
-        the defect folders, as well as ``self.defect_entries``
-        (``self.json_obj``) in the top folder, to aid calculation provenance
-        -- these can be reloaded directly with ``loadfn()`` from
-        ``monty.serialization``, or individually with
-        ``DefectEntry.from_json()``.
+        The |DefectEntry| objects are also written to ``json.gz`` files in the
+        defect folders, as well as this |DefectsSet| object itself to a
+        ``{Chemical Formula}_DefectsSet.json.gz`` file in the top folder, to
+        aid calculation provenance -- these can be reloaded directly with
+        ``loadfn()`` from ``monty.serialization``, or individually with
+        ``DefectsSet.from_json()``/``DefectEntry.from_json()``.
 
-        See the ``VASP_RelaxSet.yaml`` and ``VASP_DefectSet.yaml`` files in the
-        ``doped/io/vasp/VASP_sets`` folder for the default ``INCAR`` and
-        ``KPOINT`` settings, and ``VASP_PotcarSet.yaml`` for the default
-        ``POTCAR`` settings.
+        See |RelaxSet.yaml|, |DefectSet.yaml| and |HSESet.yaml| (hybrid DFT by
+        default; set ``LHFCALC = False`` in ``user_incar_settings`` otherwise)
+        for the default ``INCAR`` and ``KPOINTS`` settings,
+        |SinglePointSet.yaml| for the single-point (static) calculation
+        overrides, and |PotcarSet.yaml| for the default ``POTCAR`` settings.
         **These are reasonable defaults that roughly match the typical values
         needed for accurate defect calculations, but usually will need to be
         modified for your specific system, such as converged ENCUT and KPOINTS,
@@ -2524,18 +2663,22 @@ class DefectsSet(DefectsSetBase):
                 calculations in the workflow (``vasp_gam``, ``vasp_nkred_std``,
                 ``vasp_std``, ``vasp_ncl`` (if applicable)) are written to the
                 bulk supercell folder.
-                (Default: False)
+                (Default: True)
             processes (int):
                 Number of processes to use for ``multiprocessing`` for file
                 writing. If ``None`` (default), then is dynamically set to the
                 optimal value for the number of folders to write.
                 (Default: None)
+            relax_set_json (bool):
+                If ``True``, the ``DefectRelaxSet`` object for each defect is
+                also written to a ``{defect name}_DefectRelaxSet.json.gz`` file
+                in its defect folder, for calculation provenance (reloadable
+                with ``DefectRelaxSet.from_json()``). Default is ``False``.
             **kwargs:
-                Keyword arguments to pass to ``DefectDictSet.write_input()``.
+                Keyword arguments to pass to ``DefectDictSet.write_input()``,
+                such as ``stdev`` and ``d_min`` to control the magnitude of
+                ``rattle`` displacements, or ``potcar_spec``.
         """
-        # TODO: If POTCARs not setup, warn and only write neutral defect folders, with INCAR, KPOINTS and
-        #  (if poscar) POSCAR? And bulk
-
         super().write_files(
             output_path=output_path,
             bulk=bulk,
@@ -2543,6 +2686,7 @@ class DefectsSet(DefectsSetBase):
             poscar=poscar,
             rattle=rattle,
             vasp_gam=vasp_gam,
+            relax_set_json=relax_set_json,
             **kwargs,
         )
 
@@ -2551,8 +2695,8 @@ class DefectsSet(DefectsSetBase):
         Set the value of a specific key (defect name) in the ``defect_sets``
         dictionary.
 
-        Note that other |DefectsSet| attributes, like ``self.soc`` (whether
-        to perform SOC calculations) and ``self.bulk_vasp...`` are not changed.
+        Note that other |DefectsSet| attributes, like ``self.soc`` (whether to
+        perform SOC calculations) and ``self.bulk_vasp...`` are not changed.
         """
         # check the input, must be a ``DefectRelaxSet`` object:
         if not isinstance(value, DefectRelaxSet):
@@ -2571,14 +2715,8 @@ class DefectsSet(DefectsSetBase):
         self.defect_sets[key] = value
 
 
-# TODO: Go through and update docstrings with descriptions all the default behaviour (INCAR,
-#  KPOINTS settings etc)
-# TODO: Have optional parameter to output DefectRelaxSet jsons to written folders as well (but off by
-#  default)?
-# TODO: Likewise, add same to/from json etc. functions for DefectRelaxSet. __Dict__ methods apply
-#  to `.defect_sets` etc?
-# TODO: Implement renaming folders like SnB if we try to write a folder that already exists,
-#  and the structures don't match (otherwise overwrite)
+# TODO: (Likely with IO refactor); should rename similar to chemical_potentials.py, as "pre-relax", "relax"
+#  and "singlepoint" or similar, rather than "vasp_gam", "vasp_std" etc, to be code agnostic
 
 
 # ---------------------------------------------------------------------------------------------------- #
@@ -2601,10 +2739,30 @@ def get_kpoint_convergence_sets(
     r"""
     Generates a dictionary of ``DopedDictSet``\s (subclasses of
     :class:`~pymatgen.io.vasp.sets.VaspInputSet`) for k-point convergence
-    testing of competing phases, using PBEsol (GGA) DFT by default.
+    testing of competing phases, using GGA DFT by default.
 
-    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic)
-    or 0 if not.
+    Automatically sets the smearing method (``ISMEAR`` ``INCAR`` tag in
+    ``VASP``) to 2 (Methfessel-Paxton)(if metallic) or 0 (Gaussian) if not,
+    matching the geometry relaxation (:meth:`get_relaxation_sets`)
+    defaults. Note that the `final` single-point calculations
+    (:meth:`get_singlepoint_sets`) use tetrahedron smearing by default
+    (``ISMEAR = -5`` in ``VASP``), which typically converges at lower
+    `k`-point densities (particularly for metals). Thus for phases
+    requiring high `k`-point densities (e.g. metals), which can become very
+    computationally expensive with e.g. hybrid DFT and/or non-collinear
+    magnetisation / spin-orbit coupling (removing spin-rotational
+    `k`-point symmetries), it can be worth also running their `k`-point
+    convergence tests with tetrahedron smearing (e.g.
+    ``user_incar_settings={"ISMEAR": -5}`` with ``VASP``)  to determine if
+    reduced `k`-point densities are sufficiently converged for their
+    single-point calculations (tetrahedron smearing is non-variational for
+    metals, and so cannot be used with geometry relaxations). ``ISMEAR`` is
+    automatically reverted to 2 (if metallic) or 0 (otherwise) when there
+    are too few `k`-points (<4) for the tetrahedron method.
+    One can typically also use down-sampling in the Fock exchange `q`-point
+    grid (i.e. ``NKRED`` in ``VASP``) for phases requiring high `k`-point
+    densities, to further reduce computational costs without significant
+    loss of accuracy; see |Competing Phases Tips|.
 
     Args:
         competing_phases (CompetingPhases):
@@ -2629,15 +2787,16 @@ def get_kpoint_convergence_sets(
             ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
             any non-numerical or non-``True``/``False`` flags need to be
             input as strings with quotation marks. See
-            ``doped/io/vasp/VASP_sets/VASP_PBEsol_ConvergenceSet.yaml`` for
-            the default settings.
+            |ConvergenceSet.yaml| for the default settings.
         user_potcar_functional (str):
-            POTCAR functional to use. Default is "PBE" and if this fails,
-            tries "PBE_52", then "PBE_54".
+            ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+            whichever ``PBE`` ``POTCAR`` library is installed, resolved
+            newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+            ``PBE``); if a specific library is requested but unavailable,
+            the others are tried in this same order.
         user_potcar_settings (dict):
             Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-            ``POTCAR`` set.
+            |PotcarSet.yaml| for the default ``POTCAR`` set.
         extrinsic_only (bool):
             If ``True``, only generate inputs for
             ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
@@ -2652,7 +2811,7 @@ def get_kpoint_convergence_sets(
             Mapping of output folder paths to generated ``DopedDictSet``\s
             (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
     """
-    base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
+    base_incar_settings = copy.deepcopy(convergence_set["INCAR"])
     base_incar_settings.update(user_incar_settings or {})
     kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
     dict_sets: dict[str, DopedDictSet] = {}
@@ -2772,15 +2931,16 @@ def get_relaxation_sets(
             ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
             Note that any non-numerical or non-``True``/``False`` flags
             need to be input as strings with quotation marks.
-            See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
-            ``VASP_HSESet.yaml`` for the default settings.
+            See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
         user_potcar_functional (str):
-            POTCAR functional to use. Default is "PBE" and if this fails,
-            tries "PBE_52", then "PBE_54".
+            ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+            whichever ``PBE`` ``POTCAR`` library is installed, resolved
+            newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+            ``PBE``); if a specific library is requested but unavailable,
+            the others are tried in this same order.
         user_potcar_settings (dict):
             Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-            ``POTCAR`` set.
+            |PotcarSet.yaml| for the default ``POTCAR`` set.
         extrinsic_only (bool):
             If ``True``, only generate inputs for
             ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
@@ -2831,6 +2991,9 @@ def get_relaxation_sets(
         if category == "molecules":
             incar_settings["ISIF"] = 2  # don't change the volume
             incar_settings["KPAR"] = 1  # don't use k-point parallelization, gamma only
+            if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing needs >1 kpoint:
+                incar_settings["ISMEAR"] = 0
+
         _set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
         if category == "metals":
             _set_default_metal_smearing(incar_settings, user_incar_settings or {})
@@ -2845,6 +3008,10 @@ def get_relaxation_sets(
                 user_potcar_functional=user_potcar_functional,
                 force_gamma=True,
             )
+            if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing; needs >= 4 k-points
+                kpts = dict_set.kpoints.kpts[0] if dict_set.kpoints is not None else None
+                if kpts and np.prod(kpts) < 4:  # ``pymatgen`` would revert to ISMEAR = 0 for all
+                    dict_set.user_incar_settings["ISMEAR"] = 2 if category == "metals" else 0
 
             fname = f"{output_path}/{folder_name}/{subfolder}"
             dict_sets[fname] = dict_set
@@ -2898,24 +3065,33 @@ def get_singlepoint_sets(
     off symmetry for SOC calculations here -- note that the electronic band
     structure from these calculations is thus unreliable.
 
-    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-    if not. Note that any changes to the default ``INCAR``/``POTCAR``
-    settings should be consistent with those used for the defect supercell
-    calculations.
+    Automatically sets the ``ISMEAR`` ``INCAR`` tag to -5 (tetrahedron
+    smearing) for all solid phases, or 0 (Gaussian) for molecules (Γ-only
+    `k`-point sampling). Note that any changes to the default ``INCAR`` /
+    ``POTCAR`` settings should be consistent with those used for the defect
+    supercell calculations.
 
-    For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
-    default here) is well-suited to the geometry relaxations, tetrahedron
-    smearing (``ISMEAR = -5``) typically gives more accurate total energies
-    for these final single-point calculations with modest k-point
-    densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
-    Often this requires a lower `k`-point density than Methfessel-Paxton
-    smearing, and so it can be worth re-running k-point convergence testing
-    (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
-    check for cheaper converged `k`-point densities for these final
-    single-point calculations -- particularly useful if e.g. performing
-    hybrid DFT SOC calculations. See the |Competing Phases Tips| tips
-    section for further tips on boosting the efficiency of competing
-    phases calculations.
+    While Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and
+    ``2``; the defaults for the geometry relaxations) are well-suited to
+    geometry relaxations, tetrahedron smearing (``ISMEAR = -5``; default
+    here) typically gives more accurate total energies for these final
+    single-point calculations at modest `k`-point densities -- particularly
+    for metals. Set e.g. ``user_incar_settings={"ISMEAR": 0}`` to override.
+    ``ISMEAR`` is automatically reverted to 2 (if metallic) or 0
+    (otherwise) when there are too few `k`-points (<4) for the tetrahedron
+    method. Tetrahedron smearing often requires a lower `k`-point density
+    than Methfessel-Paxton/Gaussian smearing for convergence, and so it can
+    be worth re-running k-point convergence tests (with
+    :meth:`get_kpoint_convergence_sets`, using
+    ``user_incar_settings={"ISMEAR": -5}``) for particularly expensive
+    phases, to check for cheaper converged `k`-point densities for these
+    final single-point calculations -- particularly useful if e.g. using
+    hybrid DFT and/or SOC. One can typically also use down-sampling in the
+    Fock exchange `q`-point grid (i.e. ``NKRED`` in ``VASP``) for phases
+    requiring high `k`-point densities, to further reduce computational
+    costs without significant loss of accuracy. See the
+    |Competing Phases Tips| tips section for further tips on boosting the
+    efficiency of competing phases calculations.
 
     Note that this function uses a single kpoint density setting each for
     metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
@@ -2954,15 +3130,16 @@ def get_singlepoint_sets(
             ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
             Note that any non-numerical or non-``True``/``False`` flags
             need to be input as strings with quotation marks.
-            See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
-            ``VASP_HSESet.yaml`` for the default settings.
+            See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
         user_potcar_functional (str):
-            POTCAR functional to use. Default is "PBE" and if this fails,
-            tries "PBE_52", then "PBE_54".
+            ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+            whichever ``PBE`` ``POTCAR`` library is installed, resolved
+            newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+            ``PBE``); if a specific library is requested but unavailable,
+            the others are tried in this same order.
         user_potcar_settings (dict):
             Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-            ``POTCAR`` set.
+            |PotcarSet.yaml| for the default ``POTCAR`` set.
         extrinsic_only (bool):
             If ``True``, only generate inputs for
             ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
@@ -3004,8 +3181,8 @@ def get_singlepoint_sets(
 
     # build merged INCAR settings: singlepoint tags + SOC on top of user settings
     sp_incar_settings = copy.deepcopy(singlepoint_incar_settings)
-    # TODO: Set ISMEAR to -5 for singlepoint calculations if sufficient KPOINT density? And for defect
-    # calcs? Tools for handling this in ``pymatgen``?
+    # tetrahedron smearing by default, to maximise k-point sampling accuracy; reverted to 0 for
+    sp_incar_settings["ISMEAR"] = -5  # molecules and 2/0 for phases with < 4 k-points
     if soc:
         sp_incar_settings["LSORBIT"] = True
     sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
@@ -3099,13 +3276,36 @@ def write_kpoint_convergence_files(
 ) -> dict[str, DopedDictSet]:
     r"""
     Generates and writes VASP input files for k-point convergence testing of
-    competing phases, using PBEsol (GGA) DFT by default.
+    competing phases, using GGA DFT by default.
 
-    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-    if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
-    Returns the corresponding dictionary of ``DopedDictSet`` objects
-    (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
-    contain the input file settings.
+    Automatically sets the smearing method (``ISMEAR`` ``INCAR`` tag in
+    ``VASP``) to 2 (Methfessel-Paxton)(if metallic) or 0 (Gaussian) if not,
+    matching the geometry relaxation (:meth:`get_relaxation_sets`)
+    defaults. Note that the `final` single-point calculations
+    (:meth:`get_singlepoint_sets`) use tetrahedron smearing by default
+    (``ISMEAR = -5`` in ``VASP``), which typically converges at lower
+    `k`-point densities (particularly for metals). Thus for phases
+    requiring high `k`-point densities (e.g. metals), which can become very
+    computationally expensive with e.g. hybrid DFT and/or non-collinear
+    magnetisation / spin-orbit coupling (removing spin-rotational
+    `k`-point symmetries), it can be worth also running their `k`-point
+    convergence tests with tetrahedron smearing (e.g.
+    ``user_incar_settings={"ISMEAR": -5}`` with ``VASP``)  to determine if
+    reduced `k`-point densities are sufficiently converged for their
+    single-point calculations (tetrahedron smearing is non-variational for
+    metals, and so cannot be used with geometry relaxations). ``ISMEAR`` is
+    automatically reverted to 2 (if metallic) or 0 (otherwise) when there
+    are too few `k`-points (<4) for the tetrahedron method.
+    One can typically also use down-sampling in the Fock exchange `q`-point
+    grid (i.e. ``NKRED`` in ``VASP``) for phases requiring high `k`-point
+    densities, to further reduce computational costs without significant
+    loss of accuracy; see |Competing Phases Tips|.
+
+    https://github.com/kavanase/vaspup2.0 can be useful in automatically
+    running and parsing these ``VASP`` convergence calculations. Returns
+    the corresponding dictionary of ``DopedDictSet`` objects (subclasses of
+    :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which contain the input
+    file settings.
 
     Args:
         competing_phases (CompetingPhases):
@@ -3130,15 +3330,16 @@ def write_kpoint_convergence_files(
             ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
             any non-numerical or non-``True``/``False`` flags need to be
             input as strings with quotation marks. See
-            ``doped/io/vasp/VASP_sets/VASP_PBEsol_ConvergenceSet.yaml`` for
-            the default settings.
+            |ConvergenceSet.yaml| for the default settings.
         user_potcar_functional (str):
-            POTCAR functional to use. Default is "PBE" and if this fails,
-            tries "PBE_52", then "PBE_54".
+            ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+            whichever ``PBE`` ``POTCAR`` library is installed, resolved
+            newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+            ``PBE``); if a specific library is requested but unavailable,
+            the others are tried in this same order.
         user_potcar_settings (dict):
             Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-            ``POTCAR`` set.
+            |PotcarSet.yaml| for the default ``POTCAR`` set.
         extrinsic_only (bool):
             If ``True``, only generate inputs for
             ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
@@ -3234,15 +3435,16 @@ def write_relaxation_files(
             ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
             Note that any non-numerical or non-``True``/``False`` flags
             need to be input as strings with quotation marks.
-            See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
-            ``VASP_HSESet.yaml`` for the default settings.
+            See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
         user_potcar_functional (str):
-            POTCAR functional to use. Default is "PBE" and if this fails,
-            tries "PBE_52", then "PBE_54".
+            ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+            whichever ``PBE`` ``POTCAR`` library is installed, resolved
+            newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+            ``PBE``); if a specific library is requested but unavailable,
+            the others are tried in this same order.
         user_potcar_settings (dict):
             Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-            ``POTCAR`` set.
+            |PotcarSet.yaml| for the default ``POTCAR`` set.
         extrinsic_only (bool):
             If ``True``, only generate inputs for
             ``competing_phases.extrinsic_entries`` (useful when adding dopants to an
@@ -3328,24 +3530,33 @@ def write_singlepoint_files(
     off symmetry for SOC calculations here -- note that the electronic band
     structure from these calculations is thus unreliable.
 
-    Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-    if not. Note that any changes to the default ``INCAR``/``POTCAR``
-    settings should be consistent with those used for the defect supercell
-    calculations.
+    Automatically sets the ``ISMEAR`` ``INCAR`` tag to -5 (tetrahedron
+    smearing) for all solid phases, or 0 (Gaussian) for molecules (Γ-only
+    `k`-point sampling). Note that any changes to the default ``INCAR`` /
+    ``POTCAR`` settings should be consistent with those used for the defect
+    supercell calculations.
 
-    For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
-    default here) is well-suited to the geometry relaxations, tetrahedron
-    smearing (``ISMEAR = -5``) typically gives more accurate total energies
-    for these final single-point calculations with modest k-point
-    densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
-    Often this requires a lower `k`-point density than Methfessel-Paxton
-    smearing, and so it can be worth re-running k-point convergence testing
-    (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
-    check for cheaper converged `k`-point densities for these final
-    single-point calculations -- particularly useful if e.g. performing
-    hybrid DFT SOC calculations. See the |Competing Phases Tips| tips
-    section for further tips on boosting the efficiency of competing
-    phases calculations.
+    While Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and
+    ``2``; the defaults for the geometry relaxations) are well-suited to
+    geometry relaxations, tetrahedron smearing (``ISMEAR = -5``; default
+    here) typically gives more accurate total energies for these final
+    single-point calculations at modest `k`-point densities -- particularly
+    for metals. Set e.g. ``user_incar_settings={"ISMEAR": 0}`` to override.
+    ``ISMEAR`` is automatically reverted to 2 (if metallic) or 0
+    (otherwise) when there are too few `k`-points (<4) for the tetrahedron
+    method. Tetrahedron smearing often requires a lower `k`-point density
+    than Methfessel-Paxton/Gaussian smearing for convergence, and so it can
+    be worth re-running k-point convergence tests (with
+    :meth:`get_kpoint_convergence_sets`, using
+    ``user_incar_settings={"ISMEAR": -5}``) for particularly expensive
+    phases, to check for cheaper converged `k`-point densities for these
+    final single-point calculations -- particularly useful if e.g. using
+    hybrid DFT and/or SOC. One can typically also use down-sampling in the
+    Fock exchange `q`-point grid (i.e. ``NKRED`` in ``VASP``) for phases
+    requiring high `k`-point densities, to further reduce computational
+    costs without significant loss of accuracy. See the
+    |Competing Phases Tips| tips section for further tips on boosting the
+    efficiency of competing phases calculations.
 
     Note that this function uses a single kpoint density setting each for
     metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
@@ -3384,15 +3595,16 @@ def write_singlepoint_files(
             ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
             Note that any non-numerical or non-``True``/``False`` flags
             need to be input as strings with quotation marks.
-            See ``doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml`` and
-            ``VASP_HSESet.yaml`` for the default settings.
+            See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
         user_potcar_functional (str):
-            POTCAR functional to use. Default is "PBE" and if this fails,
-            tries "PBE_52", then "PBE_54".
+            ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
+            whichever ``PBE`` ``POTCAR`` library is installed, resolved
+            newest-first (``PBE_64`` -> ``PBE_54`` -> ``PBE_52`` ->
+            ``PBE``); if a specific library is requested but unavailable,
+            the others are tried in this same order.
         user_potcar_settings (dict):
             Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-            ``doped/io/vasp/VASP_sets/VASP_PotcarSet.yaml`` for the default
-            ``POTCAR`` set.
+            |PotcarSet.yaml| for the default ``POTCAR`` set.
         extrinsic_only (bool):
             If ``True``, only generate inputs for
             ``competing_phases.extrinsic_entries`` (useful when adding dopants to an

@@ -1,8 +1,7 @@
 r"""
 Helper functions for setting up PHS analysis.
 
-Contains modified versions of functions from ``pydefect`` and ``vise``
-(https://github.com/kumagai-group/pydefect / vise).
+Contains modified versions of functions from ``pydefect`` and ``vise``.
 """
 
 import warnings
@@ -393,8 +392,8 @@ def get_band_edge_info(
     band_edge_prop = band_edge_properties_from_outputs(bulk_outputs)
 
     # get defect neighbour indices
-    sorted_distances = np.sort(defect_outputs.structure.distance_matrix.flatten())
-    min_distance = sorted_distances[sorted_distances > 0.5][0]
+    distance_matrix = defect_outputs.structure.distance_matrix
+    min_distance = distance_matrix[distance_matrix > 0.5].min()
 
     if defect_supercell_site is None:
         defect_supercell_site = defect_site_from_structures(

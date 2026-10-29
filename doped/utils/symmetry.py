@@ -6,6 +6,7 @@ import contextlib
 import math
 import os
 import warnings
+from bisect import insort
 from collections.abc import Iterable, Sequence
 from functools import lru_cache, partial
 from itertools import combinations, permutations
@@ -22,7 +23,7 @@ from pymatgen.core.structure_matcher import ElementComparator
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.symmetry.groups import PointGroup
 from pymatgen.transformations.standard_transformations import SupercellTransformation
-from pymatgen.util.coord import is_coord_subset_pbc, lattice_points_in_supercell
+from pymatgen.util.coord import is_coord_subset_pbc, lattice_points_in_supercell, pbc_diff
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial import KDTree
 from scipy.spatial.distance import squareform
@@ -38,7 +39,14 @@ from doped.core import (
     template_defect_entry_from_structures,
 )
 from doped.utils.configurations import orient_s2_like_s1
-from doped.utils.efficiency import Element, PeriodicSite, SpacegroupAnalyzer, Structure
+from doped.utils.efficiency import (
+    Element,
+    PeriodicSite,
+    SpacegroupAnalyzer,
+    Structure,
+    _structure_from_sites_and_coords,
+    _to_unit_cell,
+)
 from doped.utils.mappings import _get_site_mapping_from_coords_and_indices, get_site_mappings
 from doped.utils.supercells import get_min_image_distance
 
@@ -407,13 +415,7 @@ def apply_symm_op_to_site(
         new_coords = symm_op.operate(site.coords)
 
     if just_unit_cell_frac_coords:
-        rotated_frac_coords = rotated_lattice.get_fractional_coords(new_coords)
-        return np.array(
-            [
-                np.mod(f, 1) if p else f
-                for p, f in zip(rotated_lattice.pbc, rotated_frac_coords, strict=False)
-            ]
-        )
+        return _to_unit_cell(rotated_lattice, rotated_lattice.get_fractional_coords(new_coords))
 
     return PeriodicSite(
         site.species,
@@ -469,13 +471,15 @@ def apply_symm_op_to_struct(
     else:
         rotated_lattice = struct._lattice
 
-    # note could also use ``SymmOp.operate_multi`` for speedup if ever necessary, but requires some more
-    # accounting of species ordering etc, and this isn't an efficiency bottleneck currently
-    return Structure.from_sites(
-        [
-            apply_symm_op_to_site(symm_op, site, fractional=fractional, rotate_lattice=rotated_lattice)
-            for site in struct
-        ]
+    # vectorised equivalent of ``[apply_symm_op_to_site(symm_op, site, ...) for site in struct]`` + a
+    # ``Structure.from_sites`` rebuild; site-by-site, ``pymatgen`` object creation dominates the cost:
+    if fractional:  # operate in the **original** lattice, then convert to the new lattice
+        cart_coords = struct._lattice.get_cartesian_coords(symm_op.operate_multi(struct.frac_coords))
+    else:
+        cart_coords = symm_op.operate_multi(struct.cart_coords)
+
+    return _structure_from_sites_and_coords(
+        rotated_lattice, struct.sites, rotated_lattice.get_fractional_coords(cart_coords), keep_labels=True
     )
 
 
@@ -543,7 +547,14 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
 
 
 LinkageMethod = Literal["single", "complete", "average", "weighted", "centroid", "median", "ward"]
+"""
+Allowed ``method`` values for ``scipy``'s hierarchical ``linkage``.
+"""
+
 FclusterCriterion = Literal["inconsistent", "distance", "maxclust", "monocrit", "maxclust_monocrit"]
+"""
+Allowed ``criterion`` values for ``scipy``'s ``fcluster``.
+"""
 
 
 def cluster_coords(
@@ -723,10 +734,10 @@ def doped_cluster_frac_coords(
             )
             for x in frac_coords
         }
-        symmetry_favoured_site = sorted(frac_coords_scores.items(), key=lambda x: x[1])[0][0]
-        dist_favoured_site = sorted(
+        symmetry_favoured_site = min(frac_coords_scores, key=lambda x: frac_coords_scores[x])
+        dist_favoured_site, _score = min(
             frac_coords_scores.items(), key=lambda x: (x[1][1], x[1][0], *x[1][2:])
-        )[0][0]
+        )
 
         if (
             np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
@@ -1693,13 +1704,92 @@ def translate_structure(
     Returns:
         ``pymatgen`` |Structure| object with translated sites.
     """
-    translated_structure = structure.copy()
-    return translated_structure.translate_sites(
-        indices=list(range(len(translated_structure))),
-        vector=vector,
-        to_unit_cell=to_unit_cell,
-        frac_coords=frac_coords,
+    # vectorised equivalent of ``structure.copy().translate_sites(range(len(structure)), ...)``, avoiding
+    # both the copy and the per-site loop (``pymatgen`` site-object creation dominates the cost):
+    lattice = structure.lattice
+    new_frac_coords = (
+        structure.frac_coords + vector
+        if frac_coords
+        else lattice.get_fractional_coords(structure.cart_coords + vector)
     )
+    return _structure_from_sites_and_coords(
+        lattice,
+        structure.sites,
+        _to_unit_cell(lattice, new_frac_coords) if to_unit_cell else new_frac_coords,
+        keep_labels=True,
+        charge=structure._charge,
+        properties=structure.properties,
+    )
+
+
+def remove_translation_drift(
+    defect_supercell: Structure, bulk_supercell: Structure, defect_frac_coords: ArrayLike
+) -> tuple[Structure, np.ndarray]:
+    """
+    Remove the rigid translation ('drift') of the relaxed ``defect_supercell``
+    with respect to ``bulk_supercell`` -- i.e. shift it so that the mean
+    displacement (net translation) of its host atoms from their bulk sites is
+    zero -- returning the shifted defect supercell and defect site fractional
+    coordinates.
+
+    Rattled structures (e.g. from ``ShakeNBreak``) carry a random net centroid
+    offset of order ``stdev/sqrt(N)``, which relaxation conserves (the net
+    force on a periodic cell being zero) -- so this offset survives into the
+    final structure (e.g. ~0.03 Å for a 216-site cell rattled at 0.25 Å), where
+    it adds to every site displacement measured against the bulk (as in
+    ``calc_site_displacements``) and appears as a rigid step between the
+    relaxed and bulk-padded regions of a stenciled supercell.
+
+    Similar to ``_remove_net_translation`` in ``shakenbreak.distortions``, but
+    for differing compositions. The host-atom mean is exact for vacancies and
+    substitutions; for interstitials it carries a residual bias of
+    ``-(interstitial displacement)/N_host``, as the interstitial has no bulk
+    counterpart and so contributes no displacement to the sum.
+
+    Args:
+        defect_supercell (|Structure|):
+            The relaxed defect supercell.
+        bulk_supercell (|Structure|):
+            The bulk (reference) supercell.
+        defect_frac_coords (ArrayLike):
+            Fractional coordinates of the defect site in the defect supercell,
+            used to determine the drift-removed defect site coordinates.
+
+    Returns:
+        tuple[|Structure|, np.ndarray]:
+            The drift-removed defect supercell, and the defect site fractional
+            coordinates in its frame.
+    """
+    frac_coords, bulk_frac_coords = defect_supercell.frac_coords, bulk_supercell.frac_coords
+    bulk_matches: dict[int, list[tuple[float, int]]] = {}  # bulk site -> [(distance, defect site), ...]
+    for distance, index, bulk_index in get_site_mappings(
+        defect_supercell, bulk_supercell, allow_duplicates=True, threshold=np.inf
+    ):
+        if distance is not None and index is not None and bulk_index is not None:  # species in bulk
+            # add to bulk_matches; kept sorted by distance (for later qualification):
+            insort(bulk_matches.setdefault(bulk_index, []), (distance, index))
+
+    # a bulk site mapped to two defect atoms is either a host site plus the defect atom (e.g. antisite
+    # substituent or same-species interstitial, which have no bulk site of their own) or perhaps the centre
+    # of a split interstitial; the closest match is kept only if it is clearly the host -- here we require
+    # it to be at least twice as close as the next match to decide this -- otherwise both are dropped
+    # (keeping either half of a split interstitial would bias the mean by ~|u_defect|/N_host)
+    pair_indices = np.array(
+        [(c[0][1], b) for b, c in bulk_matches.items() if len(c) == 1 or 2 * c[0][0] <= c[1][0]]
+    )
+    if not len(pair_indices):  # no usable host site pairs; e.g. no species in common (mismatched inputs)
+        raise ValueError(
+            "No host atoms could be matched between the defect and bulk supercells, so the translation "
+            "drift between them cannot be determined! Are these matching defect/bulk supercells?"
+        )
+
+    drift = pbc_diff(  # minimum image
+        frac_coords[pair_indices[:, 0]], bulk_frac_coords[pair_indices[:, 1]]
+    ).mean(axis=0)
+    defect_fcoords = np.array(defect_frac_coords) - drift  # follows the atoms; note that a _vacancy_
+    # site is defined in the bulk frame instead, so callers should keep their input coords in that case
+
+    return translate_structure(defect_supercell, -drift, frac_coords=True), defect_fcoords
 
 
 def _get_supercell_matrix_and_possibly_redefine_prim(
@@ -4137,6 +4227,9 @@ _PTG_IDS = [  # the space group number here is the first space group with that p
 _SCH_to_HERM = {t[0]: t[1] for t in _PTG_IDS}
 _HERM_to_SCH = {t[1]: t[0] for t in _PTG_IDS}
 sch_symbols = list(_SCH_to_HERM.keys())
+"""
+Schoenflies point group symbols (e.g. ``C1``, ``D4h``).
+"""
 
 
 def schoenflies_from_spacegroup_number(sg_number: int) -> str:

@@ -8,6 +8,7 @@ import os
 import shutil
 import unittest
 import warnings
+from functools import partial
 from unittest.mock import patch
 
 import matplotlib as mpl
@@ -44,6 +45,7 @@ from doped.parsing import (
     DefectParser,
     DefectsParser,
     defect_from_structures,
+    defect_site_from_structures,
     guess_defect_position,
     parse_symmetry_and_degeneracy_metadata,
 )
@@ -206,7 +208,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             raise  # tearDownClass skipped if setUpClass fails; but we still want to (attempt) clean up
 
     def setUp(self):
-        self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
+        self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk", "vasp_ncl")
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
         self.CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
 
@@ -377,7 +379,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                     for i in [
                         "Multiple `OUTCAR` files",
                         "(directory: chosen file for parsing):",
-                        f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl: OUTCAR.gz",
+                        f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl')}: OUTCAR.gz",
                         "OUTCAR files are used to",
                         "parse core levels and compute the Kumagai (eFNV) image charge correction.",
                     ]
@@ -393,10 +395,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             any(i in str(warn.message) for warn in recorded_warnings)
             for i in [
                 "Warning(s) encountered when parsing Te_Cd_+1 at ",
-                "The total energies of the provided (bulk) `OUTCAR` (-218.565 eV), used to obtain the "
-                "atomic core potentials for the eFNV correction, and the `vasprun.xml` (-218.518 eV), "
-                "used for energies and structures, do not match. Please make sure the "
-                "correct file combination is being used!",
+                (
+                    "The total energies of the provided (bulk) `OUTCAR` (-218.565 eV), used to obtain the "
+                    "atomic core potentials for the eFNV correction, and the `vasprun.xml` (-218.518 eV), "
+                    "used for energies and structures, do not match. Please make sure the "
+                    "correct file combination is being used!"
+                ),
             ]
         )  # mismatched OUTCAR and vasprun energies warning
 
@@ -672,8 +676,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         assert (
             f"No files with any of ('vasprun.xml', 'vasprun.xml.gz') in names found under "
-            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk (subfolder vasp_std). Please ensure bulk supercell "
-            f"calculation files are present and/or specify `bulk_path` manually."
+            f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'CdTe_bulk')} (subfolder vasp_std). Please ensure "
+            f"bulk supercell calculation files are present and/or specify `bulk_path` manually."
         ) in str(exc.value)
 
     def test_DefectsParser_CdTe_skip_corrections(self):
@@ -704,42 +708,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )  # correction warning
 
-        assert any(
-            f"Defects: {i} each encountered the same warning:" in str(warn.message)
-            for warn in w
-            for i in ["{'v_Cd_-2', 'v_Cd_-1'}", "{'v_Cd_-1', 'v_Cd_-2'}"]
-        )
+        # no warning for the FNV-corrected (LOCPOT-only) v_Cd defects (anymore), as the full anisotropic
+        # dielectric tensor is used:
+        assert not any("anisotropic" in str(warn.message) for warn in w)
+        for name in ["v_Cd_-2", "v_Cd_-1"]:
+            assert list(dp.defect_dict[name].corrections) == ["freysoldt_charge_correction"]
+            assert np.allclose(dp.defect_dict[name].calculation_metadata["dielectric"], np.diag([1, 2, 3]))
 
-        for i in [
-            "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute the "
-            "_anisotropic_ Kumagai eFNV charge correction) are missing from the defect or bulk folder.",
-            "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
-            "charge correction developed for _isotropic_ materials will be applied here, "
-            "which corresponds to using the effective isotropic average of the supplied "
-            "anisotropic dielectric. This could lead to significant errors for very anisotropic "
-            "systems and/or relatively small supercells!",
-            f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect subfolders)",
-        ]:
-            assert any(i in str(warn.message) for warn in w)
-
-        assert any(
-            all(
-                i in str(warn.message)
-                for i in [
-                    "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to "
-                    "compute the _anisotropic_ Kumagai eFNV charge correction) are missing from the "
-                    "defect or bulk folder.",
-                    "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
-                    "charge correction developed for _isotropic_ materials will be applied here, "
-                    "which corresponds to using the effective isotropic average of the supplied "
-                    "anisotropic dielectric. This could lead to significant errors for very anisotropic "
-                    "systems and/or relatively small supercells!",
-                    f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect "
-                    f"subfolders)",
-                ]
-            )
-            for warn in w
-        )
         check_DefectsParser(dp)
 
     def test_DefectsParser_CdTe_kpoints_mismatch(self):
@@ -765,8 +740,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             "There are mismatching KPOINTS for (some of) your defect and bulk calculations ",
             "Found the following differences:",
             "(in the format: (defect kpoints, bulk kpoints)):",
-            "Int_Te_3_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, "
-            "0.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [0.5, 0.5, 0.5]], [[0.0, 0.0, 0.0]]]",
+            (
+                "Int_Te_3_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, "
+                "0.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [0.5, 0.5, 0.5]], [[0.0, 0.0, 0.0]]]"
+            ),
             "v_Cd_0: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
             "Int_Te_3_Unperturbed_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
             "In general, the same KPOINTS settings should be used",
@@ -896,10 +873,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=self.Sb2Se3_dielectric,
             )
         assert (  # bulk in separate folder so fails
-            f"Could not determine bulk supercell calculation folder in {self.Sb2Se3_DATA_DIR}/defect, "
-            f"found 0 folders containing any of ('vasprun.xml', 'vasprun.xml.gz') in filenames (in "
-            f"subfolders) and 'bulk' in the folder name. Please specify `bulk_path` manually."
-            in str(exc.value)
+            f"Could not determine bulk supercell calculation folder in "
+            f"{os.path.join(self.Sb2Se3_DATA_DIR, 'defect')}, found 0 folders containing any of "
+            f"('vasprun.xml', 'vasprun.xml.gz') in filenames (in subfolders) and 'bulk' in the "
+            f"folder name. Please specify `bulk_path` manually." in str(exc.value)
         )
 
         Sb2Se3_O_dp, w = _create_dp_and_capture_warnings(
@@ -916,7 +893,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )  # for test_plotting
 
         # spot check:
-        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.81760, atol=1e-3)
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
     def test_extrinsic_Sb2Se3_parsing_with_single_defect_dir(self):
@@ -928,7 +905,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w  # no warnings
         check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
-        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.81760, atol=1e-3)
 
         assert len(Sb2Se3_O_thermo.defect_entries) == 1  # only the one specified defect parsed
 
@@ -999,7 +976,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             "which is greater than the `error_tolerance`: 0.050 eV)." in str(warn.message)
             for warn in w
         )
-        assert np.isclose(correction.correction_energy, 1.077, atol=1e-3)
+        assert np.isclose(correction.correction_energy, 1.0785, atol=1e-3)
         assert np.isclose(
             v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
             0.067,
@@ -1009,7 +986,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             correction, fig = v_Sb_minus_3_ent.get_kumagai_correction(plot=True, defect_region_radius=8.75)
         assert not any("Estimated error" in str(warn.message) for warn in w)
-        assert np.isclose(correction.correction_energy, 1.206, atol=1e-3)
+        assert np.isclose(correction.correction_energy, 1.207, atol=1e-3)
         assert np.isclose(
             v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
             0.023,
@@ -1028,7 +1005,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 plot=True, excluded_indices=sites_within_3A
             )
         assert not any("Estimated error" in str(warn.message) for warn in w)
-        assert np.isclose(correction.correction_energy, 1.234, atol=1e-3)
+        assert np.isclose(correction.correction_energy, 1.236, atol=1e-3)
         assert np.isclose(
             v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
             0.017,
@@ -1536,7 +1513,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert any("('NKRED', 2, 1)" in str(warn.message) for warn in w)
             if outcar_vr_mismatch:  # warning about our artificially shifted vasprun energy:
                 assert any(
-                    "sub_1_O_on_Se_1/vasp_std:\nThe total energies of the provided (bulk) `OUTCAR` "
+                    f"{os.path.join('sub_1_O_on_Se_1', 'vasp_std')}:\nThe total energies of the "
+                    "provided (bulk) `OUTCAR` "
                     "(-381.559 eV), used to obtain the atomic core potentials for the eFNV correction, "
                     "and the `vasprun.xml` (-381.729eV, -363.622 eV; final energy & last electronic step "
                     "energy), used for" in str(warn.message)
@@ -1717,17 +1695,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
         _print_warning_info(w)  # for debugging
-        assert len(w) == 1
-        assert issubclass(w[-1].category, UserWarning)
-        assert (
-            "An anisotropic dielectric constant was supplied, but `OUTCAR` files (needed to compute "
-            "the _anisotropic_ Kumagai eFNV charge correction) are missing from the defect or bulk "
-            "folder.\n`LOCPOT` files were found in both defect & bulk folders, and so the "
-            "Freysoldt (FNV) charge correction developed for _isotropic_ materials will be applied "
-            "here, which corresponds to using the effective isotropic average of the supplied "
-            "anisotropic dielectric. This could lead to significant errors for very anisotropic "
-            "systems and/or relatively small supercells!" in str(w[-1].message)
-        )
+        assert not w  # no warning for FNV with anisotropic dielectric, as now treated with full tensor
         assert all(
             i in parsed_v_cd_m2_fake_aniso_dp.__repr__()
             for i in [
@@ -1746,7 +1714,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             7.661,
             atol=3e-3,
         )  # uncorrected energy
-        assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 10.379714081555262, atol=1e-3)
+        assert np.isclose(parsed_v_cd_m2_fake_aniso.get_ediff(), 9.715065068737744, atol=1e-3)
 
         # test no warnings when skip_corrections is True
         with warnings.catch_warnings(record=True) as w:
@@ -1778,8 +1746,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             ).defect_entry
             assert (
                 f"Multiple `OUTCAR` files found in defect directory: "
-                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using OUTCAR.gz to parse core levels and "
-                f"compute the Kumagai (eFNV) image charge correction." in str(w[0].message)
+                f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl')}. Using OUTCAR.gz to "
+                f"parse core levels and compute the Kumagai (eFNV) image charge correction."
+                in str(w[0].message)
             )
             assert (
                 f"Estimated error in the Kumagai (eFNV) charge correction for defect "
@@ -1833,24 +1802,24 @@ class DefectsParsingTestCase(unittest.TestCase):
         )  # uncorrected energy
         assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -7.105, atol=1e-3)
 
-        # test warning when no core level info in OUTCAR (ICORELEVEL != 0), but LOCPOT
-        # files present, but anisotropic dielectric:
+        # test FNV fallback (with no warning about the OUTCAR, as for an isotropic dielectric) when no core
+        # level info in OUTCAR (ICORELEVEL != 0), but LOCPOT files present, with anisotropic dielectric:
         shutil.copyfile(
             f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/LOCPOT.gz",
             f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz",
         )
 
         with warnings.catch_warnings(record=True) as w:
-            parsed_int_Te_2_fake_aniso = self._check_no_icorelevel_warning_int_te(
-                fake_aniso_dielectric,
-                w,
-                2,
-                "`LOCPOT` files were found in both defect & bulk folders, and so the Freysoldt (FNV) "
-                "charge correction developed for _isotropic_ materials will be applied here, "
-                "which corresponds to using the effective isotropic average of the supplied anisotropic "
-                "dielectric. This could lead to significant errors for very anisotropic systems and/or "
-                "relatively small supercells!",
-            )
+            parsed_int_Te_2_fake_aniso = DefectParser.from_paths(
+                defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+                bulk_path=self.CdTe_BULK_DATA_DIR,
+                dielectric=fake_aniso_dielectric,
+                charge_state=2,
+            ).defect_entry
+        _print_warning_info(w)
+        assert len(w) == 1
+        assert "Estimated error in the Freysoldt (FNV) charge correction" in str(w[0].message)
+        assert list(parsed_int_Te_2_fake_aniso.corrections) == ["freysoldt_charge_correction"]
 
         assert np.isclose(
             parsed_int_Te_2_fake_aniso.get_ediff() - sum(parsed_int_Te_2_fake_aniso.corrections.values()),
@@ -1858,7 +1827,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             atol=3e-3,
         )  # uncorrected energy
         assert np.isclose(
-            parsed_int_Te_2_fake_aniso.get_ediff(), -4.7620, atol=2e-2
+            parsed_int_Te_2_fake_aniso.get_ediff(), -5.4409, atol=2e-2
         )  # -4.734 with old voronoi frac coords, expanded atol now to account for LOCPOT sub-sampling
         # compression
 
@@ -1931,13 +1900,14 @@ class DefectsParsingTestCase(unittest.TestCase):
         _print_warning_info(warnings)
         assert len(warnings) == num_warnings
         assert all(issubclass(warning.category, UserWarning) for warning in warnings)
-        assert (  # different warning start depending on whether isotropic or anisotropic dielectric
+        assert (
             f"in the defect or bulk folder were unable to be parsed, giving the following error message:\n"
             f"Unable to parse atomic core potentials from defect `OUTCAR` at "
-            f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR_no_core_levels.gz. This can happen if "
-            f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, the calculation was finished "
-            f"prematurely with a `STOPCAR`, or the calculation crashed. The Kumagai (eFNV) charge "
-            f"correction cannot be computed without this data!\n{action}" in str(warnings[0].message)
+            f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl', 'OUTCAR_no_core_levels.gz')}"
+            f". This can happen if `ICORELEVEL` was not set to 0 (= default) in the `INCAR`, the "
+            f"calculation was finished prematurely with a `STOPCAR`, or the calculation crashed. The "
+            f"Kumagai (eFNV) charge correction cannot be computed without this data!\n{action}"
+            in str(warnings[0].message)
         )
 
         return result
@@ -1973,7 +1943,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             assert (
                 f"Multiple `OUTCAR` files found in defect directory: "
-                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl. Using "
+                f"{os.path.join(self.CdTe_EXAMPLE_DIR, 'Int_Te_3_2', 'vasp_ncl')}. Using "
                 f"OUTCAR.gz to parse core levels and compute the Kumagai (eFNV) image charge "
                 f"correction." in str(w[1].message)
             )
@@ -1983,7 +1953,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             self._parse_Int_Te_3_2_and_count_warnings(fake_aniso_dielectric, w, 3)
 
     def test_multiple_locpots(self):
-        defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
+        defect_path = os.path.join(self.CdTe_EXAMPLE_DIR, "v_Cd_-2", "vasp_ncl")
 
         shutil.copyfile(f"{defect_path}/LOCPOT.gz", f"{defect_path}/another_LOCPOT.gz")
         shutil.copyfile(
@@ -2013,7 +1983,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
     def test_multiple_vaspruns(self):
-        defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
+        defect_path = os.path.join(self.CdTe_EXAMPLE_DIR, "v_Cd_-2", "vasp_ncl")
 
         shutil.copyfile(f"{defect_path}/vasprun.xml.gz", f"{defect_path}/another_vasprun.xml.gz")
         shutil.copyfile(
@@ -2383,6 +2353,140 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             assert not w
 
+    def test_defect_site_indices_per_site_tolerance(self):
+        """
+        Test that the ``site_tol`` distance threshold in
+        ``get_defect_type_and_site_indices`` is set by the shortest bond length
+        of each bulk site, and that bond-centre split vacancies are robustly
+        identified with ``site_tol = 0.4`` (as a validation test).
+        """
+        # Ag2Se has Ag sites with different shortest bond lengths (2.63 -- 2.85 Å), so the same 1.1 Å
+        # displacement (> 0.4 x 2.63, < 0.4 x 2.85 Å) is a defect site only for the shortest-bond Ag site:
+        ag2se = Structure.from_file(f"{data_dir}/Ag2Se_POSCAR") * 2
+        dists = ag2se.distance_matrix
+        np.fill_diagonal(dists, np.inf)
+        ag_idxs = sorted(ag2se.indices_from_symbol("Ag"), key=lambda i: dists[i].min())
+        short_idx, long_idx = ag_idxs[0], ag_idxs[-1]
+        defect_structure = ag2se.copy()
+        defect_structure.translate_sites([short_idx, long_idx], [1.1, 0, 0], frac_coords=False)
+        assert get_defect_type_and_site_indices(defect_structure, ag2se, site_tol=0.4)[1:] == (
+            [short_idx],
+            [short_idx],
+        )
+        for structure in [ag2se, defect_structure]:  # works equally well with oxidation states assigned:
+            structure.add_oxidation_state_by_element({"Ag": 1, "Se": -2})
+        assert get_defect_type_and_site_indices(
+            defect_structure, ag2se, site_tol=0.4, use_oxi_states=True
+        )[1:] == ([short_idx], [short_idx])
+
+        # split vacancy in Si (2 V_Si + Si_i) with the interstitial exactly at the bond centre (0.5 x the
+        # bond length from both vacant sites):
+        si = Structure.from_spacegroup("Fd-3m", np.eye(3) * 5.431, ["Si"], [[0, 0, 0]]) * 2
+        neighbour = si.get_neighbors(si[0], 2.4)[0]  # nearest neighbour of site 0 (Si-Si bond: 2.35 Å)
+        split_vac_structure = si.copy()
+        split_vac_structure.remove_sites([0, neighbour.index])
+        split_vac_structure.append("Si", (si[0].frac_coords + neighbour.frac_coords) / 2)
+        defect_type, missing_idxs, additional_idxs = get_defect_type_and_site_indices(
+            split_vac_structure, si, site_tol=0.4
+        )
+        assert (defect_type, sorted(missing_idxs), additional_idxs) == (
+            "vacancy",
+            sorted([0, neighbour.index]),
+            [len(si) - 2],
+        )
+
+    def test_defect_site_indices_split_interstitials(self):
+        """
+        Test identification of split interstitials (two atoms sharing a bulk
+        site; 2 X_i + V_X) by ``get_defect_type_and_site_indices``.
+        """
+        si = Structure.from_spacegroup("Fd-3m", np.eye(3) * 5.431, ["Si"], [[0, 0, 0]]) * 2
+        si_si_bond = np.sort(si.distance_matrix[0])[1]
+        direction = np.array([1, 1, 0]) / np.sqrt(2)
+        # <110> dumbbells at site 0, with the (host, extra) atom distances to the site (in units of the
+        # bond length), for a ``site_tol`` (distance tolerance sphere radius) of 0.4:
+        for host_dist, extra_dist, split in [
+            (0.35, 0.35, True),  # both atoms inside the tolerance sphere
+            (0.45, 0.45, True),  # both outside (so host atom off-site anyway)
+            (0.39, 0.45, True),  # similar displacements (within 15%); host atom inside the sphere
+            (0.30, 0.38, False),  # dissimilar displacements; displaced host atom + interstitial
+        ]:
+            defect_structure = si.copy()
+            defect_structure.translate_sites([0], host_dist * si_si_bond * direction, frac_coords=False)
+            defect_structure.append(
+                "Si", si[0].coords - extra_dist * si_si_bond * direction, coords_are_cartesian=True
+            )
+            defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+                get_defect_type_and_site_indices(defect_structure, si, site_tol=0.4)
+            )
+            assert defect_type == "interstitial"
+            assert missing_bulk_site_indices == ([0] if split else [])
+            assert sorted(additional_defect_site_indices) == ([0, len(si)] if split else [len(si)])
+
+        # split interstitial in a Frenkel pair (with a separate vacancy, so no unmatched defect sites):
+        far_idx = int(np.argmax(si.distance_matrix[0]))
+        frenkel_structure = si.copy()
+        frenkel_structure.translate_sites([0], 0.35 * si_si_bond * direction, frac_coords=False)
+        frenkel_structure.append(
+            "Si", si[0].coords - 0.35 * si_si_bond * direction, coords_are_cartesian=True
+        )
+        frenkel_structure.remove_sites([far_idx])
+        defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+            get_defect_type_and_site_indices(frenkel_structure, si, site_tol=0.4)
+        )
+        assert defect_type == "complex"
+        assert sorted(missing_bulk_site_indices) == [0, far_idx]
+        assert sorted(additional_defect_site_indices) == [0, len(si) - 1]
+
+        # similar displacements, but not split across the site (bent at 90°), so not a split interstitial:
+        bent_structure = si.copy()
+        bent_structure.translate_sites([0], 0.36 * si_si_bond * direction, frac_coords=False)
+        bent_structure.append(
+            "Si",
+            si[0].coords + 0.38 * si_si_bond * np.array([1, -1, 0]) / np.sqrt(2),
+            coords_are_cartesian=True,
+        )
+        assert get_defect_type_and_site_indices(bent_structure, si, site_tol=0.4) == (
+            "interstitial",
+            [],
+            [len(si)],
+        )
+
+        # bond-centre interstitial is not a split interstitial:
+        nn_idx = int(np.argsort(si.distance_matrix[0])[1])
+        _dist, image = si[0].distance_and_image(si[nn_idx])
+        bond_centre_structure = si.copy()
+        bond_centre_structure.append("Si", (si[0].frac_coords + si[nn_idx].frac_coords + image) / 2)
+        assert get_defect_type_and_site_indices(bond_centre_structure, si, site_tol=0.4) == (
+            "interstitial",
+            [],
+            [len(si)],
+        )
+
+    def test_bond_centre_H_interstitial_initial_site(self):
+        """
+        Test that the guessed initial (unrelaxed) site of a hydrogen
+        interstitial which has relaxed near a bond-centre site is that bond-
+        centre site (included by default for hydrogen interstitials).
+        """
+        si = Structure.from_spacegroup("Fd-3m", np.eye(3) * 5.431, ["Si"], [[0, 0, 0]]) * 2
+        nn_idx = int(np.argsort(si.distance_matrix[0])[1])
+        _dist, image = si[0].distance_and_image(si[nn_idx])
+        bond_centre = (si[0].frac_coords + si[nn_idx].frac_coords + image) / 2
+        defect_structure = si.copy()
+        defect_structure.append("H", bond_centre)
+        defect_structure.translate_sites([-1], [0.2, -0.2, 0], frac_coords=False)  # relaxed off-centre
+        _defect_site, defect_type, defect_site_in_bulk, *_ = defect_site_from_structures(
+            defect_structure,
+            si,
+            return_all_info=True,
+            _parameter_order_warn=False,  # TODO: Remove in v4.1
+        )
+        assert defect_type == "interstitial"
+        assert np.isclose(
+            si.lattice.get_distance_and_image(defect_site_in_bulk.frac_coords, bond_centre)[0], 0
+        )
+
     @custom_mpl_image_compare("YTOS_Int_F_-1_eigenvalue_plot_ISPIN_1.png")
     def test_extrinsic_interstitial_parsing_and_kumagai(self):
         """
@@ -2506,124 +2610,75 @@ class DefectsParsingTestCase(unittest.TestCase):
         Test parsing of extrinsic F-on-O substitution in YTOS, w/Kumagai-Oba
         (eFNV) and Freysoldt (FNV) corrections.
         """
-        # first using Freysoldt (FNV) correction
         defect_path = f"{self.YTOS_EXAMPLE_DIR}/F_O_1/"
-        # hide OUTCAR file:
-        shutil.move(f"{defect_path}/OUTCAR.gz", f"{defect_path}/hidden_otcr.gz")
-
-        # parse with no explicitly-set-charge:
-        with warnings.catch_warnings(record=True) as w:
-            F_O_1_ent = DefectParser.from_paths(
-                defect_path=defect_path,
-                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
-                dielectric=self.ytos_dielectric,
-                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            ).defect_entry  # check no correction error warning with default tolerance:
-        assert len([warning for warning in w if issubclass(warning.category, UserWarning)]) == 1
-        assert "An anisotropic dielectric constant was supplied, but `OUTCAR`" in str(w[0].message)
-
-        # test error_tolerance setting:
-        with warnings.catch_warnings(record=True) as w:
-            F_O_1_ent = DefectParser.from_paths(
-                defect_path=defect_path,
-                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
-                dielectric=self.ytos_dielectric,
-                error_tolerance=0.00001,
-                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            ).defect_entry  # check no correction error warning with default tolerance:
-        _print_warning_info(w)
-        assert any(  # break up warning message to allow slightly difference numbers after 3.XXe-04 eV:
-            f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is 3"
-            in str(warning.message)
-            for warning in w
-        )
-        assert any(
-            "e-04 eV (i.e. which is greater than the `error_tolerance`: 1.00e-05 eV). You may want "
-            "to check the accuracy of the correction by plotting the site potential differences (using "
-            "`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due "
-            "to unstable or shallow defect charge states (which can't be accurately modelled with "
-            "the supercell approach; see "
-            "https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects). "
-            "If this error is not acceptable, you may need to use a larger supercell for more "
-            "accurate energies." in str(warning.message)
-            for warning in w
-        )
-
-        with warnings.catch_warnings(record=True) as w:
-            F_O_1_ent.get_freysoldt_correction()  # default error tolerance, no warning
-        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
-
-        with warnings.catch_warnings(record=True) as w:
-            F_O_1_ent.get_freysoldt_correction(error_tolerance=0.00001)
-        assert "Estimated error in the Freysoldt (FNV)" in str(w[0].message)
-
-        # test returning correction error:
-        corr, corr_error = F_O_1_ent.get_freysoldt_correction(return_correction_error=True)
-        assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
-        assert np.isclose(corr_error, 0.000, atol=1e-3)
-        assert np.isclose(
-            F_O_1_ent.corrections_metadata["freysoldt_charge_correction_error"], 0.000, atol=1e-3
-        )
-
-        # test returning correction error with plot:
-        corr, _fig, corr_error = F_O_1_ent.get_freysoldt_correction(
-            return_correction_error=True, plot=True
-        )
-        assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
-        assert np.isclose(corr_error, 0.000, atol=1e-3)
-        assert np.isclose(
-            F_O_1_ent.corrections_metadata["freysoldt_charge_correction_error"], 0.000, atol=1e-3
-        )
-
-        # test just correction returned with plot = False and return_correction_error = False:
-        corr = F_O_1_ent.get_freysoldt_correction()
-        assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
-
-        # move OUTCAR file back to original:
-        shutil.move(f"{defect_path}/hidden_otcr.gz", f"{defect_path}/OUTCAR.gz")
-
-        self._test_F_O_1_ent(
-            F_O_1_ent,
-            0.03146836204627482,
-            "freysoldt_charge_correction",
-            0.11670254204631794,
-        )
-        # now using Kumagai-Oba (eFNV) correction
-        defect_path = f"{self.YTOS_EXAMPLE_DIR}/F_O_1/"
-        # parse with no explicitly-set-charge:
-        F_O_1_ent = DefectParser.from_paths(
+        parse_F_O_1 = partial(
+            DefectParser.from_paths,
             defect_path=defect_path,
             bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
             dielectric=self.ytos_dielectric,
-            charge_state=1,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        ).defect_entry
+        )
+        fnv_corr = 0.10378828906120033
 
-        self._test_F_O_1_ent(F_O_1_ent, 0.04176, "kumagai_charge_correction", 0.12699488572686776)
+        # first using Freysoldt (FNV) correction; hide OUTCAR file (restored in tearDown if test fails):
+        shutil.move(f"{defect_path}/OUTCAR.gz", f"{defect_path}/hidden_otcr.gz")
+        # parse with no explicitly-set charge, and test error_tolerance setting:
+        with warnings.catch_warnings(record=True) as w:
+            fnv_ent = parse_F_O_1(error_tolerance=1e-5).defect_entry
+        _print_warning_info(w)
+        # only the correction error warning; no anisotropic dielectric warning for FNV (now using the full
+        # dielectric tensor):
+        (msg,) = [str(warning.message) for warning in w if issubclass(warning.category, UserWarning)]
+        assert msg.startswith(  # 3.XXe-04 eV, allowing slight numerical differences
+            f"Estimated error in the Freysoldt (FNV) charge correction for defect {fnv_ent.name} is 3"
+        )  # rest of (shared) message tested in full in test_extrinsic_interstitial_parsing_and_kumagai
+        assert "e-04 eV (i.e. which is greater than the `error_tolerance`: 1.00e-05 eV)" in msg
+        assert "`defect_entry.get_freysoldt_correction()` with `plot=True`" in msg
+
+        with warnings.catch_warnings(record=True) as w:
+            corr = fnv_ent.get_freysoldt_correction()  # default error tolerance, no warning
+        assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
+
+        with warnings.catch_warnings(record=True) as w:
+            fnv_ent.get_freysoldt_correction(error_tolerance=1e-5)
+        assert "Estimated error in the Freysoldt (FNV)" in str(w[0].message)
+
+        # test returning correction error, with and without plot:
+        corr_w_err, corr_error = fnv_ent.get_freysoldt_correction(return_correction_error=True)
+        corr_w_plot, _fig, corr_error_w_plot = fnv_ent.get_freysoldt_correction(
+            return_correction_error=True, plot=True
+        )
+        for correction in (corr, corr_w_err, corr_w_plot):
+            assert np.isclose(correction.correction_energy, fnv_corr, atol=1e-3)
+        for error in (
+            corr_error,
+            corr_error_w_plot,
+            fnv_ent.corrections_metadata["freysoldt_charge_correction_error"],
+        ):
+            assert np.isclose(error, 0, atol=1e-3)
+
+        shutil.move(f"{defect_path}/hidden_otcr.gz", f"{defect_path}/OUTCAR.gz")  # move OUTCAR back
+
+        # now using Kumagai-Oba (eFNV) correction, with explicitly-set charge:
+        efnv_ent = parse_F_O_1(charge_state=1).defect_entry
+        for entry, ediff, correction_name, correction_energy in [
+            (fnv_ent, 0.01855410906115721, "freysoldt_charge_correction", fnv_corr),
+            (efnv_ent, 0.04176, "kumagai_charge_correction", 0.12699488572686776),
+        ]:
+            assert np.isclose(entry.get_ediff(), ediff, atol=1e-3)
+            assert np.isclose(entry.corrections[correction_name], correction_energy, atol=1e-3)
+            # assert auto-determined substitution site is correct:
+            assert np.isclose(
+                entry.defect_supercell_site.distance_and_image_from_frac_coords([0, 0, 0])[0], 0, atol=1e-2
+            )
 
         # test symmetry determination (no warning here because periodicity breaking doesn't affect F_O):
         with warnings.catch_warnings(record=True) as w:
-            warnings.resetwarnings()
-            warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
-            relaxed_defect_name = get_defect_name_from_entry(F_O_1_ent)
-            _print_warning_info(w)
-            assert len(w) == 0
-        assert relaxed_defect_name == "F_O_D4h_Ti1.79"
-        assert get_defect_name_from_entry(F_O_1_ent, relaxed=False) == "F_O_D4h_Ti1.79"
-
-    def _test_F_O_1_ent(self, F_O_1_ent, ediff, correction_name, correction):
-        assert np.isclose(F_O_1_ent.get_ediff(), ediff, atol=1e-3)
-        correction_test_dict = {correction_name: correction}
-        for correction_name, correction_energy in correction_test_dict.items():
-            assert np.isclose(F_O_1_ent.corrections[correction_name], correction_energy, atol=1e-3)
-        # assert auto-determined interstitial site is correct
-        assert np.isclose(
-            F_O_1_ent.defect_supercell_site.distance_and_image_from_frac_coords([0, 0, 0])[0],
-            0.0,
-            atol=1e-2,
-        )
-
-        return correction_test_dict
+            warnings.simplefilter("always")
+            assert get_defect_name_from_entry(efnv_ent) == "F_O_D4h_Ti1.79"
+        _print_warning_info(w)
+        assert not w
+        assert get_defect_name_from_entry(efnv_ent, relaxed=False) == "F_O_D4h_Ti1.79"
 
     def test_tricky_relaxed_interstitial_corrections_kumagai(self):
         """
@@ -3004,8 +3059,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         Previously this was handled by attempting to stencil the relaxed defect
         geometry into a periodicity-restoring supercell (giving e.g. ``C2h``
         for ``O_i_D4h_0`` here if not attempted), which was slower and not
-        guaranteed to succeed (e.g. for the ZnS supercell above, with
-        mis-matching lattice definitions).
+        guaranteed to succeed (e.g. for the ZnS supercell above, with mis-
+        matching lattice definitions).
         """
         bulk = Structure.from_file(f"{self.YTOS_EXAMPLE_DIR}/Bulk/POSCAR")
         primitive = get_primitive_structure(bulk)
@@ -3187,7 +3242,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             get_primitive_structure(entry.bulk_supercell)
         ).get_conventional_standard_structure()
         cubic = conv_structure * 2  # 64-atom cubic supercell
-        vac_index = next(i for i, site in enumerate(cubic) if site.specie.symbol == "Zn")
+        vac_index = cubic.indices_from_symbol("Zn")[0]
         cubic_center_cart = cubic[vac_index].coords.copy()
         cubic.remove_sites([vac_index])
         for site in cubic.get_sites_in_sphere(cubic_center_cart, 3.0):  # breathing mode, as in (i)

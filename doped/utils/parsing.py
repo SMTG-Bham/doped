@@ -45,7 +45,7 @@ _MOVED = {
             "get_defect_type_and_site_indices",
             "get_coords_and_idx_of_species",
             "get_matching_site",
-            "get_wigner_seitz_radius",
+            "get_half_max_face_distance",
             "check_atom_mapping_far_from_defect",
             "get_site_mappings",
             "find_missing_idx",

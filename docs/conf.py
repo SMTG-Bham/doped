@@ -4,6 +4,7 @@
 import os
 import sys
 
+from docutils import nodes
 from recommonmark.transform import AutoStructify
 
 # -- Path setup --------------------------------------------------------------
@@ -118,7 +119,6 @@ intersphinx_mapping = {
     "shakenbreak": ("https://shakenbreak.readthedocs.io/en/latest/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
-    "pymatgen.analysis.defects": ("https://materialsproject.github.io/pymatgen-analysis-defects/", None),
     "ase": ("https://docs.ase-lib.org/", None),
     "spglib": ("https://spglib.readthedocs.io/en/stable/", None),
     "python": ("https://docs.python.org/3", None),
@@ -136,11 +136,23 @@ nitpick_ignore_regex = [  # note: these are full-match (i.e. ``re.fullmatch``) p
     ("py:class", r"(np|pd|plt|mpl|go)\..*"),  # abbreviated module names in docstring types
     ("py:class", r"pathlib\._local\..*"),  # ``pathlib.Path`` annotations, with python >= 3.13
     ("py:class", r"doped\.[\w.]*\._\w+"),  # private ``doped`` helper classes shown as bases (e.g. mixins)
-    # packages with no Sphinx inventories to link against;
+    # packages with no (Python-domain) Sphinx inventories to link against:
     ("py:.*", r"(monty|tqdm|sympy|pydefect|vise|plotly|dscribe)\..*"),
-    # ``pymatgen-analysis-defects`` (mapped above) publishes only module entries in its inventory:
-    ("py:(?!module).*", r"pymatgen\.analysis\.defects\..*"),
 ]
+
+# ``pymatgen-analysis-defects`` API docs are built with ``pdoc``, which publishes no Sphinx inventory, so
+# references to it (e.g. ``Bases:`` of ``doped`` subclasses) are linked to its API pages directly:
+_PMGAD_API_URL = "https://materialsproject.github.io/pymatgen-analysis-defects/api/"
+
+
+def _link_pmgad_api(app, env, node, contnode):
+    target = node.get("reftarget", "")
+    if node.get("refdomain") != "py" or not target.startswith("pymatgen.analysis.defects."):
+        return None
+    parts = target.split(".")
+    n = max(i for i in range(3, len(parts) + 1) if ".".join(parts[:i]) in sys.modules)  # module path depth
+    uri = f"{_PMGAD_API_URL}{'/'.join(parts[:n])}.html#{'.'.join(parts[n:])}"  # pdoc anchors are qualnames
+    return nodes.reference("", "", contnode, internal=False, refuri=uri.rstrip("#"))
 
 # -- Options for autodoc -----------------------------------------------------
 autoclass_content = "both"
@@ -165,6 +177,7 @@ myst_heading_anchors = 3
 def setup(app):
     app.add_config_value("myst_parser_config", {"auto_toc_tree_section": "Contents"}, True)
     app.add_transform(AutoStructify)
+    app.connect("missing-reference", _link_pmgad_api)
 
 
 # ignore non-consecutive level header warnings, and attempted image editing:
@@ -215,4 +228,10 @@ rst_prolog = """
 .. |FermiSolver tutorial| replace:: :doc:`FermiSolver tutorial <fermisolver_tutorial>`
 .. |chempot limits tutorial| replace:: :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`
 .. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.1038/s41578-025-00879-y>`__
+.. |RelaxSet.yaml| replace:: :ref:`VASP_RelaxSet.yaml <RelaxSet.yaml>`
+.. |DefectSet.yaml| replace:: :ref:`VASP_DefectSet.yaml <DefectSet.yaml>`
+.. |HSESet.yaml| replace:: :ref:`VASP_HSESet.yaml <HSESet.yaml>`
+.. |SinglePointSet.yaml| replace:: :ref:`VASP_SinglePointSet.yaml <SinglePointSet.yaml>`
+.. |ConvergenceSet.yaml| replace:: :ref:`VASP_ConvergenceSet.yaml <ConvergenceSet.yaml>`
+.. |PotcarSet.yaml| replace:: :ref:`VASP_PotcarSet.yaml <PotcarSet.yaml>`
 """

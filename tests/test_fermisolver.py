@@ -1,8 +1,8 @@
 """
 Tests for the ``FermiSolver`` class in ``doped.thermodynamics``.
 
-The ``scan_chemical_potential_grid`` tests here indirectly test the |ChemicalPotentialGrid| class in
-``doped.chemical_potentials``.
+The ``scan_chemical_potential_grid`` tests here indirectly test the
+|ChemicalPotentialGrid| class in ``doped.chemical_potentials``.
 """
 
 import builtins
@@ -220,9 +220,8 @@ def assert_figures_equivalent(doped_fig, pyscfermi_fig, tol=2, test_name=""):
     PNG and pixel-comparing with ``matplotlib.testing.compare.compare_images``.
 
     On failure, dumps the two figures to
-    ``./debug_{test_name}_{backend}_fig.png`` for inspection (``test_name``
-    is the calling test's ``__name__`` when invoked via
-    ``parameterize_backend``).
+    ``./debug_{test_name}_{backend}_fig.png`` for inspection (``test_name`` is
+    the calling test's ``__name__`` when invoked via ``parameterize_backend``).
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         f1 = os.path.join(tmpdir, "a.png")
@@ -1276,8 +1275,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         Note that here we use the ``free_defects`` parameter which is currently
         only supported by the ``py-sc-fermi`` backend, but this is fine for
-        both initial backends, as we automatically switch to the ``py-sc-fermi``
-        backend if required (and ``py-sc-fermi`` installed).
+        both initial backends, as we automatically switch to the
+        ``py-sc-fermi`` backend if required (and ``py-sc-fermi`` installed).
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
@@ -2142,9 +2141,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         Mirrors the example in the ``fermisolver_tutorial`` notebook: the
         ``optimise``-identified chemical potential which minimises the V_S
-        concentration is plotted on top of a full scan of the V_S
-        concentration between the Sb-rich and S-rich limits, confirming it
-        sits at the (intermediate) minimum of the curve. See Figure 1 in
+        concentration is plotted on top of a full scan of the V_S concentration
+        between the Sb-rich and S-rich limits, confirming it sits at the
+        (intermediate) minimum of the curve. See Figure 1 in
         10.1021/acsenergylett.4c02722, also the subject of
         10.1002/smll.202102429 (for Sb2Se3).
         """
@@ -3626,13 +3625,13 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         extremum occurs at an internal chemical potential point, not at a
         limiting chemical potential point.
 
-        For Cu2SiSe3, the defect/carrier concentrations are dominated
-        by ``v_Cu``, which means that extrema for all defects/carriers/Fermi
-        levels basically always occur at limiting chemical potentials.
-        If we create a 'fake' defect thermo with ``v_Cu`` removed however,
-        we then get a minimum ``Cu_i`` concentration for chemical potentials
-        along the tangent line between two of the limiting chemical
-        potentials, which is tested here.
+        For Cu2SiSe3, the defect/carrier concentrations are dominated by
+        ``v_Cu``, which means that extrema for all defects/carriers/Fermi
+        levels basically always occur at limiting chemical potentials. If we
+        create a 'fake' defect thermo with ``v_Cu`` removed however, we then
+        get a minimum ``Cu_i`` concentration for chemical potentials along the
+        tangent line between two of the limiting chemical potentials, which is
+        tested here.
 
         See ``test_plot_scan_chemical_potential_grid`` for visualisation
         confirming minimum not at limiting chemical potentials.

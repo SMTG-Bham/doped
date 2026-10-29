@@ -34,9 +34,9 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -81,7 +81,7 @@ jobs:
       # Upload test plots
       - name: Archive test plots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: doped_GH_test_plots_${{ matrix.os }}_${{ matrix.split }}
           path: tests/remote_baseline
@@ -92,9 +92,9 @@ jobs:
     # rather than across the matrix above (where the ``tests/test_gpaw.py`` tests which need GPAW skip).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 

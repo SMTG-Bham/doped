@@ -581,7 +581,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             bulk_ph = [e for e in cp.entries if e.name == "Cu2SiSe4" and not hasattr(e, "structure")]
             assert len(bulk_ph) == 1
             assert os.path.isdir("CompetingPhases")
-            cu2sise4_folder = "CompetingPhases/Cu2SiSe4_NA_EaH_0"
+            cu2sise4_folder = os.path.join("CompetingPhases", "Cu2SiSe4_NA_EaH_0")
             assert os.path.isdir(cu2sise4_folder)
 
             def _check_potcar(directory, potcar_spec=potcar_spec):
@@ -619,7 +619,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             kpt_dir = os.path.dirname(kpt_incars[0])
             with open(kpt_incars[0], encoding="utf-8") as f:
                 incar_k_lines = f.readlines()
-            assert any(line == "GGA = Ps\n" for line in incar_k_lines)
+            assert not any(line.startswith("GGA") for line in incar_k_lines)  # VASP default (PBE)
             assert any(line == "NSW = 0\n" for line in incar_k_lines)
             assert any(line == "ISMEAR = 0\n" for line in incar_k_lines)
             _check_potcar(kpt_dir)
@@ -692,7 +692,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         no_write_dict_set = dict_sets_no_write[no_write_key]
         assert no_write_dict_set.kpoints.kpts[0] == (1, 2, 2)
         assert no_write_dict_set.potcar_symbols[0] == "Zr_sv"
-        assert no_write_dict_set.incar["GGA"] == "Ps"
+        assert "GGA" not in no_write_dict_set.incar  # VASP default (PBE) used
         assert no_write_dict_set.incar["NSW"] == 0
 
         dict_sets = cp.write_kpoint_convergence_files(potcar_spec=True)
@@ -711,7 +711,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_set = dict_sets["CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2"]
         assert dict_set.kpoints.kpts[0] == (1, 2, 2)
         assert dict_set.potcar_symbols[0] == "Zr_sv"
-        assert dict_set.incar["GGA"] == "Ps"
+        assert "GGA" not in dict_set.incar  # VASP default (PBE) used
         assert dict_set.incar["NSW"] == 0
         with open(f"{Zro2_EaH_0pt009_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
@@ -723,7 +723,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         with open(f"{Zro2_EaH_0pt009_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
-            assert any(line == "GGA = Ps\n" for line in contents)
+            assert not any(line.startswith("GGA") for line in contents)  # VASP default (PBE)
             assert any(line == "NSW = 0\n" for line in contents)
 
         # existing folders should warn and be overwritten with new settings (one ``UserWarning`` per
@@ -766,6 +766,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert len(cp.nonmetallic_entries) == 7
         assert len(cp.metallic_entries) == 6
+        # metals use Methfessel-Paxton smearing for relaxations (ISMEAR = 2), non-metals Gaussian (0):
+        assert sum(ds.incar["ISMEAR"] == 2 for ds in dict_sets.values()) == len(cp.metallic_entries)
         assert len(cp.molecular_entries) == 1
         assert cp.molecular_entries[0].name == "O2"
         assert cp.molecular_entries[0].data["summary"]["total_magnetization"] == 2
@@ -959,6 +961,21 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_set = dict_sets["CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl"]
         assert dict_set.incar["LSORBIT"] is True
         assert dict_set.incar["NSW"] == 0
+        assert dict_set.incar["ISMEAR"] == -5  # tetrahedron smearing for single-point energies
+        # all solid phases use tetrahedron smearing; molecules are Γ-only so revert to ISMEAR = 0:
+        assert sum(ds.incar["ISMEAR"] == -5 for ds in dict_sets.values()) == len(cp) - len(
+            cp.molecular_entries
+        )
+        assert dict_sets["CompetingPhases/O2_mmm_EaH_0/vasp_ncl"].incar["ISMEAR"] == 0
+
+        # k-mesh too sparse for tetrahedron smearing -> Methfessel-Paxton for metals, Gaussian otherwise
+        # (handled before ``pymatgen``'s blanket ISMEAR = 0 revert, so no warning):
+        sparse_sets, _stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.get_singlepoint_sets, kpoints_metals=0.1, kpoints_nonmetals=0.1
+        )
+        assert sum(ds.incar["ISMEAR"] == 2 for ds in sparse_sets.values()) == len(cp.metallic_entries)
+        assert not any(ds.incar["ISMEAR"] == -5 for ds in sparse_sets.values())
+        assert not any("tetrahedron" in str(ww.message) for ww in w)
 
         with open(f"{ZrO2_ncl_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
@@ -1204,9 +1221,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         ``get_entries_in_chemsys`` / ``get_entries`` helpers (and onto the
         underlying ``MPRester`` query).
 
-        Here we use ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}``
-        to restrict the MP query to GGA/GGA+U thermo entries, and verify that
-        the resulting entries differ from the default (GGA/GGA+U/R2SCAN) query.
+        Here we use ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}`` to
+        restrict the MP query to GGA/GGA+U thermo entries, and verify that the
+        resulting entries differ from the default (GGA/GGA+U/R2SCAN) query.
         """
         cp_default = chemical_potentials.CompetingPhases(  # GGA/GGA+U/R2SCAN
             "ZrO2", energy_above_hull=0.03, api_key=api_key
@@ -1770,11 +1787,10 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         Co-doping competing phases (entries containing more than one extrinsic
         species, e.g. ``KInO2``) should only be generated when
         ``codoping=True`` (which also forces
-        ``single_extrinsic_phase_limits=False``).
-        ``full_phase_diagram=True`` includes all phases on the MP phase diagram
-        (within ``energy_above_hull``) rather than only those potentially
-        bordering the host, so increases both the intrinsic and extrinsic entry
-        counts.
+        ``single_extrinsic_phase_limits=False``). ``full_phase_diagram=True``
+        includes all phases on the MP phase diagram (within
+        ``energy_above_hull``) rather than only those potentially bordering the
+        host, so increases both the intrinsic and extrinsic entry counts.
         """
         cases = [
             # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
@@ -1863,8 +1879,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self.La_ZrO2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.La_ZrO2_path)
 
         self.ZrO2_parsed_chempots = loadfn(f"{self.ZrO2_path}/ZrO2_chempots.json")
-        self.La_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_la_chempots.json")
-        self.y_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_y_chempots.json")
+        self.La_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_La_chempots.json")
+        self.y_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_Y_chempots.json")
 
         self.ZrO2_entry_list = [  # for testing ordering
             "ZrO2",
@@ -2761,7 +2777,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         Test warnings for mismatching INCAR settings.
 
-        No warnings for ZrO2 / La_ZrO2 already checked in ``self.test_general_cpa_reloading()`` above.
+        No warnings for ZrO2 / La_ZrO2 already checked in
+        ``self.test_general_cpa_reloading()`` above.
         """
         # convert to mismatching O2 calc:
         shutil.move(
@@ -2824,7 +2841,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         Test warnings for mismatching POTCAR settings.
 
-        No warnings for ZrO2 / La_ZrO2 already checked in ``self.test_general_cpa_reloading()`` above.
+        No warnings for ZrO2 / La_ZrO2 already checked in
+        ``self.test_general_cpa_reloading()`` above.
         """
         # convert to mismatching O2 calc, with fake "O_h" POTCAR:
         shutil.move(
@@ -2844,8 +2862,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             for i in [
                 "There are mismatching POTCAR symbols",
                 "Where ZrO2 was used as the reference entry calculation.",
-                "O2: [[{'titel': 'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}], "
-                "[{'titel': 'PAW_PBE O 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
+                (
+                    "O2: [[{'titel': 'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}], "
+                    "[{'titel': 'PAW_PBE O 08Apr2002', 'hash': None, 'summary_stats': {}}]]"
+                ),
             ]
         )
         self._general_cpa_check(cpa)
@@ -2888,39 +2908,63 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             )
         _print_warning_info(w)  # for debugging
         for expected_warning in [
-            f"Multiple `vasprun.xml` files found in competing phase directory: "
-            f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0",
-            f"vasprun.xml file at {vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
-            f" is corrupted/incomplete. Attempting to continue parsing but may fail!",
-            "There are mismatching INCAR tags for (some of) your competing phases calculations which are "
-            "likely to cause errors in the parsed results (energies & thus chemical potential limits). "
-            "Found the following differences:\n"
-            "(in the format: 'Entries: (INCAR tag, value in entry calculation, value in reference "
-            "calculation))':\n",
-            "['Ag', 'AgBr', 'Bi', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3', 'Sn']:\n[('HFSCREEN', "
-            "0.2, 0.207), ('ADDGRID', True, False), ('LASPH', True, False)]",
+            (
+                f"Multiple `vasprun.xml` files found in competing phase directory: "
+                f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0"
+            ),
+            (
+                f"vasprun.xml file at {vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/"
+                f"vasprun.xml.gz is corrupted/incomplete. Attempting to continue parsing but may fail!"
+            ),
+            (
+                "There are mismatching INCAR tags for (some of) your competing phases calculations which "
+                "are likely to cause errors in the parsed results (energies & thus chemical potential "
+                "limits). Found the following differences:\n"
+                "(in the format: 'Entries: (INCAR tag, value in entry calculation, value in reference "
+                "calculation))':\n"
+            ),
+            (
+                "['Ag', 'AgBr', 'Bi', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3', 'Sn']:\n"
+                "[('HFSCREEN', 0.2, 0.207), ('ADDGRID', True, False), ('LASPH', True, False)]"
+            ),
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
-            "In general, the same INCAR settings should be used in all final calculations for these tags "
-            "which can affect energies!",
-            "There are mismatching POTCAR symbols for (some of) your competing phases calculations which "
-            "are likely to cause errors in the parsed results (energies & thus chemical potential "
-            "limits). Found the following differences:",
+            (
+                "In general, the same INCAR settings should be used in all final calculations for these "
+                "tags which can affect energies!"
+            ),
+            (
+                "There are mismatching POTCAR symbols for (some of) your competing phases calculations "
+                "which are likely to cause errors in the parsed results (energies & thus chemical "
+                "potential limits). Found the following differences:"
+            ),
             "(in the format: (entry POTCARs, reference POTCARs)):",
-            "Bi: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
-            "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
-            "Cs3Bi2Br9: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
-            "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
+            (
+                "Bi: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
+                "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]"
+            ),
+            (
+                "Cs3Bi2Br9: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
+                "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]"
+            ),
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
-            "In general, the same POTCAR settings should be used in all final calculations for these tags "
-            "which can affect energies!",
-            "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull of "
-            "0.0171 eV/atom.",
-            "Formally, this means that (based on the supplied athermal calculation data) the host "
-            "material is unstable and so has no chemical potential limits; though in reality the host may "
-            "be stabilised by temperature effects etc, or just a metastable phase.",
-            "Here we will determine a single chemical potential 'limit' corresponding to the least "
-            "unstable (i.e. closest) point on the convex hull for the host material, as an approximation "
-            "for the true chemical potentials.",
+            (
+                "In general, the same POTCAR settings should be used in all final calculations for these "
+                "tags which can affect energies!"
+            ),
+            (
+                "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull "
+                "of 0.0171 eV/atom."
+            ),
+            (
+                "Formally, this means that (based on the supplied athermal calculation data) the host "
+                "material is unstable and so has no chemical potential limits; though in reality the "
+                "host may be stabilised by temperature effects etc, or just a metastable phase."
+            ),
+            (
+                "Here we will determine a single chemical potential 'limit' corresponding to the least "
+                "unstable (i.e. closest) point on the convex hull for the host material, "
+                "as an approximation for the true chemical potentials."
+            ),
         ]:
             print(expected_warning)
             assert any(expected_warning in str(warning.message) for warning in w)
@@ -3147,6 +3191,34 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         assert os.path.exists("test.png")
         return plot
 
+    @custom_mpl_image_compare(filename="AgSbTe2_chempot_heatmap_onto_axes.png")
+    def test_AgSbTe2_chempot_heatmap_onto_axes(self):
+        fig, axes = plt.subplots(1, 2, figsize=(7, 3.5))
+        fig.subplots_adjust(wspace=0.4)  # room for the heatmap y-axis labels
+        panel_label = axes[1].text(
+            -0.15, 1.05, "(b)", transform=axes[1].transAxes
+        )  # pre-existing user text
+        num_figs = len(plt.get_fignums())
+        returned_fig = self.AgSbTe2_cpa.plot_chempot_heatmap(ax=axes[1], filename="test.png")
+        assert panel_label.get_position() == (-0.15, 1.05)  # user text not moved by label nudging
+        assert returned_fig is fig
+        assert len(plt.get_fignums()) == num_figs  # no new figures opened
+        assert len(fig.axes) == 3  # colorbar Axes added to the user's figure
+        assert axes[1].collections  # heatmap (``tripcolor``) drawn on the given Axes
+        assert not axes[0].collections
+        assert os.path.exists("test.png")  # parent figure saved
+
+        root_fig = (
+            plt.figure()
+        )  # ``Axes`` within a ``SubFigure``; root ``Figure`` should be returned & saved
+        sub_ax = root_fig.subfigures(1, 2)[1].subplots()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            returned_fig = self.AgSbTe2_cpa.plot_chempot_heatmap(ax=sub_ax, filename=f"{tmp_dir}/hm.png")
+            assert os.listdir(tmp_dir) == ["hm.png"]
+        assert returned_fig is root_fig
+        plt.close(root_fig)
+        return fig
+
     @custom_mpl_image_compare(
         filename="AgSbTe2_chempot_heatmap_custom.png",
         style=f"{module_path}/../doped/utils/displacement.mplstyle",
@@ -3261,6 +3333,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             "CdTe ",
             energy_above_hull=0,
             extrinsic=["Cs"],
+            api_key=api_key,
         )
         cpa = chemical_potentials.CompetingPhasesAnalyzer("CdTe", cp.entries)
         return plot_chempot_heatmap_and_test_no_warnings(cpa)

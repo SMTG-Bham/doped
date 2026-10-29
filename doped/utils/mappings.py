@@ -4,6 +4,7 @@ Calculator-agnostic defect identification and site-mapping utilities
 identification etc.).
 """
 
+import itertools
 import warnings
 from copy import deepcopy
 from functools import lru_cache
@@ -16,9 +17,10 @@ from pymatgen.core.structure_matcher import get_linear_assignment_solution, pbc_
 from pymatgen.optimization.neighbors import find_points_in_spheres
 from pymatgen.util.coord import all_distances
 from pymatgen.util.typing import SpeciesLike
+from scipy.spatial import KDTree
 
 from doped.utils import _warn_parameter_order
-from doped.utils.efficiency import _parse_site_species_str
+from doped.utils.efficiency import _parse_site_species_str, get_element_indices
 
 
 def get_defect_type_and_composition_diff(
@@ -75,10 +77,56 @@ def get_defect_type_and_composition_diff(
     return defect_type, composition_diff
 
 
+def _is_split_interstitial(
+    site_frac_coords: ArrayLike,
+    pair_frac_coords: ArrayLike,
+    bulk_frac_coords: ArrayLike,
+    lattice: Lattice,
+) -> bool:
+    """
+    Determine whether two atoms form a split interstitial about a bulk site.
+
+    This requires the two atoms to be:
+
+    - Similarly displaced from the site, with their distances to the site
+      within 15% of each other.
+    - Split across the site, with the midpoint of the pair closer to the site
+      than half the distance from the site to the nearer atom.
+    - Local to the site, with both atoms closer to the site than its shortest
+      bond length (i.e. its distance to the nearest bulk site, of any species;
+      floored at 1 Å).
+
+    Args:
+        site_frac_coords (ArrayLike):
+            Fractional coordinates of the (vacated / shared) bulk site.
+        pair_frac_coords (ArrayLike):
+            Fractional coordinates of the two atoms.
+        bulk_frac_coords (ArrayLike):
+            Fractional coordinates of all bulk sites (including the site
+            itself).
+        lattice (Lattice):
+            The lattice of the structures.
+
+    Returns:
+        bool: Whether the two atoms form a split interstitial about the site.
+    """
+    site_frac_coords = np.reshape(np.asarray(site_frac_coords, dtype=float), (1, 3))
+    vecs = pbc_shortest_vectors(lattice, site_frac_coords, np.asarray(pair_frac_coords, dtype=float))[0]
+    dists = np.linalg.norm(vecs, axis=1)
+    site_bond_length = max(  # shortest bond length of the site, floored at 1 Å (as for ``site_tol``)
+        np.partition(lattice.get_all_distances(site_frac_coords, bulk_frac_coords)[0], 1)[1], 1
+    )  # (``np.partition(..., 1)[1]``: second-smallest distance, as the smallest is the site itself)
+    return bool(
+        abs(dists[0] - dists[1]) < 0.15 * dists.max()  # similar displacements from the site
+        and np.linalg.norm(vecs.sum(axis=0) / 2) < 0.5 * dists.min()  # split across the site
+        and dists.max() <= site_bond_length  # both local to the site
+    )
+
+
 def get_defect_type_and_site_indices(
     defect_supercell: Structure,
     bulk_supercell: Structure,
-    site_tol: float | None = None,  # TODO: Change to 0.5 and add complex defect handling
+    site_tol: float | None = None,  # TODO: Change to 0.4 and add complex defect handling
     abs_tol: bool = False,
     use_oxi_states: bool = False,
     rms: bool = False,
@@ -88,7 +136,11 @@ def get_defect_type_and_site_indices(
     substitutions) and defect (interstitials / substitutions) supercells.
 
     Defect sites are determined by matching sites in the bulk and defect
-    structures (by element and distances), according to ``site_tol``.
+    structures (by element and distances), according to ``site_tol``. If
+    ``site_tol`` is set, split interstitials are also identified (see
+    ``_is_split_interstitial``), with the bulk site returned as a missing site
+    (even if the split-interstitial atoms are within the distance tolerance)
+    and both atoms as additional defect sites.
 
     Note that this assumes consistent cell definitions (lattice vectors and
     bases) for the input defect and bulk supercells, and does not perform any
@@ -102,16 +154,17 @@ def get_defect_type_and_site_indices(
         site_tol (float | None):
             The (fractional) tolerance for matching sites between the defect
             and bulk structures. If ``abs_tol`` is ``False`` (default), then
-            the distance threshold for matching is set to the product of
-            ``site_tol`` and the shortest bond length in the bulk structure for
-            the given species, otherwise the value is used directly (as a
-            length in Å).
+            the distance threshold for matching each bulk site is set to the
+            product of ``site_tol`` and the shortest bond length of that site
+            in the bulk structure (i.e. its distance to the nearest other site,
+            of any species; floored at 1 Å), otherwise the value is used
+            directly (as a length in Å). Values around 0.4 are recommended.
             If ``None`` (default), we assume a single point defect and return
             the site of largest mismatch.
         abs_tol (bool):
             Whether to use ``site_tol`` as an absolute distance tolerance (in
             Å) instead of a fractional tolerance (in terms of the shortest bond
-            length in the structure). Default is ``False``.
+            length of each bulk site). Default is ``False``.
         use_oxi_states (bool):
             Whether to use the oxidation states of the sites in the bulk and
             defect structures when considering matching sites (such that e.g.
@@ -126,8 +179,8 @@ def get_defect_type_and_site_indices(
 
     Returns:
         defect_type (str):
-            The type of defect as a string (``interstitial``, ``vacancy`` or
-            ``substitution``).
+            The type of defect as a string (``interstitial``, ``vacancy``,
+            ``substitution`` or ``complex``).
         missing_bulk_site_indices (list[int]):
             Indices of sites in the bulk structure that do not match any site
             in the defect structure (according to ``site_tol`` choice).
@@ -135,8 +188,6 @@ def get_defect_type_and_site_indices(
             Indices of sites in the defect structure that do not match any site
             in the bulk structure (according to ``site_tol`` choice).
     """
-    # TODO: Default is 0.5 (i.e. half the shortest bond length in the bulk structure for the given
-    #  species). -- add to site_tol docstring
     bulk_composition = bulk_supercell.composition
     defect_composition = defect_supercell.composition
 
@@ -163,12 +214,21 @@ def get_defect_type_and_site_indices(
         )
         use_oxi_states = False
 
-    elt_symbols = {
-        str(species) if use_oxi_states else species.symbol
-        for species in bulk_composition.elements + defect_composition.elements
-    }
+    elt_symbols = (  # species strings as parsed by ``get_coords_and_idx_of_species``:
+        {_parse_site_species_str(site) for site in [*bulk_supercell, *defect_supercell]}
+        if use_oxi_states
+        else {species.symbol for species in bulk_composition.elements + defect_composition.elements}
+    )
     additional_defect_site_indices = []
     missing_bulk_site_indices = []
+
+    # distance tolerance for each bulk site; ``inf`` if ``site_tol`` is ``None`` (then only unmatched sites
+    # are defect sites), otherwise ``site_tol`` x site's shortest bond or ``site_tol`` in Å if ``abs_tol``
+    site_dist_tols = np.full(len(bulk_supercell), np.inf if site_tol is None else site_tol, dtype=float)
+    if site_tol is not None and not abs_tol:
+        bulk_dists = bulk_supercell.distance_matrix
+        np.fill_diagonal(bulk_dists, np.inf)  # exclude self-distances
+        site_dist_tols *= np.maximum(bulk_dists.min(axis=1), 1)  # shortest bond lengths, floored at 1 Å
 
     for elt_symbol in elt_symbols:
         bulk_species_fcoords, bulk_species_indices = get_coords_and_idx_of_species(
@@ -177,15 +237,6 @@ def get_defect_type_and_site_indices(
         defect_species_fcoords, defect_species_indices = get_coords_and_idx_of_species(
             defect_supercell, elt_symbol, use_oxi_states=use_oxi_states
         )
-        if bulk_species_indices.size == 0:  # extrinsic species
-            site_dist_tol = None
-        else:
-            species_distances = bulk_supercell.lattice.get_all_distances(
-                bulk_supercell.frac_coords[bulk_species_indices], bulk_supercell.frac_coords
-            )
-            species_min_dist = max(species_distances[np.nonzero(species_distances)].min(), 1)
-            site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * species_min_dist
-
         site_mapping = _get_site_mapping_from_coords_and_indices(
             defect_species_fcoords,
             bulk_species_fcoords,
@@ -197,8 +248,27 @@ def get_defect_type_and_site_indices(
         defect_site_mappings = [
             mapping
             for mapping in site_mapping
-            if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
+            if mapping[0] is None or mapping[0] > site_dist_tols[mapping[2]]
         ]
+
+        # for split interstitials, we treat it as 2X_i + V_X even if either X_i is within the matching
+        # tolerance of V_X, so flag any matched X which forms a split interstitial with an additional X_i:
+        extra_idxs = [m[1] for m in defect_site_mappings if m[1] is not None]  # additional defect sites
+        if site_tol is not None and bulk_species_indices.size and extra_idxs:
+            matched = {m[2]: m for m in site_mapping if m[0] is not None and m[0] <= site_dist_tols[m[2]]}
+            _dists, nearest_idxs = _get_closest_coords(
+                defect_supercell.frac_coords[extra_idxs], bulk_species_fcoords, bulk_supercell.lattice
+            )
+            for extra_idx, nearest_idx in zip(extra_idxs, nearest_idxs, strict=True):
+                mapping = matched.get(bulk_species_indices[nearest_idx])
+                if mapping and _is_split_interstitial(
+                    bulk_species_fcoords[nearest_idx],
+                    defect_supercell.frac_coords[[extra_idx, mapping[1]]],
+                    bulk_supercell.frac_coords,
+                    bulk_supercell.lattice,
+                ):
+                    defect_site_mappings.append(matched.pop(mapping[2]))  # pop: ensure not added twice
+
         for _dist, defect_idx, bulk_idx in defect_site_mappings:
             if bulk_idx is not None:  # missing bulk site
                 missing_bulk_site_indices.append(bulk_idx)
@@ -449,12 +519,12 @@ def _guess_initial_defect_structure(
     if defect_type != "interstitial":
         return guessed_initial_defect_structure, defect_site_in_bulk
 
-    from doped.generation import get_interstitial_sites
+    from doped.generation import _H_INTERSTITIAL_GEN_KWARGS, get_interstitial_sites
 
     # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
     # settings) to the relaxed interstitial site, as this is likely the _initial_ interstitial site
     int_site = guessed_initial_defect_structure.pop(defect_site_index)
-    int_gen_kwargs: dict[str, Any] = {"min_dist": 0.5} if int_site.species_string == "H" else {}
+    int_gen_kwargs: dict[str, Any] = _H_INTERSTITIAL_GEN_KWARGS if int_site.species_string == "H" else {}
     all_equiv_fpos = [  # all candidate interstitial frac coords in the bulk supercell
         fpos
         for *_, equiv_fpos in get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
@@ -478,10 +548,12 @@ def _guess_initial_defect_structure(
     return guessed_initial_defect_structure, defect_site_in_bulk
 
 
-def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
+def get_half_max_face_distance(lattice: Structure | Lattice) -> float:
     """
-    Calculates the Wigner-Seitz radius of the structure, which corresponds to
-    the maximum radius of a sphere fitting inside the cell.
+    Get half the largest distance between parallel faces of the cell.
+
+    This is the default defect region radius for eFNV potential sampling in
+    ``pydefect`` (and ``doped``).
 
     Templated on the ``calc_max_sphere_radius`` function from ``pydefect``,
     but rewritten to avoid calling ``vise`` which causes hanging on Windows.
@@ -494,7 +566,7 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
 
     Returns:
         float:
-            The Wigner-Seitz radius of the structure.
+            Half the largest distance between parallel cell faces (in Å).
     """
     lattice_matrix = lattice.matrix if isinstance(lattice, Lattice) else lattice.lattice.matrix
     distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4; avoid vise issues
@@ -519,13 +591,13 @@ def check_atom_mapping_far_from_defect(
     warn the user if they are large (often indicates a mismatch between the
     bulk and defect supercell definitions).
 
-    For sites of a given species outside the Wigner-Seitz radius of the defect
-    (the radius of the largest sphere which can fit in the cell), a 'large'
-    displacement is flagged if either the *mean* displacement exceeds
-    ``displacement_tol`` Ångströms (capturing a systematic/global mismatch),
-    *or* the *fraction* of such sites individually displaced by more than
-    ``displacement_tol`` exceeds ``fraction_tol`` (capturing a partial mismatch
-    without being triggered by single outlier sites).
+    For sites of a given species further from the defect than half the largest
+    distance between parallel cell faces, a 'large' displacement is flagged if
+    either the *mean* displacement exceeds ``displacement_tol`` Ångströms
+    (capturing a systematic/global mismatch), *or* the *fraction* of such sites
+    individually displaced by more than ``displacement_tol`` exceeds
+    ``fraction_tol`` (capturing a partial mismatch without being triggered by
+    single outlier sites).
 
     Args:
         defect_supercell (|Structure|):
@@ -553,54 +625,54 @@ def check_atom_mapping_far_from_defect(
         bool:
             Returns ``False`` if a mismatch is detected, else ``True``.
     """
-    wigner_seitz_radius = get_wigner_seitz_radius(bulk_supercell.lattice)
+    far_radius = get_half_max_face_distance(bulk_supercell.lattice)
     defect_frac_coords = (
         defect_coords
         if not coords_are_cartesian
         else bulk_supercell.lattice.get_fractional_coords(defect_coords)
     )
 
-    bulk_sites_outside_or_at_ws_radius = [  # vectorised for fast computation
+    bulk_sites_outside_or_at_far_radius = [  # vectorised for fast computation
         bulk_supercell[i]
         for i in np.where(
             bulk_supercell.lattice.get_all_distances(
                 bulk_supercell.frac_coords, defect_frac_coords
             ).ravel()
-            > np.max((wigner_seitz_radius - 1, 1))
+            > np.max((far_radius - 1, 1))
         )[0]
     ]
-    defect_sites_outside_wigner_radius = [  # vectorised for fast computation
+    defect_sites_outside_far_radius = [  # vectorised for fast computation
         defect_supercell[i]
         for i in np.where(
             defect_supercell.lattice.get_all_distances(
                 defect_supercell.frac_coords, defect_frac_coords
             ).ravel()
-            > wigner_seitz_radius
+            > far_radius
         )[0]
     ]
 
-    disps_outside_ws: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
+    disps_outside_far: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
     for species in bulk_supercell.composition.elements:  # divide and vectorise calc for efficiency
-        bulk_species_outside_near_ws_fcoords = get_coords_and_idx_of_species(
-            bulk_sites_outside_or_at_ws_radius, species.name
+        bulk_species_outside_near_far_fcoords = get_coords_and_idx_of_species(
+            bulk_sites_outside_or_at_far_radius, species.name
         )[0]
-        defect_species_outside_ws_fcoords = get_coords_and_idx_of_species(
-            defect_sites_outside_wigner_radius, species.name
+        defect_species_outside_far_fcoords = get_coords_and_idx_of_species(
+            defect_sites_outside_far_radius, species.name
         )[0]
-        if not (len(bulk_species_outside_near_ws_fcoords) and len(defect_species_outside_ws_fcoords)):
+        if not (len(bulk_species_outside_near_far_fcoords) and len(defect_species_outside_far_fcoords)):
             continue  # no sites of this species outside the WS radius, skip
 
-        site_mapping_outside_ws = _get_site_mapping_from_coords_and_indices(
-            defect_species_outside_ws_fcoords,
-            bulk_species_outside_near_ws_fcoords,
+        site_mapping_outside_far = _get_site_mapping_from_coords_and_indices(
+            defect_species_outside_far_fcoords,
+            bulk_species_outside_near_far_fcoords,
             lattice=bulk_supercell.lattice,
         )
-        displacement_dists = [dist for dist, _i, _j in site_mapping_outside_ws if dist is not None]
-        disps_outside_ws[species.name].extend(np.round(displacement_dists, 2))
+        displacement_dists = [dist for dist, _i, _j in site_mapping_outside_far if dist is not None]
+        disps_outside_far[species.name].extend(np.round(displacement_dists, 2))
 
-    if large_disps_outside_ws := {
+    if large_disps_outside_far := {
         specie: list
-        for specie, list in disps_outside_ws.items()
+        for specie, list in disps_outside_far.items()
         if list
         and (
             np.mean(list) > displacement_tol  # mean displacement of ``specie`` sites exceeds tolerance
@@ -608,15 +680,15 @@ def check_atom_mapping_far_from_defect(
         )
     }:
         message = (
-            f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
+            f"Detected atoms far from the defect site (>{far_radius:.2f} Å) with major "
             f"displacements (>{displacement_tol} Å) in the defect supercell. This likely indicates a "
             f"mismatch between the bulk and defect supercell definitions (-> see troubleshooting docs) or "
             f"an unconverged supercell size, both of which could cause errors in parsing. The mean (or at "
             f"least {fraction_tol:.0%}) of displacements of the following species, at sites far from the "
-            f"determined defect position, is >{displacement_tol} Å: {list(large_disps_outside_ws.keys())}"
+            f"determined defect position, is >{displacement_tol} Å: {list(large_disps_outside_far.keys())}"
         )
         if warning == "verbose":
-            message += f", with displacements (Å): {large_disps_outside_ws}"
+            message += f", with displacements (Å): {large_disps_outside_far}"
         if warning:
             warnings.warn(message)
 
@@ -856,6 +928,70 @@ def find_missing_idx(
     )
 
 
+def _get_closest_coords(
+    coords1: ArrayLike, coords2: ArrayLike, lattice: Lattice | None = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Get the distance to, and index of, the closest entry in ``coords2`` for
+    each entry in ``coords1``, using a ``KDTree`` (much faster than computing
+    the full distance matrix, for larger structures).
+
+    Args:
+        coords1 (ArrayLike):
+            Coordinates to get the closest ``coords2`` entries for.
+        coords2 (ArrayLike):
+            Coordinates to match ``coords1`` against.
+        lattice (|Lattice| | None):
+            If provided, ``coords1``/``coords2`` are taken as `fractional`
+            coordinates in this lattice, and minimum-image (PBC) distances
+            returned -- by including the neighbouring periodic images of
+            ``coords2`` in the search, which is exact whenever the closest
+            image is nearer than half the shortest lattice vector (any entries
+            for which it is not are recomputed exactly). Default is ``None``;
+            Cartesian coordinates without PBC.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]:
+            The distances to, and indices of, the closest ``coords2`` entries.
+    """
+    coords1, coords2 = np.asarray(coords1), np.asarray(coords2)
+    if lattice is None:  # ``np.asarray``s: ``KDTree.query`` is typed as returning scalars or arrays
+        distances, matches = KDTree(coords2).query(coords1)
+        return np.asarray(distances), np.asarray(matches)
+
+    # ``pymatgen``'s (Cython) minimum-image routine is faster below this size, and only above it does
+    # avoiding its N x M temporary array matter (which is the main gain here; ~50x less peak memory). The
+    # ``KDTree`` is built over 27 x ``len(coords2)`` image points, so only pays off above ~300 ``coords1``,
+    # unless the distance matrix would itself be large. It is also used for non-fully-periodic lattices
+    # (e.g. slabs), where the image search would be invalid:
+    num_pairs = len(coords1) * len(coords2)
+    if num_pairs < 1e5 or (len(coords1) < 300 and num_pairs < 1e7) or not all(lattice.pbc):
+        distance_matrix = lattice.get_all_distances(coords1, coords2)
+        return distance_matrix.min(axis=1), distance_matrix.argmin(axis=1)
+
+    # the +/-1 image search is only reliable in a reduced basis -- in a skewed (non-reduced) cell it
+    # could return a non-minimum-image match -- so work in the LLL-reduced lattice:
+    reduced = lattice.get_lll_reduced_lattice()
+    to_reduced = lattice.matrix @ np.linalg.inv(reduced.matrix)
+    lattice_vectors = np.array(list(itertools.product((-1, 0, 1), repeat=3))) @ reduced.matrix
+    image_coords = (np.mod(coords2 @ to_reduced, 1) @ reduced.matrix)[None] + lattice_vectors[:, None]
+    distances, matches = KDTree(image_coords.reshape(-1, 3)).query(
+        np.mod(coords1 @ to_reduced, 1) @ reduced.matrix
+    )
+    distances, matches = np.asarray(distances), np.asarray(matches) % len(coords2)
+
+    # a match at least half the shortest (reduced) lattice vector away is not guaranteed to be the minimum
+    # image, so recompute just those entries exactly:
+    vector_lengths = np.linalg.norm(lattice_vectors, axis=1)
+    unreliable = distances >= 0.5 * vector_lengths[vector_lengths > 0].min()
+    if unreliable.any():
+        distance_matrix = lattice.get_all_distances(coords1[unreliable], coords2)
+        distances[unreliable] = distance_matrix.min(axis=1)
+        matches[unreliable] = distance_matrix.argmin(axis=1)
+
+    return distances, matches
+
+
 def get_site_mappings(
     struct1: Structure,
     struct2: Structure,
@@ -927,7 +1063,7 @@ def get_site_mappings(
 
     # Generate a site matching table between the input and the template
     min_dist_with_index: list[tuple] = []
-    s1_species_symbols = (
+    s1_species_symbols: list[Any] = (
         [
             species.symbol
             for species in struct1.composition.elements
@@ -936,17 +1072,17 @@ def get_site_mappings(
         if not anonymous
         else [None]
     )
+    s1_idx_dict, s2_idx_dict = (  # {symbol: indices} for each structure, in one pass over sites
+        {None: list(range(len(struct)))} if anonymous else get_element_indices(struct, s1_species_symbols)
+        for struct in (struct1, struct2)
+    )
 
     for s1_species_symbol in s1_species_symbols:
         if species is not None and s1_species_symbol != species and not anonymous:
             continue
-        s1_species_indices = [
-            i for i, site in enumerate(struct1) if (site.specie.symbol == s1_species_symbol or anonymous)
-        ]
+        s1_species_indices = s1_idx_dict[s1_species_symbol]
         s1_coords = [get_coords(struct1[i]) for i in s1_species_indices]
-        s2_species_indices = [
-            i for i, site in enumerate(struct2) if (site.specie.symbol == s1_species_symbol or anonymous)
-        ]
+        s2_species_indices = s2_idx_dict[s1_species_symbol]
         s2_coords = [get_coords(struct2[i]) for i in s2_species_indices]
 
         if not s2_coords:  # no sites of this species in struct2
@@ -954,21 +1090,19 @@ def get_site_mappings(
             continue
 
         # mapping entries are (dist, species-local struct1 index, species-local struct2 index):
+        lattice = struct1.lattice if frac_coords else None
         if allow_duplicates:  # each input independently picks its closest template
-            dmat = (
-                struct1.lattice.get_all_distances(s1_coords, s2_coords)
-                if frac_coords
-                else all_distances(s1_coords, s2_coords)
-            )
+            dists, matches = _get_closest_coords(s1_coords, s2_coords, lattice)
             mapping: list[tuple[float | None, int | None, int | None]] = [
-                (float(row.min()), i, int(row.argmin())) for i, row in enumerate(dmat)
+                (float(dist), i, int(match))
+                for i, (dist, match) in enumerate(zip(dists, matches, strict=True))
             ]
 
         else:  # linear assignment, for order-independent optimal matching
             mapping = _get_site_mapping_from_coords_and_indices(
                 s1_coords,
                 s2_coords,
-                lattice=struct1.lattice if frac_coords else None,
+                lattice=lattice,
                 rms=rms,
             )
 

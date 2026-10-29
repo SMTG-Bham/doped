@@ -43,21 +43,39 @@ recognised_pre_vacancy_strings = sorted(
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which precede the element symbol in vacancy defect names.
+"""
+
 recognised_post_vacancy_strings = sorted(
     ["_v", "v", "_vac", "_Vac", "vac", "Vac", "va", "Va", "_va", "_Va"],
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which follow the element symbol in vacancy defect names.
+"""
+
 recognised_pre_interstitial_strings = sorted(
     ["i", "i_", "Int", "int", "Int_", "int_", "Inter", "inter", "Inter_", "inter_"],
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which precede the element symbol in interstitial defect
+names.
+"""
+
 recognised_post_interstitial_strings = sorted(
     ["_i", "_int", "_Int", "int", "Int", "inter", "Inter", "_inter", "_Inter"],
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which follow the element symbol in interstitial defect
+names.
+"""
+
 # _trimmable_defect_type_strings is the subset of the above strings which are trimmed from defect names
 # when identifying the constituent elements, removing marker letters which could otherwise be misread as
 # element symbols (e.g. "V" / "I" / "In" in "Vac" / "Int"). Strings starting/ending with a lowercase "i"
@@ -307,6 +325,15 @@ PETROFF10_EXTENDED_40 = [
     "#187582", "#beceb2", "#be968a", "#5dbadb", "#c28639",
     "#597d35", "#006939", "#c6d26d", "#7d96b2", "#59796d",
 ]  # fmt: skip
+"""
+Qualitative colour palette; the 10-colour Petroff scheme extended to 40
+maximally-distinct colours (within muted lightness/chroma bounds, for visual
+harmony with the base palette and to avoid pale colours that are hard to see as
+thin lines on white backgrounds) via the Glasbey et al (2007) method, as
+implemented in https://github.com/lmcinnes/glasbey, registered as the
+``petroff10_extended_40`` ``matplotlib`` colormap with ``doped``.
+"""
+
 with contextlib.suppress(ValueError):  # already registered (e.g. re-import)
     colormaps.register(ListedColormap(PETROFF10_EXTENDED_40, name="petroff10_extended_40"))
 
@@ -346,7 +373,10 @@ def get_colors(colormap: str | Colormap | None, num_colors: int) -> np.ndarray:
     return cmap(np.linspace(0, 1, num_colors))
 
 
-VARIANT_LINESTYLES = ("-", "--", ":", "-.")  # linestyle cycle for variants of the same plot group
+VARIANT_LINESTYLES = ("-", "--", ":", "-.")
+"""
+Linestyle cycle for variants of the same plot group.
+"""
 
 
 def _fade_variant_color(color, index: int, num_variants: int) -> tuple[float, ...]:
@@ -402,7 +432,8 @@ def _resolve_color_grouping(
     is escalated (``"element"`` (skipped by default) -> ``"type"`` (default
     initialisation) -> ``"site"``) while the palette would contain only a
     single colour group (e.g. a system with only one defect type), so that a
-    range of colours is used by default, rather than variants of a single colour.
+    range of colours is used by default, rather than variants of a single
+    colour.
     """
     _check_color_grouping(color_grouping)
     granularities = ("element", "type", "site")
@@ -417,13 +448,13 @@ def _resolve_color_grouping(
 
 def _color_group_key(defect, color_grouping: str = "type") -> str:
     """
-    The palette colour key for a defect: its defect type (``Defect.name``),
-    or its extrinsic element if extrinsic and ``color_grouping="element"`` --
-    so e.g. ``F_O`` and ``F_i`` share a base colour.
+    The palette colour key for a defect: its defect type (``Defect.name``), or
+    its extrinsic element if extrinsic and ``color_grouping="element"`` -- so
+    e.g. ``F_O`` and ``F_i`` share a base colour.
 
-    ``color_grouping="site"`` keys on the defect `group` name, which is
-    handled by the callers as it is not a property of the defect itself (i.e.
-    defect clustering).
+    ``color_grouping="site"`` keys on the defect `group` name, which is handled
+    by the callers as it is not a property of the defect itself (i.e. defect
+    clustering).
     """
     if color_grouping == "element" and (extrinsic_element := _extrinsic_element(defect)):
         return extrinsic_element
@@ -1062,7 +1093,7 @@ def _set_title_and_save_figure(
             ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
 
     if filename is not None:
-        fig = ax.get_figure()
+        fig = ax.figure.figure  # root ``Figure`` (``ax.figure`` is a ``SubFigure`` for subfigure axes)
         assert isinstance(fig, Figure)
         fig.savefig(filename, dpi=600, bbox_inches="tight", transparent=True)
 
@@ -1813,6 +1844,7 @@ def formation_energy_plot(
     fermi_level: float | None = None,
     title: str | None = None,
     filename: PathLike | None = None,
+    ax: plt.Axes | None = None,
 ) -> "mpl.figure.Figure":
     """
     Produce defect formation energy vs Fermi level plot (i.e. defect formation
@@ -1966,6 +1998,11 @@ def formation_energy_plot(
             Title for the plot. (Default: None)
         filename (PathLike):
             Filename to save the plot to. (Default: None (not saved)).
+        ax (plt.Axes):
+            ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+            figures), rather than creating a new figure, in which case the
+            parent figure of ``ax`` is returned (and saved, if ``filename`` is
+            set). (Default: None)
 
     Returns:
         ``matplotlib`` ``Figure`` object.
@@ -2008,9 +2045,13 @@ def formation_energy_plot(
         )
 
     # generate plot:
-    styled_fig_size = plt.rcParams["figure.figsize"]
-    fig, ax = plt.subplots(figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1]))
-    # Gives a final figure width matching styled_fig_size, with dimensions matching the doped default
+    if ax is None:
+        styled_fig_size = plt.rcParams["figure.figsize"]
+        fig, ax = plt.subplots(
+            figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1])
+        )  # Gives final figure width matching styled_fig_size, with dimensions matching the doped default
+    else:  # plot onto user-provided axes
+        fig = ax.figure.figure  # root ``Figure`` (``ax.figure`` is a ``SubFigure`` for subfigure axes)
     styled_font_size = plt.rcParams["font.size"]
     styled_linewidth = plt.rcParams["lines.linewidth"]
     styled_markersize = plt.rcParams["lines.markersize"]
@@ -2368,10 +2409,10 @@ def _box_overlap_fraction(b1: tuple, b2: tuple, x_buf: float = 0.0, y_buf: float
     """
     Quantify how much two label boxes ``(x_min, x_max, y_min, y_max)`` overlap.
 
-    Returns the overlapping area as a fraction (``0.0``--``1.0``) of the smaller
-    box's area, padding each box by ``x_buf``/``y_buf`` (consistent with
-    :func:`_boxes_overlap`). ``0.0`` means no overlap, a small value means a
-    slight clip, and ``1.0`` means one box fully covers the other. This lets
+    Returns the overlapping area as a fraction (``0.0``--``1.0``) of the
+    smaller box's area, padding each box by ``x_buf``/``y_buf`` (consistent
+    with :func:`_boxes_overlap`). ``0.0`` means no overlap, a small value means
+    a slight clip, and ``1.0`` means one box fully covers the other. This lets
     the label placement optimiser prefer slight overlaps over full overlaps
     when some overlap is unavoidable.
     """
@@ -2912,6 +2953,7 @@ def transition_level_diagram(
     column_width: float = 0.4,
     figsize: tuple[float, float] | None = None,
     filename: PathLike | None = None,
+    ax: plt.Axes | None = None,
 ):
     r"""
     Produce a vertical transition level diagram for a |DefectThermodynamics|
@@ -2980,15 +3022,24 @@ def transition_level_diagram(
             to ``0.4``. Can be a useful parameter to tune for busy plots.
         figsize (tuple):
             ``(width, height)`` of the figure in inches. Defaults to a width
-            that scales with the number of defects.
+            that scales with the number of defects. Cannot be set with ``ax``
+            (in which case the size of ``ax`` is used).
         filename (PathLike):
             If set, save the figure to this path. (Default: None)
+        ax (plt.Axes):
+            ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+            figures), rather than creating a new figure, in which case the
+            parent figure of ``ax`` is returned (and saved, if ``filename`` is
+            set). (Default: None)
 
     Returns:
         ``matplotlib`` ``Figure`` object.
     """
     if defect_thermodynamics.band_gap is None:
         raise ValueError("`DefectThermodynamics.band_gap` is not set, cannot plot transition levels.")
+
+    if ax is not None and figsize is not None:
+        raise ValueError("`figsize` cannot be set with `ax` (the size of `ax` is used instead).")
 
     if all not in (False, True, "faded", "faded_labels"):
         raise ValueError(f"`all` must be False, True, 'faded' or 'faded_labels', not {all!r}")
@@ -3013,6 +3064,14 @@ def transition_level_diagram(
     # estimate label horizontal extent (in data units = column spacing) so we can extend xlim to leave
     # room for labels at the sides of the outer columns. The data width is approximated by ``n_defects``
     # (columns are spaced 1 data-unit apart) as ``xlim`` is not yet known, assuming ~7-character labels:
+    if ax is not None:
+        # label sizing heuristics below use the figure size as a proxy for the axes size, so use the size
+        # of a ``doped``-created figure (with default subplot margins) whose axes would match ``ax``:
+        rc = plt.rcParams
+        figsize = (
+            ax.bbox.width / ax.figure.dpi / (rc["figure.subplot.right"] - rc["figure.subplot.left"]),
+            ax.bbox.height / ax.figure.dpi / (rc["figure.subplot.top"] - rc["figure.subplot.bottom"]),
+        )
     if figsize is None:
         styled_figsize = plt.rcParams["figure.figsize"]
         figsize_w = max(styled_figsize[0], n_defects + 1.0)
@@ -3029,7 +3088,10 @@ def transition_level_diagram(
         # widen the figure to accommodate the side padding without squishing column spacing:
         figsize = (figsize_w + 0.8 * (2 * side_pad + left_extra_pad), figsize_h)
 
-    fig, ax = plt.subplots(figsize=figsize)
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:  # plot onto user-provided axes
+        fig = ax.figure.figure  # root ``Figure`` (``ax.figure`` is a ``SubFigure`` for subfigure axes)
     xlim = (-side_pad - left_extra_pad, n_defects - 1 + side_pad)
 
     shade_band_edges(ax, defect_thermodynamics.band_gap, xlim, ylim, orientation="vertical")

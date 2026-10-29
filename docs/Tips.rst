@@ -188,15 +188,17 @@ particularly for metals, which are often the most expensive competing phases -- 
   calculations, and then only perform the (expensive) SOC calculations on the ground-state polymorph of 
   each competing phase.
 
-- **Smearing:** Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and ``2``) are the ``doped`` 
-  default settings for insulators and metals for geometry relaxations, but tetrahedron smearing 
-  (``ISMEAR = -5``) typically gives more accurate total energies for the `final` single-point calculation 
-  and converges at lower `k`-point densities. This can be particularly useful for metallic competing 
+- **Smearing:** Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and ``2``) are the ``doped`` default 
+  settings for insulators and metals for geometry relaxations (and `k`-point convergence testing), but 
+  tetrahedron smearing (``ISMEAR = -5``) typically gives more accurate total energies for the `final` 
+  single-point calculation and converges at lower `k`-point densities, and so is used by default for all solid 
+  phases with :meth:`~doped.chemical_potentials.CompetingPhases.write_singlepoint_files` (set 
+  ``user_incar_settings={"ISMEAR": 0}`` to override). This is particularly useful for metallic competing 
   phases, which require high `k`-point densities and thus can be very expensive, particularly if also using 
   hybrid DFT and/or including spin-orbit coupling (SOC). It can be worth re-running k-point convergence 
   testing (with :meth:`~doped.chemical_potentials.CompetingPhases.write_kpoint_convergence_files`) using 
-  ``ISMEAR = -5`` to check for cheaper converged `k`-point densities for these final single-point 
-  calculations.
+  ``user_incar_settings={"ISMEAR": -5}`` to check for cheaper converged `k`-point densities for these final 
+  single-point calculations.
 
 - **``NKRED`` with hybrid DFT:** The Fock exchange contribution in hybrid DFT typically converges at lower 
   `k`-point densities than the other DFT energy terms, so the
@@ -277,8 +279,8 @@ Due to the layered structure, the charge and strain associated with the defect i
 defective layer, while that of the layer away from the defect mostly experiences the typical long-range
 electostatic potential of the defect charge. The same behaviour can be seen for `h`-BN in the
 `original eFNV paper <https://doi.org/10.1103/PhysRevB.89.195205>`_ (Figure 4d).
-This means that our usual default of using the
-Wigner-Seitz radius to determine the sampling region is not as good, as it's including sites in the
+This means that our usual default sampling region (sites further from the defect than half the largest
+distance between parallel cell faces) is not as good, as it's including sites in the
 defective layer (circled in orange) which are causing the variance in the potential offset (ΔV) and thus
 the error in the charge correction.
 
@@ -823,8 +825,8 @@ stages of the defect workflow, ``doped`` objects have been made fully serializab
 easily saved and (re-)loaded from compact, lightweight ``.json`` files. As demonstrated at
 various stages in the tutorials, this can be achieved using the ``dumpfn``/``loadfn`` functions from
 ``monty.serialization``, or with the :meth:`~doped.core.Defect.to_json()`/
-:meth:`~doped.core.Defect.from_json()` methods provided for the |Defect|, |DefectEntry|, |DefectsGenerator| 
-and |DefectThermodynamics| classes:
+:meth:`~doped.core.Defect.from_json()` methods provided for the |Defect|, |DefectEntry|, |DefectsGenerator|,
+|DefectThermodynamics|, |DefectsSet| and :class:`~doped.io.vasp.inputs.DefectRelaxSet` classes:
 
 .. code-block:: python
 
@@ -854,13 +856,16 @@ and |DefectThermodynamics| classes:
 In the typical defect calculation workflow with ``doped`` (exemplified in the tutorials), the following
 ``JSON`` files are automatically written to file:
 
-- The |DefectsGenerator| object or ``defect_entries`` dictionary that is input to
-  :class:`~doped.io.vasp.inputs.DefectsSet`, when writing ``VASP`` input files with
-  :class:`~doped.io.vasp.inputs.DefectsSet` :meth:`~doped.io.vasp.inputs.DefectsSet.write_files()` --
-  written to ``output_path``. Additionally, for each calculation directory generated, the corresponding
-  |DefectEntry| object is written to a ``{DefectEntry.name}.json`` file in the directory 
-  so that all information on the generated defect structure, charge state etc. is preserved in the 
-  calculation directory.
+- |DefectsSet|, when writing ``VASP`` input files with
+  :meth:`~doped.io.vasp.inputs.DefectsSet.write_files()` -- written to a
+  ``{Host Chemical Formula}_DefectsSet.json.gz`` file in ``output_path``, preserving both the input
+  |DefectsGenerator| object (or ``defect_entries`` dictionary) and the ``VASP`` input settings used.
+  Additionally, for each defect folder generated, the corresponding |DefectEntry| object is written to a
+  ``{DefectEntry.name}_DefectEntry.json.gz`` file in that folder by default, so that all information on the
+  generated defect structure, charge state etc. is preserved alongside the calculation inputs.
+    - With ``relax_set_json = True``, the corresponding :class:`~doped.io.vasp.inputs.DefectRelaxSet` object
+      is also written to a ``{DefectEntry.name}_DefectRelaxSet.json.gz`` file in each defect folder,
+      preserving the full ``VASP`` input settings used.
 - The parsed defect entries dict (:attr:`~doped.parsing.DefectsParser.defect_dict`) when defect
   calculations are parsed with |DefectsParser| -- written to ``output_path``. The 
   JSON filename can be set with e.g. ``DefectsParser(json_filename="custom_name.json")``, but the default 

@@ -23,6 +23,7 @@ from matplotlib import colors
 from matplotlib.figure import Figure
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
+from pymatgen.analysis.defects.corrections.freysoldt import get_spherically_averaged_dielectric
 from pymatgen.core.composition import Composition, Element
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
 from pymatgen.io.vasp import Vasprun
@@ -38,10 +39,6 @@ from doped.chemical_potentials import (
     plot_chempot_heatmap,
 )
 from doped.core import DefectEntry, _get_abs_chempots, _get_bulk_supercell, _no_chempots_warning
-from doped.corrections import (
-    _convert_anisotropic_dielectric_to_isotropic_harmonic_mean,
-    _convert_dielectric_to_tensor,
-)
 from doped.generation import sort_defect_entries
 from doped.io import get_backend
 from doped.utils import _doped_obj_properties_methods, _signed_charge
@@ -119,10 +116,10 @@ def _parse_limit(chempots: dict, limit: str | None = None):
 def _get_limits_to_plot(chempots: dict, composition: str | Composition | None = None) -> list[str]:
     """
     Get the default chemical potential limits for plotting: the most anion-rich
-    (i.e. most-electronegative-rich) and most cation-rich (i.e.
-    most-electropositive-rich) limits for the host ``composition``, in the
-    order they appear in ``chempots["limits"]`` and de-duplicated if they
-    correspond to the same limit (e.g. for elemental systems).
+    (i.e. most-electronegative-rich) and most cation-rich (i.e. most-
+    electropositive-rich) limits for the host ``composition``, in the order
+    they appear in ``chempots["limits"]`` and de-duplicated if they correspond
+    to the same limit (e.g. for elemental systems).
 
     If ``composition`` is not provided, it is auto-determined from the limit
     names in ``chempots`` (see
@@ -487,10 +484,10 @@ def _group_defects_by_distance(
 
     Takes a (hashable) ``tuple`` of |DefectEntry| objects so that results can
     be cached w/``functools.lru_cache``. Indices (rather than the entry
-    objects) are returned so that cache hits -- possible from equal-hashing
-    but distinct entries, whose un-hashed state (e.g. ``calculation_metadata``)
-    may differ -- never return previously-cached entry objects; the public
-    wrapper rebuilds ``{cluster index: {DefectEntry, ...}}``.
+    objects) are returned so that cache hits -- possible from equal-hashing but
+    distinct entries, whose un-hashed state (e.g. ``calculation_metadata``) may
+    differ -- never return previously-cached entry objects; the public wrapper
+    rebuilds ``{cluster index: {DefectEntry, ...}}``.
     """
     reference_entry = entry_list[0]
     bulk_structure = reference_entry.defect.structure
@@ -2763,6 +2760,7 @@ class DefectThermodynamics(MSONable):
         style_file: PathLike | None = None,
         fermi_level: float | None = None,
         filename: PathLike | None = None,
+        ax: plt.Axes | list[plt.Axes] | np.ndarray | None = None,
         **kwargs,
     ) -> Figure | list[Figure]:
         r"""
@@ -3013,6 +3011,15 @@ class DefectThermodynamics(MSONable):
                 ``get_fermi_level_and_concentrations``). Default: None.
             filename (PathLike): Filename to save the plot to. Default: None
                 (not saved).
+            ax (plt.Axes, list[plt.Axes]):
+                ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+                figures), rather than creating new figure(s), in which case the
+                parent ``Figure`` of the ``Axes`` is returned. If multiple
+                chemical potential limits are plotted (i.e. ``limit`` not set),
+                a list/array of ``Axes`` (one per limit, in order) should be
+                given. Creating the figure within the ``doped_plot_style()``
+                context manager (from ``doped.utils.plotting``) applies the
+                ``doped`` plot style to the whole figure. Default: None.
             **kwargs:
                 Additional keyword arguments for advanced customisation, such
                 as ``shallow_charge_stability_tolerance`` or
@@ -3039,6 +3046,12 @@ class DefectThermodynamics(MSONable):
 
         limit = _parse_limit(chempots, limit)
         limits = [limit] if limit is not None else _get_limits_to_plot(chempots, self.bulk_formula)
+        axes = None if ax is None else list(np.asarray(ax, dtype=object).ravel())  # Axes, or list/array
+        if axes is not None and len(axes) != len(limits):
+            raise ValueError(
+                f"Got {len(axes)} `Axes` with `ax`, but there are {len(limits)} chemical potential limits "
+                f"to plot ({limits}). Provide one `Axes` per limit, or set `limit` to plot a single limit."
+            )
 
         if (
             chempots
@@ -3081,7 +3094,7 @@ class DefectThermodynamics(MSONable):
 
         with doped_plot_style(style_file):
             figs = []
-            for limit in limits:
+            for i, limit in enumerate(limits):
                 abs_chempots = chempots["limits"][limit]
                 plot_title = limit if len(limits) > 1 else None
                 plot_filename = (
@@ -3110,9 +3123,15 @@ class DefectThermodynamics(MSONable):
                         auto_labels=auto_labels,
                         fermi_level=fermi_level,
                         title=plot_title,
-                        filename=plot_filename,
+                        filename=plot_filename if axes is None else None,  # with ``ax``, saved below
+                        ax=None if axes is None else axes[i],
                     )
                 figs.append(fig)
+
+            if axes is not None and filename:
+                # save (e.g. multi-panel) figure(s) once all limits are plotted
+                for fig in dict.fromkeys(figs):  # unique figures
+                    fig.savefig(filename, dpi=600, bbox_inches="tight", transparent=True)
 
             return figs[0] if len(figs) == 1 else figs
 
@@ -3130,6 +3149,7 @@ class DefectThermodynamics(MSONable):
         figsize: tuple | None = None,
         style_file: PathLike | None = None,
         filename: PathLike | None = None,
+        ax: plt.Axes | None = None,
         **kwargs,
     ) -> Figure:
         r"""
@@ -3224,13 +3244,22 @@ class DefectThermodynamics(MSONable):
                 plots.
             figsize (tuple):
                 ``(width, height)`` of the figure in inches. Defaults to a size
-                that scales with the number of defects.
+                that scales with the number of defects. Cannot be set with
+                ``ax`` (in which case the size of ``ax`` is used).
             style_file (PathLike):
                 Path to a ``mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style (from
                 ``doped/utils/doped.mplstyle``).
             filename (PathLike):
                 If set, save the figure to this path. (Default: None)
+            ax (plt.Axes):
+                ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+                figures), rather than creating a new figure, in which case the
+                parent ``Figure`` of ``ax`` is returned (and saved, if
+                ``filename`` is set). Creating the figure within the
+                ``doped_plot_style()`` context manager (from
+                ``doped.utils.plotting``) applies the ``doped`` plot style to
+                the whole figure. Default: None.
             **kwargs:
                 Additional keyword arguments controlling the stability window
                 tolerances when pruning unstable/shallow entries (e.g.
@@ -3254,6 +3283,7 @@ class DefectThermodynamics(MSONable):
                 column_width=column_width,
                 figsize=figsize,
                 filename=filename,
+                ax=ax,
             )
 
     def _get_single_electron_tls(self) -> dict[str, list[TransitionLevel]]:
@@ -4788,6 +4818,7 @@ class DefectThermodynamics(MSONable):
         label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
         filename: PathLike | None = None,
         style_file: PathLike | None = None,
+        ax: plt.Axes | None = None,
         **kwargs,
     ) -> plt.Figure:
         """
@@ -4886,6 +4917,14 @@ class DefectThermodynamics(MSONable):
                 Path to a mplstyle file to use for the plot. If ``None``
                 (default), uses the default ``doped`` style (from
                 ``doped/utils/doped.mplstyle``).
+            ax (plt.Axes):
+                ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+                figures), rather than creating a new figure, in which case the
+                parent ``Figure`` of the ``Axes`` is returned (and saved, if
+                ``filename`` is set). Creating the figure within the
+                ``doped_plot_style()`` context manager (from
+                ``doped.utils.plotting``) applies the ``doped`` plot style to
+                the whole figure. Default: None.
             **kwargs:
                 Additional keyword arguments to pass to |get_grid|, such as
                 ``n_points`` (default = 1000) and ``cartesian`` (default =
@@ -4912,6 +4951,7 @@ class DefectThermodynamics(MSONable):
             label_positions=label_positions,
             filename=filename,
             style_file=style_file,
+            ax=ax,
             **kwargs,
         )
 
@@ -5289,7 +5329,8 @@ def scissor_dos(
             Whether to print information about the original and new band gaps.
 
     Returns:
-        FermiDos: The scissored DOS object.
+        Dos/FermiDos: The scissored DOS object (a ``FermiDos`` if the input is
+        a ``FermiDos``, otherwise a ``Dos``).
     """
     if delta_gap:
         warnings.warn(  # TODO: remove ``delta_gap`` (and this branch) in v4.1.
@@ -5319,9 +5360,16 @@ def scissor_dos(
         np.where((dos_densities > tol) & (dos.energies - dos.efermi < dos_gap / 2))[0][-1]
     ]
 
+    # Sanity checks: (1) ``vbm_energy``/``cbm_energy`` are the last/first grid points with non-zero DOS
+    # below/above the gap, whereas ``get_gap`` returns the gap between the bounding _zero-DOS_ grid points
+    # (one grid point inside the gap on each side), so if the band edges were correctly identified,
+    # ``cbm_energy - vbm_energy`` is exactly 2 grid spacings larger than ``dos_gap``; (2) ``new_cbm_index``
+    # is the grid point nearest to ``cbm_energy + delta_gap``, so ``new_cbm_energy - cbm_energy`` matches
+    # ``delta_gap`` to within half a grid spacing:
+    grid_spacing = np.median(np.diff(dos.energies))
     if not (
-        np.isclose(cbm_energy - vbm_energy, dos_gap, atol=1e-1)
-        and np.isclose(new_cbm_energy - cbm_energy, delta_gap, atol=1e-2)
+        np.isclose(cbm_energy - vbm_energy - 2 * grid_spacing, dos_gap, atol=1e-1)
+        and np.isclose(new_cbm_energy - cbm_energy, delta_gap, atol=1e-2 + grid_spacing / 2)
     ):
         warnings.warn(
             "The new band gap does not appear to be equal to the original band gap plus the scissor "
@@ -5335,7 +5383,7 @@ def scissor_dos(
     scissored_dos_dict = dos.as_dict()
 
     # Shift the CBM and remove/add values:
-    if values_to_remove_or_add < 0:  # remove values
+    if values_to_remove_or_add <= 0:  # remove values (none for rigid shifts / sub-half-grid gap changes)
         scissored_dos_dict["energies"] = np.concatenate(
             (dos.energies[: cbm_index + values_to_remove_or_add], dos.energies[cbm_index:] + delta_gap)
         )
@@ -5365,14 +5413,13 @@ def scissor_dos(
     scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
 
     # now apply the rigid shift of all energies by delta_VBM:
-    # ensure 'energies' is array (should be if function used correctly, not if band gap change is zero...):
     scissored_dos_dict["energies"] = np.array(scissored_dos_dict["energies"]) + delta_VBM
     scissored_dos_dict["efermi"] += delta_VBM
 
     if verbose:
         print(f"Orig gap: {dos_gap:.4f}, new gap:{dos_gap + delta_gap:.4f}")
-    scissored_dos_dict["structure"] = dos.structure.as_dict()
-    if isinstance(dos, FermiDos):
+    if isinstance(dos, FermiDos):  # (plain ``Dos`` objects have no ``structure``)
+        scissored_dos_dict["structure"] = dos.structure.as_dict()
         return FermiDos.from_dict(scissored_dos_dict)
     return Dos.from_dict(scissored_dos_dict)
 
@@ -5381,7 +5428,7 @@ def shallow_dopant_binding_energy(
     eff_mass: float,
     dielectric: float | np.ndarray | list,
 ):
-    """
+    r"""
     Estimate the binding energy of a shallow dopant /defect in a semiconductor,
     using effective mass theory.
 
@@ -5404,7 +5451,11 @@ def shallow_dopant_binding_energy(
             Effective mass of the dopant.
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Total dielectric constant (ionic + static contributions) of the
-            semiconductor host.
+            semiconductor host. For an anisotropic dielectric tensor, the
+            spherical average :math:`\bar{\epsilon}` (with
+            :math:`1/\bar{\epsilon} = \langle 1/(\hat{g}^T \epsilon \hat{g}) \rangle`)
+            is used, which gives the exact variational energy for a hydrogenic
+            (1s) envelope with isotropic effective mass.
 
     Returns:
         float: Binding energy of the shallow dopant, in eV.
@@ -5413,9 +5464,7 @@ def shallow_dopant_binding_energy(
 
     rydberg_in_eV = sc.physical_constants["Rydberg constant times hc in eV"][0]
 
-    eff_dielectric = _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
-        _convert_dielectric_to_tensor(dielectric)
-    )
+    eff_dielectric = get_spherically_averaged_dielectric(dielectric)
     return rydberg_in_eV * (eff_mass / eff_dielectric**2)  # in eV
 
 
@@ -5617,8 +5666,8 @@ class FermiSolver(MSONable):
         ``self.defect_thermodynamics.bulk_dos``, for use with the ``py-sc-
         fermi`` backend (``None`` if not activated).
 
-        Re-derived automatically if ``self.defect_thermodynamics.bulk_dos``
-        is reassigned.
+        Re-derived automatically if ``self.defect_thermodynamics.bulk_dos`` is
+        reassigned.
         """
         fdos = self.defect_thermodynamics.bulk_dos
         if self._DOS is None or not isinstance(fdos, FermiDos):  # py-sc-fermi backend not activated
@@ -6795,17 +6844,12 @@ class FermiSolver(MSONable):
         self._check_temperature_settings(
             annealing_temperature_range, temperature_range, quenched_temperature_range, range=True
         )
-        # Ensure temperature ranges are lists:
-        temperature_list = _ensure_list(temperature_range)
-        annealing_temperature_list = _ensure_list(annealing_temperature_range)  # returns None if None
-        quenched_temperature_list = _ensure_list(quenched_temperature_range)
-
         single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
 
-        temp_args = product(
+        temp_args = product(  # scalars (or ``None`` annealing temperature) -> single-value lists
             *(
                 i if isinstance(i, Iterable) else [i]
-                for i in [annealing_temperature_list, quenched_temperature_list, temperature_list]
+                for i in [annealing_temperature_range, quenched_temperature_range, temperature_range]
             )
         )
         return pd.concat(
@@ -7058,7 +7102,7 @@ class FermiSolver(MSONable):
                 concentration.
         """
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
-        effective_dopant_concentration_list = _ensure_list(effective_dopant_concentration_range)
+        effective_dopant_concentration_list = np.atleast_1d(effective_dopant_concentration_range)
 
         single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
 
@@ -8928,11 +8972,3 @@ def _extract_target_value(results_df: pd.DataFrame, target_names: list[str], col
 
     matching = _target_rows_mask(results_df, target_names)
     return float(results_df.loc[matching, "Concentration (cm^-3)"].sum(skipna=False))
-
-
-def _ensure_list(
-    var: float | range | list | np.ndarray | None = None,
-) -> list[float | int] | np.ndarray | None:
-    if isinstance(var, range):
-        return list(var)
-    return [var] if isinstance(var, int | float) else var

@@ -10,11 +10,11 @@ from collections.abc import Sequence
 from itertools import combinations, product
 
 import numpy as np
+from pymatgen.util.coord import pbc_diff, pbc_shortest_vectors
 from tqdm import tqdm
 
 from doped.core import DefectEntry, _get_bulk_supercell, _get_defect_supercell
 from doped.parsing import defect_site_from_structures
-from doped.thermodynamics import _ensure_list
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import (
     Composition,
@@ -26,11 +26,12 @@ from doped.utils.efficiency import (
     _Composition__eq__,
 )
 from doped.utils.mappings import (
+    _get_closest_coords,
     check_atom_mapping_far_from_defect,
     get_coords_and_idx_of_species,
     get_defect_type_and_composition_diff,
+    get_half_max_face_distance,
     get_site_mappings,
-    get_wigner_seitz_radius,
 )
 from doped.utils.supercells import _largest_cube_length_from_matrix, min_dist
 from doped.utils.symmetry import (
@@ -40,6 +41,7 @@ from doped.utils.symmetry import (
     get_clean_structure,
     get_distance_matrix,
     get_sga,
+    remove_translation_drift,
     translate_structure,
 )
 
@@ -199,13 +201,14 @@ def get_defect_in_supercell(
             threshold, a warning is issued. Default is 0.9 (i.e. 90% of the
             ``bulk_min_bond_length``).
         orientation_template_radii_range (float | range | list | np.ndarray | None):
-            A range or list of scale factors (relative to the Wigner-Seitz
-            radius of ``target_supercell``) to scan over when constructing the
-            template sub-structures of ``target_supercell`` and the bulk
-            super-supercell used for pre-stenciling orientation matching (to
-            try to ensure matching supercell atomic bases (i.e. tiling of
-            primitive cells in the supercells) in the output stenciled cells
-            with ``target_supercell``). Default is ``None``, in which case the
+            A range or list of scale factors (relative to half the largest
+            distance between parallel faces of ``target_supercell``) to scan
+            over when constructing the template sub-structures of
+            ``target_supercell`` and the bulk super-supercell used for
+            pre-stenciling orientation matching (to try to ensure matching
+            supercell atomic bases (i.e. tiling of primitive cells in the
+            supercells) in the output stenciled cells with
+            ``target_supercell``). Default is ``None``, in which case the
             default test range of ``[0.8, 1.0, 0.6, 0.4, 1.2]`` is used. It is
             expected that this parameter should rarely be required to tune.
         show_pbar (bool):
@@ -230,21 +233,24 @@ def get_defect_in_supercell(
 
     try:
         orig_defect_frac_coords: np.ndarray | tuple[float, float, float] | None
+        is_vacancy = False  # unknown for user-given coords; assume the relaxed-atom convention
         if isinstance(defect_entry, tuple):
             orig_supercell = defect_entry[0].copy()
             orig_bulk_supercell = defect_entry[1].copy()
             if len(defect_entry) > 2:
-                orig_defect_frac_coords = np.array(defect_entry[2])
+                orig_defect_frac_coords = np.array(defect_entry[2])  # user-provided coords, use as-is
             else:
-                defect_site = defect_site_from_structures(
-                    orig_supercell, orig_bulk_supercell, _parameter_order_warn=False
+                defect_site, defect_type, *_ = defect_site_from_structures(
+                    orig_supercell, orig_bulk_supercell, return_all_info=True, _parameter_order_warn=False
                 )
                 assert isinstance(defect_site, PeriodicSite)
                 orig_defect_frac_coords = defect_site.frac_coords
+                is_vacancy = defect_type == "vacancy"  # then a _bulk_ frame site, as below
         else:
             orig_supercell = _get_defect_supercell(defect_entry).copy()
             orig_bulk_supercell = _get_bulk_supercell(defect_entry).copy()
             orig_defect_frac_coords = defect_entry.sc_defect_frac_coords
+            is_vacancy = defect_entry.defect.defect_type.name == "Vacancy"
 
         target_supercell = target_supercell.copy()
         bulk_min_bond_length = min_dist(orig_bulk_supercell)
@@ -253,6 +259,16 @@ def get_defect_in_supercell(
         # ensure no oxidation states (for easy composition matching later)
         for struct in [orig_supercell, orig_bulk_supercell, target_supercell]:
             struct.remove_oxidation_states()
+
+        # remove any rigid drift of the relaxed supercell w.r.t the bulk, which would otherwise appear as a
+        # rigid step between the stenciled (relaxed) and padded (ideal bulk) regions:
+        orig_supercell, shifted_defect_frac_coords = remove_translation_drift(
+            orig_supercell, orig_bulk_supercell, np.array(orig_defect_frac_coords)
+        )
+        if not is_vacancy:  # a vacancy site is defined in the _bulk_ frame, so not drift corrected
+            orig_defect_frac_coords = shifted_defect_frac_coords
+        # TODO: May need to update drift handling of vacancy sites for complexes in future (though
+        #  expected to be less of an issue with auto drift correction now added to SnB...)
 
         # first translate both orig supercells to put defect in the middle, to aid initial stenciling:
         orig_def_to_centre = np.array([0.5, 0.5, 0.5]) - orig_defect_frac_coords
@@ -287,13 +303,12 @@ def get_defect_in_supercell(
         # First, we reduce to only atoms closest to the centre for both target and super-supercells, to
         # greatly reduce comp costs with site-matching enormous supercells; for this, we scan over possible
         # radii for the sampling sphere as some choices give matches (transformations) and some fail:
-        orientation_template_radii_range = _ensure_list(
+        orientation_template_radii_range = np.atleast_1d(
             orientation_template_radii_range
             if orientation_template_radii_range is not None
-            else [0.8, 1.0, 0.6, 0.4, 1.2]  # scale factors of get_wigner_seitz_radius(target_supercell)
+            else [0.8, 1.0, 0.6, 0.4, 1.2]  # scale factors of get_half_max_face_distance(target_supercell)
         )
-        assert isinstance(orientation_template_radii_range, list | np.ndarray)  # typing
-        wsr_target = get_wigner_seitz_radius(target_supercell)
+        radius_target = get_half_max_face_distance(target_supercell)
         trans_to_match_target = None
         fake_target_supercell_w_big_supercell_lattice = None
         # scan all sampling-sphere (orientation template) radii at tight ``stol`` values, before loosening
@@ -303,7 +318,7 @@ def get_defect_in_supercell(
             for r_factor in orientation_template_radii_range:
                 fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
                     target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                    r=r_factor * wsr_target,
+                    r=r_factor * radius_target,
                 )
                 if not fake_target_supercell_sites:
                     continue
@@ -316,7 +331,7 @@ def get_defect_in_supercell(
                 fake_big_supercell = Structure.from_sites(
                     big_bulk_supercell.get_sites_in_sphere(
                         big_bulk_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                        r=r_factor * wsr_target / 0.8,  # slightly larger r for fake big supercell
+                        r=r_factor * radius_target / 0.8,  # slightly larger r for fake big supercell
                     )
                 )
                 trans_to_match_target = get_transformation_from_s2_to_s1(
@@ -336,7 +351,10 @@ def get_defect_in_supercell(
                 big_bulk_supercell, fake_target_supercell_w_big_supercell_lattice, trans_to_match_target
             )
             oriented_big_defect_supercell = _orient_to_match_target(
-                big_defect_supercell, fake_target_supercell_w_big_supercell_lattice, trans_to_match_target
+                big_defect_supercell,
+                fake_target_supercell_w_big_supercell_lattice,
+                trans_to_match_target,
+                new_lattice=oriented_big_bulk_supercell.lattice,  # re-orient regardless of potential noise
             )
         else:
             oriented_big_bulk_supercell = big_bulk_supercell
@@ -346,11 +364,27 @@ def get_defect_in_supercell(
             pbar.update(20)  # 20% of progress bar
             pbar.set_description("Getting sites in border region")
 
-        # translate structure to put defect at the centre of the big supercell (w/frac_coords)
-        big_supercell_defect_site = next(
-            s for s in oriented_big_defect_supercell.sites if s.specie.symbol == "X"
+        defect_frac_coords = next(
+            site.frac_coords for site in oriented_big_defect_supercell if site.specie.symbol == "X"
         )
-        def_to_centre = np.array([0.5, 0.5, 0.5]) - big_supercell_defect_site.frac_coords
+        # the orientation matching above is only defined up to the point symmetry of the host, and
+        # |StructureMatcher| returns an arbitrary member of that orbit, so canonicalise the choice here
+        # (using that which retains most of the defect relaxation, also ensuring deterministic output):
+        canonical_symm_op = _get_max_retained_relaxation_symm_op(
+            oriented_big_defect_supercell,
+            oriented_big_bulk_supercell,
+            target_supercell,
+            defect_frac_coords,
+        )
+        if canonical_symm_op is not None:  # must be applied to both cells:
+            oriented_big_defect_supercell, oriented_big_bulk_supercell = (
+                apply_symm_op_to_struct(canonical_symm_op, struct, fractional=True, rotate_lattice=False)
+                for struct in (oriented_big_defect_supercell, oriented_big_bulk_supercell)
+            )
+            defect_frac_coords = canonical_symm_op.operate(defect_frac_coords)
+
+        # translate structure to put defect at the centre of the big supercell (w/frac_coords)
+        def_to_centre = np.array([0.5, 0.5, 0.5]) - defect_frac_coords
         oriented_big_defect_supercell = translate_structure(
             oriented_big_defect_supercell, def_to_centre, frac_coords=True
         )
@@ -389,13 +423,6 @@ def get_defect_in_supercell(
         # input ``target_supercell``. First we orient the generated _bulk_ supercell to match the
         # ``target_supercell``, to try to ensure consistency in the generated supercells.
 
-        # Note: this function is typically the main bottleneck in this workflow. We have already
-        # optimised the underlying |StructureMatcher| workflow in many ways (caching,
-        # fast structure/site/composition comparisons, skipping comparison of defect neighbourhood to
-        # reduce requisite ``stol`` etc; being many orders of magnitude faster than the base
-        # ``pymatgen`` |StructureMatcher|), however the ``_cart_dists()`` function call (used by
-        # ``orient_s2_like_s1``, ``get_transformation_from_s2_to_s1``) is still quite expensive,
-        # especially with large structures with significant noise in the atomic positions...
         trans = get_transformation_from_s2_to_s1(target_supercell, new_bulk_supercell, max_stol=5)
         # Note: Here we use a relatively large max stol, because we want to get `some` transformation
         # regardless of whether a perfect match is possible, as we want a consistent output bulk supercell
@@ -409,7 +436,10 @@ def get_defect_in_supercell(
                 new_bulk_supercell, target_supercell, trans
             )
             oriented_new_defect_supercell = _orient_to_match_target(
-                new_defect_supercell, target_supercell, trans
+                new_defect_supercell,
+                target_supercell,
+                trans,
+                new_lattice=oriented_new_bulk_supercell.lattice,
             )
         else:
             warnings.warn(  # shouldn't happen for most cases...
@@ -420,10 +450,8 @@ def get_defect_in_supercell(
             oriented_new_bulk_supercell = new_bulk_supercell
             oriented_new_defect_supercell = new_defect_supercell
 
-        oriented_new_defect_site = next(  # get defect site and remove X from sites
-            oriented_new_defect_supercell.pop(i)
-            for i, site in enumerate(oriented_new_defect_supercell.sites)
-            if site.specie.symbol == "X"
+        oriented_new_defect_site = oriented_new_defect_supercell.pop(  # get defect site and remove X
+            oriented_new_defect_supercell.indices_from_symbol("X")[0]
         )
         if pbar is not None:
             pbar.update(35)  # 90% of progress bar
@@ -647,12 +675,12 @@ def stencil_target_cell_from_big_cell(
     Returns:
         Structure: The stenciled supercell structure.
     """
-    edge_tol_range = _ensure_list(edge_tol_range if edge_tol_range is not None else np.arange(0.2, 4, 0.2))
-    min_dist_tol_factor_range = _ensure_list(
+    edge_tol_range = np.atleast_1d(
+        edge_tol_range if edge_tol_range is not None else np.arange(0.2, 4, 0.2)
+    )
+    min_dist_tol_factor_range = np.atleast_1d(
         min_dist_tol_factor_range if min_dist_tol_factor_range is not None else np.arange(0.95, 0.5, -0.05)
     )
-    assert isinstance(edge_tol_range, list | np.ndarray)
-    assert isinstance(min_dist_tol_factor_range, list | np.ndarray)
 
     # first, translate sites to put the centre of big_supercell (which should have defect site at the
     # centre) to the centre of the target supercell (w/cart coords)
@@ -783,25 +811,25 @@ def stencil_target_cell_from_big_cell(
                         )
                         frac_coords = [site.frac_coords for site in fake_candidate_struct_sites]
                         distance_matrix = get_distance_matrix(frac_coords, target_supercell.lattice)
-                        sorted_distances = np.sort(distance_matrix.flatten())
+                        # take the 10 smallest distances (after the diagonal zeros) for comparison:
+                        flat_distances = distance_matrix.flatten()
+                        num_kept = min(len(frac_coords) + 10, flat_distances.size)
+                        smallest_distances = np.sort(np.partition(flat_distances, num_kept - 1)[:num_kept])
                         min_interatomic_distances_tuple_combo_dict[
-                            tuple(sorted_distances[len(frac_coords) : len(frac_coords) + 10])
-                            # take the 10 smallest distances for comparison purposes
+                            tuple(smallest_distances[len(frac_coords) :])
                         ] = idx_combo_sites_in_target
 
-                # get the candidate structure with the largest minimum interatomic distance:
-                min_interatomic_distances_tuple_combo_list = sorted(
-                    min_interatomic_distances_tuple_combo_dict.items(),
-                    key=lambda x: x[0],
-                    reverse=True,
-                )
-
-                if not min_interatomic_distances_tuple_combo_list:
+                if not min_interatomic_distances_tuple_combo_dict:
                     raise RuntimeError("No matching compositions for stenciling found.")
+
+                # get the candidate structure with the largest minimum interatomic distance:
+                min_dists_tuple, best_idx_combo_sites = max(
+                    min_interatomic_distances_tuple_combo_dict.items(), key=lambda x: x[0]
+                )
 
                 # raise RuntimeError and dynamically increase ``edge_tol`` (first, then decrease
                 # ``min_dist_tol_factor``) if resulting min_dist is too small:
-                idx_combo_min_dist = min_interatomic_distances_tuple_combo_list[0][0][0]
+                idx_combo_min_dist = min_dists_tuple[0]
                 if idx_combo_min_dist < (bulk_min_bond_length * min_dist_tol_factor):
                     raise RuntimeError(
                         f"Minimum interatomic distance ({idx_combo_min_dist:.2f} Å) near the edge (within "
@@ -810,9 +838,7 @@ def stencil_target_cell_from_big_cell(
                         f"fatal issue with the stenciling process. Aborting."
                     )
 
-                new_supercell_sites = def_new_supercell_sites + list(
-                    min_interatomic_distances_tuple_combo_list[0][1]
-                )
+                new_supercell_sites = def_new_supercell_sites + list(best_idx_combo_sites)
 
                 min_dist_warning_tol = bulk_min_bond_length * min_dist_warning_tol_factor
                 if idx_combo_min_dist < min_dist_warning_tol:
@@ -854,8 +880,78 @@ def stencil_target_cell_from_big_cell(
     return new_supercell
 
 
+def _get_max_retained_relaxation_symm_op(
+    big_defect_supercell: Structure,
+    big_bulk_supercell: Structure,
+    target_supercell: Structure,
+    defect_frac_coords: np.ndarray,
+) -> SymmOp | None:
+    """
+    Get the host symmetry operation which retains the most defect-induced
+    relaxation within the ``target_supercell`` stencil bounds.
+
+    The preemptive orientation matching in ``get_defect_in_supercell`` matches
+    `ideal` (unrelaxed) host site templates, so every point symmetry operation
+    of the host is an exactly-degenerate solution and |StructureMatcher| simply
+    returns the first one found -- an arbitrary choice, which can flip with
+    machine noise. These operations rotate the relaxed defect region relative
+    to the stencil bounds, thus determining how much of the relaxed structure
+    is retained. So here we scan over this orbit and take the operation which
+    retains the most relaxation, which is both deterministic and the most
+    physical choice.
+
+    Returns ``None`` if the identity is the best (or only) candidate, otherwise
+    a `fractional` operation, to be applied to `both` super-supercells (with
+    ``rotate_lattice=False``) to retain their registered lattices.
+    """
+    lattice = big_bulk_supercell.lattice
+    assert lattice == big_defect_supercell.lattice  # matching lattices
+    frac_rotations = [
+        np.round(symm_op.rotation_matrix).astype(int)
+        for symm_op in get_sga(big_bulk_supercell).get_point_group_operations()
+    ]
+    if len(frac_rotations) < 2:
+        return None  # only the identity; no choice to be made
+
+    # the stencil aligns the super-supercell and target supercell midpoints, and the defect is subsequently
+    # re-centred, so a site at ``frac_rotation @ offset`` from the defect ends up at that offset from the
+    # target supercell midpoint (symmetry operation translation components cancel here):
+    frac_disp_from_defect = pbc_diff(big_defect_supercell.frac_coords, defect_frac_coords)  # minimum image
+
+    # displacement of each defect supercell site from its closest host site; zero for the bulk-padded sites
+    # outside the original defect supercell region, and for species absent from the host (``None`` here):
+    displacements = np.zeros(len(big_defect_supercell))
+    for distance, index, _bulk_index in get_site_mappings(
+        big_defect_supercell, big_bulk_supercell, allow_duplicates=True, threshold=np.inf
+    ):
+        displacements[index] = distance or 0
+    midpoint_coords = target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5])
+
+    scored_configs = []
+    for index, frac_rotation in enumerate(frac_rotations):
+        stencil_frac_coords = target_supercell.lattice.get_fractional_coords(
+            (frac_disp_from_defect @ frac_rotation.T) @ lattice.matrix + midpoint_coords
+        )
+        retained = np.all((stencil_frac_coords >= 0) & (stencil_frac_coords < 1), axis=1)  # within stencil
+        # round before comparing, to avoid deciding by numerical noise with degenerate choices:
+        score = -round(float(displacements[retained].sum()), 6)
+        # ties are then broken on the stenciled site positions rather than the operations themselves, which
+        # are defined relative to the arbitrary input orientation:
+        positions = np.round(stencil_frac_coords[retained], 6)
+        scored_configs.append((score, tuple(positions[np.lexsort(positions.T)].ravel()), index))
+
+    best_frac_rotation = frac_rotations[min(scored_configs)[2]]
+    if np.array_equal(best_frac_rotation, np.eye(3, dtype=int)):
+        return None  # already the best orientation
+
+    return SymmOp.from_rotation_and_translation(best_frac_rotation, np.zeros(3))
+
+
 def _orient_to_match_target(
-    structure: Structure, target_structure: Structure, transformation: tuple
+    structure: Structure,
+    target_structure: Structure,
+    transformation: tuple,
+    new_lattice: str | Lattice | None = None,
 ) -> Structure:
     return apply_s2_to_s1_transformation(
         target_structure,
@@ -863,7 +959,7 @@ def _orient_to_match_target(
         supercell_matrix=transformation[0],
         trans_vector=transformation[1],
         mapping=transformation[2],
-        # new_lattice="struct1",  # struct1 by default, no warning if not possible
+        new_lattice=new_lattice,  # ``"struct1"`` by default, if possible (falling back without warning)
         ignored_species=["X"],  # ignore X site
     )
 
@@ -1125,10 +1221,23 @@ def _get_matching_sites_from_s1_then_s2(
             The stenciled structure.
     """
     num_super_supercells = len(struct1_pool) // len(template_struct)  # both also have X
-    single_defect_subcell_sites = []
+
+    # the defect relaxation field is periodic with ``template_struct``, so each of its sites has one copy
+    # per tile in ``struct1_pool``; we take the copy `closest` to the defect (at the template centre here),
+    # rather than the copy in the defect's `own tile` -- which may sit further from the defect than the
+    # nearest image, in non-orthogonal cells, and which would carry a displacement dominated by a
+    # `neighbouring` defect image rather than the stenciled centre (likely pointing in the wrong direction)
+    # Thus we take the minimum-image copies (i.e. Wigner-Seitz region) about the defect:
+    min_image_template = Structure(
+        struct1_pool.lattice,
+        template_struct.species,
+        template_struct.lattice.get_cartesian_coords([0.5, 0.5, 0.5])
+        + pbc_shortest_vectors(template_struct.lattice, [0.5, 0.5, 0.5], template_struct.frac_coords)[0],
+        coords_are_cartesian=True,  # Cartesian coordinates, in Wigner-Seitz region around centre
+    )
 
     # Uses linear assignment per species for unambiguous optimal matching, for template_struct sites
-    mapping = get_site_mappings(template_struct, struct1_pool, frac_coords=False, threshold=np.inf)
+    mapping = get_site_mappings(min_image_template, struct1_pool, threshold=np.inf)
     pool1_indices = [  # mapping entries are (dist, template_idx, pool_idx)
         pool_idx
         for _, template_idx, pool_idx in mapping
@@ -1150,39 +1259,32 @@ def _get_matching_sites_from_s1_then_s2(
             frac_coords=True,  # frac_coords
         )[0]
 
+    pool_frac_coords = struct2_pool.frac_coords  # uncached ``pymatgen`` property; rebuilt on each access
     struct2_pool_dists_to_template_centre = struct2_pool.lattice.get_all_distances(
-        struct2_pool.frac_coords,
+        pool_frac_coords,
         struct2_pool.lattice.get_fractional_coords(
             template_struct.lattice.get_cartesian_coords([0.5, 0.5, 0.5])
         ),
     ).ravel()  # template centre is defect site in stenciling workflow
     largest_encompassed_cube_length = _largest_cube_length_from_matrix(template_struct.lattice.matrix)
-    candidate_struct2_pool_species_sites: dict[str, list[PeriodicSite]] = {
-        super_site.specie.symbol: [] for super_site in struct2_pool
-    }
-    for dist_to_template_centre, super_site in zip(
-        struct2_pool_dists_to_template_centre, struct2_pool, strict=False
-    ):
-        # screen to sites outside defect WS radius, for efficiency:
-        if dist_to_template_centre > largest_encompassed_cube_length * 0.49:  # 2% buffer (cube length / 2)
-            candidate_struct2_pool_species_sites[super_site.specie.symbol].append(super_site)
+    # distance of each site to the closest same-species site in the single defect subcell, screening to
+    # sites outside the defect WS radius for efficiency; the rest keep ``-inf``, sorting them last and
+    # cutting below:
+    candidate = struct2_pool_dists_to_template_centre > largest_encompassed_cube_length * 0.49  # 2% buffer
+    symbols = np.array([super_site.specie.symbol for super_site in struct2_pool])
+    min_dists_to_subcell = np.full(len(struct2_pool), -np.inf)
+    for species_symbol, subcell_coords in species_coord_dict.items():
+        species_candidate = candidate & (symbols == species_symbol)  # matching species & outside WS radius
+        if species_candidate.any():
+            min_dists_to_subcell[species_candidate] = _get_closest_coords(
+                pool_frac_coords[species_candidate], subcell_coords, lattice=struct2_pool.lattice
+            )[0]
 
-    struct2_pool_site_min_dist_dict = {}
-    for species_symbol, species_sites in candidate_struct2_pool_species_sites.items():
-        dist_matrix = struct2_pool.lattice.get_all_distances(  # vectorised for fast computation
-            species_coord_dict[species_symbol], [site.frac_coords for site in species_sites]
-        )  # M x N
-        min_dists = np.min(dist_matrix, axis=0)  # down columns
-        struct2_pool_site_min_dist_dict.update(dict(zip(species_sites, min_dists, strict=False)))
-
-    # sort possible_bulk_outer_cell_sites by (largest) min dist to single_defect_subcell_sites:
-    possible_bulk_outer_cell_sites = sorted(
-        [site for sites in candidate_struct2_pool_species_sites.values() for site in sites],
-        key=lambda x: struct2_pool_site_min_dist_dict[x],
-        reverse=True,
-    )
-    bulk_outer_cell_sites = possible_bulk_outer_cell_sites[
-        : len(struct2_pool) - len(struct2_pool) // num_super_supercells
+    # take the sites with the largest min dist to ``single_defect_subcell_sites``:
+    num_outer_cell_sites = len(struct2_pool) - len(struct2_pool) // num_super_supercells
+    bulk_outer_cell_sites = [
+        struct2_pool[index]
+        for index in np.argsort(-min_dists_to_subcell, kind="stable")[:num_outer_cell_sites]
     ]
 
     return Structure.from_sites(single_defect_subcell_sites + bulk_outer_cell_sites)
@@ -1276,13 +1378,13 @@ def _convert_defect_neighbours_to_X(
     defect_supercell: Structure,
     defect_position: np.ndarray,
     coords_are_cartesian: bool = False,
-    ws_radius_fraction: float = 0.5,
+    radius_fraction: float = 0.5,
 ) -> Structure:
     """
     Convert all neighbouring sites of a defect site in a supercell, within
-    ``ws_radius_fraction`` of the Wigner-Seitz radius, to have their species as
-    "X" (storing their original species in the site property dict under the
-    "orig_species" key).
+    ``radius_fraction`` of half the largest distance between parallel cell
+    faces, to have their species as "X" (storing their original species in the
+    site property dict under the "orig_species" key).
 
     Intended to then be used to make structure-matching far more efficient, by
     ignoring the highly-perturbed defect neighbourhood (which requires larger
@@ -1299,10 +1401,10 @@ def _convert_defect_neighbours_to_X(
         coords_are_cartesian (bool):
             Whether the defect position is in Cartesian coordinates. Default is
             ``False`` (fractional coordinates).
-        ws_radius_fraction (float):
-            The fraction of the Wigner-Seitz radius to use as the cut-off
-            distance for neighbouring sites to convert to species "X". Default
-            is 0.5 (50%).
+        radius_fraction (float):
+            The fraction of half the largest distance between parallel cell
+            faces to use as the cut-off distance for neighbouring sites to
+            convert to species "X". Default is 0.5 (50%).
 
     Returns:
         Structure:
@@ -1310,7 +1412,7 @@ def _convert_defect_neighbours_to_X(
             sites converted to species X.
     """
     converted_defect_supercell = defect_supercell.copy()
-    ws_radius = get_wigner_seitz_radius(defect_supercell)
+    half_max_face_dist = get_half_max_face_distance(defect_supercell)
     defect_frac_coords = (
         defect_position
         if not coords_are_cartesian
@@ -1320,7 +1422,7 @@ def _convert_defect_neighbours_to_X(
         defect_supercell.lattice.get_all_distances(
             defect_supercell.frac_coords, defect_frac_coords
         ).ravel()
-        < np.max((ws_radius * ws_radius_fraction, 1))
+        < np.max((half_max_face_dist * radius_fraction, 1))
     )[0]
 
     for i, orig_site in enumerate(defect_supercell):
