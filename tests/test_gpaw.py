@@ -2,21 +2,22 @@
 Tests for the GPAW interface in ``doped.io.gpaw``.
 """
 
+import contextlib
 import os
-import runpy
 import shutil
 import unittest
 from pathlib import Path
 
 import numpy as np
 import pytest
-from ase import Atoms
+from ase.io import read
+from ase.io.trajectory import Trajectory
 from pymatgen.core.structure import Structure
 from test_utils import gpaw_data_dir
 
 from doped.generation import DefectsGenerator
 from doped.io import get_calculation_outputs
-from doped.io.gpaw.inputs import DefectRelaxSet, DefectsSet
+from doped.io.gpaw.inputs import DefectDictSet, DefectsSet
 from doped.io.gpaw.outputs import _find_gpaw_output, get_potentials_from_input
 from doped.parsing import DefectParser, DefectsParser
 
@@ -35,9 +36,9 @@ class GPAWTest(unittest.TestCase):
         if os.path.exists(self.output_dir):
             shutil.rmtree(self.output_dir)
 
-    def test_gpaw_defect_relax_set(self):
+    def test_gpaw_defect_dict_set(self):
         # Test with Structure
-        relax_set = DefectRelaxSet(self.structure, charge_state=1)
+        relax_set = DefectDictSet(self.structure, charge_state=1)
         relax_set.write_input(self.output_dir)
 
         assert os.path.exists(os.path.join(self.output_dir, "relax.py"))
@@ -49,15 +50,22 @@ class GPAWTest(unittest.TestCase):
             content = f.read()
             assert "charge=1" in content
             assert "mode=PW(ecut=400)" in content  # Default
+            assert "append_trajectory=True" in content  # continues an interrupted relaxation
+            compile(content, "relax.py", "exec")  # valid Python
 
-    def test_gpaw_defect_relax_set_custom(self):
+        # rewriting the inputs in a folder with a previous relaxation warns that it will be continued:
+        Path(self.output_dir, "relax.traj").touch()
+        with pytest.warns(UserWarning, match="relax.traj already exists"):
+            relax_set.write_input(self.output_dir)
+
+    def test_gpaw_defect_dict_set_custom(self):
         # Test with custom settings
         gpaw_settings = {
             "mode": {"name": "pw", "ecut": 400},
             "xc": "PBE",
             "kpts": {"size": (2, 2, 2), "gamma": True},
         }
-        relax_set = DefectRelaxSet(self.structure, charge_state=-1, gpaw_settings=gpaw_settings)
+        relax_set = DefectDictSet(self.structure, charge_state=-1, gpaw_settings=gpaw_settings)
         relax_set.write_input(self.output_dir)
 
         with open(os.path.join(self.output_dir, "relax.py")) as f:
@@ -67,12 +75,21 @@ class GPAWTest(unittest.TestCase):
             assert "'size': (2, 2, 2)" in content
             assert "from gpaw import GPAW, PW, LCAO, FD" in content
 
-    def test_gpaw_defect_relax_set_lcao(self):
+        # non-string ``xc`` (e.g. dict-form hybrid functional settings) and ``txt`` values:
+        for gpaw_settings, expected in (
+            ({"xc": {"name": "HSE06", "backend": "pw"}}, "xc={'name': 'HSE06', 'backend': 'pw'},"),
+            ({"txt": None}, "txt=None,"),
+            ({"txt": Path("log.txt")}, "txt='log.txt',"),
+        ):
+            relax_set = DefectDictSet(self.structure, gpaw_settings=gpaw_settings)
+            assert expected in relax_set._generate_script("structure.cif")
+
+    def test_gpaw_defect_dict_set_lcao(self):
         # Test with LCAO mode
         gpaw_settings = {
             "mode": {"name": "lcao", "basis": "dzp"},
         }
-        relax_set = DefectRelaxSet(self.structure, charge_state=0, gpaw_settings=gpaw_settings)
+        relax_set = DefectDictSet(self.structure, charge_state=0, gpaw_settings=gpaw_settings)
         relax_set.write_input(self.output_dir)
 
         with open(os.path.join(self.output_dir, "relax.py")) as f:
@@ -83,21 +100,16 @@ class GPAWTest(unittest.TestCase):
 
         assert gpaw_settings == {"mode": {"name": "lcao", "basis": "dzp"}}
 
-    def test_gpaw_defect_relax_set_kwargs(self):
-        with pytest.raises(TypeError, match=r"unexpected_setting.*gpaw_settings"):
-            DefectRelaxSet(self.structure, unexpected_setting=True)
+    def test_gpaw_defect_dict_set_kwargs(self):
+        with pytest.raises(TypeError, match="unexpected_setting"):  # GPAW settings go in gpaw_settings
+            DefectDictSet(self.structure, unexpected_setting=True)
 
-        alias_set = DefectRelaxSet(self.structure, charge=-1)
-        alias_set.write_input(self.output_dir)
-        assert "charge=-1" in (Path(self.output_dir) / "relax.py").read_text()
-
-        # An explicit charge_state still takes precedence, including the neutral state.
-        explicit_set = DefectRelaxSet(self.structure, charge_state=0, charge=-1)
-        explicit_set.write_input(self.output_dir)
-        assert "charge=0" in (Path(self.output_dir) / "relax.py").read_text()
+        # GPAW's ``charge`` is set from ``charge_state``, so would be repeated in the ``GPAW()`` call:
+        with pytest.raises(ValueError, match=r"gpaw_settings\['charge'\]"):
+            DefectDictSet(self.structure, gpaw_settings={"charge": 1})
 
     def test_gpaw_lcao_conflicting_basis(self):
-        relax_set = DefectRelaxSet(
+        relax_set = DefectDictSet(
             self.structure,
             gpaw_settings={"mode": {"name": "lcao", "basis": "dzp"}, "basis": "sz"},
         )
@@ -109,15 +121,14 @@ class GPAWTest(unittest.TestCase):
         output_path = os.path.join(self.output_dir, "new_folder")
         for gpaw_settings, match in [
             ({"mode": {"name": "pw", "basis": "dzp"}, "basis": "sz"}, "Conflicting basis settings"),
-            ({"optimizer": "MDMin"}, "Unsupported optimizer"),
             ({"initial_magnetic_moments": [1.0] * (len(self.structure) + 1)}, "one value per atom"),
         ]:
             with pytest.raises(ValueError, match=match):
-                DefectRelaxSet(self.structure, gpaw_settings=gpaw_settings).write_input(output_path)
+                DefectDictSet(self.structure, gpaw_settings=gpaw_settings).write_input(output_path)
             assert not os.path.exists(output_path)
 
     def test_gpaw_singlepoint_set(self):
-        singlepoint_set = DefectRelaxSet(
+        singlepoint_set = DefectDictSet(
             self.structure,
             charge_state=1,
             calculation_type="singlepoint",
@@ -131,12 +142,13 @@ class GPAWTest(unittest.TestCase):
 
         assert "charge=1" in content
         assert "calc.write('singlepoint.gpw')" in content
+        compile(content, "singlepoint.py", "exec")  # valid Python
         assert "ase.optimize" not in content
         assert "dyn.run" not in content
 
     def test_gpaw_initial_magnetic_moments(self):
         magnetic_moments = [1.0] + [0.0] * (len(self.structure) - 1)
-        input_set = DefectRelaxSet(
+        input_set = DefectDictSet(
             self.structure,
             gpaw_settings={"initial_magnetic_moments": magnetic_moments},
             calculation_type="singlepoint",
@@ -149,7 +161,7 @@ class GPAWTest(unittest.TestCase):
         assert f"atoms.set_initial_magnetic_moments({magnetic_moments!r})" in content
         assert "initial_magnetic_moments=" not in content
 
-        invalid_set = DefectRelaxSet(
+        invalid_set = DefectDictSet(
             self.structure,
             gpaw_settings={"initial_magnetic_moments": [*magnetic_moments, 0.0]},
         )
@@ -159,7 +171,7 @@ class GPAWTest(unittest.TestCase):
         # per-element moments are expanded for the structure, with unlisted elements set to zero:
         structure = self.structure * (2, 1, 1)
         structure.replace(0, "Ni")
-        DefectRelaxSet(structure, gpaw_settings={"initial_magnetic_moments": {"Ni": 2.0}}).write_input(
+        DefectDictSet(structure, gpaw_settings={"initial_magnetic_moments": {"Ni": 2.0}}).write_input(
             self.output_dir
         )
         script = (Path(self.output_dir) / "relax.py").read_text()
@@ -172,8 +184,10 @@ class GPAWTest(unittest.TestCase):
         ``<defect name>/`` folder structure, as with VASP.
         """
         defect_gen = DefectsGenerator(self.structure)
-        with pytest.raises(TypeError, match=r"unexpected_setting.*gpaw_settings"):
+        with pytest.raises(TypeError, match="unexpected_setting"):
             DefectsSet(defect_gen, unexpected_setting=True)
+        with pytest.raises(ValueError, match=r"gpaw_settings\['charge'\]"):  # on init, before writing
+            DefectsSet(defect_gen, gpaw_settings={"charge": 1})
         defects_set = DefectsSet(defect_gen, gpaw_settings={"mode": {"name": "pw", "ecut": 500}})
         assert len(defects_set.defect_sets) == len(defect_gen.defect_entries)
 
@@ -186,6 +200,8 @@ class GPAWTest(unittest.TestCase):
             "singlepoint.py",
             "structure.cif",
         ]
+        bulk_structure = Structure.from_file(os.path.join(self.output_dir, "Cu_bulk", "structure.cif"))
+        assert bulk_structure.matches(defect_gen.bulk_supercell)
         assert any(name.endswith(".json.gz") for name in written)  # provenance
 
         defect_species = next(iter(defect_gen.defect_entries))
@@ -513,6 +529,20 @@ class GPAWTest(unittest.TestCase):
             )
 
 
+def _run_script_setup(script_path: Path) -> dict:
+    """
+    Check that a generated GPAW script compiles, then run it up to its
+    calculation (reading the structure and setting up the calculator, with real
+    GPAW input validation), in its folder, and return the script namespace.
+    """
+    script = script_path.read_text()
+    compile(script, script_path.name, "exec")
+    namespace: dict = {}
+    with contextlib.chdir(script_path.parent):
+        exec(script.split("atoms.calc = calc")[0], namespace)
+    return namespace
+
+
 @pytest.mark.parametrize(
     "gpaw_settings",
     [
@@ -523,30 +553,18 @@ class GPAWTest(unittest.TestCase):
         {"mode": {"name": "pw", "basis": "dzp"}},
     ],
 )
-def test_basis_script_initializes_gpaw(gpaw_settings, tmp_path, monkeypatch):
+def test_basis_script_initializes_gpaw(gpaw_settings, tmp_path):
     """
-    Execute the generated script with real GPAW input validation, without an
-    SCF calculation or restart-file write.
+    Set up the GPAW calculator from the generated script, with real GPAW input
+    validation.
     """
-    gpaw = pytest.importorskip("gpaw")
-
-    real_gpaw = gpaw.GPAW
-
-    def make_calculator(*args, **kwargs):
-        calc = real_gpaw(*args, **kwargs)
-        monkeypatch.setattr(calc, "write", lambda *args, **kwargs: None)
-        return calc
-
-    monkeypatch.setattr(gpaw, "GPAW", make_calculator)
-    monkeypatch.setattr(Atoms, "get_potential_energy", lambda self: 0.0)
-    monkeypatch.chdir(tmp_path)
+    pytest.importorskip("gpaw")
     structure = Structure.from_file(Path(gpaw_data_dir).parent / "Cu_prim_POSCAR")
-    DefectRelaxSet(structure, gpaw_settings=gpaw_settings, calculation_type="singlepoint").write_input(
+    DefectDictSet(structure, gpaw_settings=gpaw_settings, calculation_type="singlepoint").write_input(
         tmp_path
     )
 
-    namespace = runpy.run_path(str(tmp_path / "singlepoint.py"))
-    calc = namespace["calc"]
+    calc = _run_script_setup(tmp_path / "singlepoint.py")["calc"]
     try:
         # GPAW 25.x uses a dict; 26.x exposes a Parameters object and normalises a string basis.
         basis = calc.parameters["basis"] if isinstance(calc.parameters, dict) else calc.parameters.basis
@@ -556,4 +574,31 @@ def test_basis_script_initializes_gpaw(gpaw_settings, tmp_path, monkeypatch):
     finally:
         if hasattr(calc, "close"):
             calc.close()
-        namespace["atoms"].calc = None
+
+
+def test_relax_script_continues_from_trajectory(tmp_path):
+    """
+    ``relax.py`` starts from the last frame of ``relax.traj`` if present (e.g.
+    when resubmitting a timed-out relaxation), otherwise ``structure.cif``.
+    """
+    pytest.importorskip("gpaw")
+    structure = Structure.from_file(Path(gpaw_data_dir).parent / "Cu_prim_POSCAR")
+    DefectDictSet(structure).write_input(tmp_path)
+    atoms = read(tmp_path / "structure.cif")
+    moved = atoms.copy()
+    moved.positions += 0.1
+
+    # no trajectory, an empty or header-only one (as left by a run interrupted before its first step, with
+    # ASE < 3.27), then a previous relaxation:
+    for frames, expected in ((None, atoms), (b"", atoms), ([], atoms), ([atoms, moved], moved)):
+        if isinstance(frames, bytes):
+            (tmp_path / "relax.traj").write_bytes(frames)
+        elif frames is not None:
+            with Trajectory(tmp_path / "relax.traj", "w") as trajectory:
+                for frame in frames:
+                    trajectory.write(frame)
+
+        namespace = _run_script_setup(tmp_path / "relax.py")
+        if hasattr(namespace["calc"], "close"):
+            namespace["calc"].close()
+        np.testing.assert_allclose(namespace["atoms"].positions, expected.positions)
