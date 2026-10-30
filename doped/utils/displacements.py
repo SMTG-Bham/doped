@@ -591,6 +591,77 @@ def plot_site_displacements(
     return fig
 
 
+def _get_minimum_volume_ellipsoid(P, tolerance=5e-4):
+    """
+    Find the minimum volume ellipsoid which holds all the points.
+
+    Based on work by Nima Moshtagh:
+    https://www.mathworks.com/matlabcentral/fileexchange/9542
+    and following work:
+    https://cctbx.sourceforge.net/current/python/scitbx.math.minimum_covering_ellipsoid.html
+
+    Here, P is a numpy array of N dimensional points like:
+    P = [[x,y,z], <-- one point per line
+        [x,y,z],
+        ...
+        [x,y,z]]
+
+    Returns:
+    (center, radii, rotation)
+    """
+    P = np.array(P)
+    N, d = np.shape(P)
+
+    Q = np.vstack([np.copy(P.T), np.ones(N)])  # working array
+    QT = Q.T
+
+    err = 1.0 + tolerance
+    u = (1.0 / N) * np.ones(N)
+
+    while err > tolerance:  # Khachiyan Algorithm
+        V = np.dot(Q, np.dot(np.diag(u), QT))
+        M = np.diag(np.dot(QT, np.dot(np.linalg.inv(V), Q)))  # M the diagonal vector of an NxN matrix
+        j = np.argmax(M)
+        maximum = M[j]
+        step_size = (maximum - d - 1.0) / ((d + 1.0) * (maximum - 1.0))
+        new_u = (1.0 - step_size) * u
+        new_u[j] += step_size
+        err = np.linalg.norm(new_u - u)
+        u = new_u
+
+    center = np.dot(P.T, u)  # center of the ellipse
+
+    A = (  # the A matrix for the ellipse
+        np.linalg.inv(
+            np.dot(P.T, np.dot(np.diag(u), P)) - np.array([[a * b for b in center] for a in center])
+        )
+        / d
+    )
+
+    _U, s, rotation = np.linalg.svd(A)
+    # there can be some small numerical noise and ambiguity in this approach and ``numpy``\s SVD,
+    # so here we ensure consistent & reproducible output regardless of OS etc., favouring alignment
+    # with the positive octant (i.e. along [1, 1, 1]):
+    rotation *= np.where(np.dot(rotation, [1, 1, 1])[:, None] < -tolerance * 2, -1, 1)
+    radii = 1.0 / np.sqrt(s)
+
+    # similarly, the axes of (near-)degenerate radii (e.g. by symmetry) are arbitrary within the subspace
+    # they span, and so can flip with numerical noise (e.g. to a mirror-related solution with a different
+    # BLAS library), so we set them deterministically here:
+    degenerate_pairs = np.flatnonzero(np.isclose(radii[1:], radii[:-1], rtol=tolerance * 4, atol=0))
+    if len(degenerate_pairs) == 2:  # all radii (near-)equal, use Cartesian axes
+        rotation = np.eye(3)
+    elif len(degenerate_pairs) == 1:  # use x (or y if n ~ x) projected onto the plane normal to n
+        i = degenerate_pairs[0]
+        n = rotation[2 - 2 * i]  # non-degenerate axis
+        # skip x if within ~6° of n (norm < 0.1), safely away from low-index directions (>= 14° from x):
+        in_plane_axis = next(v for v in np.eye(3) - np.outer(n, n) if np.linalg.norm(v) > 0.1)
+        rotation[i] = in_plane_axis / np.linalg.norm(in_plane_axis)
+        rotation[i + 1] = np.cross(n, rotation[i])  # right-handed (det = +1), for consistent plot shading
+
+    return center, radii, rotation
+
+
 def calc_displacements_ellipsoid(
     defect_entry: DefectEntry,
     quantile: float = 0.8,
@@ -638,63 +709,6 @@ def calc_displacements_ellipsoid(
               If ``return_extras=True``, also returns ``disp_df`` and the
               points used to fit the ellipsoid, appended to the return tuple.
     """
-
-    def _get_minimum_volume_ellipsoid(P, tolerance=5e-4):
-        """
-        Find the minimum volume ellipsoid which holds all the points.
-
-        Based on work by Nima Moshtagh:
-        https://www.mathworks.com/matlabcentral/fileexchange/9542
-        and following work:
-        https://cctbx.sourceforge.net/current/python/scitbx.math.minimum_covering_ellipsoid.html
-
-        Here, P is a numpy array of N dimensional points like:
-        P = [[x,y,z], <-- one point per line
-            [x,y,z],
-            ...
-            [x,y,z]]
-
-        Returns:
-        (center, radii, rotation)
-        """
-        P = np.array(P)
-        N, d = np.shape(P)
-
-        Q = np.vstack([np.copy(P.T), np.ones(N)])  # working array
-        QT = Q.T
-
-        err = 1.0 + tolerance
-        u = (1.0 / N) * np.ones(N)
-
-        while err > tolerance:  # Khachiyan Algorithm
-            V = np.dot(Q, np.dot(np.diag(u), QT))
-            M = np.diag(np.dot(QT, np.dot(np.linalg.inv(V), Q)))  # M the diagonal vector of an NxN matrix
-            j = np.argmax(M)
-            maximum = M[j]
-            step_size = (maximum - d - 1.0) / ((d + 1.0) * (maximum - 1.0))
-            new_u = (1.0 - step_size) * u
-            new_u[j] += step_size
-            err = np.linalg.norm(new_u - u)
-            u = new_u
-
-        center = np.dot(P.T, u)  # center of the ellipse
-
-        A = (  # the A matrix for the ellipse
-            np.linalg.inv(
-                np.dot(P.T, np.dot(np.diag(u), P)) - np.array([[a * b for b in center] for a in center])
-            )
-            / d
-        )
-
-        _U, s, rotation = np.linalg.svd(A)
-        # there can be some small numerical noise and ambiguity in this approach and ``numpy``\s SVD,
-        # so here we ensure consistent & reproducible output regardless of OS etc., favouring alignment
-        # with the positive octant (i.e. along [1, 1, 1]):
-        rotation *= np.where(np.dot(rotation, [1, 1, 1])[:, None] < -tolerance * 2, -1, 1)
-        radii = 1.0 / np.sqrt(s)
-
-        return center, radii, rotation
-
     disp_df = calc_site_displacements(
         defect_entry, relaxed_distances=relaxed_distances, relative_to_defect=True
     )
@@ -719,7 +733,9 @@ def calc_displacements_ellipsoid(
     if points.shape[0] >= 10:  # only proceed if there are at least 10 points over the threshold
         try:
             # Try to fit a minimum volume ellipsoid to the points
-            ellipsoid_center, ellipsoid_radii, ellipsoid_rotation = _get_minimum_volume_ellipsoid(points)
+            ellipsoid_center, ellipsoid_radii, ellipsoid_rotation = _get_minimum_volume_ellipsoid(
+                points, tolerance
+            )
             anisotropy_df = pd.DataFrame(
                 {
                     "Longest Radius": ellipsoid_radii[2],
