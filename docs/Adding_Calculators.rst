@@ -170,8 +170,8 @@ implement the ``_defect_input_set()`` & ``_write_defect()`` hooks (see the VASP
 ``DefectsSet`` for reference), plus optionally ``_defect_sets_to_write()`` to
 filter which defects are written. As ``write_files()`` serialises the whole
 object (via ``MSONable``) to ``{formula}_DefectsSet.json.gz`` for provenance,
-each ``__init__`` argument should be stored as a same-named attribute
-(``**kwargs`` are stored as ``self.kwargs`` by ``DefectsSetBase``).
+each ``__init__`` argument should be stored as a same-named, JSON-serialisable
+attribute (``**kwargs`` are stored as ``self.kwargs`` by ``DefectsSetBase``).
 Per-calculation input sets should be built on the ``pymatgen.io.core``
 ``InputSet``/``InputGenerator`` framework where available for the calculator
 (e.g. ``VaspInputSet``, on which ``doped.io.vasp.inputs.DopedDictSet`` is

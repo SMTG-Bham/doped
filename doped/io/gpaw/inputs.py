@@ -59,6 +59,16 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
+def _gpaw_settings_to_dicts(gpaw_settings: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Convert GPAW parameter objects in ``gpaw_settings`` (e.g. ``PW(400)`` or
+    ``Davidson(3)``) to their ``todict()`` forms (as ASE does when saving
+    calculator parameters), so that they can be written to the generated
+    scripts and serialised to JSON.
+    """
+    return {k: v.todict() if hasattr(v, "todict") else v for k, v in (gpaw_settings or {}).items()}
+
+
 class DefectDictSet:
     """
     Class for generating the input files (``structure.cif`` and a GPAW Python
@@ -80,7 +90,9 @@ class DefectDictSet:
                 Charge state of the defect, which sets GPAW's ``charge``
                 parameter. Default is 0.
             gpaw_settings (dict):
-                Dictionary of GPAW settings. Defaults used if not specified:
+                Dictionary of GPAW settings. GPAW parameter objects (e.g.
+                ``PW(400)``) are converted to their ``todict()`` forms.
+                Defaults used if not specified:
                 - "mode": {"name": "pw", "ecut": 400}
                 - "xc": "PBE"
                 - "kpts": {"size": (1, 1, 1), "gamma": True}
@@ -105,7 +117,7 @@ class DefectDictSet:
 
         self.structure = structure
         self.charge_state = charge_state
-        self.gpaw_settings = gpaw_settings or {}
+        self.gpaw_settings = _gpaw_settings_to_dicts(gpaw_settings)
         self.calculation_type = calculation_type
 
     def write_input(
@@ -302,7 +314,7 @@ class DefectsSet(DefectsSetBase):
                 "`DefectDictSet` directly if you wish to use site-resolved initial magnetic moments."
             )
 
-        self.gpaw_settings = gpaw_settings
+        self.gpaw_settings = _gpaw_settings_to_dicts(gpaw_settings)  # JSON-serialisable, for provenance
         self.calculation_type = calculation_type
         super().__init__(defect_entries)
 

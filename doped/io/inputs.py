@@ -21,7 +21,6 @@ details.
 import contextlib
 import copy
 import os
-import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, cast
 
@@ -67,8 +66,8 @@ class DefectsSetBase(MSONable, ABC):
     :meth:`_defect_sets_to_write` to filter which defects are written in
     :meth:`write_files`. As :meth:`write_files` serialises the whole object
     (via ``MSONable``; see :meth:`to_json`), each ``__init__`` argument should
-    be stored as a same-named attribute (``**kwargs`` are stored as
-    ``self.kwargs`` here).
+    be stored as a same-named, JSON-serialisable attribute (``**kwargs`` are
+    stored as ``self.kwargs`` here).
     """
 
     _input_set_name: str = "defect input set"  # name of the per-defect input-set class, for messages
@@ -300,14 +299,8 @@ class DefectsSetBase(MSONable, ABC):
             for args in tqdm(args_list, desc="Generating and writing input files"):
                 self._write_defect(args)
 
-        try:  # serialise this object (input entries & settings), for calculation provenance
-            self.to_json(os.path.join(output_path, self.json_name))
-        except Exception as exc:  # e.g. calculator objects in input settings (``PW(...)`` with GPAW)
-            warnings.warn(
-                f"The {type(self).__name__} object could not be serialised to JSON (got: {exc!r}), so "
-                f"only the input defect entries have been saved to {self.json_name}."
-            )
-            dumpfn(self.json_obj, os.path.join(output_path, self.json_name))
+        # serialise this object (input entries & settings), for calculation provenance:
+        self.to_json(os.path.join(output_path, self.json_name))
 
     def _defect_sets_to_write(self, write_kwargs: dict) -> dict:
         """

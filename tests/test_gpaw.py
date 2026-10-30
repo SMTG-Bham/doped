@@ -121,6 +121,24 @@ class GPAWTest(unittest.TestCase):
             assert f"charge={charge}" in script
             assert f"atoms.set_initial_magnetic_moments({[1.0] * n_atoms!r})" in script
 
+    def test_gpaw_parameter_objects(self):
+        # GPAW parameter objects are converted to their ``todict()`` forms, giving valid scripts (rather
+        # than object reprs) and a JSON-serialisable ``DefectsSet`` (written by ``write_files``):
+        gpaw = pytest.importorskip("gpaw")
+        gpaw_settings = {"mode": gpaw.PW(400), "eigensolver": gpaw.Davidson(3)}
+        relax_set = DefectDictSet(self.structure, gpaw_settings=gpaw_settings)
+        content = relax_set._generate_script("structure.cif")
+        assert "mode=PW(ecut=400" in content
+        assert "eigensolver={'name': 'davidson', 'niter': 3}" in content
+        compile(content, "relax.py", "exec")  # valid Python
+
+        DefectsSet(DefectsGenerator(self.structure), gpaw_settings=gpaw_settings).write_files(
+            output_path=self.output_dir, processes=1
+        )
+        assert "mode=PW(ecut=400" in Path(self.output_dir, "Cu_bulk", "singlepoint.py").read_text()
+        reloaded = DefectsSet.from_json(os.path.join(self.output_dir, "Cu_DefectsSet.json.gz"))
+        assert reloaded.gpaw_settings == {key: value.todict() for key, value in gpaw_settings.items()}
+
     def test_find_gpaw_output(self):
         calc_dir = os.path.join(self.output_dir, "calculation")
         os.makedirs(calc_dir)
