@@ -113,4 +113,13 @@ jobs:
         run: python -c "import gpaw; print(gpaw.__version__)"
 
       - name: Test
-        run: pytest -vv tests/test_gpaw.py
+        env:
+          MPLBACKEND: Agg  # non-interactive backend for matplotlib
+        run: pytest -vv --mpl --mpl-results-path=tests/remote_baseline tests/test_gpaw.py
+
+      - name: Archive test plots  # result, baseline and diff images for any failed image comparisons
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: doped_GH_test_plots_gpaw
+          path: tests/remote_baseline

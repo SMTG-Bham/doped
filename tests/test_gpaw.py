@@ -3,7 +3,9 @@ Tests for the GPAW interface in ``doped.io.gpaw``.
 """
 
 import contextlib
+import copy
 import os
+import runpy
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,13 +15,20 @@ import pytest
 from ase.io import read
 from ase.io.trajectory import Trajectory
 from pymatgen.core.structure import Structure
-from test_utils import data_dir, gpaw_data_dir
+from test_utils import (
+    _run_func_and_capture_stdout_warnings,
+    custom_mpl_image_compare,
+    data_dir,
+    gpaw_data_dir,
+)
 
 from doped.generation import DefectsGenerator
 from doped.io import get_calculation_outputs
 from doped.io.gpaw.inputs import DefectDictSet, DefectsSet
 from doped.io.gpaw.outputs import _find_gpaw_output, get_potentials_from_input
+from doped.io.inputs import _get_bulk_folder_name
 from doped.parsing import DefectParser, DefectsParser
+from doped.thermodynamics import DefectThermodynamics
 
 
 class GPAWTest(unittest.TestCase):
@@ -122,22 +131,15 @@ class GPAWTest(unittest.TestCase):
             assert f"atoms.set_initial_magnetic_moments({[1.0] * n_atoms!r})" in script
 
     def test_gpaw_parameter_objects(self):
-        # GPAW parameter objects are converted to their ``todict()`` forms, giving valid scripts (rather
-        # than object reprs) and a JSON-serialisable ``DefectsSet`` (written by ``write_files``):
+        # GPAW parameter objects are converted to their ``todict()`` forms, giving runnable scripts (rather
+        # than object reprs; see ``test_gpaw_end_to_end`` for ``DefectsSet``, and its JSON serialisation):
         gpaw = pytest.importorskip("gpaw")
         gpaw_settings = {"mode": gpaw.PW(400), "eigensolver": gpaw.Davidson(3)}
-        relax_set = DefectDictSet(self.structure, gpaw_settings=gpaw_settings)
-        content = relax_set._generate_script("structure.cif")
+        DefectDictSet(self.structure, gpaw_settings=gpaw_settings).write_input(self.output_dir)
+        content = Path(self.output_dir, "relax.py").read_text()
         assert "mode=PW(ecut=400" in content
         assert "eigensolver={'name': 'davidson', 'niter': 3}" in content
-        compile(content, "relax.py", "exec")  # valid Python
-
-        DefectsSet(DefectsGenerator(self.structure), gpaw_settings=gpaw_settings).write_files(
-            output_path=self.output_dir, processes=1
-        )
-        assert "mode=PW(ecut=400" in Path(self.output_dir, "Cu_bulk", "singlepoint.py").read_text()
-        reloaded = DefectsSet.from_json(os.path.join(self.output_dir, "Cu_DefectsSet.json.gz"))
-        assert reloaded.gpaw_settings == {key: value.todict() for key, value in gpaw_settings.items()}
+        _run_script_setup(Path(self.output_dir, "relax.py"))  # runs, with GPAW input validation
 
     def test_find_gpaw_output(self):
         calc_dir = os.path.join(self.output_dir, "calculation")
@@ -329,3 +331,208 @@ def test_relax_script_continues_from_trajectory(tmp_path):
 
         positions = _run_script_setup(tmp_path / "relax.py")["atoms"].positions
         np.testing.assert_allclose(positions, expected.positions)
+
+
+def _gpaw_defect_workflow(tmp_path: Path, supercell: Structure, names: tuple[str, ...], **kwargs):
+    """
+    Generate, write, run and parse GPAW calculations for the named defects in
+    ``supercell`` (spin-paired, at Gamma, for speed), with GPAW parameter
+    objects in ``gpaw_settings`` (converted to their ``todict()`` forms for the
+    generated scripts and the ``DefectsSet`` JSON). ``kwargs`` are passed to
+    ``DefectsParser``.
+
+    Returns the ``DefectsParser``, and the warnings from defect generation and
+    parsing.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    gpaw_settings = {"mode": gpaw.PW(300), "eigensolver": gpaw.Davidson(3), "spinpol": False}
+    defect_gen, _, generation_warnings = _run_func_and_capture_stdout_warnings(
+        DefectsGenerator, supercell, generate_supercell=False
+    )
+    defects_set = DefectsSet([defect_gen[name] for name in names], gpaw_settings=gpaw_settings)
+    defects_set.write_files(tmp_path)
+    stored = DefectsSet.from_json(tmp_path / defects_set.json_name).gpaw_settings
+    assert stored == gpaw_settings | {k: gpaw_settings[k].todict() for k in ("mode", "eigensolver")}
+
+    bulk_folder = _get_bulk_folder_name(defect_gen.bulk_supercell)
+    for folder, script in [(name, "relax.py") for name in names] + [(bulk_folder, "singlepoint.py")]:
+        with contextlib.chdir(tmp_path / folder):
+            runpy.run_path(script)
+
+    dp, _, parsing_warnings = _run_func_and_capture_stdout_warnings(  # finds the bulk folder itself
+        DefectsParser, output_path=tmp_path, calculator="gpaw", **kwargs
+    )
+    assert set(dp.defect_dict) == set(names)
+    for entry in dp.defect_dict.values():
+        assert entry.calculation_metadata["mismatching_gpaw_parameters"] is False
+    return dp, generation_warnings + parsing_warnings
+
+
+def _check_warnings(warnings: list, expected: list[tuple[str, ...]]):
+    """
+    Check that the ``UserWarning`` messages in ``warnings`` comprise exactly
+    one warning matching each tuple of substrings in ``expected``.
+    """
+    messages = [str(warning.message) for warning in warnings if issubclass(warning.category, UserWarning)]
+    assert len(messages) == len(expected), messages
+    for substrings in expected:
+        assert sum(all(s in message for s in substrings) for message in messages) == 1, substrings
+
+
+class GPAWCuEndToEndTest(unittest.TestCase):
+    """
+    End-to-end GPAW defect workflow (``_gpaw_defect_workflow``, run once for
+    the class) for neutral defects in an 8-atom Cu supercell (metallic, so not
+    charged).
+
+    Includes an octahedral interstitial and a vacancy (which does not relax due
+    to symmetry, with each other atom sitting midway between the vacancy and
+    one of its periodic images).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        supercell = Structure.from_file(os.path.join(data_dir, "Cu_prim_POSCAR")) * 2
+        tmp_path = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
+        cls.names = ("v_Cu_0", "Cu_i_Oh_0")
+        cls.dp, cls.warnings = _gpaw_defect_workflow(tmp_path, supercell, cls.names)
+        cls.entries = [cls.dp.defect_dict[name] for name in cls.names]
+        cls.chempots = {"Cu": cls.entries[0].bulk_entry.energy_per_atom}  # mu_Cu = bulk energy per atom
+
+    def test_warnings(self):
+        _check_warnings(  # (small supercell warnings)
+            self.warnings,
+            [
+                ("minimum image distance = 5.06",),
+                ("parsing v_Cu_0", "first coordination shell distance ~2.53"),
+                ("parsing Cu_i_Oh_0", "first coordination shell distance ~2.01"),
+                ("'v_Cu_0'", "'Cu_i_Oh_0'", "each encountered", "more than 10% of the 8 sites"),
+            ],
+        )
+
+    def test_formation_energies(self):  # ~1 eV for the v_Cu, 6 eV for Cu_i, as expected for Cu
+        formation_energies = [entry.formation_energy(chempots=self.chempots) for entry in self.entries]
+        assert formation_energies == pytest.approx([0.989, 6.017], abs=0.01)
+
+    def test_geometries(self):
+        # unrelaxed vacancy (12 nearest neighbours at a/sqrt(2)), and symmetric outward relaxation of the
+        # interstitial's 6 nearest neighbours (from a/2 = 1.79 Å):
+        for entry, distances in zip(self.entries, ([2.53] * 12, [2.014] * 6), strict=True):
+            neighbours = entry.defect_supercell.get_neighbors(entry.defect_supercell_site, 3)
+            assert sorted(n.nn_distance for n in neighbours) == pytest.approx(distances, abs=0.01)
+        assert self.entries[1].calculation_metadata["relaxed point symmetry"] == "Oh"
+
+
+class GPAWMgOEndToEndTest(unittest.TestCase):
+    """
+    End-to-end GPAW defect workflow (``_gpaw_defect_workflow``, run once for
+    the class) for charged defects (with eFNV corrections) in insulating MgO
+    (3.65 eV band gap with these settings), in the 8-atom conventional cell.
+
+    Includes neutral and charged vacancies (which, as in Cu, do not relax due
+    to symmetry), and a charged interstitial (``v_O_+2`` is avoided, as its
+    empty defect level is resonant with the valence band in this small cell).
+    """
+
+    dp: DefectsParser
+
+    @classmethod
+    def setUpClass(cls):
+        supercell = Structure.from_spacegroup("Fm-3m", np.eye(3) * 4.21, ["Mg", "O"], [[0] * 3, [0.5] * 3])
+        tmp_path = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
+        cls.names = ("v_O_0", "v_Mg_0", "v_Mg_-2", "Mg_i_Td_+2")
+        cls.dp, cls.warnings = _gpaw_defect_workflow(tmp_path, supercell, cls.names, dielectric=8.8963)
+        cls.entries = [cls.dp.defect_dict[name] for name in cls.names]
+        # mu_Mg + mu_O = E(MgO), at a moderately O-rich point within the MgO stability region for this
+        # Gamma-only bulk energy (mu_O and mu_Mg 0.66 and 3.29 eV below the O2 and Mg metal energies from
+        # separate GPAW calculations at these settings):
+        mu = cls.entries[0].bulk_entry.energy_per_atom
+        cls.chempots = {"Mg": mu - 3, "O": mu + 3}
+
+    def test_warnings(self):
+        _check_warnings(  # (small supercell warnings)
+            self.warnings,
+            [
+                ("minimum image distance = 4.21",),
+                (
+                    "parsing Mg_i_Td_+2",
+                    "first coordination shell distance ~1.79",
+                    "Fewer than 3 atomic sites lie outside the eFNV defect region radius",
+                ),
+                ("'v_O_0'", "'v_Mg_0'", "'v_Mg_-2'", "each encountered", "shell distance ~2.10"),
+                ("'v_O_0'", "'v_Mg_0'", "'v_Mg_-2'", "'Mg_i_Td_+2'", "each", "more than 10% of the 8"),
+                ("Estimated error in the Kumagai (eFNV) charge correction", "v_Mg_-2: "),
+            ],
+        )
+
+    def test_band_gap_corrections_formation_energies(self):
+        assert self.entries[0].calculation_metadata["band_gap"] == pytest.approx(3.654, abs=0.01)
+        corrections = [entry.corrections.get("kumagai_charge_correction", 0) for entry in self.entries]
+        assert corrections == pytest.approx([0, 0, 7.324, 4.830], abs=0.01)
+        formation_energies = [entry.formation_energy(chempots=self.chempots) for entry in self.entries]
+        assert formation_energies == pytest.approx([0.459, 2.558, 7.690, 8.375], abs=0.01)  # at the VBM
+
+    def test_geometries(self):
+        # unrelaxed vacancies (6 nearest neighbours at a/2), and Td-symmetric relaxation around the
+        # interstitial (4 O neighbours inwards and 4 Mg outwards, from sqrt(3)a/4 = 1.82 Å):
+        expected_distances = [[2.105] * 6] * 3 + [[1.791] * 4 + [2.095] * 4]
+        for entry, distances in zip(self.entries, expected_distances, strict=True):
+            neighbours = entry.defect_supercell.get_neighbors(entry.defect_supercell_site, 2.5)
+            assert sorted(n.nn_distance for n in neighbours) == pytest.approx(distances, abs=0.01)
+        assert self.entries[-1].calculation_metadata["relaxed point symmetry"] == "Td"
+
+    @custom_mpl_image_compare("GPAW_MgO_formation_energies.png")
+    def test_formation_energy_plot(self):
+        thermo = DefectThermodynamics(self.entries, chempots=self.chempots)
+        ((transition_level, charges),) = thermo.transition_level_map["v_Mg"].items()
+        assert (transition_level, charges) == (pytest.approx(2.566, abs=0.01), [0, -2])  # in the gap
+        fig, _, warnings = _run_func_and_capture_stdout_warnings(thermo.plot)
+        _check_warnings(warnings, [])
+        return fig
+
+    def _correction_plot(self, name: str, fnv: bool = False):
+        """
+        Plot the eFNV (default) or FNV correction for the named defect, using a
+        copy of its entry (as the correction is stored in its ``corrections``),
+        with the FNV planar-averaged potentials loaded from the calculation
+        folders.
+
+        Returns the figure and the warnings (here, estimated correction errors
+        above ``error_tolerance``, or the eFNV sampling region being reduced,
+        due to the small supercell).
+        """
+        entry = copy.deepcopy(self.dp.defect_dict[name])
+        kwargs: dict = {}
+        if fnv:
+            entry.corrections.pop("kumagai_charge_correction")  # else warns of double-counting with eFNV
+            kwargs = {
+                f"{label}_planar_averaged_potentials": entry.calculation_metadata[f"{label}_path"]
+                for label in ("defect", "bulk")
+            }
+        get_correction = entry.get_freysoldt_correction if fnv else entry.get_kumagai_correction
+        (_corr, fig), _, w = _run_func_and_capture_stdout_warnings(get_correction, plot=True, **kwargs)
+        return fig, w
+
+    @custom_mpl_image_compare("GPAW_MgO_v_Mg_-2_eFNV_plot.png")
+    def test_efnv_plot_vacancy(self):
+        fig, warnings = self._correction_plot("v_Mg_-2")
+        _check_warnings(warnings, [("(eFNV) charge correction for defect v_Mg_-2 is",)])
+        return fig
+
+    @custom_mpl_image_compare("GPAW_MgO_Mg_i_Td_+2_eFNV_plot.png")
+    def test_efnv_plot_interstitial(self):
+        fig, warnings = self._correction_plot("Mg_i_Td_+2")
+        _check_warnings(warnings, [("Fewer than 3 atomic sites lie outside the eFNV defect region",)])
+        return fig
+
+    @custom_mpl_image_compare("GPAW_MgO_v_Mg_-2_FNV_plot.png")
+    def test_fnv_plot_vacancy(self):
+        fig, warnings = self._correction_plot("v_Mg_-2", fnv=True)
+        _check_warnings(warnings, [("(FNV) charge correction for defect v_Mg_-2 is",)])
+        return fig
+
+    @custom_mpl_image_compare("GPAW_MgO_Mg_i_Td_+2_FNV_plot.png")
+    def test_fnv_plot_interstitial(self):
+        fig, warnings = self._correction_plot("Mg_i_Td_+2", fnv=True)
+        _check_warnings(warnings, [("(FNV) charge correction for defect Mg_i_Td_+2 is",)])
+        return fig
