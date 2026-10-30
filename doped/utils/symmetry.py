@@ -73,29 +73,17 @@ def _set_spglib_warnings_error_handling_env_var():
     """
     Set the SPGLIB environment variable to use new error handling.
     """
-    os.environ["SPGLIB_OLD_ERROR_HANDLING"] = "False"  # can be removed with spglib >=2.8
+    # can be removed once spglib raises errors by default (announced for v2.8, but not yet in 2.8.0...)
+    os.environ["SPGLIB_OLD_ERROR_HANDLING"] = "False"
     os.environ["SPGLIB_WARNING"] = "OFF"
 
 
-def _check_spglib_version():
-    """
-    Check the versions of spglib and its C libraries, and raise a warning if
-    the correct installation instructions have not been followed.
-    """
-    python_version = spglib.__version__
-    c_version = spglib.spg_get_version_full()
-
-    if python_version != c_version:
-        warnings.warn(  # think this issue is avoided with latest spglib versions, but not sure
-            f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
-            f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
-            f"spglib warning messages, but can be avoided by upgrading spglib with `pip install --upgrade "
-            f"spglib`."
-        )  # previously also had to do conda or special pip install settings, with spglib <2.5
-
-
 _set_spglib_warnings_error_handling_env_var()
-_check_spglib_version()
+# spglib failures raise ``SpglibError`` (rather than returning ``None``) with the error handling set above;
+# ``SpglibError`` added in spglib 2.7.0, can remove check once spglib (indirect) requirement is >= 2.7:
+_SPGLIB_ERRORS: tuple[type[Exception], ...] = (
+    (spglib.SpglibError,) if hasattr(spglib, "SpglibError") else ()
+)
 
 
 def _round_floats(obj, places: int = 5):
@@ -331,11 +319,7 @@ def _cache_ready_get_sga(
 
     sga = None
     trial_symprecs = [symprec, 0.1, 0.001, 1, 0.0001]
-    spg_2pt7 = False
-    symm_error_types: tuple[type[Exception], ...] = (SymmetryUndeterminedError, ValueError)
-    with contextlib.suppress(AttributeError):  # introduced with spglib 2.7.0, can remove once spglib
-        symm_error_types += (spglib.SpglibError,)  # (indirect) requirement is >= 2.7
-        spg_2pt7 = True
+    symm_error_types = (SymmetryUndeterminedError, ValueError, *_SPGLIB_ERRORS)
 
     for trial_symprec in trial_symprecs:
         try:  # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
@@ -349,7 +333,7 @@ def _cache_ready_get_sga(
 
     raise SymmetryUndeterminedError(
         "Could not determine symmetry of input structure!"
-        + (f"Got spglib error: {spglib.get_error_message()}" if not spg_2pt7 else "")
+        + (f" Got spglib error: {spglib.get_error_message()}" if not _SPGLIB_ERRORS else "")
     ) from symm_error
 
 
@@ -850,7 +834,9 @@ def _cache_ready_get_orientation_preserving_primitive(
     unique_species = list(dict.fromkeys(site.species for site in structure))
     numbers = [unique_species.index(site.species) for site in structure]
     cell = (structure.lattice.matrix, structure.frac_coords, numbers)
-    prim_cell = spglib.standardize_cell(cell, to_primitive=True, no_idealize=True, symprec=symprec)
+    prim_cell = None
+    with contextlib.suppress(*_SPGLIB_ERRORS):  # spglib failure -> None
+        prim_cell = spglib.standardize_cell(cell, to_primitive=True, no_idealize=True, symprec=symprec)
     if prim_cell is None or len(prim_cell[2]) >= len(structure):
         return None
 
@@ -2921,7 +2907,11 @@ def _bulk_cartesian_rotations(bulk_structure: Structure, symprec: float = 0.01) 
     )
     # get primitive cell, but with no reorientation of the Cartesian frame (``no_idealize=True`` is crucial
     # here (keeps original Cartesian orientation), and so we can't use ``get_sga`` directly:
-    primitive_cell = spglib.standardize_cell(cell, to_primitive=True, no_idealize=True, symprec=symprec)
+    primitive_cell = None
+    with contextlib.suppress(*_SPGLIB_ERRORS):  # spglib failure -> None
+        primitive_cell = spglib.standardize_cell(
+            cell, to_primitive=True, no_idealize=True, symprec=symprec
+        )
     if primitive_cell is not None:  # otherwise spglib failure; use the input cell directly
         bulk_structure = Structure(
             Lattice(primitive_cell[0]),

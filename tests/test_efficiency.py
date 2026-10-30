@@ -306,6 +306,16 @@ class TestSharedCacheMutationGuards:
         assert "X0+" in [str(specie) for specie in prim.types_of_species]  # X survives the round-trip
         assert round(float(np.linalg.det(matrix))) == 8
 
+    def test_direct_spglib_calls_fall_back_on_spglib_failure(self):
+        # with the error handling that ``doped`` sets, ``spglib`` failures raise ``SpglibError`` rather
+        # than returning ``None``, here two atoms 0.03 Å apart make it fail at ``symprec=0.1``:
+        from doped.utils.symmetry import _bulk_cartesian_rotations, _get_orientation_preserving_primitive
+
+        near_overlap = Structure(Lattice.cubic(3.0), ["H", "H"], [[0, 0, 0], [0, 0, 0.01]])
+        assert _get_orientation_preserving_primitive(near_overlap, symprec=0.1) is None
+        # input cell then used directly, with ``get_sga`` recovering at a smaller ``symprec`` (P4/mmm):
+        assert len(_bulk_cartesian_rotations(near_overlap, symprec=0.1)) == 16
+
 
 class TestNonMagneticSymmetryDefault:
     """
