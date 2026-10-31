@@ -56,6 +56,16 @@ class TestCompositionHashEq:
         assert Composition("Fe2O3") != {Element("Fe"): 3.0, Element("O"): 2.0}
         # Composition.__eq__ supports dict -- Composition comparison
         assert {Element("Fe"): 2.0, Element("O"): 3.0} == Composition("Fe2O3")
+        # str-keyed dicts are converted (as in ``pymatgen``), and dicts with unparsable or missing keys
+        # compare unequal (rather than raising):
+        assert Composition("Fe2O3") == {"Fe": 2, "O": 3}
+        assert Composition({"Fe3+": 2, "O2-": 3}) == {"Fe3+": 2, "O2-": 3}
+        assert Composition("CdTe") in [{"Cd": 1, "Te": 1}]
+        assert Composition("Fe2O3") != {"Fe": 2, "Al": 3}
+        assert Composition("Fe2O3") != {"Fe": 2, "Zz": 3}
+        assert Composition("Fe2O3") != {Element("Fe"): 2, Element("Al"): 3}
+        assert Composition("CdTe") != {"CdTe": 1}  # unparsable (IndexError in pymatgen-core < 2026.10.30)
+        assert Composition("CdTe") != {"limits": 1}  # unparsable (ValueError)
 
     def test_ion_hash_invariant(self):
         # ``Ion.__hash__`` = hash((composition, charge)); inherits the Composition fix:
