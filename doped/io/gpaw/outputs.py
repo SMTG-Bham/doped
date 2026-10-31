@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from ase.dft.kpoints import get_monkhorst_pack_size_and_offset
 from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.core import Spin
@@ -39,7 +40,7 @@ from doped.io.outputs import CalculationOutputs
 # ``doped`` accesses the remaining unimplemented protocol name directly (rather than probing
 # with ``getattr(backend, name, default)``), so they are intercepted here to fail informatively rather
 # than with an obscure ``AttributeError``. The optional, ``getattr``-probed protocol names
-# (``SUBFOLDER_PRIORITY``, ``MISMATCH_WARNING_SPECS``, ``check_entry_compatibility``,
+# (``SUBFOLDER_PRIORITY``, ``MISMATCH_WARNING_SPECS``,
 # ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
 # ``AttributeError``, so that those features degrade gracefully as intended:
 _UNIMPLEMENTED_BACKEND_ATTRS = ("get_fermi_dos",)
@@ -291,6 +292,7 @@ def get_potentials_from_input(
     return potentials_input
 
 
+find_calc_output = _find_gpaw_output
 CALC_OUTPUT_MASK = (".gpw",)
 """
 Filename patterns identifying ``GPAW`` calculation output files, used for
@@ -307,6 +309,25 @@ FILE_PARSING_ACTIONS = {
 The ``GPAW`` calculation output file types parsed by ``doped``, and what they
 are used for (for informative warning messages).
 """
+
+
+@contextlib.contextmanager
+def _read_gpaw_calculation(gpw_file: PathLike):
+    """
+    Read a restart with a stored energy, without starting a new SCF cycle.
+    """
+    from gpaw import GPAW
+
+    calc = GPAW(gpw_file, txt=None)
+    try:
+        if calc.calculation_required(calc.atoms, ["energy"]):
+            raise ValueError(f"{gpw_file} holds no converged energy")
+        yield calc
+    finally:
+        if hasattr(calc, "close"):
+            calc.close()
+        if getattr(calc, "atoms", None) is not None:
+            calc.atoms.calc = None
 
 
 def get_calculation_outputs(
@@ -343,11 +364,8 @@ def get_calculation_outputs(
     Returns:
         CalculationOutputs: The parsed calculation outputs.
     """
-    from gpaw import GPAW
-
     gpw_file = _find_gpaw_output(path, subfolder)
-    calc = GPAW(gpw_file, txt=None)
-    try:
+    with _read_gpaw_calculation(gpw_file) as calc:
         parameters = (
             calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
         )  # retain GPAW<26 compatibility
@@ -395,37 +413,29 @@ def get_calculation_outputs(
             site_potentials=_get_site_potentials_from_calc(calc),
             run_metadata={"gpaw_parameters": parameters},
         )
-    finally:
-        if hasattr(calc, "close"):
-            calc.close()
-        if getattr(calc, "atoms", None) is not None:
-            calc.atoms.calc = None
 
 
-def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None) -> ComputedStructureEntry:
+def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
     """
     Parse a neutral competing-phase calculation for
     ``CompetingPhasesAnalyzer``.
 
-    Only the structure, energy and calculation metadata are read. Electrostatic
-    potentials and orbital data, needed for defect analysis, are not loaded.
+    Only the structure, stored energy and calculation metadata are read.
+    Electrostatic potentials and orbital data are not loaded.
 
     Args:
-        path (PathLike): Calculation directory or a GPAW ``.gpw`` restart file.
-        subfolder (PathLike): Optional calculation subfolder. Default is ``None``.
+        path (PathLike):
+            Calculation directory or a GPAW ``.gpw`` restart file.
 
     Returns:
-        ComputedStructureEntry: The uncorrected total energy and structure, with
-        GPAW parameters, formula, volume, atom count, source folder and available
-        electronic convergence / magnetization information in ``entry.data``.
-        Ionic convergence is not reported: restart files have no ionic-step
-        history. Band gaps are omitted pending occupation-based band edges.
+        ComputedStructureEntry:
+            The uncorrected energy and structure, with GPAW parameters,
+            formula, volume, atom count, source folder and magnetization in
+            ``entry.data``. Ionic convergence cannot be established from a
+            restart. Band gaps await occupation-based band edges.
     """
-    from gpaw import GPAW
-
-    gpw_file = _find_gpaw_output(path, subfolder)
-    calc = GPAW(gpw_file, txt=None)
-    try:
+    gpw_file = _find_gpaw_output(path)
+    with _read_gpaw_calculation(gpw_file) as calc:
         parameters = (
             calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
         )
@@ -433,7 +443,7 @@ def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None)
             raise ValueError("Competing-phase calculations must be neutral (GPAW charge must be zero)")
 
         structure = _structure_from_calc(calc)
-        entry = ComputedStructureEntry(structure, calc.get_potential_energy(), parameters=parameters)
+        entry = ComputedStructureEntry(structure, calc.get_potential_energy())
         elements = sorted(el.symbol for el in entry.composition.elements)
         summary = {}
         with contextlib.suppress(Exception):  # optional for incomplete / non-spin-polarised outputs
@@ -450,19 +460,14 @@ def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None)
                 "nelements": len(elements),
                 "summary": summary,
                 "folder": str(Path(gpw_file).parent),
+                "converged_electronic": True,  # stored energy was verified before parsing
             }
         )
-        if (scf := getattr(calc, "scf", None)) is not None and hasattr(scf, "converged"):
-            entry.data["converged_electronic"] = bool(scf.converged)
-        kpts = parameters.get("kpts")
-        if isinstance(kpts, dict) and kpts.get("size") is not None:
-            entry.data["kpoints"] = [list(kpts["size"])]
+        with contextlib.suppress(ValueError):  # non-Monkhorst-Pack sampling has no mesh dimensions
+            entry.data["kpoints"] = [
+                get_monkhorst_pack_size_and_offset(calc.get_bz_k_points())[0].tolist()
+            ]
         return entry
-    finally:
-        if hasattr(calc, "close"):
-            calc.close()
-        if getattr(calc, "atoms", None) is not None:
-            calc.atoms.calc = None
 
 
 _COMPATIBILITY_PARAMETERS = (
@@ -498,6 +503,39 @@ def _comparable(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [_comparable(val) for val in value]
     return value
+
+
+def check_entry_compatibility(entries, template_candidates=None) -> None:
+    """
+    Warn when competing phases use inconsistent energy-affecting settings.
+
+    K-point and real-space meshes may differ between phases and are excluded.
+    Entries without GPAW parameter metadata are skipped.
+    """
+    candidates = entries if template_candidates is None else template_candidates
+    template = next((e for e in candidates if e.data.get("gpaw_parameters")), None)
+    if template is None:
+        return
+    reference = template.data["gpaw_parameters"]
+    parameters = set(_COMPATIBILITY_PARAMETERS) - {"kpts", "h", "gpts"}
+    differences = []
+    for entry in entries:
+        if not (settings := entry.data.get("gpaw_parameters")):
+            continue
+        mismatches = {
+            key: (settings.get(key), reference.get(key))
+            for key in sorted(parameters)
+            if _comparable(settings.get(key)) != _comparable(reference.get(key))
+        }
+        entry.data["mismatching_gpaw_parameters"] = mismatches or False
+        if mismatches:
+            differences.append(f"{entry.name} ({entry.data.get('folder', '')}): {mismatches}")
+    if differences:
+        warnings.warn(
+            "There are mismatching GPAW parameters between competing phases, which may mean their "
+            "energies and chemical potentials are not comparable. "
+            f"Reference: {template.name}. Differences (phase, reference):\n" + "\n".join(differences)
+        )
 
 
 def check_run_compatibility(

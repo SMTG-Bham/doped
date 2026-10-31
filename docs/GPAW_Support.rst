@@ -177,9 +177,8 @@ competing phases:
 
    phase_analyzer = CompetingPhasesAnalyzer(
        "MgO",
-       entries=["MgO_bulk", "CompetingPhases_GPAW"],
+       entries="CompetingPhases_GPAW",
        calculator="gpaw",
-       processes=1,
    )
    defect_thermodynamics = DefectThermodynamics(defect_dict, chempots=phase_analyzer.chempots)
    defect_thermodynamics.plot(limit="Mg-rich")
@@ -189,9 +188,11 @@ The parser reads structures, total energies and GPAW parameters, without loading
 the electrostatic potentials needed for defect charge corrections. Charged
 phase calculations are rejected. Ionic convergence cannot be established from
 a restart file alone and is not reported; verify geometry convergence separately.
-GPAW parameters are stored in each entry, but automatic cross-phase settings
-compatibility checks are not yet implemented. Ensure energies use consistent
-functionals, PAW datasets, basis sets and cutoffs with the bulk and defects.
+GPAW parameters are stored in each entry and compared across phases, warning
+about inconsistent functionals, PAW datasets, basis sets or calculation modes.
+K-point and real-space meshes may differ between phases. The example includes
+the MgO host calculation inside ``CompetingPhases_GPAW`` together with the
+elemental references, so this directory can be searched recursively.
 Competing-phase input generation with GPAW is also not yet implemented.
 
 The complete MgO example prepares Mg structures obtained from the
