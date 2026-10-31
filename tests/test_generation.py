@@ -3677,6 +3677,20 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         """
         Si_defect_gen, _output = self._generate_and_test_no_warnings(self.conv_si, extrinsic="D")
         self._general_defect_gen_check(Si_defect_gen)
+        assert {name.rsplit("_", 1)[0] for name in Si_defect_gen.defect_entries} == {
+            "v_Si",
+            "Si_i_D3d",
+            "Si_i_Td",
+            "D_Si",
+            "D_i_D3d_Si1.18",
+            "D_i_D3d_Si2.26",
+            "D_i_Td",
+        }  # including the bond-centre D_i site, as for H
+        assert all(
+            name.startswith(entry.defect.name) for name, entry in Si_defect_gen.defect_entries.items()
+        )
+        self._save_defect_gen_jsons(Si_defect_gen)
+        self._load_and_test_defect_gen_jsons(Si_defect_gen)
 
         # test DefectsSet initialisation also fine:
         DefectsSet(Si_defect_gen)
@@ -3940,7 +3954,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # distorted-octahedral D4h site has max coordination/symmetry; 1.43 Å distance to host, and is
         # 0.72 Å from the Voronoi site which has max distance-to-host of 1.6 Å (0.17 Å more), and so they
         # are within the clustering range with the default ``clustering_tol`` of 0.8 Å (indeed they relax
-        # to the same site as expected), so D2d site only preferred when symm_pref_dist_factor is >= 90%
+        # to the same site as expected), so D2d site only preferred when symm_pref_dist_factor is >= 90%.
+        # Bond-centre sites are excluded here, as otherwise the D4h site is re-added as the bond centre of
+        # the second-nearest-neighbour Fe-Fe bonds (bond-centre sites being added after site grouping, and
+        # so unaffected by ``symm_pref_dist_factor``; giving the same 3 sites as the default case above):
         defect_gen, output = self._generate_and_test_no_warnings(
             bcc_fe,
             generate_supercell=False,
@@ -3948,7 +3965,11 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             substitution_elements=[],
             vacancy_elements=[],
             neutral_only=True,
-            interstitial_gen_kwargs={"include_unique_wyckoffs": True, "symm_pref_dist_factor": 0.9},
+            interstitial_gen_kwargs={
+                "include_unique_wyckoffs": True,
+                "symm_pref_dist_factor": 0.9,
+                "include_bond_centres": False,
+            },
             min_image_distance=2.86,
         )
 
@@ -3987,15 +4008,14 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             + 1
         )
 
-        # included by default for hydrogen in ``DefectsGenerator``:
+        # included by default for hydrogen in ``DefectsGenerator``, but not for other elements (here Li):
         defect_gen, output = self._generate_and_test_no_warnings(
             self.conv_si,
-            extrinsic="H",
-            interstitial_elements=["H"],
+            extrinsic=["H", "Li"],
             substitution_elements=[],
             vacancy_elements=[],
             neutral_only=True,
         )
         assert "H_i_D3d_Si1.18_0" in defect_gen.defect_entries
-        assert "[0.125,0.125,0.125]  16c" in output
-        assert len(defect_gen.defect_entries) == n_voronoi_sites + 1
+        assert output.count("[0.125,0.125,0.125]  16c") == 1  # bond-centre site for H_i only
+        assert len(defect_gen.defect_entries) == 3 * n_voronoi_sites + 1  # Si_i, Li_i & H_i (+bond centre)

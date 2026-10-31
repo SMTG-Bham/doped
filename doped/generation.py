@@ -1896,21 +1896,20 @@ class DefectsGenerator(MSONable):
 
         self.defects["interstitials"] = []
         for el in self.kwargs.get("interstitial_elements", self._element_list):
+            el_gen_kwargs, el_sites = interstitial_gen_kwargs, sorted_sites_mul_and_equiv_fpos
             if (
-                el == "H"
+                Element(el).symbol == "H"  # also D/T (named isotopes, with symbol "H")
                 and not self.interstitial_coords
                 and (H_gen_kwargs := {**_H_INTERSTITIAL_GEN_KWARGS, **interstitial_gen_kwargs})
                 != interstitial_gen_kwargs
             ):
                 # Hydrogen present, H-specific generation defaults not overridden, and no manually
                 # specified interstitial sites; so re-generate interstitial sites for H with these settings
-                interstitial_gen_kwargs = H_gen_kwargs
-                sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
-                    self.primitive_structure, **H_gen_kwargs
-                )
+                el_gen_kwargs = H_gen_kwargs
+                el_sites = get_interstitial_sites(self.primitive_structure, **H_gen_kwargs)
 
-            cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
-            inter_generator = InterstitialGenerator(interstitial_gen_kwargs.get("min_dist", 0.9)).generate(
+            cand_sites, multiplicity, equiv_fpos = zip(*el_sites, strict=False)
+            inter_generator = InterstitialGenerator(el_gen_kwargs.get("min_dist", 0.9)).generate(
                 self.primitive_structure,
                 insertions={el: cand_sites},
                 multiplicities={el: multiplicity},
