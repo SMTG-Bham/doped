@@ -25,7 +25,7 @@ from doped.utils.configurations import (
     orient_s2_like_s1,
     write_path_structures,
 )
-from doped.utils.parsing import (
+from doped.utils.mappings import (
     _cached_min_separation,
     _get_site_mapping_from_coords_and_indices,
     _min_separation,

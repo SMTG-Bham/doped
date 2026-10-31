@@ -29,7 +29,7 @@ If errors occur during parsing of defect calculations, ``doped`` will try to inf
 the origin of the parsing failure (e.g. ``Parsing failed for [...] with the same error: ...``).
 Depending on what the error is, this error message on its own may not be very helpful. In these cases, it's
 worth trying to parse one or two of these failing defect calculations individually, using the
-|DefectsParser| :meth:`~doped.analysis.DefectParser.from_paths()` method
+|DefectsParser| :meth:`~doped.parsing.DefectParser.from_paths()` method
 (``defect_path="...", bulk_path="...", ...``), which should give a more verbose error traceback.
 
 .. note::
@@ -90,7 +90,7 @@ using something like:
 
 .. code:: python
 
-    from doped.analysis import DefectsParser
+    from doped.parsing import DefectsParser
     from doped.thermodynamics import DefectThermodynamics
 
     dp_1 = DefectsParser("Defects_Calcs_Supercell_1", bulk_path="Bulk_Supercell_1", dielectric=dielectric)
@@ -159,8 +159,8 @@ Errors with ``Python`` Scripts
 The recommended usage of ``doped`` is through interactive python sessions, such as with Jupyter notebooks,
 ``IPython`` or an IDE (e.g. ``PyCharm`` or ``VSCode``), as shown in the ``doped`` :doc:`tutorials <Tutorials>`.
 However, it is possible to also use ``doped`` through ``Python`` scripts if preferred.
-Due to the use of the ``multiprocessing`` module in ``doped.generation``, ``doped.vasp`` and
-``doped.analysis``, you need to use the proper syntax for running ``Python`` scripts, with
+Due to the use of the ``multiprocessing`` module in ``doped.generation``, ``doped.io.vasp.inputs`` and
+``doped.parsing``, you need to use the proper syntax for running ``Python`` scripts, with
 ``if __name__ == '__main__':...``
 
 A simple example script of generating the intrinsic defects and writing the VASP input files (all with
@@ -170,7 +170,7 @@ default settings – in reality you likely need to customise some options!) woul
 
     from pymatgen.core.structure import Structure
     from doped.generation import DefectsGenerator
-    from doped.vasp import DefectsSet
+    from doped.io.vasp.inputs import DefectsSet
 
     def generate_and_write_vasp_files():
         primitive_struct = Structure.from_file("prim_POSCAR")

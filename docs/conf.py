@@ -187,7 +187,7 @@ suppress_warnings = ["myst.header", "mystnb.image", "mystnb.unknown_mime_type"]
 # These substitutions are available in all RST files
 rst_prolog = """
 .. |DefectsGenerator| replace:: :class:`~doped.generation.DefectsGenerator`
-.. |DefectsParser| replace:: :class:`~doped.analysis.DefectsParser`
+.. |DefectsParser| replace:: :class:`~doped.parsing.DefectsParser`
 .. |DefectThermodynamics| replace:: :class:`~doped.thermodynamics.DefectThermodynamics`
 .. |get_TLs| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels`
 .. |get_formation_energies| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`
@@ -228,10 +228,10 @@ rst_prolog = """
 .. |FermiSolver tutorial| replace:: :doc:`FermiSolver tutorial <fermisolver_tutorial>`
 .. |chempot limits tutorial| replace:: :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`
 .. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.1038/s41578-025-00879-y>`__
-.. |RelaxSet.yaml| replace:: :ref:`RelaxSet.yaml <RelaxSet.yaml>`
-.. |DefectSet.yaml| replace:: :ref:`DefectSet.yaml <DefectSet.yaml>`
-.. |HSESet.yaml| replace:: :ref:`HSESet.yaml <HSESet.yaml>`
-.. |SinglePointSet.yaml| replace:: :ref:`SinglePointSet.yaml <SinglePointSet.yaml>`
-.. |ConvergenceSet.yaml| replace:: :ref:`ConvergenceSet.yaml <ConvergenceSet.yaml>`
-.. |PotcarSet.yaml| replace:: :ref:`PotcarSet.yaml <PotcarSet.yaml>`
+.. |RelaxSet.yaml| replace:: :ref:`VASP_RelaxSet.yaml <RelaxSet.yaml>`
+.. |DefectSet.yaml| replace:: :ref:`VASP_DefectSet.yaml <DefectSet.yaml>`
+.. |HSESet.yaml| replace:: :ref:`VASP_HSESet.yaml <HSESet.yaml>`
+.. |SinglePointSet.yaml| replace:: :ref:`VASP_SinglePointSet.yaml <SinglePointSet.yaml>`
+.. |ConvergenceSet.yaml| replace:: :ref:`VASP_ConvergenceSet.yaml <ConvergenceSet.yaml>`
+.. |PotcarSet.yaml| replace:: :ref:`VASP_PotcarSet.yaml <PotcarSet.yaml>`
 """

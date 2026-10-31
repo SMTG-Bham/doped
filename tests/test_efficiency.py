@@ -25,7 +25,7 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 import doped.utils.efficiency  # noqa: F401  (applies the ``pymatgen`` patches)
 from doped.core import DefectEntry, Vacancy
-from doped.utils.parsing import _get_closest_coords
+from doped.utils.mappings import _get_closest_coords
 from doped.utils.symmetry import get_all_equiv_sites, get_distance_matrix, get_primitive_structure, get_sga
 
 CUBIC_LATTICE = Lattice.cubic(5.0)

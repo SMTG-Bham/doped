@@ -546,6 +546,21 @@
             ]
         }
     },
+    "calc_output_paths": [
+        "PhaseDiagram/AgSbTe2_C2c/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/Ag2Te_EaH_0.038/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/Te_EaH_0/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/SbTe2/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/SbTe_EaH_0.0088/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/AgSbTe2_R3m/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/Ag2Te_EaH_0.0359/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/Ag3Sb_EaH_0.0243/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/AgTe_EaH_0.0005/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/Sb2Te3_EaH_0/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/Ag_EaH_0/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/Sb_EaH_0/vasp_ncl/vasprun.xml",
+        "PhaseDiagram/Ag2Te_EaH_0/vasp_ncl/vasprun.xml"
+    ],
     "composition": {
         "Ag": 1.0,
         "Sb": 1.0,
@@ -6400,20 +6415,5 @@
         "PhaseDiagram/Ag_EaH_0/vasp_ncl/",
         "PhaseDiagram/Sb2Te3_EaH_0/vasp_ncl/"
     ],
-    "unstable_host": false,
-    "vasprun_paths": [
-        "PhaseDiagram/AgSbTe2_C2c/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/Ag2Te_EaH_0.038/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/Te_EaH_0/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/SbTe2/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/SbTe_EaH_0.0088/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/AgSbTe2_R3m/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/Ag2Te_EaH_0.0359/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/Ag3Sb_EaH_0.0243/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/AgTe_EaH_0.0005/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/Sb2Te3_EaH_0/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/Ag_EaH_0/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/Sb_EaH_0/vasp_ncl/vasprun.xml",
-        "PhaseDiagram/Ag2Te_EaH_0/vasp_ncl/vasprun.xml"
-    ]
+    "unstable_host": false
 }

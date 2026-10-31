@@ -1,11 +1,20 @@
 name: Tests
 
+# NOTE: the ``pull_request`` trigger and the narrowed ``push`` branches below are not specific to GPAW
+# support, and are intended to be cherry-picked onto ``develop`` -- fork PRs previously never ran CI at
+# all (which is why PR #149 was merged untested). Note that ``release.yml`` MUST carry the
+# same-repository guard added alongside this, or a fork PR whose head branch is named ``main`` can
+# trigger a PyPI release.
 on:
   workflow_dispatch:
 
   push:
-    branches:
-      - '*'  # all branches
+    branches:  # long-lived branches only; topic branches are covered by ``pull_request`` below, so
+      - main  # listing '*' here as well would run the (3 OS x 2 python x 10 split = 60 job) matrix twice
+      - develop
+      - IO_refactor
+
+  pull_request:
 
 jobs:
   test:
@@ -75,4 +84,42 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: doped_GH_test_plots_${{ matrix.os }}_${{ matrix.split }}
+          path: tests/remote_baseline
+
+  test-gpaw:
+    # GPAW support (``doped.io.gpaw``) needs GPAW itself to read ``.gpw`` outputs, and GPAW builds a C
+    # extension against libxc/BLAS/LAPACK/FFTW (with no Windows support), so its tests run in one Linux job
+    # rather than across the matrix above (where the ``tests/test_gpaw.py`` tests which need GPAW skip).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y libxc-dev libblas-dev liblapack-dev libfftw3-dev
+          python -m pip install --upgrade pip
+          pip install --no-deps git+https://github.com/SMTG-Bham/ShakeNBreak@develop
+          # GPAW 26.7 compiles its ``.c`` sources as C++, but with Python's default C compiler unless one
+          # is set (failing with ``algorithm: No such file or directory``), hence ``CC=g++``. ``ase``
+          # 3.29.0's ``.gpw`` reader sets ``ndarray.shape``, deprecated in NumPy 2.5, which the test config
+          # treats as an error; drop the ``numpy`` pin at the next ``ase`` release (TODO):
+          CC=g++ pip install -e ".[tests,gpaw]" "numpy<2.5"
+
+      - name: Check GPAW is importable  # the GPAW tests skip without it, so a broken install must fail here
+        run: python -c "import gpaw; print(gpaw.__version__)"
+
+      - name: Test
+        env:
+          MPLBACKEND: Agg  # non-interactive backend for matplotlib
+        run: pytest -vv --mpl --mpl-results-path=tests/remote_baseline tests/test_gpaw.py
+
+      - name: Archive test plots  # result, baseline and diff images for any failed image comparisons
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: doped_GH_test_plots_gpaw
           path: tests/remote_baseline

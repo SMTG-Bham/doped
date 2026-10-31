@@ -80,6 +80,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - N.-R. Skogemyr **_First-Principles Defect Thermodynamics of MgSnN<sub>2</sub>: Origin and Suppression of Unintentional n-Type Conductivity_** [_MSc Thesis, Linköping University_](https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510) 2026
+- C. Morel et al. **_Mechanochemically Disordered Li<sub>2</sub>Ta<sub>2</sub>OCl<sub>10</sub> Oxyhalide Unlocks Superionic Conductivity (>10 mS.cm⁻¹)_** [_Advanced Energy Materials_](https://doi.org/10.1002/aenm.71736) 2026
 - M. J. Brady et al. **_High Defect Formation Energies Limit Ionic Conductivity in Na<sub>3</sub>Ga<sub>2</sub>Li<sub>3</sub>F<sub>12</sub> and Na<sub>3</sub>Al<sub>2</sub>Li<sub>3</sub>F<sub>12</sub>_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.6c01542) 2026
 - N. Singh, V. Agarwal and D. Ghosh **_Deep Learning the Defect Landscape: Long-Timescale Vacancy Dynamics in Lead-Free Double Perovskites_** [_ACS Applied Energy Materials_](https://doi.org/10.1021/acsaem.6c02409) 2026
 - H. Lee et al. **_Identification and Structural Decomposition of Hidden Defect Configurations: A Case Study of Charged Oxygen Divacancies in HfO<sub>2</sub>_** [_arXiv_](https://doi.org/10.48550/arXiv.2610.04892) 2026
