@@ -3195,8 +3195,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         discovered ``vasprun.xml(.gz)`` files are parsed.
 
         If ``path`` is a list, each element may be a direct path to a
-        ``vasprun.xml(.gz)`` file **or** to a directory containing one,
-        which will be located via a recursive search.
+        ``vasprun.xml(.gz)`` file **or** to the directory directly containing
+        one (i.e. not searched recursively).
 
         Args:
             path (PathLike or list):
@@ -3226,7 +3226,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         """
         output_file = self._backend.CALC_OUTPUT_MASK[0]  # e.g. "vasprun.xml" with VASP
         if isinstance(path, list):
-            self._collect_calc_outputs_from_list(path)
+            self._collect_calc_outputs_from_list(path, verbose)
         else:
             self._collect_calc_outputs_from_directory(path, subfolder, verbose)
 
@@ -3332,13 +3332,17 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         """
         return get_backend(getattr(self, "calculator", "vasp"))
 
-    def _collect_calc_outputs_from_list(self, path_list: list[PathLike]) -> None:
+    def _collect_calc_outputs_from_list(self, path_list: list[PathLike], verbose: bool = True) -> None:
         """
         Populate ``self.calc_output_paths`` from a list of paths, where each
         entry can be a direct calculation output file path
-        (``vasprun.xml(.gz)`` with ``VASP``) or a directory containing one.
+        (``vasprun.xml(.gz)`` with ``VASP``) or the directory directly
+        containing one.
+
+        Directories without one are skipped, with a warning if ``verbose``.
         """
         output_file = self._backend.CALC_OUTPUT_MASK[0]
+        skipped_folders = []
         for entry_path in path_list:
             if str(output_file) in str(entry_path) and not os.path.basename(entry_path).startswith("."):
                 self.calc_output_paths.append(str(entry_path))
@@ -3347,6 +3351,11 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             calc_output_path = self._find_calc_output_in_directory(entry_path)
             if calc_output_path is not None:
                 self.calc_output_paths.append(str(calc_output_path))
+            else:
+                skipped_folders.append(str(entry_path))
+
+        if verbose:
+            _warn_skipped_folders(output_file, skipped_folders)
 
     def _collect_calc_outputs_from_directory(
         self,
@@ -3376,21 +3385,39 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         if calc_files_df.empty:
             return
 
+        subfolder_suffix = ""  # for the skipped folders warning
         if resolved_subfolder != ".":  # actual subfolder found
             filtered = calc_files_df[
                 calc_files_df["folder_path"].apply(lambda p: p.name == resolved_subfolder)
             ]
             if not filtered.empty:
                 calc_files_df = filtered
+                subfolder_suffix = f"/{resolved_subfolder}"
             elif verbose:
                 warnings.warn(
                     f"No {output_file} files found in '{resolved_subfolder}' subfolders under {path}. "
                     f"Using all {len(calc_files_df)} {output_file} files found."
                 )
 
+        parsed_folders = set()  # top-level folders in ``path`` with parsed outputs
         for directory in sorted(calc_files_df["folder_path"].unique()):
             if (calc_output_path := self._find_calc_output_in_directory(directory)) is not None:
                 self.calc_output_paths.append(calc_output_path)
+                parsed_folders.add(os.path.relpath(directory, root).split(os.sep)[0])
+
+        if verbose:  # warn about calculation folders in ``path`` without parsed outputs
+            _warn_skipped_folders(
+                output_file,
+                [
+                    f"{folder.name}{subfolder_suffix}"
+                    for folder in sorted(root.iterdir())
+                    if folder.is_dir()
+                    and not folder.name.startswith(".")
+                    and folder.name not in parsed_folders
+                    and _is_calc_folder_name(folder.name)
+                ],
+                path,
+            )
 
     def _find_calc_output_in_directory(self, directory: PathLike) -> str | None:
         """
@@ -4626,6 +4653,37 @@ def _parse_entry_and_catch_exception(
         )
     except Exception as e:
         return str(e), calc_output_path, False, False
+
+
+def _is_calc_folder_name(folder_name: str) -> bool:
+    """
+    Whether ``folder_name`` looks like the name of a (competing phase)
+    calculation folder, i.e. contains ``"EaH"`` (as in the default
+    ``{Formula}_{spg}_EaH_{EaH}`` folder names) or a composition (e.g.
+    ``"ZrO2"``) in its ``"_"``-separated parts.
+    """
+    if "EaH" in folder_name:
+        return True
+    for name_part in folder_name.split("_"):
+        with contextlib.suppress(ValueError):  # not a composition
+            if name_part and Composition(name_part):
+                return True
+    return False
+
+
+def _warn_skipped_folders(
+    output_file: str, folders: list[str], parent_folder: PathLike | None = None
+) -> None:
+    """
+    Warn that calculation output files (``output_file``) could not be found in
+    ``folders`` (in ``parent_folder``, if given), and so they are skipped.
+    """
+    if folders:
+        parent_folder_string = f" (in {parent_folder})" if parent_folder is not None else ""
+        warnings.warn(
+            f"{output_file} files could not be found in the following directories{parent_folder_string}, "
+            f"and so they will be skipped for parsing:\n" + "\n".join(folders)
+        )
 
 
 def _possible_label_positions_from_bbox_intersections(

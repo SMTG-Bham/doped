@@ -2418,6 +2418,20 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self._compare_cpas(lst_fols_cpa, cpa)
         self._general_cpa_check(lst_fols_cpa)
 
+        # list entries are not searched recursively, so a phase folder (rather than its ``vasp_std``
+        # subfolder) is skipped, with a warning:
+        skipped_folder = next(os.path.dirname(folder) for folder in all_folders if "Zr2O_EaH" in folder)
+        entries = [skipped_folder if "Zr2O_EaH" in folder else folder for folder in all_folders]
+        skip_cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", entries=entries
+        )
+        assert len(skip_cpa.calc_output_paths) == 7
+        assert any(
+            "vasprun.xml files could not be found in the following directories, and so they will be "
+            f"skipped for parsing:\n{skipped_folder}" in str(warning.message)
+            for warning in w
+        )
+
     def test_vaspruns_hidden_files(self):
         with open(f"{self.ZrO2_path}/._OUTCAR", "w") as f:
             f.write("test pop")
@@ -2494,9 +2508,17 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
-            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder="vasp_ncl")
+            cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
+                chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", tmp_dir, subfolder="vasp_ncl"
+            )
             assert set(map(os.path.realpath, cpa.calc_output_paths)) == ncl_paths
             assert len(cpa.calc_output_paths) == 3
+            # the ignored phase folder (no ``vasp_ncl`` subfolder) is warned about:
+            assert any(
+                f"vasprun.xml files could not be found in the following directories (in {tmp_dir}), and "
+                "so they will be skipped for parsing:\nZr3O_EaH_0.0/vasp_ncl" in str(warning.message)
+                for warning in w
+            )
 
     def test_subfolder_auto_detect_picks_highest_priority(self):
         """
