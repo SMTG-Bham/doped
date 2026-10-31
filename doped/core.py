@@ -3107,6 +3107,14 @@ class Vacancy(Defect, core.Vacancy):
         frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
         return f"{self.name} vacancy defect at site [{frac_coords_string}] in structure"
 
+    @property
+    def name(self) -> str:
+        """
+        Name of the defect (e.g. ``v_Cd``), with named isotopes labelled as
+        such (e.g. ``v_D`` rather than ``v_H`` for deuterium).
+        """
+        return f"v_{core.get_element(self.defect_site.specie).name}"  # not symbol ("H" for D/T)
+
 
 class Substitution(Defect, core.Substitution):
     def __init__(self, *args, **kwargs):
@@ -3123,6 +3131,16 @@ class Substitution(Defect, core.Substitution):
         """
         frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
         return f"{self.name} substitution defect at site [{frac_coords_string}] in structure"
+
+    @property
+    def name(self) -> str:
+        """
+        Name of the defect (e.g. ``Te_Cd``), with named isotopes labelled as
+        such (e.g. ``D_Si`` rather than ``H_Si`` for deuterium).
+        """
+        return (
+            f"{core.get_element(self.site.specie).name}_{core.get_element(self.defect_site.specie).name}"
+        )
 
 
 class Interstitial(Defect, core.Interstitial):
@@ -3152,3 +3170,11 @@ class Interstitial(Defect, core.Interstitial):
         """
         frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
         return f"{self.name} interstitial defect at site [{frac_coords_string}] in structure"
+
+    @property
+    def name(self) -> str:
+        """
+        Name of the defect (e.g. ``Cd_i``), with named isotopes labelled as
+        such (e.g. ``D_i`` rather than ``H_i`` for deuterium).
+        """
+        return f"{core.get_element(self.site.specie).name}_i"
