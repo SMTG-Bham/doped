@@ -186,9 +186,9 @@ competing phases:
    defect_thermodynamics.plot(limit="O-rich")
 
 The parser reads structures, total energies and GPAW parameters, without loading
-the electrostatic potentials needed for defect charge corrections. Charged
-phase calculations are rejected. Ionic convergence cannot be established from
-a restart file alone and is not reported; verify geometry convergence separately.
+the electrostatic potentials needed for defect charge corrections. Ionic
+convergence cannot be established from a restart file alone and is not reported;
+verify geometry convergence separately.
 GPAW parameters are stored in each entry, but automatic cross-phase settings
 compatibility checks are not yet implemented. Ensure energies use consistent
 functionals, PAW datasets, basis sets and cutoffs with the bulk and defects.

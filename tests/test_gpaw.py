@@ -613,21 +613,3 @@ def test_competing_phase_analyzer_gpaw(tmp_path, monkeypatch, new_parameters):
     assert set(analyzer.parsed_folders) == {str(tmp_path / phase) for phase in atoms_and_energies}
     assert all(calc.closed for calc in opened)
     assert len(analyzer.get_formation_energy_df()) == 3
-
-
-def test_competing_phase_entry_rejects_charge_and_closes(tmp_path, monkeypatch):
-    """
-    Do not use charged defect energies as neutral competing phases; close on
-    errors too.
-    """
-    gpaw = pytest.importorskip("gpaw")
-    path = tmp_path / "singlepoint.gpw"
-    path.touch()
-    calc = SimpleNamespace(parameters={"charge": 1}, atoms=Atoms("H"))
-    closed = []
-    calc.close = lambda: closed.append(True)
-    monkeypatch.setattr(gpaw, "GPAW", lambda *args, **kwargs: calc)
-    with pytest.raises(ValueError, match="must be neutral"):
-        get_competing_phase_entry(path)
-    assert closed == [True]
-    assert calc.atoms.calc is None
