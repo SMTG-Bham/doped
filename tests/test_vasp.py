@@ -425,12 +425,14 @@ class DefectDictSetTest(unittest.TestCase):
 
     def test_ediff_per_atom_custom_setting(self):
         # first with DopedDictSet:
+        user_incar_settings = {"EDIFF_PER_ATOM": 1e-2}
         with warnings.catch_warnings(record=True) as w:
             dds = DopedDictSet(
                 self.prim_cdte.copy(),
-                user_incar_settings={"EDIFF_PER_ATOM": 1e-2},
+                user_incar_settings=user_incar_settings,
                 user_kpoints_settings={"reciprocal_density": 123},
             )
+        assert user_incar_settings == {"EDIFF_PER_ATOM": 1e-2}  # input dict not modified
         print([warning.message for warning in w])  # for debugging
         assert any(
             "EDIFF_PER_ATOM was set to 1.00e-02 eV/atom, which" in str(warning.message) for warning in w

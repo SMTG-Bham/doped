@@ -257,6 +257,7 @@ class DopedDictSet(VaspInputSet):
         self.charge_state = charge_state
 
         if user_incar_settings is not None:
+            user_incar_settings = user_incar_settings.copy()  # don't modify input (EDIFF_PER_ATOM pop)
             if "EDIFF_PER_ATOM" in user_incar_settings:
                 ediff_per_atom = user_incar_settings.pop("EDIFF_PER_ATOM")  # pop un-used tag
                 ediff = scaled_ediff(
@@ -298,6 +299,7 @@ class DopedDictSet(VaspInputSet):
 
         # check POTCAR settings not in config dict format:
         if isinstance(user_potcar_settings, dict):
+            user_potcar_settings = user_potcar_settings.copy()  # don't modify input (shared) dict
             if "POTCAR_FUNCTIONAL" in user_potcar_settings and user_potcar_functional == "PBE":
                 # i.e. default
                 user_potcar_functional = user_potcar_settings.pop("POTCAR_FUNCTIONAL")
