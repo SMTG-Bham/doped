@@ -108,6 +108,41 @@ def _find_gpaw_output(
     )
 
 
+@contextlib.contextmanager
+def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
+    """
+    Load a ``GPAW`` calculator from the ``gpw_file`` restart file, as a context
+    manager which closes it and detaches it from its ``Atoms`` on exit.
+
+    Args:
+        gpw_file (PathLike): Path to the ``GPAW`` ``.gpw`` restart file.
+        **kwargs: Passed to ``GPAW()`` (e.g. ``txt=None``).
+
+    Yields:
+        GPAW: The ``GPAW`` calculator.
+    """
+    from gpaw import GPAW
+
+    calc = GPAW(gpw_file, **kwargs)
+    try:
+        yield calc
+    finally:
+        if hasattr(calc, "close"):  # removed in GPAW >= 26
+            calc.close()
+        if getattr(calc, "atoms", None) is not None:  # break the ``Atoms`` <-> calculator reference
+            calc.atoms.calc = None
+
+
+def _get_gpaw_parameters(calc) -> dict:
+    """
+    Get the parameters of a ``GPAW`` calculator as a ``dict``.
+
+    With GPAW >= 26, these are only the explicitly-set values, while with older
+    versions they also include the defaults.
+    """
+    return calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
+
+
 def _get_site_potentials_from_calc(calc) -> np.ndarray:
     """
     Get the atom-centred electrostatic site potentials from a ``GPAW``
@@ -204,19 +239,8 @@ def get_gpaw_site_potentials(
     """
     Extracts atomic site potentials from a ``GPAW`` ``.gpw`` file.
     """
-    from gpaw import GPAW
-
-    gpw_file = _find_gpaw_output(gpw_file)
-    calc = GPAW(gpw_file)
-    site_potentials = _get_site_potentials_from_calc(calc)
-
-    if hasattr(calc, "close"):
-        calc.close()
-
-    if hasattr(calc, "atoms") and calc.atoms:
-        calc.atoms.calc = None
-
-    return site_potentials
+    with _open_gpaw_restart(_find_gpaw_output(gpw_file)) as calc:
+        return _get_site_potentials_from_calc(calc)
 
 
 def get_gpaw_planar_averaged_potential(
@@ -225,16 +249,8 @@ def get_gpaw_planar_averaged_potential(
     """
     Extracts planar-averaged potential from a ``GPAW`` ``.gpw`` file.
     """
-    from gpaw import GPAW
-
-    gpw_file = _find_gpaw_output(gpw_file)
-    calc = GPAW(gpw_file)
-    planar_averages = _get_planar_averaged_potential_from_calc(calc)
-
-    if hasattr(calc, "close"):
-        calc.close()
-
-    return planar_averages
+    with _open_gpaw_restart(_find_gpaw_output(gpw_file)) as calc:
+        return _get_planar_averaged_potential_from_calc(calc)
 
 
 def get_potentials_from_input(
@@ -343,14 +359,9 @@ def get_calculation_outputs(
     Returns:
         CalculationOutputs: The parsed calculation outputs.
     """
-    from gpaw import GPAW
-
     gpw_file = _find_gpaw_output(path, subfolder)
-    calc = GPAW(gpw_file, txt=None)
-    try:
-        parameters = (
-            calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
-        )  # retain GPAW<26 compatibility
+    with _open_gpaw_restart(gpw_file, txt=None) as calc:
+        parameters = _get_gpaw_parameters(calc)
         charge = parameters.get("charge") or 0  # parameters only holds explicitly-set, non-default values
         band_gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
         eigenvalues = {}
@@ -395,11 +406,6 @@ def get_calculation_outputs(
             site_potentials=_get_site_potentials_from_calc(calc),
             run_metadata={"gpaw_parameters": parameters},
         )
-    finally:
-        if hasattr(calc, "close"):
-            calc.close()
-        if getattr(calc, "atoms", None) is not None:
-            calc.atoms.calc = None
 
 
 def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None) -> ComputedStructureEntry:
@@ -421,23 +427,12 @@ def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None)
         Ionic convergence is not reported: restart files have no ionic-step
         history. Band gaps are omitted pending occupation-based band edges.
     """
-    from gpaw import GPAW
-
     gpw_file = _find_gpaw_output(path, subfolder)
-    calc = GPAW(gpw_file, txt=None)
-    try:
-        parameters = (
-            calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
-        )
-        if parameters.get("charge", 0):
-            raise ValueError("Competing-phase calculations must be neutral (GPAW charge must be zero)")
-
+    with _open_gpaw_restart(gpw_file, txt=None) as calc:
+        parameters = _get_gpaw_parameters(calc)
         structure = _structure_from_calc(calc)
         entry = ComputedStructureEntry(structure, calc.get_potential_energy(), parameters=parameters)
         elements = sorted(el.symbol for el in entry.composition.elements)
-        summary = {}
-        with contextlib.suppress(Exception):  # optional for incomplete / non-spin-polarised outputs
-            summary["total_magnetization"] = calc.get_magnetic_moment()
         entry.data.update(
             {
                 "calculator": "gpaw",
@@ -448,7 +443,7 @@ def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None)
                 "energy_per_atom": entry.energy_per_atom,
                 "elements": elements,
                 "nelements": len(elements),
-                "summary": summary,
+                "summary": {"total_magnetization": calc.get_magnetic_moment()},
                 "folder": str(Path(gpw_file).parent),
             }
         )
@@ -458,11 +453,6 @@ def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None)
         if isinstance(kpts, dict) and kpts.get("size") is not None:
             entry.data["kpoints"] = [list(kpts["size"])]
         return entry
-    finally:
-        if hasattr(calc, "close"):
-            calc.close()
-        if getattr(calc, "atoms", None) is not None:
-            calc.atoms.calc = None
 
 
 _COMPATIBILITY_PARAMETERS = (
