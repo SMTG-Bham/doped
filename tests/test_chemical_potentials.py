@@ -1904,7 +1904,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         }
 
     def tearDown(self):
-        for i in ["cpa.json"]:
+        for i in ["cpa.json", "ZrO2_competing_phases_analyzer.json.gz"]:
             if_present_rm(i)
 
         if_present_rm(os.path.join(data_dir, "ZrO2_LaTeX_Tables/test.tex"))
@@ -2782,12 +2782,20 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         reloaded_cpa = loadfn("cpa.json")
         self._compare_cpas(cpa, reloaded_cpa)
 
+        cpa.to_json("cpa.json")
+        self._compare_cpas(cpa, chemical_potentials.CompetingPhasesAnalyzer.from_json("cpa.json"))
+
     def test_general_cpa_reloading(self):
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
         _print_warning_info(w)  # for debugging
         assert not w
         self._general_cpa_check(cpa)
+        cpa.to_json()  # default filename (compressed)
+        json_cpa = chemical_potentials.CompetingPhasesAnalyzer.from_json(
+            "ZrO2_competing_phases_analyzer.json.gz"
+        )
+        self._compare_cpas(cpa, json_cpa)
 
         with warnings.catch_warnings(record=True) as w:
             la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.La_ZrO2_path)

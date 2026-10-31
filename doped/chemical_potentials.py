@@ -27,7 +27,7 @@ from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
-from monty.serialization import loadfn
+from monty.serialization import dumpfn, loadfn
 from mp_api.client.mprester import DEFAULT_THERMOTYPE_CRITERIA, MPRester, MPRestError
 from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
@@ -4068,6 +4068,45 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         cpa.calc_output_paths = d.get("calc_output_paths", cpa.calc_output_paths)
         cpa.calculator = d.get("calculator", cpa.calculator)
         return cpa
+
+    def to_json(self, filename: PathLike | None = None):
+        """
+        Save the |CompetingPhasesAnalyzer| object as a json file, which can be
+        reloaded with the ``CompetingPhasesAnalyzer.from_json()`` class method.
+
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
+        Args:
+            filename (PathLike):
+                Filename to save ``json`` file as. If ``None``, the filename
+                will be set as
+                ``{Chemical Formula}_competing_phases_analyzer.json.gz``, where
+                ``{Chemical Formula}`` is the chemical formula of the host
+                material.
+        """
+        if filename is None:
+            formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            filename = f"{formula}_competing_phases_analyzer.json.gz"
+
+        dumpfn(self, filename)
+
+    @classmethod
+    def from_json(cls, filename: PathLike):
+        """
+        Load a |CompetingPhasesAnalyzer| object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
+
+        Args:
+            filename (PathLike):
+                Filename of json file to load |CompetingPhasesAnalyzer| object
+                from.
+
+        Returns:
+            |CompetingPhasesAnalyzer| object
+        """
+        return loadfn(filename)
 
     @property
     def chempot_grid(self) -> ChemicalPotentialGrid:
