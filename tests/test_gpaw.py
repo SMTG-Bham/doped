@@ -25,7 +25,7 @@ from test_utils import (
 from doped.generation import DefectsGenerator
 from doped.io import get_calculation_outputs
 from doped.io.gpaw.inputs import DefectDictSet, DefectsSet
-from doped.io.gpaw.outputs import _find_gpaw_output, get_potentials_from_input
+from doped.io.gpaw.outputs import _find_gpaw_output, get_competing_phase_entry, get_potentials_from_input
 from doped.io.inputs import _get_bulk_folder_name
 from doped.parsing import DefectParser, DefectsParser
 from doped.thermodynamics import DefectThermodynamics
@@ -536,3 +536,219 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
         fig, warnings = self._correction_plot("Mg_i_Td_+2", fnv=True)
         _check_warnings(warnings, [("(FNV) charge correction for defect Mg_i_Td_+2 is",)])
         return fig
+
+
+def _run_phase_calculation(structure, folder, settings):
+    """
+    Generate, write and execute a small real GPAW single-point script.
+    """
+    DefectDictSet(structure, gpaw_settings=settings, calculation_type="singlepoint").write_input(folder)
+    with contextlib.chdir(folder):
+        namespace = runpy.run_path("singlepoint.py")
+    energy = namespace["energy"]
+    namespace["atoms"].calc = None
+    return energy
+
+
+@pytest.fixture(scope="module")
+def gpaw_competing_phases(tmp_path_factory):
+    """
+    Compute real MgO, Mg and triplet O2 references in the example layout.
+    """
+    pytest.importorskip("gpaw")
+    from ase.build import bulk, molecule
+    from pymatgen.io.ase import AseAtomsAdaptor
+
+    root = tmp_path_factory.mktemp("gpaw_phases") / "CompetingPhases_GPAW"
+    oxygen = molecule("O2")
+    oxygen.center(vacuum=3)
+    oxygen.pbc = True
+    atoms = {"MgO": bulk("MgO", "rocksalt", a=4.21), "Mg": bulk("Mg", "hcp", a=3.21, c=5.21), "O2": oxygen}
+    names = {"MgO": "MgO_Fm-3m_EaH_0", "Mg": "Mg_P6_3mmc_EaH_0", "O2": "O2_mmm_EaH_0"}
+    common = {"mode": {"name": "pw", "ecut": 300}, "xc": "PBE", "kpts": (1, 1, 1), "spinpol": False}
+    structures, settings, energies = {}, {}, {}
+    for phase, phase_atoms in atoms.items():
+        structures[phase] = AseAtomsAdaptor.get_structure(phase_atoms)
+        settings[phase] = copy.deepcopy(common)
+        if phase == "MgO":
+            settings[phase]["kpts"] = (2, 2, 2)
+        elif phase == "Mg":
+            settings[phase]["kpts"] = {"density": 1.0, "gamma": True}
+        elif phase == "O2":
+            settings[phase].update(spinpol=True, initial_magnetic_moments={"O": 1.0})
+        energies[phase] = _run_phase_calculation(structures[phase], root / names[phase], settings[phase])
+    return root, names, structures, settings, energies
+
+
+def test_competing_phase_entry_real_gpaw():
+    """
+    Read and serialize the shipped neutral calculation, without defect
+    potentials.
+    """
+    pytest.importorskip("gpaw")
+    from monty.json import MontyDecoder, MontyEncoder
+
+    path = Path(gpaw_data_dir) / "MgO" / "bulk"
+    entry = get_competing_phase_entry(path)
+    assert entry.composition.reduced_formula == "MgO"
+    assert entry.energy == pytest.approx(73.25088079545509, abs=1e-6)
+    assert entry.data["folder"] == str(path)
+    assert entry.data["nsites"] == len(entry.structure)
+    assert entry.data["gpaw_parameters"]["mode"]["name"] == "pw"
+    assert entry.data["converged_electronic"] is True
+    assert "converged_ionic" not in entry.data
+    assert entry.parameters == {}  # GPAW settings are stored only in entry.data
+    roundtrip = MontyDecoder().decode(MontyEncoder().encode(entry))
+    assert roundtrip.energy == entry.energy
+    assert roundtrip.structure == entry.structure
+
+
+def test_competing_phase_analyzer_gpaw(gpaw_competing_phases):
+    """
+    Parse the documented directory layout and check limits against real DFT
+    energies.
+    """
+    from doped.chemical_potentials import CompetingPhasesAnalyzer
+
+    root, names, structures, _, energies = gpaw_competing_phases
+    analyzer, _, warnings = _run_func_and_capture_stdout_warnings(
+        CompetingPhasesAnalyzer, "MgO", entries=root, calculator="gpaw"
+    )
+    assert not warnings
+    assert len(analyzer.entries) == 3
+    mu_mg = energies["Mg"] / len(structures["Mg"])
+    mu_o = energies["O2"] / 2
+    assert analyzer.chempots["elemental_refs"] == pytest.approx({"Mg": mu_mg, "O": mu_o}, abs=1e-5)
+    formation_energy = energies["MgO"] - mu_mg - mu_o
+    assert formation_energy < 0
+    limits = list(analyzer.chempots["limits_wrt_el_refs"].values())
+    np.testing.assert_allclose(
+        sorted((mu["Mg"], mu["O"]) for mu in limits),
+        [(formation_energy, 0), (0, formation_energy)],
+        atol=1e-5,  # the chemical-potential dictionary rounds to five decimal places
+    )
+    assert set(analyzer.parsed_folders) == {str(root / name) for name in names.values()}
+    assert len(analyzer.get_formation_energy_df()) == 3
+    assert all(e.data["mismatching_gpaw_parameters"] is False for e in analyzer.entries)
+    # Density-based sampling must report a real mesh, rather than N/A.
+    magnesium = next(e for e in analyzer.entries if e.composition.reduced_formula == "Mg")
+    assert np.prod(magnesium.data["kpoints"][0]) > 1
+    oxygen = next(e for e in analyzer.entries if e.composition.reduced_formula == "O2")
+    assert oxygen.data["summary"]["total_magnetization"] == pytest.approx(2.0, abs=0.01)
+
+
+def test_gpaw_competing_phase_example_inputs(tmp_path):
+    """
+    The example writes the host and elemental references into one phase
+    directory.
+    """
+    script = Path(__file__).resolve().parents[1] / "examples/MgO_with_GPAW/Run1st_create_gpaw_workflow.py"
+    write_inputs = runpy.run_path(str(script))["write_competing_phase_inputs"]
+    with contextlib.chdir(tmp_path):
+        write_inputs({"mode": {"name": "pw", "ecut": 300}, "xc": "PBE"})
+    folders = list((tmp_path / "CompetingPhases_GPAW").iterdir())
+    assert len(folders) == 5
+    assert {p.name.split("_")[0] for p in folders} == {"MgO", "Mg", "O2"}
+    assert all((p / "singlepoint.py").exists() and (p / "structure.cif").exists() for p in folders)
+
+
+def test_competing_phase_file_priority(gpaw_competing_phases, tmp_path):
+    """
+    Use the GPAW filename priority and ignore backup files in real phase
+    directories.
+    """
+    import shutil
+
+    from doped.chemical_potentials import CompetingPhasesAnalyzer
+
+    root, names, _, _, energies = gpaw_competing_phases
+    target = tmp_path / "CompetingPhases_GPAW"
+    shutil.copytree(root, target)
+    mg = target / names["Mg"]
+    shutil.copyfile(mg / "singlepoint.gpw", mg / "relaxed.gpw")
+    # A real output of another phase makes a wrong file selection detectable.
+    shutil.copyfile(target / names["MgO"] / "singlepoint.gpw", mg / "singlepoint.gpw")
+    (mg / "singlepoint.gpw.bak").write_text("stale backup")
+    analyzer, _, warnings = _run_func_and_capture_stdout_warnings(
+        CompetingPhasesAnalyzer, "MgO", entries=target, calculator="gpaw"
+    )
+    assert any("Multiple" in str(w.message) and "relaxed.gpw" in str(w.message) for w in warnings)
+    assert all("electrostatic" not in str(w.message) for w in warnings)
+    assert str(mg / "relaxed.gpw") in analyzer.calc_output_paths
+    entry = next(e for e in analyzer.entries if e.composition.reduced_formula == "Mg")
+    assert entry.energy == pytest.approx(energies["Mg"])
+    (mg / "singlepoint.gpw").unlink()
+    (mg / "relaxed.gpw").unlink()
+    with pytest.raises(ValueError, match=r"No elemental reference.*Mg"):
+        CompetingPhasesAnalyzer("MgO", entries=target, calculator="gpaw")
+
+
+@pytest.mark.parametrize("parameter", ["xc", "setups", "mode"])
+def test_competing_phase_settings_mismatch(gpaw_competing_phases, tmp_path, parameter):
+    """
+    Warn about genuinely different XC, PAW datasets and modes in real
+    calculations.
+    """
+    import shutil
+
+    from doped.chemical_potentials import CompetingPhasesAnalyzer
+
+    root, names, structures, original_settings, _ = gpaw_competing_phases
+    target = tmp_path / "CompetingPhases_GPAW"
+    shutil.copytree(root, target)
+    phase = "O2" if parameter == "mode" else "Mg"
+    settings = copy.deepcopy(original_settings[phase])
+    if parameter == "xc":
+        settings["xc"] = "LDA"
+    elif parameter == "setups":
+        settings["setups"] = {"Mg": "2"}
+    else:
+        settings.update(mode={"name": "fd"}, h=0.4)
+    _run_phase_calculation(structures[phase], target / names[phase], settings)
+    with pytest.warns(UserWarning, match="mismatching GPAW parameters"):
+        analyzer = CompetingPhasesAnalyzer("MgO", entries=target, calculator="gpaw")
+    entry = next(e for e in analyzer.entries if e.composition.reduced_formula == phase)
+    assert parameter in entry.data["mismatching_gpaw_parameters"]
+
+
+@pytest.mark.parametrize(
+    "kpts", [(2, 1, 1), {"size": (2, 1, 1), "gamma": True}, [[-0.25, 0, 0], [0.25, 0, 0]]]
+)
+def test_competing_phase_kpoint_mesh(gpaw_competing_phases, tmp_path, kpts):
+    """
+    Record actual regular meshes for tuple, size-dictionary and explicit
+    k-points.
+    """
+    _, _, structures, original_settings, _ = gpaw_competing_phases
+    settings = copy.deepcopy(original_settings["Mg"])
+    settings["kpts"] = kpts
+    _run_phase_calculation(structures["Mg"], tmp_path, settings)
+    assert get_competing_phase_entry(tmp_path).data["kpoints"] == [[2, 1, 1]]
+
+
+def test_competing_phase_rejects_charged_restart():
+    """
+    Reject the shipped charged defect calculation as a competing phase.
+    """
+    pytest.importorskip("gpaw")
+    with pytest.raises(ValueError, match="must be neutral"):
+        get_competing_phase_entry(Path(gpaw_data_dir) / "MgO" / "v_Mg_-2")
+
+
+@pytest.mark.parametrize("reader", ["phase", "supercell"])
+def test_gpaw_restart_without_energy(tmp_path, reader):
+    """
+    Reject real restart data lacking its stored energy instead of re-running
+    SCF.
+    """
+    pytest.importorskip("gpaw")
+    from ase.io import ulm
+
+    source = Path(gpaw_data_dir) / "MgO" / "bulk" / "relaxed.gpw"
+    target = tmp_path / "incomplete.gpw"
+    with ulm.open(source, "r") as original, ulm.open(target, "w", tag=original.get_tag()) as incomplete:
+        ulm.copy(original, incomplete, exclude={".results.energy"})
+    read_restart = get_competing_phase_entry if reader == "phase" else get_calculation_outputs
+    kwargs = {} if reader == "phase" else {"calculator": "gpaw"}
+    with pytest.raises(ValueError, match="holds no converged energy"):
+        read_restart(target, **kwargs)

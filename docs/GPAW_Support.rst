@@ -165,28 +165,35 @@ been applied):
 Chemical potentials and formation energies
 ------------------------------------------
 
-Competing-phase calculations must use energies that are consistent with the
-GPAW settings used for the bulk and defects. Individual outputs can be converted
-to ``pymatgen`` computed entries and used to determine the chemical-potential
-limits:
+Neutral GPAW competing-phase outputs can be parsed directly with
+``CompetingPhasesAnalyzer(..., calculator="gpaw")``. Include the host calculation
+and an elemental reference for every element, together with all relevant
+competing phases:
 
 .. code-block:: python
 
-   from doped.chemical_potentials import get_doped_chempots_from_entries
-   from doped.io import get_calculation_outputs
+   from doped.chemical_potentials import CompetingPhasesAnalyzer
    from doped.thermodynamics import DefectThermodynamics
 
-   bulk_entry = get_calculation_outputs("MgO_bulk", calculator="gpaw").get_computed_entry()
-
-   # phase_entries should contain consistently calculated elemental and
-   # competing-phase entries.
-   chempots = get_doped_chempots_from_entries(
-       [bulk_entry, *phase_entries],
-       bulk_entry,
+   phase_analyzer = CompetingPhasesAnalyzer(
+       "MgO",
+       entries="CompetingPhases_GPAW",
+       calculator="gpaw",
    )
-   defect_thermodynamics = DefectThermodynamics(defect_dict, chempots=chempots)
+   defect_thermodynamics = DefectThermodynamics(defect_dict, chempots=phase_analyzer.chempots)
    defect_thermodynamics.plot(limit="Mg-rich")
    defect_thermodynamics.plot(limit="O-rich")
+
+The parser reads structures, total energies and GPAW parameters, without loading
+the electrostatic potentials needed for defect charge corrections. Charged
+phase calculations are rejected. Ionic convergence cannot be established from
+a restart file alone and is not reported; verify geometry convergence separately.
+GPAW parameters are stored in each entry and compared across phases, warning
+about inconsistent functionals, PAW datasets, basis sets or calculation modes.
+K-point and real-space meshes may differ between phases. The example includes
+the MgO host calculation inside ``CompetingPhases_GPAW`` together with the
+elemental references, so this directory can be searched recursively.
+Competing-phase input generation with GPAW is also not yet implemented.
 
 The complete MgO example prepares Mg structures obtained from the
 |CompetingPhases| workflow and an isolated triplet O2 reference, then generates

@@ -3195,8 +3195,9 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         discovered ``vasprun.xml(.gz)`` files are parsed.
 
         If ``path`` is a list, each element may be a direct path to a
-        ``vasprun.xml(.gz)`` file **or** to a directory containing one,
-        which will be located via a recursive search.
+        ``vasprun.xml(.gz)`` file **or** to a directory containing one.
+        Directories in a list are searched non-recursively. Supply a single
+        base directory path to search its subdirectories recursively.
 
         Args:
             path (PathLike or list):
@@ -3401,10 +3402,23 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         """
         output_file = self._backend.CALC_OUTPUT_MASK[0]
         calc_output_path, multiple = None, False
-        with contextlib.suppress(FileNotFoundError):
-            calc_output_path, multiple = _io_utils._get_output_files_and_check_if_multiple(
-                output_file, str(directory)
-            )
+        if (find_calc_output := getattr(self._backend, "find_calc_output", None)) is not None:
+            # Use the backend's selection rules, including filename priority and exact extensions.
+            with contextlib.suppress(FileNotFoundError):
+                calc_output_path = find_calc_output(directory)
+            if calc_output_path is not None:
+                multiple = (
+                    sum(
+                        path.is_file() and path.name.lower().endswith(self._backend.CALC_OUTPUT_MASK)
+                        for path in Path(directory).iterdir()
+                    )
+                    > 1
+                )
+        else:
+            with contextlib.suppress(FileNotFoundError):
+                calc_output_path, multiple = _io_utils._get_output_files_and_check_if_multiple(
+                    output_file, str(directory)
+                )
         if calc_output_path and os.path.exists(calc_output_path):
             if multiple:
                 self._multiple_files_warning(output_file, directory, calc_output_path)
@@ -3414,12 +3428,9 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
     def _multiple_files_warning(self, output_file, directory, chosen_filepath) -> None:
         """
         Warn that multiple calculation output files were found in
-        ``directory``, using the backend's ``FILE_PARSING_ACTIONS`` for the
-        (informative) description of what the file is parsed for.
+        ``directory``, describing the competing-phase parsing task.
         """
-        action = getattr(self._backend, "FILE_PARSING_ACTIONS", {}).get(
-            output_file, "parse the calculation energy and metadata."
-        )
+        action = "parse the competing-phase energy and metadata."
         _io_utils._multiple_files_warning(
             output_file, directory, chosen_filepath, action, dir_type="competing phase"
         )
