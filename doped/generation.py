@@ -1487,6 +1487,13 @@ class DefectsGenerator(MSONable):
         elif not isinstance(structure, Structure):  # assume ASE Atoms
             structure = Structure.from_ase_atoms(structure)
 
+        if extra_site_props := set(structure.site_properties) - {"magmom"}:
+            # e.g. ``velocities``/``momenta``, ``selective_dynamics`` or ``tags`` from (ASE) reads of VASP
+            # CONTCARs / MD frames; irrelevant for defect generation and causes various downstream issues:
+            structure = structure.copy()  # don't modify input structure
+            for prop in extra_site_props:
+                structure.remove_site_property(prop)
+
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
         self.kwargs = kwargs

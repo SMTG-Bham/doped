@@ -10,6 +10,7 @@ import gzip
 import os
 import random
 import sys
+import tempfile
 import unittest
 import warnings
 from io import StringIO
@@ -3694,6 +3695,64 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         # test DefectsSet initialisation also fine:
         DefectsSet(Si_defect_gen)
+
+    def test_input_structure_site_properties(self):
+        r"""
+        Test |DefectsGenerator| with input structures with site properties,
+        such as ``ASE`` ``Atoms`` read from a ``VASP`` ``CONTCAR`` (which has a
+        velocities block, so ``ASE`` sets ``momenta``, which ``pymatgen``
+        converts to ``momenta`` / ``velocities`` site properties), or with
+        ``tags`` or ``selective_dynamics``.
+
+        Site properties other than ``magmom`` are removed, as previously they
+        were carried through to all generated structures, with ``None`` values
+        for new defect sites, giving malformed ``POSCAR``\s and errors when
+        rattling substitution & interstitial supercells (``to_ase_atoms``).
+        """
+        from ase.io import read
+
+        atoms = read(f"{EXAMPLE_DIR}/MgO/Bulk_relax/CONTCAR")
+        assert atoms.has("momenta")  # from CONTCAR velocities block
+        atoms.set_tags([1, 2])
+        structure = Structure.from_ase_atoms(atoms)  # with ``tags`` & ``velocities``/``momenta``
+        sd_magmom_structure = Structure.from_file(f"{EXAMPLE_DIR}/MgO/Bulk_relax/CONTCAR")
+        sd_magmom_structure.add_site_property("selective_dynamics", [[True, True, False], [True] * 3])
+        sd_magmom_structure.add_site_property("magmom", [1.0, 0.0])
+        defect_names = ["Mg_O_0", "Mg_i_Td_0", "v_Mg_0"]  # new-site substitution/interstitial, & vacancy
+
+        for structure_input in [atoms, structure, sd_magmom_structure]:
+            input_site_props = set(getattr(structure_input, "site_properties", {}))
+            mgo_defect_gen, _output = self._generate_and_test_no_warnings(structure_input)
+            for struct in [
+                mgo_defect_gen.structure,
+                mgo_defect_gen.primitive_structure,
+                mgo_defect_gen.bulk_supercell,
+                *(entry.defect_supercell for entry in mgo_defect_gen.values()),
+            ]:
+                assert not set(struct.site_properties) - {"magmom"}
+            assert set(getattr(structure_input, "site_properties", {})) == input_site_props  # unchanged
+            if structure_input is sd_magmom_structure:
+                assert "magmom" in mgo_defect_gen.bulk_supercell.site_properties  # retained
+
+            with tempfile.TemporaryDirectory() as tmp_dir:  # write rattled POSCARs:
+                DefectsSet({name: mgo_defect_gen[name] for name in defect_names}).write_files(
+                    output_path=tmp_dir, poscar=True
+                )
+                poscar_paths = [
+                    os.path.join(dirpath, "POSCAR")
+                    for dirpath, _dirnames, filenames in os.walk(tmp_dir)
+                    if "POSCAR" in filenames
+                ]
+                assert all(
+                    any(f"{os.sep}{name}{os.sep}" in path for path in poscar_paths)
+                    for name in defect_names
+                )
+                assert any("_bulk" in path for path in poscar_paths)
+                for path in poscar_paths:
+                    with open(path, encoding="utf-8") as f:
+                        poscar_lines = f.read().splitlines()
+                    num_sites = sum(int(i) for i in poscar_lines[6].split())
+                    assert len(poscar_lines) == 8 + num_sites  # no selective dynamics or velocities
 
     def test_P1_sanity_check(self):
         """
