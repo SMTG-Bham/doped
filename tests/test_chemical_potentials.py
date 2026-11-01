@@ -2872,8 +2872,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         Test that the final pressures of VASP competing phase calculations are
         parsed (when the stress was calculated), that large residual pressures
-        are warned about (sorted by magnitude, and only with
-        ``check_compatibility=True``).
+        are warned about (outside asymmetric bounds, sorted by magnitude, and
+        only with ``check_compatibility=True``).
         """
 
         def first_ionic_step_entry(path, **data):  # real phase at its unrelaxed (MP) lattice
@@ -2907,18 +2907,33 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         )
         polymorph = first_ionic_step_entry(f"{self.ZrO2_path}/ZrO2_EaH_0.009/vasp_std/vasprun.xml.gz")
         assert polymorph.data["pressure"] < -5
-        assert mgo.data["pressure"] == pytest.approx(-0.99, abs=0.01)  # within the tolerance
+        assert mgo.data["pressure"] == pytest.approx(-0.99, abs=0.01)  # within the bounds
+        # and just inside (MgO after a lower-cutoff relaxation, La2O3) and outside (Zr3O) the bounds:
+        mgo_tight = first_ionic_step_entry(
+            f"{EXAMPLE_DIR}/MgO/Dielectric/Ionic/Relax_tight/vasprun.xml.gz"
+        )
+        la2o3_path = f"{EXAMPLE_DIR}/La_ZrO2_CompetingPhases/La2O3_EaH_0.0/vasp_std/vasprun.xml.gz"
+        la2o3 = first_ionic_step_entry(la2o3_path)
+        zr3o_path = f"{self.ZrO2_path}/Zr3O_EaH_0.004/vasp_std/vasprun.xml.gz"
+        zr3o = first_ionic_step_entry(zr3o_path, folder="Zr3O_EaH_0.004")
+        assert mgo_tight.data["pressure"] == pytest.approx(0.97, abs=0.01)
+        assert la2o3.data["pressure"] == pytest.approx(-2.10, abs=0.01)
+        assert zr3o.data["pressure"] == pytest.approx(-3.46, abs=0.01)
 
         _, _, w = _run_func_and_capture_stdout_warnings(
-            chemical_potentials._check_entry_pressures, [mgo, la, zro2, cdte, polymorph, ytos]
+            chemical_potentials._check_entry_pressures,
+            [mgo, mgo_tight, la, la2o3, zro2, cdte, polymorph, zr3o, ytos],
         )
         assert len(w) == 1
         message = str(w[0].message)
-        tolerance = chemical_potentials._PRESSURE_TOLERANCE_GPA
-        assert message.startswith(f"There are large final pressures (|P| > {tolerance} GPa) for (some of)")
+        min_pressure, max_pressure = chemical_potentials._PRESSURE_RANGE_GPA
+        assert message.startswith(
+            f"There are large final pressures (P < {min_pressure} GPa or P > {max_pressure} GPa) for"
+        )
         assert message.split("(positive = compressive stress):\n")[1].splitlines() == [  # sorted by |P|
             f"{ytos.name} ({ytos.data['folder']}): -17.37 GPa",
             f"ZrO2: {polymorph.data['pressure']:+.2f} GPa",
+            "Zr3O (Zr3O_EaH_0.004): -3.46 GPa",
             "La (La_EaH_0.0): +1.21 GPa",
         ]
 

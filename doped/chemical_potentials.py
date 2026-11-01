@@ -4718,26 +4718,28 @@ def _check_entry_compatibility(
         )
 
 
-_PRESSURE_TOLERANCE_GPA = 1
+_PRESSURE_RANGE_GPA = (-3, 1)
 """
-Tolerance (in GPa) for the final (residual) pressures of competing phase
-calculations, above which |CompetingPhasesAnalyzer| warns that they may not be
-at their equilibrium volumes (see :func:`_check_entry_pressures`).
+Range (in GPa) of final (residual) pressures for competing phase calculations,
+outside of which |CompetingPhasesAnalyzer| warns that they may not be at their
+equilibrium volumes (see :func:`_check_entry_pressures`).
+
+The lower bound is looser, as large negative pressures can be Pulay stress (in
+fixed-cell calculations with low plane-wave cutoffs) rather than volume errors.
 """
 
 
 def _check_entry_pressures(entries: list[ComputedEntry]) -> None:
     """
     Warn about competing phase ``entries`` with large final (residual)
-    pressures (above :data:`_PRESSURE_TOLERANCE_GPA`), which indicate that
-    their cells are not at their equilibrium volumes for the calculation
-    settings used (e.g. fixed-cell or single-point calculations at lattices
-    from other functionals, codes or cutoffs, or unconverged relaxations), and
-    so can cause errors in their energies and thus the chemical potential
-    limits.
+    pressures (outside :data:`_PRESSURE_RANGE_GPA`), which indicate that their
+    cells are not at their equilibrium volumes for the calculation settings
+    used (e.g. fixed-cell or single-point calculations at lattices from other
+    functionals, codes or cutoffs, or unconverged relaxations), and so can
+    cause errors in their energies and thus the chemical potential limits.
 
     Large negative pressures in fixed-cell calculations with low plane-wave
-    cutoffs are usually Pulay stress.
+    cutoffs are usually Pulay stress, so the lower bound is looser.
 
     The pressures are taken from ``entry.data["pressure"]`` (in GPa, positive
     for compressive stress). Entries without a numerical pressure are skipped.
@@ -4746,21 +4748,24 @@ def _check_entry_pressures(entries: list[ComputedEntry]) -> None:
         entries (list[|ComputedEntry|]):
             The competing phase entries to check.
     """
+    min_pressure, max_pressure = _PRESSURE_RANGE_GPA
     high_pressures = []
     for entry in entries:
-        pressure = entry.data.get("pressure")
-        if isinstance(pressure, int | float) and abs(pressure) > _PRESSURE_TOLERANCE_GPA:  # (not NaN)
+        pressure = entry.data.get("pressure")  # (``None`` and NaN pressures are skipped below)
+        if isinstance(pressure, int | float) and (pressure < min_pressure or pressure > max_pressure):
             folder = entry.data.get("folder")
             high_pressures.append((f"{entry.name} ({folder})" if folder else entry.name, pressure))
 
     if high_pressures:
         high_pressures.sort(key=lambda x: -abs(x[1]))
         warnings.warn(
-            f"There are large final pressures (|P| > {_PRESSURE_TOLERANCE_GPA} GPa) for (some of) your "
-            f"competing phase calculations, suggesting that their cells are not at their equilibrium "
-            f"volumes for the calculation settings used (e.g. fixed-cell or single-point calculations at "
-            f"lattices from other functionals, codes or cutoffs, or unconverged relaxations), which can "
-            f"cause errors in their energies. Final pressures (positive = compressive stress):\n"
+            f"There are large final pressures (P < {min_pressure} GPa or P > {max_pressure} GPa) for "
+            f"(some of) your competing phase calculations, suggesting that their cells are not at their "
+            f"equilibrium volumes for the calculation settings used (e.g. fixed-cell or single-point "
+            f"calculations at lattices from other functionals, codes or cutoffs, or unconverged "
+            f"relaxations), which can cause errors in their energies. Negative pressures in fixed-cell "
+            f"calculations with low plane-wave cutoffs can be Pulay stress, which may have a negligible "
+            f"effect on energies. Final pressures (positive = compressive stress):\n"
             + "\n".join(f"{label}: {pressure:+.2f} GPa" for label, pressure in high_pressures)
         )
 
