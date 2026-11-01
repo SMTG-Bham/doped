@@ -28,7 +28,7 @@ from pymatgen.analysis.defects.generators import (
 from pymatgen.analysis.defects.utils import remove_collisions
 from pymatgen.core.adsorption import AdsorbateSiteFinder
 from pymatgen.core.entries import ComputedStructureEntry
-from pymatgen.core.periodic_table import DummySpecies
+from pymatgen.core.periodic_table import DummySpecies, get_el_sp
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
 from tabulate import tabulate  # type: ignore[import-untyped]
@@ -1855,7 +1855,7 @@ class DefectsGenerator(MSONable):
             self.defects["substitutions"] = [
                 sub
                 for sub in self.defects["substitutions"]
-                if any(sub.name.startswith(sub_elt) for sub_elt in sub_elts)
+                if sub.name.split("_", 1)[0] in sub_elts  # exact match, not prefix (e.g. T vs Te)
             ]
 
         if not self.defects["substitutions"]:  # no substitutions, single-element system, no extrinsic
@@ -1905,7 +1905,7 @@ class DefectsGenerator(MSONable):
         for el in self.kwargs.get("interstitial_elements", self._element_list):
             el_gen_kwargs, el_sites = interstitial_gen_kwargs, sorted_sites_mul_and_equiv_fpos
             if (
-                Element(el).symbol == "H"  # also D/T (named isotopes, with symbol "H")
+                get_el_sp(el).symbol == "H"  # also D/T (named isotopes, with symbol "H")
                 and not self.interstitial_coords
                 and (H_gen_kwargs := {**_H_INTERSTITIAL_GEN_KWARGS, **interstitial_gen_kwargs})
                 != interstitial_gen_kwargs
@@ -2531,22 +2531,22 @@ def _first_and_second_element(defect_name: str) -> tuple[str, str]:
     )  # return name split if formatting fails
 
 
-def _element_sort_func(element_str: str) -> tuple[int, int]:
+def _element_sort_func(element_str: str) -> tuple[int, int, float]:
     """
     Return a tuple of the group (+16 if it's a transition metal, to move them
-    after main group elements) and atomic number of the element, for sorting
-    purposes.
+    after main group elements), atomic number and atomic mass (to order named
+    isotopes, i.e. H, D, T) of the element, for sorting purposes.
 
     Args:
         element_str (str): Element symbol.
 
     Returns:
-        tuple: Tuple of the group and atomic number of the
+        tuple: Tuple of the group, atomic number and atomic mass of the
             element.
     """
     elt = Element(element_str)
     group = elt.group + 16 if 3 <= elt.group <= 18 else elt.group
-    return (group, elt.Z)
+    return (group, elt.Z, elt.atomic_mass)
 
 
 def sort_defect_entries(defect_entries: dict | list, element_list: list | None = None):

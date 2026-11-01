@@ -971,7 +971,11 @@ class DefectEntry(thermo.DefectEntry):
         self, chemical_potentials: dict | None = None, missing_elts_warning: bool = True
     ) -> float:
         chempot_dict: dict = chemical_potentials or {}
-        element_changes = {elt.symbol: change for elt, change in self.defect.element_changes.items()}
+        element_changes: dict[str, int] = collections.defaultdict(int)
+        for elt, change in self.defect.element_changes.items():
+            # named isotopes (e.g. D, symbol "H") take their parent element's chempot if not specified:
+            use_symbol = elt.name not in chempot_dict and elt.symbol in chempot_dict
+            element_changes[elt.symbol if use_symbol else elt.name] += change  # D_H: {"H": 0} w/μ_D = μ_H
         missing_elts = [elt for elt in element_changes if elt not in chempot_dict]
         if missing_elts and missing_elts_warning:
             warnings.warn(

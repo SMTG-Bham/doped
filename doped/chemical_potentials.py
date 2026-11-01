@@ -648,7 +648,7 @@ def get_MP_summary_dicts(
 def _entries_sort_func(
     entry: ComputedEntry,
     bulk_composition: str | Composition | dict | list | None = None,
-) -> tuple[float, bool, int, list[tuple[int, int]], str]:
+) -> tuple[float, bool, int, list[tuple[int, int, float]], str]:
     r"""
     Function to sort |ComputedEntry|\s by energy above hull, then if
     composition matches ``bulk_composition`` (if provided), then by the number
@@ -666,7 +666,7 @@ def _entries_sort_func(
             Default is ``None`` (don't sort according to this).
 
     Returns:
-        tuple[float, bool, int, list[tuple[int, int]], str]:
+        tuple[float, bool, int, list[tuple[int, int, float]], str]:
             Sort key: energy above hull, whether the composition differs from
             the bulk composition (when ``bulk_composition`` is set), number of
             species in ``entry.name``, periodic-table ordering tuples for each
@@ -1347,9 +1347,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
             if set(entry.composition.elements) <= intrinsic_el_set
             and entry.data.get("energy_above_hull", 0) <= self.energy_above_hull
         ]
-        # record the effective ``mp-api`` thermo-type criteria (for reference/serialisation); placed after
-        # ``get_entries_in_chemsys``, to show the ``mp-api`` warning about updated default thermo type
-        # criteria. Copies avoid mutating the caller's dict or aliasing the ``mp-api`` module-level list:
+        # record the effective ``mp-api`` thermo-type criteria (for reference/serialisation). Copies avoid
+        # mutating the caller's dict or aliasing the ``mp-api`` module-level list:
         self._get_entries_kwargs["additional_criteria"] = {
             "thermo_types": list(DEFAULT_THERMOTYPE_CRITERIA["thermo_types"]),
             **(self._get_entries_kwargs.get("additional_criteria") or {}),
