@@ -22,6 +22,7 @@ from ase.build import bulk, make_supercell
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
+from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Species
 from pymatgen.core.surface import SlabGenerator
@@ -46,6 +47,7 @@ from doped.core import (
 )
 from doped.generation import (
     DefectsGenerator,
+    _element_sort_func,
     get_bond_centre_sites,
     get_defect_name_from_defect,
     get_defect_name_from_entry,
@@ -63,11 +65,6 @@ from doped.utils.symmetry import (
     translate_structure,
 )
 from doped.vasp import DefectsSet
-
-try:
-    from pymatgen.core.entries import ComputedStructureEntry
-except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
-    from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 default_supercell_gen_kwargs = {
     "min_image_distance": 10.0,  # same as current pymatgen-analysis-defects `min_length` ( = 10)
@@ -972,34 +969,34 @@ Se_i_C2_Ag2.48               [0,-1,-2]          [0.091,0.500,0.500]  2b
 -----------  -----------------  -------------------  ---------
 v_Si         [+1,0,-1,-2,-3]    [0.000,0.000,0.445]  6c
 v_Sb         [+1,0,-1,-2,-3]    [0.000,0.000,0.166]  6c
-v_Te         [+2,+1,0,-1]       [0.332,0.001,0.260]  18f
+v_Te         [+2,+1,0,-1]       [0.335,0.003,0.073]  18f
 
 Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
 Si_Sb            [+1,0,-1]                    [0.000,0.000,0.166]  6c
-Si_Te            [+6,+5,+4,+3,+2,+1,0,-1,-2]  [0.332,0.001,0.260]  18f
+Si_Te            [+6,+5,+4,+3,+2,+1,0,-1,-2]  [0.335,0.003,0.073]  18f
 Sb_Si            [+2,+1,0,-1,-2,-3,-4,-5,-6]  [0.000,0.000,0.445]  6c
-Sb_Te            [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.332,0.001,0.260]  18f
+Sb_Te            [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.335,0.003,0.073]  18f
 Te_Si            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.445]  6c
 Te_Sb            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.166]  6c
 
 Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
-Si_i_C1_Si2.21   [+4,+3,+2,+1,0]              [0.201,0.359,0.167]  18f
-Si_i_C1_Si2.48   [+4,+3,+2,+1,0]              [0.348,0.347,0.543]  18f
-Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.003,0.335,0.044]  18f
+Si_i_C1_Si2.21   [+4,+3,+2,+1,0]              [0.158,0.359,0.167]  18f
+Si_i_C1_Si2.48   [+4,+3,+2,+1,0]              [0.347,0.348,0.457]  18f
+Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.001,0.336,0.289]  18f
 Si_i_C3_Sb2.41   [+4,+3,+2,+1,0]              [0.000,0.000,0.050]  6c
 Si_i_C3_Si2.64   [+4,+3,+2,+1,0]              [0.000,0.000,0.318]  6c
 Si_i_C3i         [+4,+3,+2,+1,0]              [0.000,0.000,0.000]  3a
-Sb_i_C1_Si2.21   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.201,0.359,0.167]  18f
-Sb_i_C1_Si2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.348,0.347,0.543]  18f
-Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.003,0.335,0.044]  18f
+Sb_i_C1_Si2.21   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.158,0.359,0.167]  18f
+Sb_i_C1_Si2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.347,0.348,0.457]  18f
+Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.001,0.336,0.289]  18f
 Sb_i_C3_Sb2.41   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.050]  6c
 Sb_i_C3_Si2.64   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.318]  6c
 Sb_i_C3i         [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.000]  3a
-Te_i_C1_Si2.21   [+4,+3,+2,+1,0,-1,-2]        [0.201,0.359,0.167]  18f
-Te_i_C1_Si2.48   [+4,+3,+2,+1,0,-1,-2]        [0.348,0.347,0.543]  18f
-Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.003,0.335,0.044]  18f
+Te_i_C1_Si2.21   [+4,+3,+2,+1,0,-1,-2]        [0.158,0.359,0.167]  18f
+Te_i_C1_Si2.48   [+4,+3,+2,+1,0,-1,-2]        [0.347,0.348,0.457]  18f
+Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.001,0.336,0.289]  18f
 Te_i_C3_Sb2.41   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.050]  6c
 Te_i_C3_Si2.64   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.318]  6c
 Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
@@ -1770,19 +1767,19 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             ytos_defect_gen.prim_interstitial_coords_mult_and_equiv_coords,
             [
                 (
-                    np.array([0.1838, 0.6838, 0.3675]),
+                    np.array([0.3162, 0.8162, 0.3675]),
                     4,
                     [
-                        np.array([0.1838, 0.6838, 0.3675]),
-                        np.array([0.6838, 0.1838, 0.3675]),
-                        np.array([0.3162, 0.8162, 0.6325]),
-                        np.array([0.8162, 0.3162, 0.6325]),
+                        np.array([0.3162, 0.8162, 0.3675]),
+                        np.array([0.8162, 0.3162, 0.3675]),
+                        np.array([0.1838, 0.6838, 0.6325]),
+                        np.array([0.6838, 0.1838, 0.6325]),
                     ],
                 ),
                 (
-                    np.array([0.5822, 0.5822, 0.1643]),
+                    np.array([0.4178, 0.4178, 0.1643]),
                     2,
-                    [np.array([0.5822, 0.5822, 0.1643]), np.array([0.4178, 0.4178, 0.8357])],
+                    [np.array([0.4178, 0.4178, 0.1643]), np.array([0.5822, 0.5822, 0.8357])],
                 ),
                 (
                     np.array([0.25, 0.75, 0.5]),
@@ -2492,7 +2489,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             # slight extra expansion)
         else:
             assert np.allclose(
-                ytos_defect_gen.supercell_matrix, np.array([[3, 0, 0], [0, 3, 0], [1, 1, 2]])
+                ytos_defect_gen.supercell_matrix, np.array([[3, 0, 0], [0, 3, 0], [-1, -1, 2]])
             )
             assert np.allclose(
                 ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
@@ -2514,7 +2511,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert ytos_defect_gen.defects["vacancies"][0].name == "v_Y"
         assert ytos_defect_gen.defects["vacancies"][0].oxi_state == -3
         assert ytos_defect_gen.defects["vacancies"][0].multiplicity == 2
-        v_Y_frac_coords = np.array([0.333885, 0.333885, 0.66777])
+        v_Y_frac_coords = np.array([0.333885, 0.333885, 0.332231])
         assert np.allclose(
             ytos_defect_gen.defects["vacancies"][0].site.frac_coords,
             v_Y_frac_coords,
@@ -2570,7 +2567,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
 
         frac_coords = np.array(
-            [0.555372, 0.555372, 0.33223] if generate_supercell else [0.3333, 0.3333, 0.3339]
+            [0.444628, 0.444628, 0.33223] if generate_supercell else [0.3333, 0.3333, 0.3339]
         )
         try:
             assert np.allclose(
@@ -2587,7 +2584,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert np.allclose(
             ytos_defect_gen["v_Y_0"].defect.site.frac_coords,
-            np.array([0.333885, 0.333885, 0.66777]),
+            np.array([0.333885, 0.333885, 0.332231]),
             atol=1e-3,
         )
 
@@ -3690,11 +3687,26 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert all(
             name.startswith(entry.defect.name) for name, entry in Si_defect_gen.defect_entries.items()
         )
+        # D uses its own chemical potential if given, else that of H:
+        D_Si = Si_defect_gen["D_Si_0"]
+        assert np.isclose(D_Si._get_chempot_term({"Si": -5, "H": -3}), -2)  # μ_Si - μ_D
+        assert np.isclose(D_Si._get_chempot_term({"Si": -5, "H": -3, "D": -3.2}), -1.8)
+        assert sorted(["T", "D", "H"], key=_element_sort_func) == ["H", "D", "T"]  # deterministic order
         self._save_defect_gen_jsons(Si_defect_gen)
         self._load_and_test_defect_gen_jsons(Si_defect_gen)
 
         # test DefectsSet initialisation also fine:
         DefectsSet(Si_defect_gen)
+
+        # substitution_elements matches elements exactly, not as name prefixes (T vs Te):
+        CdTe_defect_gen, _output = self._generate_and_test_no_warnings(
+            self.prim_cdte,
+            extrinsic="T",
+            substitution_elements=["T"],
+            vacancy_elements=[],
+            interstitial_gen_kwargs=False,
+        )
+        assert {name.rsplit("_", 1)[0] for name in CdTe_defect_gen.defect_entries} == {"T_Cd", "T_Te"}
 
     def test_input_structure_site_properties(self):
         r"""

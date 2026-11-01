@@ -5472,8 +5472,7 @@ def scissor_dos(
 
     if verbose:
         print(f"Orig gap: {dos_gap:.4f}, new gap:{dos_gap + delta_gap:.4f}")
-    if isinstance(dos, FermiDos):  # (plain ``Dos`` objects have no ``structure``)
-        scissored_dos_dict["structure"] = dos.structure.as_dict()
+    if isinstance(dos, FermiDos):
         return FermiDos.from_dict(scissored_dos_dict)
     return Dos.from_dict(scissored_dos_dict)
 

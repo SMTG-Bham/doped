@@ -2049,6 +2049,10 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
     - maximum number of abs(x), abs(y), abs(z) that are equal
     - a, b, c magnitudes (favouring c >= b >= a)
 
+    Signs and equalities of matrix elements are compared after rounding to 6
+    decimal places, so that float noise (e.g. ``-4e-16`` entries from Niggli
+    reduction) doesn't affect the ordering.
+
     Args:
         lattice_matrix (np.ndarray): Lattice matrix to sort.
 
@@ -2062,9 +2066,10 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
 
     is_diagonal = np.all(np.abs(lattice_matrix[~np.eye(3, dtype=bool)]) < 1e-3)
     symmetric = is_diagonal or is_symmetric(lattice_matrix)
-    num_negs = np.sum(lattice_matrix < 0)
+    rounded_matrix = np.round(lattice_matrix, 6)  # round off float noise (e.g. -4e-16)
+    num_negs = np.sum(rounded_matrix < 0)
     diag_sum = np.round(np.sum(np.abs(np.diag(lattice_matrix))), 1)
-    flat_matrix = lattice_matrix.ravel()
+    flat_matrix = rounded_matrix.ravel()
     _unique_vals, counts = np.unique(flat_matrix, return_counts=True)
     num_equals = np.sum(counts * (counts + 1) // 2)
     _abs_vals, abs_counts = np.unique(np.abs(flat_matrix), return_counts=True)
@@ -2115,7 +2120,7 @@ def get_clean_structure(
             structure lattice to the new structure lattice (T * Orig = New).
     """
     lattice = structure.lattice
-    if np.all(lattice.matrix <= 0):
+    if np.all(np.round(lattice.matrix, 6) <= 0):  # ignore float noise, as in ``_lattice_matrix_sort_func``
         lattice = Lattice(lattice.matrix * -1)
     possible_lattice_matrices = [
         lattice.matrix,
@@ -2136,7 +2141,7 @@ def get_clean_structure(
 
     possible_lattice_matrices.sort(key=_lattice_matrix_sort_func)
     new_lattice_matrix = possible_lattice_matrices[0]
-    if np.all(new_lattice_matrix <= 0):
+    if np.all(np.round(new_lattice_matrix, 6) <= 0):  # round off any float noise
         new_lattice_matrix = new_lattice_matrix * -1
 
     new_structure = Structure(

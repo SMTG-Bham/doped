@@ -154,7 +154,7 @@ def _Composition__eq__(self, other):
     if not isinstance(other, type(self)):  # plain dicts have no ``_data``/hash-cache support, and may be
         try:  # keyed by str symbols (which never match ``Element`` keys), so convert, as in ``pymatgen``:
             other = Composition(other, allow_negative=True)
-        except (ValueError, TypeError, IndexError):  # IndexError if unparsable, pmg<2026.10.30
+        except (ValueError, TypeError):
             return False
         return fast_Composition_eq(self, other)  # compare directly
 

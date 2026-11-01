@@ -64,8 +64,8 @@ class TestCompositionHashEq:
         assert Composition("Fe2O3") != {"Fe": 2, "Al": 3}
         assert Composition("Fe2O3") != {"Fe": 2, "Zz": 3}
         assert Composition("Fe2O3") != {Element("Fe"): 2, Element("Al"): 3}
-        assert Composition("CdTe") != {"CdTe": 1}  # unparsable (IndexError in pymatgen-core < 2026.10.30)
-        assert Composition("CdTe") != {"limits": 1}  # unparsable (ValueError)
+        assert Composition("CdTe") != {"CdTe": 1}  # unparsable
+        assert Composition("CdTe") != {"limits": 1}  # unparsable
 
     def test_ion_hash_invariant(self):
         # ``Ion.__hash__`` = hash((composition, charge)); inherits the Composition fix:

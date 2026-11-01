@@ -15,6 +15,7 @@ from unittest.mock import patch
 import matplotlib as mpl
 import numpy as np
 import pytest
+from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import PeriodicSite, Structure
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
@@ -22,11 +23,6 @@ from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_p
 from doped.analysis import DefectParser, DefectsParser
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
-
-try:
-    from pymatgen.core.entries import ComputedStructureEntry
-except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
-    from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
