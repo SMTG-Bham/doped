@@ -4,20 +4,15 @@ from pathlib import Path
 
 from monty.serialization import dumpfn
 
-from doped.chemical_potentials import get_doped_chempots_from_entries
-from doped.io import get_calculation_outputs
+from doped.chemical_potentials import CompetingPhasesAnalyzer
 from doped.parsing import DefectsParser
 from doped.thermodynamics import DefectThermodynamics
 
 DIELECTRIC = 8.8963
 
 
-def get_gpaw_entry(path):
-    """Read one GPAW calculation as a computed structure entry."""
-    return get_calculation_outputs(path, calculator="gpaw").get_computed_entry()
-
-
 def main():
+    """Parse GPAW calculations and write Mg-rich and O-rich formation-energy plots."""
     calculation_dir = Path.cwd()
 
     print("Parsing MgO defect calculations...")
@@ -29,13 +24,10 @@ def main():
     )
 
     print("Building GPAW-consistent Mg/O chemical potentials...")
-    bulk_entry = get_gpaw_entry(calculation_dir / "MgO_bulk")
-    phase_dir = calculation_dir / "CompetingPhases_GPAW"
-    phase_entries = [get_gpaw_entry(path) for path in sorted(phase_dir.iterdir()) if path.is_dir()]
-    chempots = get_doped_chempots_from_entries(
-        [bulk_entry, *phase_entries],
-        bulk_entry,
-    )
+    # from the primitive-cell MgO host and Mg/O phase calculations (not the Γ-only ``MgO_bulk`` supercell):
+    chempots = CompetingPhasesAnalyzer(
+        "MgO", entries=calculation_dir / "CompetingPhases_GPAW", calculator="gpaw"
+    ).chempots
     dumpfn(chempots, calculation_dir / "MgO_GPAW_chempots.json")
 
     defect_thermodynamics = DefectThermodynamics(

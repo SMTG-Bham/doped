@@ -1059,8 +1059,9 @@ class DefectsParser:
         # Parsed defect checks:
         # handle (and warn) any charge correction errors or calculation parameter mismatches:
         _handle_charge_correction_errors(self.defect_dict, self.error_tolerance, **kwargs)
-        _warn_calculation_mismatches(  # warn any mismatching defect/bulk calc parameters
-            self.defect_dict, getattr(self._backend, "MISMATCH_WARNING_SPECS", {})
+        _io_utils._warn_calculation_mismatches(  # warn any mismatching defect/bulk calc parameters
+            [(name, entry.calculation_metadata) for name, entry in self.defect_dict.items()],
+            getattr(self._backend, "MISMATCH_WARNING_SPECS", {}),
         )
         _check_and_warn_dimer_bonds_spin_states(self.defect_dict, rtol=self.kwargs.get("rtol", 1.05))
 
@@ -1805,37 +1806,6 @@ def _name_parsed_defect_entries(
     )
 
     return sort_defect_entries(defect_dict)
-
-
-def _warn_calculation_mismatches(
-    defect_dict: dict[str, DefectEntry], mismatch_warning_specs: dict[str, dict]
-) -> None:
-    """
-    Generic handler for mismatching calculation parameters, stored in
-    ``DefectEntry.calculation_metadata``.
-
-    ``mismatch_warning_specs`` is the calculator backend
-    ``MISMATCH_WARNING_SPECS`` constant: for each metadata key, the
-    human-readable setting name (``"object_name"``) and the value transform &
-    message formatting functions.
-    """
-    for mismatch_key, mismatch_spec in mismatch_warning_specs.items():
-        mismatches = [
-            (name, mismatch_spec["transform"](entry.calculation_metadata[mismatch_key]))
-            for name, entry in defect_dict.items()
-            if entry.calculation_metadata.get(mismatch_key, False)
-        ]
-        if not mismatches:
-            continue
-
-        # sort by number of items then by name, descending, then warn
-        mismatches.sort(key=lambda x: (len(x[1]), x[0]), reverse=True)
-
-        warnings.warn(
-            f"There are mismatching {mismatch_spec['object_name']} for (some of) your defect and bulk "
-            f"calculations which are likely to cause errors in the parsed results (energies). Found the "
-            f"following differences:\n(in the format: {mismatch_spec['message'](mismatches)})"
-        )
 
 
 def _handle_charge_correction_errors(

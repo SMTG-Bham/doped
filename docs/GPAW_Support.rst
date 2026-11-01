@@ -165,32 +165,33 @@ been applied):
 Chemical potentials and formation energies
 ------------------------------------------
 
-Competing-phase calculations must use energies that are consistent with the
-GPAW settings used for the bulk and defects. Individual outputs can be converted
-to ``pymatgen`` computed entries and used to determine the chemical-potential
-limits:
+GPAW competing-phase outputs can be parsed directly with
+``CompetingPhasesAnalyzer(..., calculator="gpaw")``:
 
 .. code-block:: python
 
-   from doped.chemical_potentials import get_doped_chempots_from_entries
-   from doped.io import get_calculation_outputs
+   from doped.chemical_potentials import CompetingPhasesAnalyzer
    from doped.thermodynamics import DefectThermodynamics
 
-   bulk_entry = get_calculation_outputs("MgO_bulk", calculator="gpaw").get_computed_entry()
-
-   # phase_entries should contain consistently calculated elemental and
-   # competing-phase entries.
-   chempots = get_doped_chempots_from_entries(
-       [bulk_entry, *phase_entries],
-       bulk_entry,
+   phase_analyzer = CompetingPhasesAnalyzer(
+       "MgO",
+       entries="CompetingPhases_GPAW",
+       calculator="gpaw",
    )
-   defect_thermodynamics = DefectThermodynamics(defect_dict, chempots=chempots)
+   defect_thermodynamics = DefectThermodynamics(defect_dict, chempots=phase_analyzer.chempots)
    defect_thermodynamics.plot(limit="Mg-rich")
    defect_thermodynamics.plot(limit="O-rich")
 
-The complete MgO example prepares Mg structures obtained from the
-|CompetingPhases| workflow and an isolated triplet O2 reference, then generates
-Mg-rich and O-rich formation-energy diagrams.
+The parser reads the stored structures, total energies and GPAW parameters, and
+warns if the functional, PAW datasets, basis set or mode (e.g. plane-wave
+cutoff) differ between competing phases (while k-point and real-space meshes
+can differ). Ensure energies use consistent functionals, PAW datasets, basis
+sets and cutoffs with the bulk and defects. Competing-phase input generation
+with GPAW is not yet implemented (TODO).
+
+The complete MgO example prepares a primitive-cell MgO host calculation, Mg
+structures obtained from the |CompetingPhases| workflow and an isolated triplet
+O2 reference, then generates Mg-rich and O-rich formation-energy diagrams.
 
 Anisotropic and two-dimensional systems
 ---------------------------------------

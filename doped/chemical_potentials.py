@@ -2883,8 +2883,9 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 multiprocessing.
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
-                by comparing their ``INCAR`` and ``POTCAR`` settings (if
-                available). Default is ``True``.
+                by comparing their calculation settings (e.g. ``INCAR`` tags
+                and ``POTCAR`` symbols with VASP), if available. Default is
+                ``True``.
             calculator (str):
                 Name of the calculator used for the competing phase
                 calculations (matching a ``doped.io.<calculator>`` parsing
@@ -2995,8 +2996,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 potential limits.
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
-                by comparing their ``INCAR`` and ``POTCAR`` settings.
-                Default is ``True``.
+                by comparing their calculation settings (e.g. ``INCAR`` tags
+                and ``POTCAR`` symbols with VASP). Default is ``True``.
         """
         self.entries = entries
         intrinsic_entries: list[ComputedEntry | ComputedStructureEntry] = []
@@ -3079,10 +3080,9 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         # check entry compatibilities (calculation settings), with the calculator backend (if it
         # implements this check); taking the first of bulk entry, bulk comp entries, intrinsic, all
         # entries `with` the relevant settings data as the reference (template) entry:
-        if check_compatibility and (
-            check_entry_compatibility := getattr(self._backend, "check_entry_compatibility", None)
-        ):
-            check_entry_compatibility(
+        if check_compatibility:
+            _check_entry_compatibility(
+                self._backend,
                 entries,
                 template_candidates=[self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries],
             )
@@ -3195,8 +3195,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         discovered ``vasprun.xml(.gz)`` files are parsed.
 
         If ``path`` is a list, each element may be a direct path to a
-        ``vasprun.xml(.gz)`` file **or** to a directory containing one,
-        which will be located via a recursive search.
+        ``vasprun.xml(.gz)`` file **or** to the directory directly containing
+        one (i.e. not searched recursively).
 
         Args:
             path (PathLike or list):
@@ -3221,8 +3221,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 multiprocessing.
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
-                by comparing their ``INCAR`` and ``POTCAR`` settings.
-                Default is ``True``.
+                by comparing their calculation settings (e.g. ``INCAR`` tags
+                and ``POTCAR`` symbols with VASP). Default is ``True``.
         """
         output_file = self._backend.CALC_OUTPUT_MASK[0]  # e.g. "vasprun.xml" with VASP
         if isinstance(path, list):
@@ -3405,6 +3405,10 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             calc_output_path, multiple = _io_utils._get_output_files_and_check_if_multiple(
                 output_file, str(directory)
             )
+        # optional backend file selection (e.g. GPAW filename priority, matching defect parsing):
+        if (find_calc_output := getattr(self._backend, "find_calc_output", None)) is not None:
+            with contextlib.suppress(FileNotFoundError, ValueError):  # none/ambiguous: keep generic pick
+                calc_output_path = find_calc_output(directory)
         if calc_output_path and os.path.exists(calc_output_path):
             if multiple:
                 self._multiple_files_warning(output_file, directory, calc_output_path)
@@ -3414,12 +3418,9 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
     def _multiple_files_warning(self, output_file, directory, chosen_filepath) -> None:
         """
         Warn that multiple calculation output files were found in
-        ``directory``, using the backend's ``FILE_PARSING_ACTIONS`` for the
-        (informative) description of what the file is parsed for.
+        ``directory``, describing the competing-phase parsing task.
         """
-        action = getattr(self._backend, "FILE_PARSING_ACTIONS", {}).get(
-            output_file, "parse the calculation energy and metadata."
-        )
+        action = "parse the competing-phase energy and metadata."
         _io_utils._multiple_files_warning(
             output_file, directory, chosen_filepath, action, dir_type="competing phase"
         )
@@ -4601,6 +4602,51 @@ def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None, exclude: set 
                 new_position = (new_position[0], new_position[1] + delta_y)
 
         text.set_position(new_position)
+
+
+def _check_entry_compatibility(
+    backend: ModuleType, entries: list[ComputedEntry], template_candidates: list[ComputedEntry]
+) -> None:
+    r"""
+    Check the calculation settings of the competing phase ``entries`` against
+    those of a reference (template) entry, using the
+    ``compare_calculation_settings()`` function and ``MISMATCH_WARNING_SPECS``
+    of the ``doped.io`` calculator ``backend`` (if implemented); recording any
+    mismatches in ``entry.data`` (under the ``MISMATCH_WARNING_SPECS`` keys)
+    and warning about these collectively.
+
+    For each type of setting, the first entry in ``template_candidates`` with
+    the relevant settings data (``"data_key"`` in ``MISMATCH_WARNING_SPECS``)
+    is used as the reference, and entries without this data (e.g.
+    ``ComputedEntry``\s supplied directly by the user, rather than parsed
+    from calculation outputs) are skipped.
+
+    Args:
+        backend (ModuleType):
+            The ``doped.io`` calculator parsing backend module.
+        entries (list[|ComputedEntry|]):
+            The competing phase entries to check.
+        template_candidates (list[|ComputedEntry|]):
+            Priority-ordered candidate entries from which to take the reference
+            (template) calculation settings.
+    """
+    if (compare := getattr(backend, "compare_calculation_settings", None)) is None:
+        return
+    for mismatch_key, spec in getattr(backend, "MISMATCH_WARNING_SPECS", {}).items():
+        template = next((e for e in template_candidates if e.data.get(spec["data_key"])), None)
+        if template is None:
+            continue
+        for entry in entries:
+            if entry.data.get(spec["data_key"]) and mismatch_key in (
+                mismatches := compare(entry.data, template.data, competing_phases=True)
+            ):
+                entry.data[mismatch_key] = mismatches[mismatch_key]
+        _io_utils._warn_calculation_mismatches(
+            [(entry.name, entry.data) for entry in entries],
+            {mismatch_key: spec},
+            competing_phases=True,
+            reference_name=template.name,
+        )
 
 
 def _parse_entry_and_catch_exception(
