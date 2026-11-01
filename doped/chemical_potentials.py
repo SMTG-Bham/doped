@@ -26,7 +26,7 @@ from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
-from monty.serialization import loadfn
+from monty.serialization import dumpfn, loadfn
 from mp_api.client.mprester import DEFAULT_THERMOTYPE_CRITERIA, MPRester, MPRestError
 from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
@@ -4007,8 +4007,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         discovered ``vasprun.xml(.gz)`` files are parsed.
 
         If ``path`` is a list, each element may be a direct path to a
-        ``vasprun.xml(.gz)`` file **or** to a directory containing one,
-        which will be located via a recursive search.
+        ``vasprun.xml(.gz)`` file **or** to the directory directly containing
+        one (i.e. not searched recursively).
 
         Args:
             path (PathLike or list):
@@ -4037,7 +4037,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 Default is ``True``.
         """
         if isinstance(path, list):
-            self._collect_vaspruns_from_list(path)
+            self._collect_vaspruns_from_list(path, verbose)
         else:
             self._collect_vaspruns_from_directory(path, subfolder, verbose)
 
@@ -4132,12 +4132,15 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
 
         return self._from_entries(self.entries, check_compatibility=check_compatibility)
 
-    def _collect_vaspruns_from_list(self, path_list: list[PathLike]) -> None:
+    def _collect_vaspruns_from_list(self, path_list: list[PathLike], verbose: bool = True) -> None:
         """
         Populate ``self.vasprun_paths`` from a list of paths, where each entry
-        can be a direct ``vasprun.xml(.gz)`` path or a directory containing
-        one.
+        can be a direct ``vasprun.xml(.gz)`` path or the directory directly
+        containing one.
+
+        Directories without one are skipped, with a warning if ``verbose``.
         """
+        skipped_folders = []
         for entry_path in path_list:
             if "vasprun.xml" in str(entry_path) and not os.path.basename(entry_path).startswith("."):
                 self.vasprun_paths.append(str(entry_path))
@@ -4146,6 +4149,11 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             vasprun_path = self._find_vasprun_in_directory(entry_path)
             if vasprun_path is not None:
                 self.vasprun_paths.append(str(vasprun_path))
+            else:
+                skipped_folders.append(str(entry_path))
+
+        if verbose:
+            _warn_skipped_folders("vasprun.xml", skipped_folders)
 
     def _collect_vaspruns_from_directory(
         self,
@@ -4166,21 +4174,39 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         if calc_files_df.empty:
             return
 
+        subfolder_suffix = ""  # for the skipped folders warning
         if resolved_subfolder != ".":  # actual subfolder found
             filtered = calc_files_df[
                 calc_files_df["folder_path"].apply(lambda p: p.name == resolved_subfolder)
             ]
             if not filtered.empty:
                 calc_files_df = filtered
+                subfolder_suffix = f"/{resolved_subfolder}"
             elif verbose:
                 warnings.warn(
                     f"No vasprun.xml files found in '{resolved_subfolder}' subfolders under {path}. "
                     f"Using all {len(calc_files_df)} vasprun.xml files found."
                 )
 
+        parsed_folders = set()  # top-level folders in ``path`` with parsed outputs
         for directory in sorted(calc_files_df["folder_path"].unique()):
             if (vasprun_path := self._find_vasprun_in_directory(directory)) is not None:
                 self.vasprun_paths.append(vasprun_path)
+                parsed_folders.add(os.path.relpath(directory, root).split(os.sep)[0])
+
+        if verbose:  # warn about calculation folders in ``path`` without parsed outputs
+            _warn_skipped_folders(
+                "vasprun.xml",
+                [
+                    f"{folder.name}{subfolder_suffix}"
+                    for folder in sorted(root.iterdir())
+                    if folder.is_dir()
+                    and not folder.name.startswith(".")
+                    and folder.name not in parsed_folders
+                    and _is_calc_folder_name(folder.name)
+                ],
+                path,
+            )
 
     @staticmethod
     def _find_vasprun_in_directory(directory: PathLike) -> str | None:
@@ -4814,6 +4840,44 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         cpa.vasprun_paths = d.get("vasprun_paths", cpa.vasprun_paths)
         return cpa
 
+    def to_json(self, filename: PathLike | None = None):
+        """
+        Save the |CompetingPhasesAnalyzer| object as a json file, which can be
+        reloaded with the ``CompetingPhasesAnalyzer.from_json()`` class method.
+
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
+        Args:
+            filename (PathLike):
+                Filename to save ``json`` file as. If ``None``, set to
+                ``{Chemical Formula}_competing_phases_analyzer.json.gz`` by
+                default, where ``{Chemical Formula}`` is the reduced chemical
+                formula of the host material.
+        """
+        if filename is None:
+            formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            filename = f"{formula}_competing_phases_analyzer.json.gz"
+
+        dumpfn(self, filename)
+
+    @classmethod
+    def from_json(cls, filename: PathLike):
+        """
+        Load a |CompetingPhasesAnalyzer| object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
+
+        Args:
+            filename (PathLike):
+                Filename of json file to load |CompetingPhasesAnalyzer| object
+                from.
+
+        Returns:
+            |CompetingPhasesAnalyzer| object
+        """
+        return loadfn(filename)
+
     @property
     def chempot_grid(self) -> ChemicalPotentialGrid:
         """
@@ -5412,6 +5476,37 @@ def _parse_entry_from_vasprun_and_catch_exception(
         return entry, folder, electronic_converged, ionic_converged
     except Exception as e:
         return str(e), vasprun_path, False, False
+
+
+def _is_calc_folder_name(folder_name: str) -> bool:
+    """
+    Whether ``folder_name`` looks like the name of a (competing phase)
+    calculation folder, i.e. contains ``"EaH"`` (as in the default
+    ``{Formula}_{spg}_EaH_{EaH}`` folder names) or a composition (e.g.
+    ``"ZrO2"``) in its ``"_"``-separated parts.
+    """
+    if "EaH" in folder_name:
+        return True
+    for name_part in folder_name.split("_"):
+        with contextlib.suppress(ValueError):  # not a composition
+            if name_part and Composition(name_part):
+                return True
+    return False
+
+
+def _warn_skipped_folders(
+    output_file: str, folders: list[str], parent_folder: PathLike | None = None
+) -> None:
+    """
+    Warn that calculation output files (``output_file``) could not be found in
+    ``folders`` (in ``parent_folder``, if given), and so they are skipped.
+    """
+    if folders:
+        parent_folder_string = f" (in {parent_folder})" if parent_folder is not None else ""
+        warnings.warn(
+            f"{output_file} files could not be found in the following directories{parent_folder_string}, "
+            f"and so they will be skipped for parsing:\n" + "\n".join(folders)
+        )
 
 
 def _possible_label_positions_from_bbox_intersections(
