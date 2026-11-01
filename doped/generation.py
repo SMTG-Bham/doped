@@ -28,7 +28,7 @@ from pymatgen.analysis.defects.generators import (
 from pymatgen.analysis.defects.utils import remove_collisions
 from pymatgen.core.adsorption import AdsorbateSiteFinder
 from pymatgen.core.entries import ComputedStructureEntry
-from pymatgen.core.periodic_table import DummySpecies, get_el_sp
+from pymatgen.core.periodic_table import DummySpecies, Species, get_el_sp
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
 from tabulate import tabulate  # type: ignore[import-untyped]
@@ -1493,6 +1493,20 @@ class DefectsGenerator(MSONable):
             structure = structure.copy()  # don't modify input structure
             for prop in extra_site_props:
                 structure.remove_site_property(prop)
+
+        if isotopes := [sp for sp in structure.composition if getattr(sp, "name", sp.symbol) != sp.symbol]:
+            # pymatgen only partly keeps host D/T (giving mixes like v_D & H_Li), so use parent elements:
+            warnings.warn(
+                f"Named isotopes {[sp.name for sp in isotopes]} in the host structure are treated as "
+                "their parent element (e.g. D as H), as in written VASP inputs."
+            )
+            structure = structure.copy()  # don't modify input structure
+            structure.replace_species(
+                {
+                    sp: Species(sp.symbol, sp.oxi_state) if isinstance(sp, Species) else sp.symbol
+                    for sp in isotopes
+                }
+            )
 
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
