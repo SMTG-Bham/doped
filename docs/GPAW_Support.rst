@@ -208,3 +208,17 @@ Examples and API
   references, chemical potentials and formation-energy diagrams.
 - ``examples/Graphene_with_GPAW``: anisotropic two-dimensional parsing example.
 - :doc:`doped.io`: complete GPAW API reference (``doped.io.gpaw``).
+
+Band edges
+----------
+
+Neutral GPAW calculation outputs determine VBM and CBM from the raw band
+occupations, independently of the stored Fermi level. Occupations within 0.1
+of zero or one are treated as empty or filled, respectively. Partially
+occupied states or overlapping occupied and empty levels give a zero gap,
+with both edges at the Fermi level. Strong smearing can therefore obscure an
+insulating gap; use suitably converged occupation settings for bulk references.
+Both occupied and unoccupied bands must be present to determine an insulating
+gap. Charged supercells do not supply host band edges; use a neutral bulk
+reference. PAW projection mapping and shallow-defect analysis remain separate
+work.

@@ -15,8 +15,6 @@ Not implemented, and so unavailable with GPAW:
   the ``.gpw`` files, but are not yet mapped to ``pymatgen``'s format.
 - ``get_fermi_dos()``: bulk DOS parsing, for Fermi level / carrier
   concentration analysis (``FermiSolver``).
-- Occupation-based band edges, see
-  :func:`_get_eigenvalue_properties_from_calc`.
 
 See the GPAW tracking issue.
 """
@@ -203,30 +201,54 @@ def _structure_from_calc(calc) -> Structure:
     return structure
 
 
-def _get_eigenvalue_properties_from_calc(calc) -> tuple[float, float, float, float]:
+def _get_eigenvalue_properties_from_calc(
+    calc, occupation_tolerance: float = 0.1
+) -> tuple[float, float, float, float]:
     """
-    Get ``(band_gap, cbm, vbm, efermi)`` (eV) from a ``GPAW`` calculator.
+    Get ``(band_gap, cbm, vbm, efermi)`` (eV) using band occupations.
+
+    GPAW's raw occupations exclude spin degeneracy and k-point weights, so
+    fully occupied states have occupation one in either spin channel. States
+    between ``occupation_tolerance`` and ``1 - occupation_tolerance`` are
+    partially occupied and give a zero gap, as do bands whose occupation
+    changes across k-points or overlapping occupied and empty states. For
+    these metallic cases both edges are set to the Fermi level. Missing
+    occupied or empty states raise an informative error rather than
+    substituting the Fermi level for an uncomputed band edge.
+
+    These are the edges of the supplied calculation, not host band edges
+    inferred from defect states. Charged supercell outputs omit band edges.
     """
-    # TODO: Band edges are taken purely from the Fermi level here (VBM = highest eigenvalue at or below
-    # E_F, CBM = lowest above it), with no reference to occupations. That is only safe for a gapped
-    # bulk with E_F in the gap: it gives meaningless edges for a metallic or heavily-smeared bulk, and
-    # silently returns ``efermi`` for both edges (i.e. a zero gap) if no eigenvalue falls on one side.
-    # It is also outright wrong for charged defect supercells, where a partially-occupied in-gap state
-    # would be reported as a band edge -- so ``get_calculation_outputs`` only takes the band edges from
-    # the bulk. Replace with an occupation-based determination, as done for VASP in
-    # ``doped.utils.eigenvalues.band_edge_properties_from_outputs``; the occupations are available from
-    # ``calc.get_occupation_numbers()``. See the GPAW tracking issue.
+    if not 0 < occupation_tolerance < 0.5:
+        raise ValueError("occupation_tolerance must be between zero and 0.5")
     efermi = calc.get_fermi_level()
-    energies: list[float] = []
+    occupied: list[float] = []
+    empty: list[float] = []
+    partial = False
+    crosses_fermi_surface = False
     for spin in range(calc.get_number_of_spins()):
+        filled_counts = []
         for kpt in range(len(calc.get_ibz_k_points())):
-            energies.extend(calc.get_eigenvalues(kpt=kpt, spin=spin))
+            energies = np.asarray(calc.get_eigenvalues(kpt=kpt, spin=spin))
+            occupations = np.asarray(calc.get_occupation_numbers(kpt=kpt, spin=spin, raw=True))
+            filled = occupations >= 1 - occupation_tolerance
+            vacant = occupations <= occupation_tolerance
+            filled_counts.append(np.count_nonzero(filled))
+            partial |= bool(np.any(~(filled | vacant)))
+            occupied.extend(energies[filled])
+            empty.extend(energies[vacant])
+        crosses_fermi_surface |= bool(np.ptp(filled_counts))
 
-    below = [energy for energy in energies if energy <= efermi]
-    above = [energy for energy in energies if energy > efermi]
-    vbm = max(below) if below else efermi
-    cbm = min(above) if above else efermi
-
+    if partial or crosses_fermi_surface:
+        return 0.0, efermi, efermi, efermi
+    if not occupied or not empty:
+        raise ValueError(
+            "Cannot determine GPAW band edges: no fully occupied or empty states were found. "
+            "Include both occupied and unoccupied bands (increase nbands if necessary)."
+        )
+    vbm, cbm = max(occupied), min(empty)
+    if cbm <= vbm:
+        return 0.0, efermi, efermi, efermi
     return cbm - vbm, cbm, vbm, efermi
 
 
@@ -376,7 +398,11 @@ def get_calculation_outputs(
     with _open_gpaw_restart(gpw_file, txt=None) as calc:
         parameters = _get_gpaw_parameters(calc)
         charge = parameters.get("charge") or 0  # parameters only holds explicitly-set, non-default values
-        band_gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
+        if charge:
+            band_gap = cbm = vbm = None
+            efermi = calc.get_fermi_level()
+        else:
+            band_gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
         eigenvalues = {}
         for spin_index, spin in enumerate((Spin.up, Spin.down)[: calc.get_number_of_spins()]):
             eigenvalues[spin] = np.array(
@@ -408,10 +434,10 @@ def get_calculation_outputs(
             nelect=calc.get_number_of_electrons(),
             charge=charge,
             magnetization=calc.get_magnetic_moment(),
-            # the Fermi-level band edges are only meaningful for a gapped, neutral bulk:
-            vbm=vbm if not charge else None,
-            cbm=cbm if not charge else None,
-            band_gap=band_gap if not charge else None,
+            # Defect states cannot establish the host edges of a charged supercell.
+            vbm=vbm,
+            cbm=cbm,
+            band_gap=band_gap,
             planar_averaged_potentials={
                 int(axis): potentials
                 for axis, potentials in _get_planar_averaged_potential_from_calc(calc).items()

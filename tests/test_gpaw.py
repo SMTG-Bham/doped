@@ -34,6 +34,7 @@ from doped.io import get_calculation_outputs
 from doped.io.gpaw.inputs import DefectDictSet, DefectsSet
 from doped.io.gpaw.outputs import (
     _find_gpaw_output,
+    _get_eigenvalue_properties_from_calc,
     get_competing_phase_entry,
     get_gpaw_planar_averaged_potential,
     get_gpaw_site_potentials,
@@ -248,7 +249,7 @@ class GPAWTest(unittest.TestCase):
             os.path.join(gpaw_data_dir, "MgO", "v_Mg_-2"), calculator="gpaw", label="defect"
         )
         assert defect_outputs.charge == -2
-        assert defect_outputs.band_gap is None  # Fermi-level band edges are meaningless when charged
+        assert defect_outputs.band_gap is None  # charged defect levels cannot establish host edges
         assert len(defect_outputs.structure) == len(bulk_outputs.structure) - 1  # a vacancy
 
         # the potentials loaded lazily from the folder match (with string axis keys):
@@ -813,3 +814,87 @@ def test_competing_phase_kpoint_mesh(gpaw_competing_phases, tmp_path, kpts):
     settings["kpts"] = kpts
     _run_phase_calculation(structures["Mg"], tmp_path, settings)
     assert get_competing_phase_entry(tmp_path).data["kpoints"] == [[2, 1, 1]]
+
+
+@pytest.fixture(scope="module", params=["MgO", "Cu", "Cu_sharp", "O2"])
+def band_edge_calculation(request, tmp_path_factory):
+    """
+    Compute a small insulator, metal and spin-polarised molecule.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    from ase.build import bulk, molecule
+
+    name = request.param
+    if name == "O2":
+        atoms = molecule("O2")
+        atoms.center(vacuum=3)
+        atoms.pbc = True
+        atoms.set_initial_magnetic_moments([1, 1])
+    else:
+        atoms = bulk("MgO", "rocksalt", a=4.21) if name == "MgO" else bulk("Cu", "fcc", a=3.6)
+    folder = tmp_path_factory.mktemp(f"band_edges_{name}")
+    atoms.calc = gpaw.GPAW(
+        mode=gpaw.PW(300),
+        xc="PBE",
+        kpts=(1, 1, 1) if name == "O2" else (2, 2, 2),
+        occupations=gpaw.FermiDirac(0 if name == "Cu_sharp" else 0.1),
+        spinpol=name == "O2",
+        txt=str(folder / "gpaw.txt"),
+    )
+    atoms.get_potential_energy()
+    atoms.calc.write(folder / "singlepoint.gpw")
+    yield name, atoms.calc, folder
+    atoms.calc = None
+
+
+def test_occupation_band_edges(band_edge_calculation):
+    """
+    Compare edges to independently selected occupied and empty DFT states.
+    """
+    name, calc, folder = band_edge_calculation
+    gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
+    eigenvalues, occupations = [], []
+    for spin in range(calc.get_number_of_spins()):
+        for kpt in range(len(calc.get_ibz_k_points())):
+            eigenvalues.extend(calc.get_eigenvalues(kpt=kpt, spin=spin))
+            occupations.extend(calc.get_occupation_numbers(kpt=kpt, spin=spin, raw=True))
+    eigenvalues, occupations = np.array(eigenvalues), np.array(occupations)
+    if name.startswith("Cu"):
+        if name == "Cu":
+            assert np.any((occupations > 0.1) & (occupations < 0.9))
+        # The previous Fermi-level partition reports a spurious finite gap on this mesh.
+        assert min(eigenvalues[eigenvalues > efermi]) - max(eigenvalues[eigenvalues <= efermi]) > 0
+        assert (gap, cbm, vbm) == (0, efermi, efermi)
+    else:
+        assert gap > 0
+        assert vbm == pytest.approx(max(eigenvalues[occupations >= 0.9]))
+        assert cbm == pytest.approx(min(eigenvalues[occupations <= 0.1]))
+        assert gap == pytest.approx(cbm - vbm)
+        if name == "O2":
+            assert calc.get_number_of_spins() == 2
+            assert calc.get_magnetic_moment() == pytest.approx(2, abs=0.01)
+        if name == "MgO":
+            # Recompute with exactly the occupied bands: this has no calculated CBM.
+            truncated = calc.fixed_density(
+                nbands=int(calc.get_number_of_electrons() / 2), txt=str(folder / "occupied_only.txt")
+            )
+            try:
+                with pytest.raises(ValueError, match="increase nbands"):
+                    _get_eigenvalue_properties_from_calc(truncated)
+            finally:
+                truncated.atoms.calc = None
+
+
+def test_band_edges_survive_restart(band_edge_calculation):
+    """
+    Stored restart occupations give the same edges as the live calculation.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    _, calc, folder = band_edge_calculation
+    restarted = gpaw.GPAW(folder / "singlepoint.gpw", txt=None)
+    try:
+        assert _get_eigenvalue_properties_from_calc(restarted) == pytest.approx(
+            _get_eigenvalue_properties_from_calc(calc)
+        )
+    finally:
+        restarted.atoms.calc = None
