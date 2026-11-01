@@ -613,3 +613,32 @@ def test_competing_phase_analyzer_gpaw(tmp_path, monkeypatch, new_parameters):
     assert set(analyzer.parsed_folders) == {str(tmp_path / phase) for phase in atoms_and_energies}
     assert all(calc.closed for calc in opened)
     assert len(analyzer.get_formation_energy_df()) == 3
+
+
+def test_restart_without_results_raises(tmp_path):
+    """
+    Check that a restart file without stored results (here from an unconverged
+    SCF) raises an informative error in each reader, rather than ``GPAW``
+    silently re-running the calculation during parsing.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    from ase.build import bulk
+    from ase.calculators.calculator import PropertyNotImplementedError
+
+    from doped.io.gpaw.outputs import get_gpaw_planar_averaged_potential, get_gpaw_site_potentials
+
+    atoms = bulk("Mg", "hcp", a=3.19, c=5.18)
+    atoms.calc = gpaw.GPAW(mode=gpaw.PW(200), kpts=(2, 2, 2), maxiter=2, txt=None)
+    with pytest.raises(gpaw.KohnShamConvergenceError):
+        atoms.get_potential_energy()
+    atoms.calc.write(tmp_path / "singlepoint.gpw")
+
+    for parse in (
+        lambda: get_calculation_outputs(tmp_path, calculator="gpaw"),
+        lambda: get_gpaw_site_potentials(tmp_path),
+        lambda: get_gpaw_planar_averaged_potential(tmp_path),
+    ):  # without the check, GPAW re-runs the SCF here (failing again, with ``maxiter=2``)
+        with pytest.raises(ValueError, match="holds no stored results"):
+            parse()
+    with pytest.raises(PropertyNotImplementedError):  # (``ase`` reader; skipped with a warning by the CPA)
+        get_competing_phase_entry(tmp_path)

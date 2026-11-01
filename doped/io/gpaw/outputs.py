@@ -114,6 +114,9 @@ def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
     Load a ``GPAW`` calculator from the ``gpw_file`` restart file, as a context
     manager which closes it and detaches it from its ``Atoms`` on exit.
 
+    Raises a ``ValueError`` if the file holds no stored results (e.g. from an
+    unconverged calculation).
+
     Args:
         gpw_file (PathLike): Path to the ``GPAW`` ``.gpw`` restart file.
         **kwargs: Passed to ``GPAW()`` (e.g. ``txt=None``).
@@ -125,6 +128,10 @@ def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
 
     calc = GPAW(gpw_file, **kwargs)
     try:
+        if calc.calculation_required(calc.atoms, ["energy"]):
+            raise ValueError(
+                f"{gpw_file} holds no stored results (e.g. from an unconverged or unfinished calculation)"
+            )
         yield calc
     finally:
         if hasattr(calc, "close"):  # removed in GPAW >= 26
@@ -385,7 +392,7 @@ def get_calculation_outputs(
             energy=calc.get_potential_energy(),
             calculator="gpaw",
             directory=str(path),
-            converged_electronic=bool(getattr(getattr(calc, "scf", None), "converged", True)),
+            converged_electronic=True,  # (as results-less restarts are rejected by _open_gpaw_restart)
             # a ``.gpw`` restart file holds the final state only, with no ionic-step history to check:
             converged_ionic=None,
             efermi=efermi,
