@@ -184,7 +184,9 @@ def _structure_from_calc(calc) -> Structure:
     re-attached as a site property.
 
     Args:
-        calc (GPAW): ``GPAW`` calculator object.
+        calc (Calculator):
+            ``GPAW`` calculator object, or ``ase`` single-point calculator with
+            the results read from a ``.gpw`` file.
 
     Returns:
         Structure: The calculation structure.
@@ -417,49 +419,52 @@ def get_calculation_outputs(
 
 def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None) -> ComputedStructureEntry:
     """
-    Parse a neutral competing-phase calculation for
-    ``CompetingPhasesAnalyzer``.
-
-    Only the structure, energy and calculation metadata are read. Electrostatic
-    potentials and orbital data, needed for defect analysis, are not loaded.
+    Parse a competing-phase calculation for ``CompetingPhasesAnalyzer``,
+    reading the stored structure, energy and calculation parameters, and
+    creating a |ComputedStructureEntry|.
 
     Args:
         path (PathLike): Calculation directory or a GPAW ``.gpw`` restart file.
-        subfolder (PathLike): Optional calculation subfolder. Default is ``None``.
+        subfolder (PathLike):
+            Optional calculation subfolder. Default is ``None``.
 
     Returns:
-        ComputedStructureEntry: The uncorrected total energy and structure, with
-        GPAW parameters, formula, volume, atom count, source folder and available
-        electronic convergence / magnetization information in ``entry.data``.
-        Ionic convergence is not reported: restart files have no ionic-step
-        history. Band gaps are omitted pending occupation-based band edges.
+        ComputedStructureEntry:
+            The uncorrected total energy and structure, with GPAW parameters
+            (as set for the calculation), formula, volume, atom count, source
+            folder and magnetization in ``entry.data``. Ionic convergence is
+            not reported: restart files have no ionic-step history. Band gaps
+            are omitted pending occupation-based band edges (TODO).
     """
+    from ase.io.gpw import read_gpw  # not ``ase.io.read``, which imports ``gpaw`` via its IO plugin
+    from ase.io.ulm import open as ulm_open
+
     gpw_file = _find_gpaw_output(path, subfolder)
-    with _open_gpaw_restart(gpw_file, txt=None) as calc:
-        parameters = _get_gpaw_parameters(calc)
-        structure = _structure_from_calc(calc)
-        entry = ComputedStructureEntry(structure, calc.get_potential_energy(), parameters=parameters)
-        elements = sorted(el.symbol for el in entry.composition.elements)
-        entry.data.update(
-            {
-                "calculator": "gpaw",
-                "gpaw_parameters": parameters,
-                "formula_pretty": entry.composition.reduced_formula,
-                "nsites": len(structure),
-                "volume": structure.volume,
-                "energy_per_atom": entry.energy_per_atom,
-                "elements": elements,
-                "nelements": len(elements),
-                "summary": {"total_magnetization": calc.get_magnetic_moment()},
-                "folder": str(Path(gpw_file).parent),
-            }
-        )
-        if (scf := getattr(calc, "scf", None)) is not None and hasattr(scf, "converged"):
-            entry.data["converged_electronic"] = bool(scf.converged)
-        kpts = parameters.get("kpts")
-        if isinstance(kpts, dict) and kpts.get("size") is not None:
-            entry.data["kpoints"] = [list(kpts["size"])]
-        return entry
+    atoms = read_gpw(gpw_file)  # with a ``SinglePointDFTCalculator`` holding the stored results
+    with ulm_open(gpw_file) as reader:
+        parameters = reader.parameters.asdict()
+
+    structure = _structure_from_calc(atoms.calc)
+    entry = ComputedStructureEntry(structure, atoms.get_potential_energy(), parameters=parameters)
+    elements = sorted(el.symbol for el in entry.composition.elements)
+    entry.data.update(
+        {
+            "calculator": "gpaw",
+            "gpaw_parameters": parameters,
+            "formula_pretty": entry.composition.reduced_formula,
+            "nsites": len(structure),
+            "volume": structure.volume,
+            "energy_per_atom": entry.energy_per_atom,
+            "elements": elements,
+            "nelements": len(elements),
+            "summary": {"total_magnetization": atoms.calc.get_magnetic_moment()},
+            "folder": str(Path(gpw_file).parent),
+        }
+    )
+    kpts = parameters.get("kpts")
+    if isinstance(kpts, dict) and kpts.get("size") is not None:
+        entry.data["kpoints"] = [list(kpts["size"])]
+    return entry
 
 
 _COMPATIBILITY_PARAMETERS = (
