@@ -685,7 +685,6 @@ default_energy_affecting_incar_tags: dict[str, str | int | float] = {
     "GGA": "PE",
     "LHFCALC": False,
     "ADDGRID": False,
-    "ISIF": 2,
     "LASPH": False,
     "PREC": "Normal",
     "PRECFOCK": "Normal",
@@ -1230,8 +1229,10 @@ def get_competing_phase_entry(path: PathLike, **kwargs) -> ComputedStructureEntr
             The parsed entry, with ``entry.data`` containing the calculation
             summary info (``"summary"``; band gap & total magnetization),
             settings (``"incar"``, ``"kpoints"``, ``"potcar_symbols"``),
-            convergence (``"converged_electronic"``, ``"converged_ionic"``)
-            and the folder it was parsed from (``"folder"``).
+            convergence (``"converged_electronic"``, ``"converged_ionic"``),
+            the folder it was parsed from (``"folder"``) and the final pressure
+            (``"pressure"``, in GPa, positive for compressive stress; if the
+            stress was calculated, i.e. ``ISIF`` > 0 and ``PSTRESS`` = 0).
     """
     vasprun = get_vasprun(path, **kwargs)
     entry = vasprun.get_computed_entry()
@@ -1258,6 +1259,10 @@ def get_competing_phase_entry(path: PathLike, **kwargs) -> ComputedStructureEntr
             "folder": str(path).removesuffix(".gz").removesuffix("vasprun.xml"),
         }
     )
+    # final (OUTCAR external) pressure; no stress is calculated with ISIF = 0, and PSTRESS isn't handled:
+    stress = vasprun.ionic_steps[-1].get("stress")
+    if stress is not None and not vasprun.parameters.get("PSTRESS"):
+        entry.data["pressure"] = float(np.trace(stress) / 30)  # GPa (from kbar), positive = compressive
     return entry
 
 
@@ -1813,18 +1818,15 @@ def compare_calculation_settings(
     Args:
         settings (dict):
             The calculation settings; ``"incar"`` and ``"potcar_symbols"``,
-            plus ``"kpoints"`` & ``"actual_kpoints"`` (defect/bulk
-            calculations) or ``"volume"`` (competing phases).
+            plus ``"kpoints"`` & ``"actual_kpoints"`` for defect/bulk
+            calculations.
         reference_settings (dict):
             The settings of the reference calculation (e.g. the bulk
             supercell).
         competing_phases (bool):
             Whether these are competing phase calculations, for which k-points
-            and ``NKRED`` are not compared, ``ISIF`` is only compared if both
-            cells are below 800 Å\ :sup:`3` (i.e. not gas molecule or bulk
-            supercell calculations, assumed to have the correct volume), and
-            ``POTCAR``\s are only compared for shared elements. Default is
-            ``False``.
+            and ``NKRED`` are not compared, and ``POTCAR``\s are only compared
+            for shared elements. Default is ``False``.
         warn (bool):
             Whether to warn about each type of mismatch found. Default is
             ``False``.
@@ -1843,12 +1845,6 @@ def compare_calculation_settings(
         name_1=labels["name_1"],
         name_2=labels["name_2"],
     )
-    if competing_phases:
-        incar_mismatches = [
-            i
-            for i in incar_mismatches
-            if i[0] != "ISIF" or all(s.get("volume", 0) < 800 for s in [settings, reference_settings])
-        ]
     mismatches: dict[str, Any] = {
         "mismatching_INCAR_tags": incar_mismatches or False,
         "mismatching_POTCAR_symbols": compare_potcar_symbols(

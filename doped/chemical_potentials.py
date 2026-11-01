@@ -2884,8 +2884,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
                 by comparing their calculation settings (e.g. ``INCAR`` tags
-                and ``POTCAR`` symbols with VASP), if available. Default is
-                ``True``.
+                and ``POTCAR`` symbols with VASP) and checking their final
+                pressures, if available. Default is ``True``.
             calculator (str):
                 Name of the calculator used for the competing phase
                 calculations (matching a ``doped.io.<calculator>`` parsing
@@ -2997,7 +2997,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
                 by comparing their calculation settings (e.g. ``INCAR`` tags
-                and ``POTCAR`` symbols with VASP). Default is ``True``.
+                and ``POTCAR`` symbols with VASP) and checking their final
+                pressures, if available. Default is ``True``.
         """
         self.entries = entries
         intrinsic_entries: list[ComputedEntry | ComputedStructureEntry] = []
@@ -3086,6 +3087,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 entries,
                 template_candidates=[self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries],
             )
+            _check_entry_pressures(self.entries)  # are the phases at their equilibrium volumes?
 
         # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
         # and add to self.elements:
@@ -3222,7 +3224,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
                 by comparing their calculation settings (e.g. ``INCAR`` tags
-                and ``POTCAR`` symbols with VASP). Default is ``True``.
+                and ``POTCAR`` symbols with VASP) and checking their final
+                pressures, if available. Default is ``True``.
         """
         output_file = self._backend.CALC_OUTPUT_MASK[0]  # e.g. "vasprun.xml" with VASP
         if isinstance(path, list):
@@ -4646,6 +4649,53 @@ def _check_entry_compatibility(
             {mismatch_key: spec},
             competing_phases=True,
             reference_name=template.name,
+        )
+
+
+_PRESSURE_TOLERANCE_GPA = 1
+"""
+Tolerance (in GPa) for the final (residual) pressures of competing phase
+calculations, above which |CompetingPhasesAnalyzer| warns that they may not be
+at their equilibrium volumes (see :func:`_check_entry_pressures`).
+"""
+
+
+def _check_entry_pressures(entries: list[ComputedEntry]) -> None:
+    """
+    Warn about competing phase ``entries`` with large final (residual)
+    pressures (above :data:`_PRESSURE_TOLERANCE_GPA`), which indicate that
+    their cells are not at their equilibrium volumes for the calculation
+    settings used (e.g. fixed-cell or single-point calculations at lattices
+    from other functionals, codes or cutoffs, or unconverged relaxations), and
+    so can cause errors in their energies and thus the chemical potential
+    limits.
+
+    Large negative pressures in fixed-cell calculations with low plane-wave
+    cutoffs are usually Pulay stress.
+
+    The pressures are taken from ``entry.data["pressure"]`` (in GPa, positive
+    for compressive stress). Entries without a numerical pressure are skipped.
+
+    Args:
+        entries (list[|ComputedEntry|]):
+            The competing phase entries to check.
+    """
+    high_pressures = []
+    for entry in entries:
+        pressure = entry.data.get("pressure")
+        if isinstance(pressure, int | float) and abs(pressure) > _PRESSURE_TOLERANCE_GPA:  # (not NaN)
+            folder = entry.data.get("folder")
+            high_pressures.append((f"{entry.name} ({folder})" if folder else entry.name, pressure))
+
+    if high_pressures:
+        high_pressures.sort(key=lambda x: -abs(x[1]))
+        warnings.warn(
+            f"There are large final pressures (|P| > {_PRESSURE_TOLERANCE_GPA} GPa) for (some of) your "
+            f"competing phase calculations, suggesting that their cells are not at their equilibrium "
+            f"volumes for the calculation settings used (e.g. fixed-cell or single-point calculations at "
+            f"lattices from other functionals, codes or cutoffs, or unconverged relaxations), which can "
+            f"cause errors in their energies. Final pressures (positive = compressive stress):\n"
+            + "\n".join(f"{label}: {pressure:+.2f} GPa" for label, pressure in high_pressures)
         )
 
 

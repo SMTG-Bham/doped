@@ -142,16 +142,17 @@ reference backend):
   :class:`~doped.thermodynamics.DefectThermodynamics`. Without this,
   ``FermiDos`` objects can still be constructed directly by the user and
   passed as ``bulk_dos``.
-- ``get_competing_phase_entry(path) -> ComputedStructureEntry``: parsing of
-  a competing phase (bulk crystal) calculation to a ``pymatgen``
+- ``get_competing_phase_entry(path) -> ComputedStructureEntry``: parsing of a
+  competing phase (bulk crystal) calculation to a ``pymatgen``
   ``ComputedStructureEntry``, for chemical potential analysis with
   :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
   (``CompetingPhasesAnalyzer(..., calculator="<calculator>")``). Calculation
   summary info & settings should be added to ``entry.data``, including
   ``"converged_electronic"``/``"converged_ionic"`` (convergence warnings) and
-  ``"folder"`` (the parsed calculation folder). Without this,
-  ``CompetingPhasesAnalyzer`` can still be initialised directly from a list
-  of ``ComputedEntry``/``ComputedStructureEntry`` objects.
+  ``"folder"`` (the parsed calculation folder), and optionally ``"pressure"``
+  (the final pressure in GPa, positive for compressive stress). Without this,
+  ``CompetingPhasesAnalyzer`` can still be initialised directly from a list of
+  ``ComputedEntry``/``ComputedStructureEntry`` objects.
 - ``find_calc_output(directory) -> str``: selection of the calculation output
   file to parse in a competing phase directory (e.g. with the filename
   priorities used for defect parsing), for ``CompetingPhasesAnalyzer``. If not
