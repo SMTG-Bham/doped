@@ -1396,7 +1396,7 @@ def _parse_vr_and_poss_procar(
     ``PROCAR`` file if ``parse_projected_eigen`` is not ``False`` and projected
     eigenvalues cannot be parsed from the ``vasprun.xml(.gz)`` file.
 
-    ``kwargs`` are passed to :func:`get_vasprun` (e.g. ``parse_mag``).
+    ``kwargs`` are passed to :func:`get_vasprun` (e.g. ``ionic_step_skip``).
     """
     procar = None
     failed_eig_parsing_warning_message = (
@@ -1491,7 +1491,7 @@ def get_calculation_outputs(
             choices. Default is ``"calculation"``.
         **kwargs:
             Additional keyword arguments to pass to :func:`get_vasprun` (e.g.
-            ``parse_mag``).
+            ``ionic_step_skip``).
 
     Returns:
         CalculationOutputs: The parsed calculation outputs.

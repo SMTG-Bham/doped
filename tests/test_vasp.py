@@ -1380,7 +1380,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         assert len([warning for warning in w if "overridden" in str(warning.message)]) == 1
 
         # string values equal to the forced settings aren't flagged, while a ``LSORBIT`` override (for the
-        # ``vasp_ncl`` sets only) gives its own warning:
+        # ``vasp_ncl`` sets only) is:
         warn_once.cache_clear()
         with warnings.catch_warnings(record=True) as w:
             drs = DefectRelaxSet(
@@ -1390,8 +1390,8 @@ class DefectRelaxSetTest(unittest.TestCase):
         override_messages = [str(warning.message) for warning in w if "overridden" in str(warning.message)]
         assert override_messages == [
             (
-                "LSORBIT = False in user_incar_settings is overridden to True for the SOC singlepoint "
-                "(vasp_ncl) calculations."
+                "The following user_incar_settings are overridden for the singlepoint (static) "
+                "calculations (vasp_ncl and/or bulk): LSORBIT = False -> True"
             )
         ]
 

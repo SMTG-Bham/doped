@@ -953,14 +953,10 @@ class DefectRelaxSet(MSONable):
                 flags which aren't numbers or ``True/False`` need to be input
                 as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
                 ``MAGMOM`` keys should be element symbols (e.g. ``{"Fe": 5}``).
-                These settings are also used for the singlepoint (``vasp_ncl``
-                and bulk) calculations, except for the |SinglePointSet.yaml|
-                settings for no ionic relaxation and ``LSORBIT = True`` for
-                ``vasp_ncl``, which override them (with a warning). A user
-                ``NUPDOWN`` (default 0 or 1 for an even or odd number of
-                electrons) is used for all supercells (incl. bulk) with the
-                same electron number parity, and otherwise replaced by the
-                default (with a warning). Default is ``None``.
+                Also used for the singlepoint (``vasp_ncl``/bulk) calculations,
+                bar the |SinglePointSet.yaml| and ``LSORBIT`` tags, while
+                ``NUPDOWN`` is reset to 0/1 for supercells where its parity
+                mismatches ``NELECT`` (with warnings). Default is ``None``.
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 |VaspInputSet| format) e.g., ``{"reciprocal_density": 123}``,
@@ -1226,28 +1222,16 @@ class DefectRelaxSet(MSONable):
         if all("NKRED" not in k for k in incar_settings):  # determine appropriate NKRED, if not user-set
             try:
                 kpt_mesh = np.array(self._vasp_std._kpts)
-                # if all divisible by 2 or 3, then set NKRED to 2 or 3, respectively:
-                nkred_dict = {
-                    "NKRED": None,
-                    "NKREDX": None,
-                    "NKREDY": None,
-                    "NKREDZ": None,
-                }  # type: dict[str, int | None]
+                # NKRED = 2 or 3 if all divisible by 2 or 3, otherwise NKREDX/Y/Z for divisible directions:
+                nkred_settings = {}
                 for k in [2, 3]:
                     if np.all(kpt_mesh % k == 0):
-                        nkred_dict["NKRED"] = k
+                        nkred_settings = {"NKRED": k}
                         break
-
-                    for idx, nkred_key in enumerate(["NKREDX", "NKREDY", "NKREDZ"]):
-                        if kpt_mesh[idx] % k == 0:  # set for _all_ divisible directions
-                            nkred_dict[nkred_key] = k
-
-                if nkred_dict["NKRED"] is not None:
-                    incar_settings["NKRED"] = nkred_dict["NKRED"]
-                else:
-                    for nkred_key in ["NKREDX", "NKREDY", "NKREDZ"]:
-                        if nkred_dict[nkred_key] is not None:
-                            incar_settings[nkred_key] = nkred_dict[nkred_key]
+                    nkred_settings.update(
+                        {f"NKRED{i}": k for i, n in zip("XYZ", kpt_mesh, strict=True) if n % k == 0}
+                    )
+                incar_settings.update(nkred_settings)
 
             except Exception:
                 warnings.warn(
@@ -1331,42 +1315,34 @@ class DefectRelaxSet(MSONable):
     def _singlepoint_incar_settings(self, soc: bool = False) -> dict:
         """
         Returns ``self.user_incar_settings`` with the |SinglePointSet.yaml|
-        settings applied, for the singlepoint (static) calculations.
+        settings (and ``LSORBIT = True`` if ``soc``) applied, for the
+        singlepoint (static) calculations, warning (once) if any user settings
+        are overridden.
 
-        The
-        singlepoint ``EDIFF`` is only used if ``EDIFF``/``EDIFF_PER_ATOM`` are
-        not set in ``user_incar_settings``, while the other singlepoint
-        settings (for no ionic relaxation), and ``LSORBIT = True`` if ``soc``,
-        override any user settings, with a warning (once) if so.
+        The singlepoint ``EDIFF`` is only used if ``EDIFF`` or
+        ``EDIFF_PER_ATOM`` are not set in ``user_incar_settings``.
         """
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        if "EDIFF" not in user_incar_settings and user_incar_settings.get("EDIFF_PER_ATOM") is None:
-            user_incar_settings["EDIFF"] = singlepoint_incar_settings["EDIFF"]  # else user setting used
+        incar_settings = copy.deepcopy(self.user_incar_settings)
+        if "EDIFF" not in incar_settings and incar_settings.get("EDIFF_PER_ATOM") is None:
+            incar_settings["EDIFF"] = singlepoint_incar_settings["EDIFF"]  # else user setting used
 
-        def _is_overridden(key, forced_value):  # compare to parsed user values (e.g. "0  # ..." -> 0)
-            return _parse_incar_value(key, user_incar_settings.get(key, forced_value)) != forced_value
-
-        forced_settings = {k: v for k, v in singlepoint_incar_settings.items() if k != "EDIFF"}
-        if overridden := {k: v for k, v in forced_settings.items() if _is_overridden(k, v)}:
+        forced = {k: v for k, v in singlepoint_incar_settings.items() if k != "EDIFF"}  # no ionic relax
+        if soc:
+            forced["LSORBIT"] = True  # ISYM already 0
+        if overridden := {  # compare to parsed user values (e.g. "0  # ..." -> 0)
+            k: v for k, v in forced.items() if _parse_incar_value(k, incar_settings.get(k, v)) != v
+        }:
             warn_once(
                 "The following user_incar_settings are overridden for the singlepoint (static) "
-                "calculations (vasp_ncl and/or bulk), with the VASP_SinglePointSet.yaml settings (no "
-                "ionic relaxation): "
+                "calculations (vasp_ncl and/or bulk): "
                 + ", ".join(
-                    f"{k} = {user_incar_settings[k]} -> {'not set' if v is None else v}"
+                    f"{k} = {incar_settings[k]} -> {'not set' if v is None else v}"
                     for k, v in overridden.items()
                 )
             )
-        if soc:
-            if _is_overridden("LSORBIT", True):
-                warn_once(
-                    f"LSORBIT = {user_incar_settings['LSORBIT']} in user_incar_settings is overridden to "
-                    f"True for the SOC singlepoint (vasp_ncl) calculations."
-                )
-            forced_settings["LSORBIT"] = True  # ISYM already 0
 
-        user_incar_settings.update(forced_settings)
-        return user_incar_settings
+        incar_settings.update(forced)
+        return incar_settings
 
     @property
     def bulk_vasp_gam(self) -> DefectDictSet | None:
@@ -2485,14 +2461,10 @@ class DefectsSet(DefectsSetBase):
                 flags which aren't numbers or ``True/False`` need to be input as
                 strings with quotation marks (e.g. ``{"ALGO": "All"}``).
                 ``MAGMOM`` keys should be element symbols (e.g. ``{"Fe": 5}``).
-                These settings are also used for the singlepoint (``vasp_ncl``
-                and bulk) calculations, except for the |SinglePointSet.yaml|
-                settings for no ionic relaxation and ``LSORBIT = True`` for
-                ``vasp_ncl``, which override them (with a warning). A user
-                ``NUPDOWN`` (default 0 or 1 for an even or odd number of
-                electrons) is used for all supercells (incl. bulk) with the
-                same electron number parity, and otherwise replaced by the
-                default (with a warning). Default is ``None``.
+                Also used for the singlepoint (``vasp_ncl``/bulk) calculations,
+                bar the |SinglePointSet.yaml| and ``LSORBIT`` tags, while
+                ``NUPDOWN`` is reset to 0/1 for supercells where its parity
+                mismatches ``NELECT`` (with warnings). Default is ``None``.
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 |VaspInputSet| format) e.g., ``{"reciprocal_density": 123}``,
