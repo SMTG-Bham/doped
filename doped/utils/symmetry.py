@@ -319,7 +319,6 @@ def _cache_ready_get_sga(
 
     sga = None
     trial_symprecs = [symprec, 0.1, 0.001, 1, 0.0001]
-    symm_error_types = (SymmetryUndeterminedError, ValueError, *_SPGLIB_ERRORS)
 
     for trial_symprec in trial_symprecs:
         try:  # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
@@ -327,7 +326,7 @@ def _cache_ready_get_sga(
             # check symmetry determination, sometimes SpacegroupAnalyzer initialises but methods fail:
             _detected_symmetry = sga._get_symmetry()
             return (sga, trial_symprec) if return_symprec else sga
-        except symm_error_types as latest_symm_error:
+        except ValueError as latest_symm_error:  # incl. SymmetryUndeterminedError (spglib failures)
             symm_error = latest_symm_error  # save before auto-deleted at end of except block
             continue
 
