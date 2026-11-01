@@ -12,6 +12,7 @@ DIELECTRIC = 8.8963
 
 
 def main():
+    """Parse GPAW calculations and write Mg-rich and O-rich formation-energy plots."""
     calculation_dir = Path.cwd()
 
     print("Parsing MgO defect calculations...")

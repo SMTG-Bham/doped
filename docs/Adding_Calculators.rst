@@ -143,6 +143,11 @@ reference backend):
   ``"folder"`` (the parsed calculation folder). Without this,
   ``CompetingPhasesAnalyzer`` can still be initialised directly from a list
   of ``ComputedEntry``/``ComputedStructureEntry`` objects.
+- ``find_calc_output(directory) -> str``: selection of the calculation output
+  file to parse in a competing phase directory (e.g. with the filename
+  priorities used for defect parsing), for ``CompetingPhasesAnalyzer``. If not
+  implemented, or raising ``FileNotFoundError``/``ValueError`` (no or ambiguous
+  files), the generic ``CALC_OUTPUT_MASK[0]`` filename matching is used.
 
 The generic calculation-file discovery helpers in ``doped.io.utils``
 (e.g. ``_find_calc_outputs``, ``_determine_subfolder``) are parameterised by

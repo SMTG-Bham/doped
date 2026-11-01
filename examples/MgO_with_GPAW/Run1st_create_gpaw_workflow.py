@@ -1,3 +1,5 @@
+"""Prepare GPAW inputs for MgO defects and their competing-phase references."""
+
 from pathlib import Path
 
 from pymatgen.core.lattice import Lattice
@@ -57,6 +59,7 @@ def write_competing_phase_inputs(gpaw_settings, host_structure):
 
 
 def main():
+    """Write the defect, bulk and competing-phase calculation inputs."""
     print("Generating MgO bulk structure natively...")
     # Native structure generation
     lattice = Lattice.cubic(4.21)

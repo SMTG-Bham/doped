@@ -3195,8 +3195,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         discovered ``vasprun.xml(.gz)`` files are parsed.
 
         If ``path`` is a list, each element may be a direct path to a
-        ``vasprun.xml(.gz)`` file **or** to a directory containing one,
-        which will be located via a recursive search.
+        ``vasprun.xml(.gz)`` file **or** to the directory directly containing
+        one (i.e. not searched recursively).
 
         Args:
             path (PathLike or list):
@@ -3405,6 +3405,10 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             calc_output_path, multiple = _io_utils._get_output_files_and_check_if_multiple(
                 output_file, str(directory)
             )
+        # optional backend file selection (e.g. GPAW filename priority, matching defect parsing):
+        if (find_calc_output := getattr(self._backend, "find_calc_output", None)) is not None:
+            with contextlib.suppress(FileNotFoundError, ValueError):  # none/ambiguous: keep generic pick
+                calc_output_path = find_calc_output(directory)
         if calc_output_path and os.path.exists(calc_output_path):
             if multiple:
                 self._multiple_files_warning(output_file, directory, calc_output_path)
@@ -3414,12 +3418,9 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
     def _multiple_files_warning(self, output_file, directory, chosen_filepath) -> None:
         """
         Warn that multiple calculation output files were found in
-        ``directory``, using the backend's ``FILE_PARSING_ACTIONS`` for the
-        (informative) description of what the file is parsed for.
+        ``directory``, describing the competing-phase parsing task.
         """
-        action = getattr(self._backend, "FILE_PARSING_ACTIONS", {}).get(
-            output_file, "parse the calculation energy and metadata."
-        )
+        action = "parse the competing-phase energy and metadata."
         _io_utils._multiple_files_warning(
             output_file, directory, chosen_filepath, action, dir_type="competing phase"
         )

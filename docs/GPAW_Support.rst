@@ -182,12 +182,12 @@ GPAW competing-phase outputs can be parsed directly with
    defect_thermodynamics.plot(limit="Mg-rich")
    defect_thermodynamics.plot(limit="O-rich")
 
-The parser reads the stored structures, total energies and GPAW parameters.
-GPAW parameters are stored in each entry, but automatic cross-phase settings
-compatibility checks are not yet implemented (TODO). Ensure energies use
-consistent functionals, PAW datasets, basis sets and cutoffs with the bulk
-and defects. Competing-phase input generation with GPAW is also not yet
-implemented (TODO).
+The parser reads the stored structures, total energies and GPAW parameters, and
+warns if the functional, PAW datasets, basis set or mode (e.g. plane-wave
+cutoff) differ between competing phases (while k-point and real-space meshes
+can differ). Ensure energies use consistent functionals, PAW datasets, basis
+sets and cutoffs with the bulk and defects. Competing-phase input generation
+with GPAW is not yet implemented (TODO).
 
 The complete MgO example prepares a primitive-cell MgO host calculation, Mg
 structures obtained from the |CompetingPhases| workflow and an isolated triplet

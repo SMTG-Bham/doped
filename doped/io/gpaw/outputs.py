@@ -36,12 +36,12 @@ from pymatgen.util.typing import PathLike
 
 from doped.io.outputs import CalculationOutputs
 
-# ``doped`` accesses the remaining unimplemented protocol name directly (rather than probing
-# with ``getattr(backend, name, default)``), so they are intercepted here to fail informatively rather
-# than with an obscure ``AttributeError``. The optional, ``getattr``-probed protocol names
-# (``SUBFOLDER_PRIORITY``, ``MISMATCH_WARNING_SPECS``, ``check_entry_compatibility``,
-# ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
-# ``AttributeError``, so that those features degrade gracefully as intended:
+# ``doped`` accesses the remaining unimplemented protocol name directly (rather than probing with
+# ``getattr(backend, name, default)``), so it is intercepted here to fail informatively rather than with an
+# obscure ``AttributeError``. The optional, ``getattr``-probed protocol names (``SUBFOLDER_PRIORITY``,
+# ``MISMATCH_WARNING_SPECS``, ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``,
+# ``SITE_POTENTIALS_FILE``) must keep raising ``AttributeError``, so that those features degrade gracefully
+# as intended:
 _UNIMPLEMENTED_BACKEND_ATTRS = ("get_fermi_dos",)
 
 
@@ -118,11 +118,14 @@ def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
     unconverged calculation).
 
     Args:
-        gpw_file (PathLike): Path to the ``GPAW`` ``.gpw`` restart file.
-        **kwargs: Passed to ``GPAW()`` (e.g. ``txt=None``).
+        gpw_file (PathLike):
+            Path to the ``GPAW`` ``.gpw`` restart file.
+        **kwargs:
+            Passed to ``GPAW()`` (e.g. ``txt=None``).
 
     Yields:
-        GPAW: The ``GPAW`` calculator.
+        GPAW:
+            The ``GPAW`` calculator.
     """
     from gpaw import GPAW
 
@@ -316,6 +319,7 @@ def get_potentials_from_input(
     return potentials_input
 
 
+find_calc_output = _find_gpaw_output  # used by CompetingPhasesAnalyzer for file selection
 CALC_OUTPUT_MASK = (".gpw",)
 """
 Filename patterns identifying ``GPAW`` calculation output files, used for
@@ -417,29 +421,30 @@ def get_calculation_outputs(
         )
 
 
-def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None) -> ComputedStructureEntry:
+def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
     """
     Parse a competing-phase calculation for ``CompetingPhasesAnalyzer``,
     reading the stored structure, energy and calculation parameters, and
     creating a |ComputedStructureEntry|.
 
     Args:
-        path (PathLike): Calculation directory or a GPAW ``.gpw`` restart file.
-        subfolder (PathLike):
-            Optional calculation subfolder. Default is ``None``.
+        path (PathLike):
+            Calculation directory or a GPAW ``.gpw`` restart file.
 
     Returns:
         ComputedStructureEntry:
             The uncorrected total energy and structure, with GPAW parameters
             (as set for the calculation), formula, volume, atom count, source
-            folder and magnetization in ``entry.data``. Ionic convergence is
-            not reported: restart files have no ionic-step history. Band gaps
-            are omitted pending occupation-based band edges (TODO).
+            folder, k-point mesh and magnetization in ``entry.data``. Ionic
+            convergence is not reported: restart files have no ionic-step
+            history. Band gaps are omitted pending occupation-based band edges
+            (TODO).
     """
+    from ase.dft.kpoints import get_monkhorst_pack_size_and_offset
     from ase.io.gpw import read_gpw
     from ase.io.ulm import open as ulm_open
 
-    gpw_file = _find_gpaw_output(path, subfolder)
+    gpw_file = _find_gpaw_output(path)
     with ulm_open(gpw_file) as reader:  # first, so that non-ULM (e.g. empty) files give a clear error
         parameters = reader.parameters.asdict()
     atoms = read_gpw(gpw_file)  # with a ``SinglePointDFTCalculator`` holding the stored results
@@ -449,7 +454,7 @@ def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None)
         )
 
     structure = _structure_from_calc(atoms.calc)
-    entry = ComputedStructureEntry(structure, atoms.get_potential_energy(), parameters=parameters)
+    entry = ComputedStructureEntry(structure, atoms.get_potential_energy())  # parameters in ``entry.data``
     elements = sorted(el.symbol for el in entry.composition.elements)
     entry.data.update(
         {
@@ -463,11 +468,13 @@ def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None)
             "nelements": len(elements),
             "summary": {"total_magnetization": atoms.calc.get_magnetic_moment()},
             "folder": str(Path(gpw_file).parent),
+            "converged_electronic": True,  # (as results-less restarts are rejected above)
         }
     )
-    kpts = parameters.get("kpts")
-    if isinstance(kpts, dict) and kpts.get("size") is not None:
-        entry.data["kpoints"] = [list(kpts["size"])]
+    with contextlib.suppress(ValueError):  # non-Monkhorst-Pack sampling has no mesh dimensions
+        entry.data["kpoints"] = [
+            get_monkhorst_pack_size_and_offset(atoms.calc.get_bz_k_points())[0].tolist()
+        ]
     return entry
 
 
@@ -504,6 +511,59 @@ def _comparable(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [_comparable(val) for val in value]
     return value
+
+
+def check_entry_compatibility(entries, template_candidates=None) -> None:
+    """
+    Check the compatibility of parsed competing phase entries, by comparing
+    their ``GPAW`` parameters against those of a reference (template) entry,
+    and warning about any mismatches (which can cause errors in the parsed
+    energies, and thus the chemical potential limits).
+
+    The parameters in :data:`_COMPATIBILITY_PARAMETERS` are compared, except
+    for the k-point and real-space meshes (``kpts``, ``h``, ``gpts``), which
+    can differ between phases. Mismatches are recorded in ``entry.data`` under
+    ``"mismatching_gpaw_parameters"`` (a ``{parameter: (value, reference
+    value)}`` dict, or ``False`` if they match). Entries without
+    ``"gpaw_parameters"`` data are skipped.
+
+    Part of the ``doped.io`` backend protocol (optional; used by
+    :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` when
+    ``check_compatibility=True``).
+
+    Args:
+        entries (list[|ComputedEntry|]):
+            The competing phase entries to check.
+        template_candidates (list[|ComputedEntry|]):
+            Priority-ordered candidate entries from which to take the reference
+            (template) calculation settings; the first with
+            ``"gpaw_parameters"`` data is used. Default is ``None``, in which
+            case ``entries`` is used.
+    """
+    candidates = entries if template_candidates is None else template_candidates
+    template = next((e for e in candidates if e.data.get("gpaw_parameters")), None)
+    if template is None:
+        return
+    reference = template.data["gpaw_parameters"]
+    parameters = sorted(set(_COMPATIBILITY_PARAMETERS) - {"kpts", "h", "gpts"})
+    differences = []
+    for entry in entries:
+        if not (settings := entry.data.get("gpaw_parameters")):
+            continue
+        mismatches = {
+            key: (settings.get(key), reference.get(key))
+            for key in parameters
+            if _comparable(settings.get(key)) != _comparable(reference.get(key))
+        }
+        entry.data["mismatching_gpaw_parameters"] = mismatches or False
+        if mismatches:
+            differences.append(f"{entry.name} ({entry.data.get('folder', '')}): {mismatches}")
+    if differences:
+        warnings.warn(
+            "There are mismatching GPAW parameters between competing phases, which may mean their "
+            "energies and chemical potentials are not comparable. "
+            f"Reference: {template.name}. Differences (phase, reference):\n" + "\n".join(differences)
+        )
 
 
 def check_run_compatibility(
