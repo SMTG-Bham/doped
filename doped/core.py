@@ -15,7 +15,6 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core, thermo, utils
 from pymatgen.core.bond_valence import BVAnalyzer
 from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
-from pymatgen.core.structure_matcher import SpeciesComparator
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
@@ -1946,14 +1945,17 @@ def _guess_and_set_struct_oxi_states_icsd_prob(
     try:
         attempt = 0
         structure.add_oxidation_state_by_guess(max_sites=-1)
-        while (  # check oxi_states assigned and not all zero:
-            attempt < 3 and all(specie.oxi_state == 0 for specie in structure.species)
-        ) or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
+        while attempt < 2 and (  # retry if oxi states all zero or not whole numbers:
+            all(specie.oxi_state == 0 for specie in structure.species)
+            or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species)
+        ):
             attempt += 1
             if attempt == 1:
                 structure.add_oxidation_state_by_guess(max_sites=-1, all_oxi_states=True)
-            elif attempt == 2:
+            else:
                 structure.add_oxidation_state_by_guess()
+        if not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
+            return False  # non-integer (e.g. mixed-valence average) oxidation states from every guess
     except Exception:
         structure.add_oxidation_state_by_guess()
 
@@ -2041,7 +2043,7 @@ def guess_and_set_oxi_states_with_timeout(
         (
             break_early_if_expensive or _mp.current_process().daemon
         )  # if in a daemon process, can't spawn new `Process`s
-        and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 3e7  # ~10 s
+        and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1.4e8  # ~10 s
     ):
         structure_with_oxi = False
 
@@ -2220,8 +2222,9 @@ def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites
     Follows ``pymatgen``'s ``Composition.oxi_state_guesses()`` algorithm, which
     enumerates the oxidation state combinations of each element, then all
     combinations of their distinct oxidation state sums. The returned cost is
-    roughly the number of ``python`` operations, at ~2.5e6 per second on a
-    modern CPU.
+    roughly the number of sum combinations, at ~1.4e7 per second on a modern
+    CPU, with the (vectorised, ~20x cheaper per operation) enumeration of
+    per-element combinations scaled to match.
     """
     if isinstance(comp, str):
         comp = Composition(comp)
@@ -2238,7 +2241,7 @@ def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites
         combos_cost += num_combos * (num_atoms + num_sums)
         num_sum_combos *= num_sums
 
-    return combos_cost + num_sum_combos
+    return combos_cost / 20 + num_sum_combos
 
 
 class Defect(core.Defect):
@@ -2455,7 +2458,7 @@ class Defect(core.Defect):
                             defect.structure,
                             bulk_oxi_states,
                             func_name="get_mapping",
-                            comparator=SpeciesComparator(),
+                            primitive_cell=False,  # required for ``get_mapping``
                         )
                         if mapping_to_defect is None:
                             raise ValueError(

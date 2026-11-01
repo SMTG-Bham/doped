@@ -20,7 +20,7 @@ from pymatgen.core.composition import Composition, DummySpecies
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.periodic_table import Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
-from pymatgen.core.structure import IStructure, Molecule, Structure
+from pymatgen.core.structure import IStructure, Molecule, Structure, _all_sites_in
 from pymatgen.core.structure_matcher import (
     AbstractComparator,
     ElementComparator,
@@ -544,8 +544,8 @@ def cache_species(structure_cls):
 
 def doped_Structure__eq__(self, other: IStructure) -> bool:
     """
-    Copied from ``pymatgen``, but updated to break early once a mis-matching
-    site is found, to speed up structure matching by ~2x.
+    Copied from ``pymatgen``, but with ``properties`` comparison that tolerates
+    ``np.ndarray`` values (``_properties_equal``).
     """
     # skip matching object type check here, as already checked upstream in ``_Structure__eq__``
     if other is self:
@@ -556,10 +556,7 @@ def doped_Structure__eq__(self, other: IStructure) -> bool:
         return False
     if not _properties_equal(self.properties, other.properties):
         return False
-    for site in self:  # noqa: SIM110
-        if site not in other:
-            return False  # break early!
-    return True
+    return _all_sites_in(self.sites, other.sites)  # O(N log N) site matching (KD-tree)
 
 
 # operand slots for the cached structure equality function; see ``_composition_eq_pair`` comment above:

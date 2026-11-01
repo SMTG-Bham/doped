@@ -46,6 +46,8 @@ from doped.core import (
     Substitution,
     Vacancy,
     _falling_back_to_common_oxi_states_warning,
+    _guess_and_set_struct_oxi_states,
+    _guess_and_set_struct_oxi_states_icsd_prob,
     _guess_and_set_struct_oxi_states_icsd_prob_process,
 )
 from doped.generation import (
@@ -3531,6 +3533,24 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         ):
             print(f"Testing Sn5O6 defect_gen with oxi states: {w_oxi}")
             self.Sn5O6_defect_gen_check(defect_gen, manual_oxi=w_oxi)
+
+        # ICSD-probability guessing gives non-integer (mixed-valence average) oxidation states for every
+        # guess here, which previously looped forever; now returns ``False`` (-> fallbacks):
+        for try_without_max_sites in [False, True]:
+            assert _guess_and_set_struct_oxi_states_icsd_prob(self.sn5o6, try_without_max_sites) is False
+
+        # mixed-valence ``bulk_oxi_states`` structure which is equivalent to, but not ``==``, the defect
+        # host -> oxidation states transferred by site mapping (previously always raised an error):
+        from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
+
+        shifted_sn5o6 = self.sn5o6.copy()
+        shifted_sn5o6.translate_sites(list(range(len(shifted_sn5o6))), [0.01, 0, 0])
+        v_O = Vacancy._from_pmg_defect(
+            pmg_Vacancy(shifted_sn5o6, shifted_sn5o6[0]),
+            bulk_oxi_states=_guess_and_set_struct_oxi_states(self.sn5o6),  # BVAnalyzer: Sn2+ & Sn3+
+        )
+        assert {str(species) for species in v_O.structure.species} == {"O2-", "Sn2+", "Sn3+"}
+        assert v_O.oxi_state == 2
 
     def Sn5O6_defect_gen_check(self, defect_gen, manual_oxi=False):
         self._general_defect_gen_check(defect_gen)

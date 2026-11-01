@@ -174,12 +174,16 @@ class TestStructureHashEq:
         assert s1 != s3  # different coords; full comparison path
 
     def test_tolerant_equality_kept(self):
-        s1 = _simple_structure()
-        permuted = Structure.from_sites(list(reversed(s1.sites)))
-        assert s1 == permuted  # site-order-independent equality
-        noisy = Structure(CUBIC_LATTICE, ["Cd", "Te"], [[0, 0, 1e-9], [0.25, 0.25, 0.25]])
-        # tolerance-based equality (noise above 1e-10 hash rounding, so hashes may differ, but still eq):
-        assert s1 == noisy
+        for s1 in [_simple_structure(), _simple_structure() * 2]:  # brute-force & KD-tree site matching
+            permuted = Structure.from_sites(list(reversed(s1.sites)))
+            assert s1 == permuted  # site-order-independent equality
+            noisy = s1.copy()
+            noisy.translate_sites([0], [0, 0, 1e-9])
+            # tolerance-based equality (noise above 1e-10 hash rounding; hashes may differ, but still eq):
+            assert s1 == noisy
+            moved = s1.copy()
+            moved.translate_sites([0], [0, 0, 0.1])
+            assert s1 != moved
 
     def test_float_noise_twins_share_hash(self):
         # coords/lattices differing only by float noise (<1e-10, e.g. from symmop round-trips) share a hash

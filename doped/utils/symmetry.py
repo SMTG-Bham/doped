@@ -23,7 +23,7 @@ from pymatgen.core.structure_matcher import ElementComparator
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.symmetry.groups import PointGroup
 from pymatgen.transformations.standard_transformations import SupercellTransformation
-from pymatgen.util.coord import is_coord_subset_pbc, lattice_points_in_supercell, pbc_diff
+from pymatgen.util.coord import lattice_points_in_supercell, pbc_diff
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial import KDTree
 from scipy.spatial.distance import squareform
@@ -43,7 +43,6 @@ from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
-    _get_site_mapping_from_coords_and_indices,
     get_site_mappings,
 )
 from doped.utils.supercells import get_min_image_distance
@@ -4450,77 +4449,4 @@ def get_orientational_degeneracy(
 
     return group_order_from_schoenflies(bulk_site_point_group) / group_order_from_schoenflies(
         relaxed_point_group
-    )
-
-
-def is_periodic_image(
-    sites_1: Iterable[PeriodicSite | np.ndarray],
-    sites_2: Iterable[PeriodicSite | np.ndarray],
-    frac_tol: float = 0.01,
-    same_image: bool = False,
-) -> bool:
-    r"""
-    Determine if the |PeriodicSite|/``frac_coords`` in ``sites_1`` are a
-    periodic image of those in ``sites_2``.
-
-    This function determines if the set of fractional coordinates in
-    ``sites_1`` are periodic images of those in ``sites_2``, with only unique
-    site matches permitted (i.e. no repeat matches; each site can only have
-    one match).
-
-    If ``same_image`` is ``True``, then the sites must all be of the same
-    periodic image translation (i.e. the same rigid translation vector), such
-    that ``sites_1`` can be `rigidly` translated by any combination of lattice
-    vectors to match the set of fractional coordinates in ``sites_2``.
-
-    Note that the this function tests if the `full` set of sites is a periodic
-    image of the other, and not just that `each` site in ``sites_1`` is
-    (individually) a periodic image of a site in ``sites_2`` (for which the
-    ``PeriodicSite.is_periodic_image`` method could be used).
-
-    Args:
-        sites_1 (list): List of |PeriodicSite|\s or ``frac_coords`` arrays.
-        sites_2 (list): List of |PeriodicSite|\s or ``frac_coords`` arrays.
-        frac_tol (float): Fractional coordinate tolerance for comparing sites.
-        same_image (bool):
-            If ``True``, also check that the sites are the `same` periodic
-            image translation (i.e. the same rigid translation vector).
-            Default is ``False``.
-
-    Returns:
-        bool:
-            ``True`` if ``sites_1`` is a periodic image of ``sites_2``,
-            ``False`` otherwise.
-    """
-    sites_1_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_1]
-    sites_2_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_2]
-
-    if len(sites_1_frac_coords) != len(sites_2_frac_coords):
-        raise ValueError("``is_periodic_image`` requires the same number of sites in both lists!")
-
-    if not same_image:
-        return len(sites_1_frac_coords) == len(sites_2_frac_coords) and is_coord_subset_pbc(
-            sites_1_frac_coords, sites_2_frac_coords
-        )
-
-    lattice = Lattice(np.eye(3))  # if fractional coords
-    for site in [next(iter(sites_1)), next(iter(sites_2))]:
-        if isinstance(site, PeriodicSite):
-            lattice = site.lattice
-
-    # first need to match sites with their closest (individual) periodic images, to account for order /
-    # permutation invariance:
-    site_mapping = _get_site_mapping_from_coords_and_indices(
-        sites_1_frac_coords, sites_2_frac_coords, lattice=lattice
-    )  # list of tuples of (dist, s1_index, s2_index)
-    reordered_sites_1_frac_coords = [
-        sites_1_frac_coords[s1_idx] for _dist, s1_idx, _s2_idx in site_mapping if s1_idx is not None
-    ]
-
-    pbc_frac_dist = np.subtract(reordered_sites_1_frac_coords, sites_2_frac_coords)
-    pbc_frac_diff = pbc_frac_dist - np.round(pbc_frac_dist)
-    return np.allclose(  # all sites are periodic images
-        pbc_frac_diff, np.zeros(pbc_frac_diff.shape), atol=frac_tol
-    ) and (  # all sites are _the same_ translation (periodic image)
-        np.allclose(pbc_frac_dist, pbc_frac_dist[0], atol=frac_tol)
     )
