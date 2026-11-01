@@ -10,7 +10,7 @@ import statistics
 import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
-from copy import copy, deepcopy
+from copy import copy
 from functools import lru_cache, partial, reduce
 from itertools import chain, product
 from operator import methodcaller
@@ -5342,7 +5342,7 @@ def get_fermi_dos(dos_vr: PathLike | Vasprun):
 
 
 def scissor_dos(
-    dos: Dos | FermiDos = None,
+    dos: Dos | FermiDos,
     delta_VBM: float = 0.0,
     delta_CBM: float = 0.0,
     delta_gap: float = 0.0,
@@ -5400,7 +5400,6 @@ def scissor_dos(
     delta_CBM = delta_CBM or +delta_gap / 2
     delta_gap = delta_CBM - delta_VBM  # change in band gap (keep this ``delta_gap`` definition/usage)
 
-    dos = deepcopy(dos)  # don't overwrite object
     dos_gap = dos.get_gap(tol=tol)
     dos_densities = dos.densities[Spin.up]
     # internally, shift just the CBM region by delta_gap, then rigidly shift all energies by delta_VBM
@@ -5432,49 +5431,22 @@ def scissor_dos(
             f"from dos.get_gap(tol=tol) and new gap: {dos_gap + delta_gap}"
         )
 
-    # Determine the number of values in energies/densities to remove/add to avoid duplication
-    values_to_remove_or_add = int(new_cbm_index - cbm_index)
-    scissored_dos_dict = dos.as_dict()
-
-    # Shift the CBM and remove/add values:
-    if values_to_remove_or_add <= 0:  # remove values (none for rigid shifts / sub-half-grid gap changes)
-        scissored_dos_dict["energies"] = np.concatenate(
-            (dos.energies[: cbm_index + values_to_remove_or_add], dos.energies[cbm_index:] + delta_gap)
-        )
-        scissored_dos_dict["densities"][Spin.up] = np.concatenate(
-            (
-                dos_densities[: cbm_index + values_to_remove_or_add],
-                dos_densities[cbm_index:],
-            )
-        )
-    elif values_to_remove_or_add > 0:  # add more zero DOS values:
-        scissored_dos_dict["energies"] = np.concatenate(
-            (
-                dos.energies[:cbm_index],
-                dos.energies[cbm_index:new_cbm_index],
-                dos.energies[cbm_index:] + delta_gap,
-            )
-        )
-        scissored_dos_dict["densities"][Spin.up] = np.concatenate(
-            (
-                dos_densities[:cbm_index],
-                np.zeros(values_to_remove_or_add),
-                dos_densities[cbm_index:],
-            )
-        )
-
-    # Assuming non-spin-polarised bulk here:
-    scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
-
-    # now apply the rigid shift of all energies by delta_VBM:
-    scissored_dos_dict["energies"] = np.array(scissored_dos_dict["energies"]) + delta_VBM
-    scissored_dos_dict["efermi"] += delta_VBM
+    # Shift the CBM region (and above) to ``new_cbm_index``, removing gap grid points if the gap shrinks or
+    # adding zero-DOS ones if it widens (none for rigid shifts / sub-half-grid gap changes):
+    energies = np.concatenate((dos.energies[:new_cbm_index], dos.energies[cbm_index:] + delta_gap))
+    densities = np.concatenate((dos_densities[:new_cbm_index], dos_densities[cbm_index:]))
+    densities[cbm_index:new_cbm_index] = 0  # zero DOS at any grid points added to the gap
 
     if verbose:
         print(f"Orig gap: {dos_gap:.4f}, new gap:{dos_gap + delta_gap:.4f}")
+
+    # now apply the rigid shift of all energies by delta_VBM, assuming non-spin-polarised bulk:
+    scissored_dos = Dos(
+        dos.efermi + delta_VBM, energies + delta_VBM, {Spin.up: densities, Spin.down: densities}
+    )
     if isinstance(dos, FermiDos):
-        return FermiDos.from_dict(scissored_dos_dict)
-    return Dos.from_dict(scissored_dos_dict)
+        return FermiDos(scissored_dos, structure=dos.structure, nelecs=dos.nelecs)
+    return scissored_dos
 
 
 class FermiSolver(MSONable):
