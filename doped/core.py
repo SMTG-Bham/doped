@@ -2044,7 +2044,7 @@ def guess_and_set_oxi_states_with_timeout(
     ):
         structure_with_oxi = False
 
-    if _mp.current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
+    elif _mp.current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
         structure_with_oxi = _guess_and_set_struct_oxi_states_icsd_prob(structure)
 
     else:
@@ -2142,10 +2142,11 @@ def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_wit
 
     For internal ``doped`` usage.
     """
-    if structure_with_oxi := _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites):
-        queue.put(structure_with_oxi)
-    else:
-        queue.put(False)
+    try:
+        structure_with_oxi = _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites)
+    except Exception:  # e.g. unknown elements; must put a result, else ``queue.get()`` hangs
+        structure_with_oxi = False
+    queue.put(structure_with_oxi or False)
 
 
 def _guess_and_set_oxi_states_with_timeout_icsd_prob(
