@@ -7,6 +7,7 @@ import contextlib
 import warnings
 from collections.abc import Iterable
 from functools import cached_property
+from math import comb
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -14,7 +15,6 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core, thermo, utils
 from pymatgen.core.bond_valence import BVAnalyzer
 from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
-from pymatgen.core.structure_matcher import SpeciesComparator
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
@@ -926,7 +926,11 @@ class DefectEntry(thermo.DefectEntry):
         self, chemical_potentials: dict | None = None, missing_elts_warning: bool = True
     ) -> float:
         chempot_dict: dict = chemical_potentials or {}
-        element_changes = {elt.symbol: change for elt, change in self.defect.element_changes.items()}
+        element_changes: dict[str, int] = collections.defaultdict(int)
+        for elt, change in self.defect.element_changes.items():
+            # named isotopes (e.g. D, symbol "H") take their parent element's chempot if not specified:
+            use_symbol = elt.name not in chempot_dict and elt.symbol in chempot_dict
+            element_changes[elt.symbol if use_symbol else elt.name] += change  # D_H: {"H": 0} w/μ_D = μ_H
         missing_elts = [elt for elt in element_changes if elt not in chempot_dict]
         if missing_elts and missing_elts_warning:
             warnings.warn(
@@ -2039,14 +2043,17 @@ def _guess_and_set_struct_oxi_states_icsd_prob(
     try:
         attempt = 0
         structure.add_oxidation_state_by_guess(max_sites=-1)
-        while (  # check oxi_states assigned and not all zero:
-            attempt < 3 and all(specie.oxi_state == 0 for specie in structure.species)
-        ) or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
+        while attempt < 2 and (  # retry if oxi states all zero or not whole numbers:
+            all(specie.oxi_state == 0 for specie in structure.species)
+            or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species)
+        ):
             attempt += 1
             if attempt == 1:
                 structure.add_oxidation_state_by_guess(max_sites=-1, all_oxi_states=True)
-            elif attempt == 2:
+            else:
                 structure.add_oxidation_state_by_guess()
+        if not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
+            return False  # non-integer (e.g. mixed-valence average) oxidation states from every guess
     except Exception:
         structure.add_oxidation_state_by_guess()
 
@@ -2134,11 +2141,11 @@ def guess_and_set_oxi_states_with_timeout(
         (
             break_early_if_expensive or _mp.current_process().daemon
         )  # if in a daemon process, can't spawn new `Process`s
-        and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1e6
+        and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1.4e8  # ~10 s
     ):
         structure_with_oxi = False
 
-    if _mp.current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
+    elif _mp.current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
         structure_with_oxi = _guess_and_set_struct_oxi_states_icsd_prob(structure)
 
     else:
@@ -2236,10 +2243,11 @@ def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_wit
 
     For internal ``doped`` usage.
     """
-    if structure_with_oxi := _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites):
-        queue.put(structure_with_oxi)
-    else:
-        queue.put(False)
+    try:
+        structure_with_oxi = _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites)
+    except Exception:  # e.g. unknown elements; must put a result, else ``queue.get()`` hangs
+        structure_with_oxi = False
+    queue.put(structure_with_oxi or False)
 
 
 def _guess_and_set_oxi_states_with_timeout_icsd_prob(
@@ -2308,6 +2316,13 @@ def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites
     A cost function which roughly estimates the computational cost of guessing
     the oxidation states of a given composition, using the ICSD oxidation state
     probabilities approach.
+
+    Follows ``pymatgen``'s ``Composition.oxi_state_guesses()`` algorithm, which
+    enumerates the oxidation state combinations of each element, then all
+    combinations of their distinct oxidation state sums. The returned cost is
+    roughly the number of sum combinations, at ~1.4e7 per second on a modern
+    CPU, with the (vectorised, ~20x cheaper per operation) enumeration of
+    per-element combinations scaled to match.
     """
     if isinstance(comp, str):
         comp = Composition(comp)
@@ -2315,22 +2330,16 @@ def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites
     if max_sites:
         comp, _factor = comp.get_reduced_composition_and_factor()
 
-    el_amt = comp.get_el_amt_dict()
-    elements = list(el_amt)
+    combos_cost, num_sum_combos = 0, 1
+    for el, amt in comp.get_el_amt_dict().items():
+        oxi_states = Element(el).icsd_oxidation_states or Element(el).common_oxidation_states or (0,)
+        num_atoms = int(amt)
+        num_combos = comb(len(oxi_states) + num_atoms - 1, num_atoms)
+        num_sums = min(num_combos, num_atoms * (max(oxi_states) - min(oxi_states)) + 1)  # distinct sums
+        combos_cost += num_combos * (num_atoms + num_sums)
+        num_sum_combos *= num_sums
 
-    def num_possible_combinations(n, r):
-        from math import factorial
-
-        return factorial(n + r - 1) / factorial(r) / factorial(n - 1)
-
-    return np.prod(
-        [
-            num_possible_combinations(
-                len(Element(el).icsd_oxidation_states or Element(el).oxidation_states), int(el_amt[el])
-            )
-            for el in elements
-        ]
-    )
+    return combos_cost / 20 + num_sum_combos
 
 
 class Defect(core.Defect):
@@ -2547,7 +2556,7 @@ class Defect(core.Defect):
                             defect.structure,
                             bulk_oxi_states,
                             func_name="get_mapping",
-                            comparator=SpeciesComparator(),
+                            primitive_cell=False,  # required for ``get_mapping``
                         )
                         if mapping_to_defect is None:
                             raise ValueError(
@@ -3205,6 +3214,14 @@ class Vacancy(Defect, core.Vacancy):
         frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
         return f"{self.name} vacancy defect at site [{frac_coords_string}] in structure"
 
+    @property
+    def name(self) -> str:
+        """
+        Name of the defect (e.g. ``v_Cd``), with named isotopes labelled as
+        such (e.g. ``v_D`` rather than ``v_H`` for deuterium).
+        """
+        return f"v_{core.get_element(self.defect_site.specie).name}"  # not symbol ("H" for D/T)
+
 
 class Substitution(Defect, core.Substitution):
     def __init__(self, *args, **kwargs):
@@ -3221,6 +3238,16 @@ class Substitution(Defect, core.Substitution):
         """
         frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
         return f"{self.name} substitution defect at site [{frac_coords_string}] in structure"
+
+    @property
+    def name(self) -> str:
+        """
+        Name of the defect (e.g. ``Te_Cd``), with named isotopes labelled as
+        such (e.g. ``D_Si`` rather than ``H_Si`` for deuterium).
+        """
+        return (
+            f"{core.get_element(self.site.specie).name}_{core.get_element(self.defect_site.specie).name}"
+        )
 
 
 class Interstitial(Defect, core.Interstitial):
@@ -3250,3 +3277,11 @@ class Interstitial(Defect, core.Interstitial):
         """
         frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
         return f"{self.name} interstitial defect at site [{frac_coords_string}] in structure"
+
+    @property
+    def name(self) -> str:
+        """
+        Name of the defect (e.g. ``Cd_i``), with named isotopes labelled as
+        such (e.g. ``D_i`` rather than ``H_i`` for deuterium).
+        """
+        return f"{core.get_element(self.site.specie).name}_i"

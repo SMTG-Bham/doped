@@ -10,4 +10,5 @@ INCAR:
 # Notes:
 # KPAR is set to 2 for `vasp_std` calculations (multiple kpoints)
 # NUPDOWN is set to 0 (singlet) or 1 (doublet) depending on the number of electrons
-# (even or odd, respectively) -- see https://doped.readthedocs.io/en/latest/Tips.html#magnetization
+# (even or odd, respectively), unless set (with the same parity) in user_incar_settings -- see
+# https://doped.readthedocs.io/en/latest/Tips.html#magnetization

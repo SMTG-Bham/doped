@@ -40,6 +40,7 @@ from doped.io.vasp.inputs import (
     default_potcar_dict,
     singlepoint_incar_settings,
 )
+from doped.utils import warn_once
 from doped.utils.efficiency import Structure, StructureMatcher_scan_stol
 
 # TODO: Should move this to a .io tests subpackage?
@@ -230,7 +231,7 @@ class DefectDictSetTest(unittest.TestCase):
         if dds.incar.get("NSW", 0) > 0:
             assert dds.incar["EDIFF"] == 1e-5  # default EDIFF
         else:
-            assert dds.incar["EDIFF"] == 1e-6  # hard set to 1e-6 for static calculations
+            assert dds.incar["EDIFF"] == 1e-6  # static calculation default, if EDIFF(_PER_ATOM) not set
 
         for k, v in default_relax_settings.items():
             if k == "GGA" and dds.incar.get("LHFCALC", False):
@@ -399,6 +400,11 @@ class DefectDictSetTest(unittest.TestCase):
 
             assert "GGA" not in gga_dds.incar  # no GGA tag set; VASP default (PBE) used
 
+        for lhfcalc in ["False", ".FALSE."]:  # string values parsed (previously truthy, so HSE used)
+            str_gga_dds = DefectDictSet(self.prim_cdte.copy(), user_incar_settings={"LHFCALC": lhfcalc})
+            assert str_gga_dds.incar["LHFCALC"] is False
+            assert not any(k in str_gga_dds.incar for k in self.hse06_incar_min if k != "LHFCALC")
+
     def test_bad_incar_setting(self):
         with warnings.catch_warnings(record=True) as w:
             # warnings.resetwarnings()  # neither of these should've been called previously
@@ -428,12 +434,14 @@ class DefectDictSetTest(unittest.TestCase):
 
     def test_ediff_per_atom_custom_setting(self):
         # first with DopedDictSet:
+        user_incar_settings = {"EDIFF_PER_ATOM": 1e-2}
         with warnings.catch_warnings(record=True) as w:
             dds = DopedDictSet(
                 self.prim_cdte.copy(),
-                user_incar_settings={"EDIFF_PER_ATOM": 1e-2},
+                user_incar_settings=user_incar_settings,
                 user_kpoints_settings={"reciprocal_density": 123},
             )
+        assert user_incar_settings == {"EDIFF_PER_ATOM": 1e-2}  # input dict not modified
         print([warning.message for warning in w])  # for debugging
         assert any(
             "EDIFF_PER_ATOM was set to 1.00e-02 eV/atom, which" in str(warning.message) for warning in w
@@ -447,6 +455,37 @@ class DefectDictSetTest(unittest.TestCase):
             user_incar_settings={"EDIFF_PER_ATOM": 1e-2},
         )
         assert np.isclose(dds.incar["EDIFF"], 1e-2 * len(self.prim_cdte))
+
+        # with both EDIFF_PER_ATOM and EDIFF set, EDIFF is used (as in pymatgen) with a warning:
+        user_incar_settings = {"EDIFF_PER_ATOM": 1e-6, "EDIFF": 1e-4}
+        for dict_set_class in [DopedDictSet, DefectDictSet]:
+            warn_once.cache_clear()  # warned once per process
+            with warnings.catch_warnings(record=True) as w:
+                dds = dict_set_class(
+                    self.prim_cdte.copy(),
+                    user_incar_settings=user_incar_settings,
+                    user_kpoints_settings={"reciprocal_density": 123},
+                )
+            assert any(
+                "EDIFF_PER_ATOM and EDIFF both set in user_incar_settings. EDIFF will be used"
+                in str(warning.message)
+                for warning in w
+            )
+            assert dds.incar["EDIFF"] == 1e-4
+            assert "EDIFF_PER_ATOM" not in dds.incar
+        assert user_incar_settings == {"EDIFF_PER_ATOM": 1e-6, "EDIFF": 1e-4}  # input dict not modified
+        assert dds.user_incar_settings == user_incar_settings  # DefectDictSet stores the input settings
+
+        # ``None`` values unset tags (as in ``pymatgen``), rather than e.g. removing the default EDIFF:
+        dds = DefectDictSet(self.prim_cdte.copy(), user_incar_settings={"EDIFF_PER_ATOM": None})
+        assert dds.incar["EDIFF"] == 1e-5  # default
+        dds = DopedDictSet(
+            self.prim_cdte.copy(),
+            user_incar_settings={"EDIFF_PER_ATOM": 1e-6, "EDIFF": None, "NSW": 100, "POTIM": None},
+            user_kpoints_settings={"reciprocal_density": 123},
+        )
+        assert dds.incar["EDIFF"] == 2e-6  # scaled EDIFF_PER_ATOM
+        assert "POTIM" not in dds.incar
 
     def test_kspacing_setting(self):
         """
@@ -478,6 +517,34 @@ class DefectDictSetTest(unittest.TestCase):
             incar = DopedDictSet(supercell, user_incar_settings={"KSPACING": 0.6, "KPAR": 2}).incar
         assert incar["KPAR"] == 1  # 0.6 Å⁻¹ > |b|, so the predicted mesh is Γ-only
         assert any("Γ-only (i.e. only one kpoint), so KPAR is being set to 1" in str(i.message) for i in w)
+
+    def test_user_magmom_over_site_magmoms(self):
+        """
+        Test that user ``MAGMOM`` settings take precedence over site magnetic
+        moments of the input structure for ``DopedDictSet`` (as used for
+        competing phases), as in ``pymatgen``.
+        """
+        structure = self.prim_cdte.copy()
+        structure.add_site_property("magmom", [1.0] * len(structure))
+        kpoints = {"reciprocal_density": 50}
+        warn_once.cache_clear()
+        with warnings.catch_warnings(record=True) as w:
+            for cd_magmom in [3, 0]:  # (user zero also used)
+                dds = DopedDictSet(structure, {"MAGMOM": {"Cd": cd_magmom}, "ISPIN": 2}, kpoints)
+                assert dds.incar["MAGMOM"] == [
+                    cd_magmom if site.specie.symbol == "Cd" else 1.0 for site in dds.structure
+                ]
+        assert not any("MAGMOM" in str(warning.message) for warning in w)
+        assert structure.site_properties["magmom"] == [1.0, 1.0]  # input structure not modified
+
+        with warnings.catch_warnings(record=True) as w:  # ignored with ISPIN = 1 (default), with a warning
+            assert "MAGMOM" not in DopedDictSet(structure, {"MAGMOM": {"Cd": 3}}, kpoints).incar
+        assert [str(warning.message) for warning in w if "MAGMOM" in str(warning.message)] == [
+            (
+                "MAGMOM in user_incar_settings is ignored for calculations with ISPIN = 1 (no spin "
+                "polarisation, VASP default). Set ISPIN = 2 to allow spin polarisation."
+            )
+        ]
 
     def test_initialisation_for_all_structs(self):
         """
@@ -768,9 +835,10 @@ class DefectRelaxSetTest(unittest.TestCase):
         for defect_dict_set, type in dds_bulk_test_list:
             if defect_dict_set is not None:
                 print(f"Testing {entry_name}, {type}")
-                self.dds_test._check_dds(
-                    defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
-                )
+                # bulk sets use the bulk supercell without oxidation states (as for defect supercells):
+                bulk_supercell = defect_relax_set.bulk_supercell.copy()
+                bulk_supercell.remove_oxidation_states()
+                self.dds_test._check_dds(defect_dict_set, bulk_supercell, charge_state=0, **kwargs)
                 self.dds_test._write_and_check_dds_files(defect_dict_set)
                 self.dds_test._write_and_check_dds_files(defect_dict_set, poscar=False)
                 self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
@@ -1225,6 +1293,233 @@ class DefectRelaxSetTest(unittest.TestCase):
             return np.mean(np.linalg.norm(structure.cart_coords - unperturbed.cart_coords, axis=1))
 
         assert _mean_disp(custom_rattled) > _mean_disp(default_rattled) > 0  # stdev = 0.5 >> default
+
+    def test_user_magmom_bulk_and_defect(self):
+        """
+        Test that (element-keyed) user ``MAGMOM`` settings are applied equally
+        to the defect and bulk supercell calculations, when the supercells have
+        site magnetic moments and the bulk supercell is oxidation-state-
+        decorated (as from ``DefectsGenerator``).
+        """
+        defect_entry = deepcopy(self.CdTe_defect_gen["v_Cd_0"])
+        assert any(getattr(sp, "oxi_state", None) for sp in defect_entry.bulk_supercell.composition)
+        for supercell in [defect_entry.bulk_supercell, defect_entry.defect_supercell]:
+            supercell.add_site_property("magmom", [1.0] * len(supercell))
+
+        user_magmoms = {"Cd": 3, "Te": 4}
+        drs = DefectRelaxSet(defect_entry, user_incar_settings={"MAGMOM": user_magmoms})
+        for dds in [drs.vasp_gam, drs.bulk_vasp_gam]:
+            magmoms = dds.incar["MAGMOM"]
+            assert len(magmoms) == len(dds.structure)
+            assert all(
+                magmom == user_magmoms[site.specie.symbol]
+                for magmom, site in zip(magmoms, dds.structure, strict=True)
+            )
+
+    def test_potcar_functional_in_user_potcar_settings(self):
+        """
+        Test that a ``POTCAR_FUNCTIONAL`` given in ``user_potcar_settings`` is
+        used for all ``DefectRelaxSet`` sub-sets.
+        """
+        user_potcar_settings = {"POTCAR_FUNCTIONAL": "PBE_54"}
+        drs = DefectRelaxSet(self.CdTe_defect_gen["v_Cd_0"], user_potcar_settings=user_potcar_settings)
+        dds_list = [drs.vasp_gam, drs.vasp_nkred_std, drs.vasp_std, drs.bulk_vasp_gam, drs.bulk_vasp_std]
+        assert all(dds is not None for dds in dds_list)
+        assert all(dds.user_potcar_functional == "PBE_54" for dds in dds_list)
+        assert user_potcar_settings == {"POTCAR_FUNCTIONAL": "PBE_54"}  # input dict not modified
+
+    def test_singlepoint_user_incar_settings(self):
+        """
+        Test that user ``EDIFF``/``EDIFF_PER_ATOM`` settings are used for all
+        ``DefectRelaxSet`` sets, including the singlepoint (``vasp_ncl`` and
+        bulk) sets (which otherwise use the fixed singlepoint ``EDIFF``), while
+        user settings for ionic relaxation (e.g. ``NSW``) are overridden in the
+        singlepoint sets, with a warning (once).
+        """
+        defect_entry = self.CdTe_defect_gen["v_Cd_0"]
+        user_incar_settings = {"EDIFF_PER_ATOM": 1e-7}
+        with warnings.catch_warnings(record=True) as w:
+            drs = DefectRelaxSet(defect_entry, user_incar_settings=user_incar_settings)
+            relax_dds_list = [drs.vasp_gam, drs.vasp_nkred_std, drs.vasp_std]
+            singlepoint_dds_list = [
+                drs.vasp_ncl,
+                drs.bulk_vasp_gam,
+                drs.bulk_vasp_nkred_std,
+                drs.bulk_vasp_std,
+                drs.bulk_vasp_ncl,
+            ]
+            assert all(dds is not None for dds in relax_dds_list + singlepoint_dds_list)
+            for dds in relax_dds_list + singlepoint_dds_list:  # scaled EDIFF, rounded to 1 sig. fig.:
+                assert dds.incar["EDIFF"] == float(f"{1e-7 * len(dds.structure):.1g}")
+                assert "EDIFF_PER_ATOM" not in dds.incar
+        assert not any("EDIFF" in str(warning.message) for warning in w)
+        assert not any("overridden" in str(warning.message) for warning in w)
+        assert user_incar_settings == {"EDIFF_PER_ATOM": 1e-7}  # input dict not modified
+
+        user_incar_settings = {"EDIFF": 1e-7, "NSW": 200, "EDIFFG": -0.005}
+        with warnings.catch_warnings(record=True) as w:
+            drs = DefectRelaxSet(defect_entry, user_incar_settings=user_incar_settings)
+            assert drs.vasp_std.incar["NSW"] == 200
+            assert drs.vasp_std.incar["EDIFFG"] == -0.005
+            for dds in [drs.vasp_std, drs.vasp_ncl, drs.bulk_vasp_gam, drs.bulk_vasp_std]:
+                assert dds.incar["EDIFF"] == 1e-7
+            for dds in [drs.vasp_ncl, drs.bulk_vasp_gam, drs.bulk_vasp_std]:
+                assert dds.incar["NSW"] == 0
+                assert "EDIFFG" not in dds.incar
+        override_warnings = [warning for warning in w if "overridden" in str(warning.message)]
+        assert len(override_warnings) == 1  # warned once
+        assert "NSW = 200 -> 0" in str(override_warnings[0].message)
+        assert "EDIFFG = -0.005 -> not set" in str(override_warnings[0].message)
+        assert user_incar_settings == {"EDIFF": 1e-7, "NSW": 200, "EDIFFG": -0.005}  # not modified
+
+        # also warned when the singlepoint sets are first generated in ``write_all()`` (which filters some
+        # warnings, previously losing this one):
+        warn_once.cache_clear()
+        with warnings.catch_warnings(record=True) as w:
+            DefectRelaxSet(defect_entry, user_incar_settings={"NSW": 200}).write_all("test_dir", bulk=True)
+        assert len([warning for warning in w if "overridden" in str(warning.message)]) == 1
+
+        # string values equal to the forced settings aren't flagged, while a ``LSORBIT`` override (for the
+        # ``vasp_ncl`` sets only) gives its own warning:
+        warn_once.cache_clear()
+        with warnings.catch_warnings(record=True) as w:
+            drs = DefectRelaxSet(
+                defect_entry, user_incar_settings={"NSW": "0", "IBRION": "-1", "LSORBIT": False}
+            )
+            assert drs.vasp_ncl.incar["LSORBIT"] is True
+        override_messages = [str(warning.message) for warning in w if "overridden" in str(warning.message)]
+        assert override_messages == [
+            (
+                "LSORBIT = False in user_incar_settings is overridden to True for the SOC singlepoint "
+                "(vasp_ncl) calculations."
+            )
+        ]
+
+    def test_set_init_warnings_with_write_all(self):
+        """
+        Test that warnings from ``DefectDictSet`` initialisation for user
+        ``INCAR`` settings (e.g. ``MAGMOM`` ignored with ``ISPIN = 1``) are
+        raised (once) when using ``DefectRelaxSet.write_all()``, which
+        generates the sets under warning filters.
+        """
+        v_Cd_0 = self.CdTe_defect_gen["v_Cd_0"]
+        for user_incar_settings, message in [
+            ({"MAGMOM": {"Cd": 3}, "ISPIN": 1}, "MAGMOM in user_incar_settings is ignored"),
+            ({"EDIFF": 1e-5, "EDIFF_PER_ATOM": 1e-6}, "EDIFF_PER_ATOM and EDIFF both set"),
+        ]:
+            warn_once.cache_clear()
+            with warnings.catch_warnings(record=True) as w:
+                DefectRelaxSet(v_Cd_0, user_incar_settings=user_incar_settings).write_all("test_dir")
+            assert len([warning for warning in w if message in str(warning.message)]) == 1
+            if_present_rm("test_dir")
+
+        warn_once.cache_clear()  # no warning with the default ISPIN = 2 for defects:
+        with warnings.catch_warnings(record=True) as w:
+            DefectRelaxSet(v_Cd_0, user_incar_settings={"MAGMOM": {"Cd": 3}}).write_all("test_dir")
+        assert not any("MAGMOM" in str(warning.message) for warning in w)
+        assert "MAGMOM" in Incar.from_file("test_dir/vasp_std/INCAR")
+
+    def test_user_nupdown_setting(self):
+        """
+        Test that a user ``NUPDOWN`` setting (e.g. to test triplet states) is
+        used for supercells with the same electron number parity, and otherwise
+        replaced by the default (0/1 for even/odd) with a warning (once, and
+        also when the sets are first generated in ``write_all()``), while
+        ``None`` (unset) and -1 (unconstrained) are always used.
+        """
+        if not _potcars_available():  # NELECT, and so NUPDOWN parity, requires POTCARs
+            return
+
+        v_Cd_0, v_Cd_m1 = self.CdTe_defect_gen["v_Cd_0"], self.CdTe_defect_gen["v_Cd_-1"]  # even, odd
+        for nupdown, expected in [(2, 2), ("2  # triplet", 2), (-1, -1), (None, None)]:
+            with warnings.catch_warnings(record=True) as w:
+                drs = DefectRelaxSet(v_Cd_0, user_incar_settings={"NUPDOWN": nupdown})
+                for dds in [drs.vasp_gam, drs.vasp_std, drs.vasp_ncl, drs.bulk_vasp_std]:
+                    assert dds.incar.get("NUPDOWN") == expected
+            assert not any("NUPDOWN" in str(warning.message) for warning in w)
+        assert DefectRelaxSet(v_Cd_m1, user_incar_settings={"NUPDOWN": 3}).vasp_std.incar["NUPDOWN"] == 3
+
+        warn_once.cache_clear()
+        with warnings.catch_warnings(record=True) as w:
+            DefectRelaxSet(v_Cd_m1, user_incar_settings={"NUPDOWN": 2}).write_all("test_dir", bulk=True)
+        nupdown_warnings = [str(warning.message) for warning in w if "NUPDOWN" in str(warning.message)]
+        assert nupdown_warnings == [
+            (
+                "NUPDOWN = 2 in user_incar_settings is incompatible with supercells with an odd number of "
+                "electrons (NELECT), so the default NUPDOWN = 1 is used for these instead (see "
+                "https://doped.readthedocs.io/en/latest/Tips.html#magnetization)."
+            )
+        ]
+        for folder, expected in [("test_dir/vasp_std", 1), ("CdTe_bulk/vasp_ncl", 2)]:  # odd, even
+            assert Incar.from_file(f"{folder}/INCAR")["NUPDOWN"] == expected
+
+    def test_user_nkred_setting(self):
+        """
+        Test that user ``NKRED(X,Y,Z)`` settings are used for the
+        ``vasp_nkred_std`` sets, rather than being overwritten by the
+        automatically-determined values, including for non-grid-like k-point
+        settings (for which these cannot be determined), and that a string
+        ``LHFCALC = "False"`` (GGA) gives no ``vasp_nkred_std`` set.
+        """
+        defect_entry = self.CdTe_defect_gen["v_Cd_0"]
+        assert DefectRelaxSet(defect_entry).vasp_nkred_std.incar["NKRED"] == 2  # automatic
+        for nkred_settings in [{"NKRED": 3}, {"NKREDX": 2, "NKREDY": 3}]:
+            drs = DefectRelaxSet(defect_entry, user_incar_settings=nkred_settings)
+            for dds in [drs.vasp_nkred_std, drs.bulk_vasp_nkred_std]:
+                assert {k: v for k, v in dds.incar.items() if "NKRED" in k} == nkred_settings
+
+        drs = DefectRelaxSet(
+            defect_entry,
+            user_kpoints_settings=Kpoints(
+                style=Kpoints.supported_modes.Automatic, num_kpts=0, kpts=[(101,)]
+            ),
+            user_incar_settings={"NKRED": 2},
+        )
+        with warnings.catch_warnings(record=True) as w:
+            assert drs.vasp_nkred_std.incar["NKRED"] == 2
+        assert not any("NKRED settings cannot be automatically determined" in str(i.message) for i in w)
+
+        gga_drs = DefectRelaxSet(defect_entry, user_incar_settings={"LHFCALC": "False"})  # string value
+        assert gga_drs.vasp_nkred_std is None
+
+    def test_user_kspacing_setting(self):
+        """
+        Test that a user ``KSPACING`` setting is used in place of the default
+        k-point density, except for the Γ-only ``vasp_gam`` sets, with the mesh
+        ``VASP`` will generate being predicted to set ``KPAR`` and ``NKRED``,
+        and to determine if ``vasp_std`` is needed.
+
+        ``KPOINTS`` settings take
+        precedence if also set (with a warning), as in ``pymatgen``.
+        """
+        defect_entry = self.CdTe_defect_gen["v_Cd_0"]
+        drs = DefectRelaxSet(defect_entry, user_incar_settings={"KSPACING": 0.3})
+        assert drs.vasp_gam.kpoints.kpts == [(1, 1, 1)]
+        assert "KSPACING" not in drs.vasp_gam.incar
+        for dds in [drs.vasp_std, drs.vasp_nkred_std, drs.vasp_ncl, drs.bulk_vasp_std]:
+            assert dds.kpoints is None
+            assert dds.incar["KSPACING"] == 0.3
+        assert drs.vasp_std._kpts == (2, 2, 2)  # |b| = 0.48 Å^-1 for the 64-atom CdTe supercell
+        assert drs.vasp_std.incar["KPAR"] == 4
+        assert drs.vasp_nkred_std.incar["NKRED"] == 2
+
+        with warnings.catch_warnings(record=True) as w:  # Γ-only predicted mesh -> no vasp_std
+            assert DefectRelaxSet(defect_entry, user_incar_settings={"KSPACING": 1.5}).vasp_std is None
+        assert any(
+            "current kpoint settings (KSPACING = 1.5), the k-point mesh is Γ-only" in str(i.message)
+            for i in w
+        )
+
+        warn_once.cache_clear()
+        with warnings.catch_warnings(record=True) as w:
+            drs = DefectRelaxSet(
+                defect_entry,
+                user_incar_settings={"KSPACING": 0.3},
+                user_kpoints_settings={"reciprocal_density": 200},
+            )
+            assert drs.vasp_std.kpoints is not None
+            assert "KSPACING" not in drs.vasp_std.incar
+        assert sum("KSPACING in user_incar_settings is ignored" in str(i.message) for i in w) == 1
 
     def test_to_from_json(self):
         """

@@ -10,9 +10,11 @@ import gzip
 import os
 import random
 import sys
+import tempfile
 import unittest
 import warnings
 from io import StringIO
+from queue import SimpleQueue
 from unittest.mock import patch
 
 import numpy as np
@@ -23,7 +25,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.lattice import Lattice
-from pymatgen.core.structure import Species
+from pymatgen.core.structure import DummySpecies, Species
 from pymatgen.core.surface import SlabGenerator
 from pymatgen.io.vasp import Poscar
 from test_utils import (
@@ -31,6 +33,7 @@ from test_utils import (
     _compare_attributes,
     _compare_prim_interstitial_coords,
     _print_warning_info,
+    _run_func_and_capture_stdout_warnings,
     _run_heavy_tests,
     data_dir,
     if_present_rm,
@@ -44,9 +47,13 @@ from doped.core import (
     Substitution,
     Vacancy,
     _falling_back_to_common_oxi_states_warning,
+    _guess_and_set_struct_oxi_states,
+    _guess_and_set_struct_oxi_states_icsd_prob,
+    _guess_and_set_struct_oxi_states_icsd_prob_process,
 )
 from doped.generation import (
     DefectsGenerator,
+    _element_sort_func,
     get_bond_centre_sites,
     get_defect_name_from_defect,
     get_defect_name_from_entry,
@@ -968,34 +975,34 @@ Se_i_C2_Ag2.48               [0,-1,-2]          [0.091,0.500,0.500]  2b
 -----------  -----------------  -------------------  ---------
 v_Si         [+1,0,-1,-2,-3]    [0.000,0.000,0.445]  6c
 v_Sb         [+1,0,-1,-2,-3]    [0.000,0.000,0.166]  6c
-v_Te         [+2,+1,0,-1]       [0.332,0.001,0.260]  18f
+v_Te         [+2,+1,0,-1]       [0.335,0.003,0.073]  18f
 
 Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
 Si_Sb            [+1,0,-1]                    [0.000,0.000,0.166]  6c
-Si_Te            [+6,+5,+4,+3,+2,+1,0,-1,-2]  [0.332,0.001,0.260]  18f
+Si_Te            [+6,+5,+4,+3,+2,+1,0,-1,-2]  [0.335,0.003,0.073]  18f
 Sb_Si            [+2,+1,0,-1,-2,-3,-4,-5,-6]  [0.000,0.000,0.445]  6c
-Sb_Te            [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.332,0.001,0.260]  18f
+Sb_Te            [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.335,0.003,0.073]  18f
 Te_Si            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.445]  6c
 Te_Sb            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.166]  6c
 
 Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
-Si_i_C1_Si2.21   [+4,+3,+2,+1,0]              [0.201,0.359,0.167]  18f
-Si_i_C1_Si2.48   [+4,+3,+2,+1,0]              [0.348,0.347,0.543]  18f
-Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.003,0.335,0.044]  18f
+Si_i_C1_Si2.21   [+4,+3,+2,+1,0]              [0.158,0.359,0.167]  18f
+Si_i_C1_Si2.48   [+4,+3,+2,+1,0]              [0.347,0.348,0.457]  18f
+Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.001,0.336,0.289]  18f
 Si_i_C3_Sb2.41   [+4,+3,+2,+1,0]              [0.000,0.000,0.050]  6c
 Si_i_C3_Si2.64   [+4,+3,+2,+1,0]              [0.000,0.000,0.318]  6c
 Si_i_C3i         [+4,+3,+2,+1,0]              [0.000,0.000,0.000]  3a
-Sb_i_C1_Si2.21   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.201,0.359,0.167]  18f
-Sb_i_C1_Si2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.348,0.347,0.543]  18f
-Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.003,0.335,0.044]  18f
+Sb_i_C1_Si2.21   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.158,0.359,0.167]  18f
+Sb_i_C1_Si2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.347,0.348,0.457]  18f
+Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.001,0.336,0.289]  18f
 Sb_i_C3_Sb2.41   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.050]  6c
 Sb_i_C3_Si2.64   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.318]  6c
 Sb_i_C3i         [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.000]  3a
-Te_i_C1_Si2.21   [+4,+3,+2,+1,0,-1,-2]        [0.201,0.359,0.167]  18f
-Te_i_C1_Si2.48   [+4,+3,+2,+1,0,-1,-2]        [0.348,0.347,0.543]  18f
-Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.003,0.335,0.044]  18f
+Te_i_C1_Si2.21   [+4,+3,+2,+1,0,-1,-2]        [0.158,0.359,0.167]  18f
+Te_i_C1_Si2.48   [+4,+3,+2,+1,0,-1,-2]        [0.347,0.348,0.457]  18f
+Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.001,0.336,0.289]  18f
 Te_i_C3_Sb2.41   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.050]  6c
 Te_i_C3_Si2.64   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.318]  6c
 Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
@@ -1766,19 +1773,19 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             ytos_defect_gen.prim_interstitial_coords_mult_and_equiv_coords,
             [
                 (
-                    np.array([0.1838, 0.6838, 0.3675]),
+                    np.array([0.3162, 0.8162, 0.3675]),
                     4,
                     [
-                        np.array([0.1838, 0.6838, 0.3675]),
-                        np.array([0.6838, 0.1838, 0.3675]),
-                        np.array([0.3162, 0.8162, 0.6325]),
-                        np.array([0.8162, 0.3162, 0.6325]),
+                        np.array([0.3162, 0.8162, 0.3675]),
+                        np.array([0.8162, 0.3162, 0.3675]),
+                        np.array([0.1838, 0.6838, 0.6325]),
+                        np.array([0.6838, 0.1838, 0.6325]),
                     ],
                 ),
                 (
-                    np.array([0.5822, 0.5822, 0.1643]),
+                    np.array([0.4178, 0.4178, 0.1643]),
                     2,
-                    [np.array([0.5822, 0.5822, 0.1643]), np.array([0.4178, 0.4178, 0.8357])],
+                    [np.array([0.4178, 0.4178, 0.1643]), np.array([0.5822, 0.5822, 0.8357])],
                 ),
                 (
                     np.array([0.25, 0.75, 0.5]),
@@ -2488,7 +2495,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             # slight extra expansion)
         else:
             assert np.allclose(
-                ytos_defect_gen.supercell_matrix, np.array([[3, 0, 0], [0, 3, 0], [1, 1, 2]])
+                ytos_defect_gen.supercell_matrix, np.array([[3, 0, 0], [0, 3, 0], [-1, -1, 2]])
             )
             assert np.allclose(
                 ytos_defect_gen.bulk_supercell.lattice.matrix, self.ytos_bulk_supercell.lattice.matrix
@@ -2510,7 +2517,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert ytos_defect_gen.defects["vacancies"][0].name == "v_Y"
         assert ytos_defect_gen.defects["vacancies"][0].oxi_state == -3
         assert ytos_defect_gen.defects["vacancies"][0].multiplicity == 2
-        v_Y_frac_coords = np.array([0.333885, 0.333885, 0.66777])
+        v_Y_frac_coords = np.array([0.333885, 0.333885, 0.332231])
         assert np.allclose(
             ytos_defect_gen.defects["vacancies"][0].site.frac_coords,
             v_Y_frac_coords,
@@ -2566,7 +2573,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
 
         frac_coords = np.array(
-            [0.555372, 0.555372, 0.33223] if generate_supercell else [0.3333, 0.3333, 0.3339]
+            [0.444628, 0.444628, 0.33223] if generate_supercell else [0.3333, 0.3333, 0.3339]
         )
         try:
             assert np.allclose(
@@ -2583,7 +2590,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert np.allclose(
             ytos_defect_gen["v_Y_0"].defect.site.frac_coords,
-            np.array([0.333885, 0.333885, 0.66777]),
+            np.array([0.333885, 0.333885, 0.332231]),
             atol=1e-3,
         )
 
@@ -3462,6 +3469,13 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
         self._general_defect_gen_check(CdTe_defect_gen)
 
+        # errors in the oxi state guessing subprocess (here from a dummy species) must still put a result
+        # on the queue, otherwise ``queue.get()`` in the parent process hangs forever:
+        queue = SimpleQueue()
+        na_X = Structure(Lattice.cubic(4), ["Na", DummySpecies("X")], [[0, 0, 0], [0.5, 0.5, 0.5]])
+        _guess_and_set_struct_oxi_states_icsd_prob_process(na_X, queue)
+        assert queue.get() is False
+
     def test_agsbte2(self):
         """
         Test generating defects in a disordered supercell of AgSbTe2.
@@ -3520,6 +3534,24 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         ):
             print(f"Testing Sn5O6 defect_gen with oxi states: {w_oxi}")
             self.Sn5O6_defect_gen_check(defect_gen, manual_oxi=w_oxi)
+
+        # ICSD-probability guessing gives non-integer (mixed-valence average) oxidation states for every
+        # guess here, which previously looped forever; now returns ``False`` (-> fallbacks):
+        for try_without_max_sites in [False, True]:
+            assert _guess_and_set_struct_oxi_states_icsd_prob(self.sn5o6, try_without_max_sites) is False
+
+        # mixed-valence ``bulk_oxi_states`` structure which is equivalent to, but not ``==``, the defect
+        # host -> oxidation states transferred by site mapping (previously always raised an error):
+        from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
+
+        shifted_sn5o6 = self.sn5o6.copy()
+        shifted_sn5o6.translate_sites(list(range(len(shifted_sn5o6))), [0.01, 0, 0])
+        v_O = Vacancy._from_pmg_defect(
+            pmg_Vacancy(shifted_sn5o6, shifted_sn5o6[0]),
+            bulk_oxi_states=_guess_and_set_struct_oxi_states(self.sn5o6),  # BVAnalyzer: Sn2+ & Sn3+
+        )
+        assert {str(species) for species in v_O.structure.species} == {"O2-", "Sn2+", "Sn3+"}
+        assert v_O.oxi_state == 2
 
     def Sn5O6_defect_gen_check(self, defect_gen, manual_oxi=False):
         self._general_defect_gen_check(defect_gen)
@@ -3674,9 +3706,110 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         """
         Si_defect_gen, _output = self._generate_and_test_no_warnings(self.conv_si, extrinsic="D")
         self._general_defect_gen_check(Si_defect_gen)
+        assert {name.rsplit("_", 1)[0] for name in Si_defect_gen.defect_entries} == {
+            "v_Si",
+            "Si_i_D3d",
+            "Si_i_Td",
+            "D_Si",
+            "D_i_D3d_Si1.18",
+            "D_i_D3d_Si2.26",
+            "D_i_Td",
+        }  # including the bond-centre D_i site, as for H
+        assert all(
+            name.startswith(entry.defect.name) for name, entry in Si_defect_gen.defect_entries.items()
+        )
+        # D uses its own chemical potential if given, else that of H:
+        D_Si = Si_defect_gen["D_Si_0"]
+        assert np.isclose(D_Si._get_chempot_term({"Si": -5, "H": -3}), -2)  # μ_Si - μ_D
+        assert np.isclose(D_Si._get_chempot_term({"Si": -5, "H": -3, "D": -3.2}), -1.8)
+        assert sorted(["T", "D", "H"], key=_element_sort_func) == ["H", "D", "T"]  # deterministic order
+        self._save_defect_gen_jsons(Si_defect_gen)
+        self._load_and_test_defect_gen_jsons(Si_defect_gen)
 
         # test DefectsSet initialisation also fine:
         DefectsSet(Si_defect_gen)
+
+        # substitution_elements matches elements exactly, not as name prefixes (T vs Te):
+        CdTe_defect_gen, _output = self._generate_and_test_no_warnings(
+            self.prim_cdte,
+            extrinsic="T",
+            substitution_elements=["T"],
+            vacancy_elements=[],
+            interstitial_gen_kwargs=False,
+        )
+        assert {name.rsplit("_", 1)[0] for name in CdTe_defect_gen.defect_entries} == {"T_Cd", "T_Te"}
+
+        # host named isotopes are treated as their parent element, with a warning (as pymatgen only
+        # partially keeps them, which would otherwise give a mix of D and H defects, e.g. v_D & H_Li):
+        lid = Structure.from_spacegroup("Fm-3m", Lattice.cubic(4.07), ["Li", "D"], [[0, 0, 0], [0.5] * 3])
+        LiD_defect_gen, _stdout, w = _run_func_and_capture_stdout_warnings(DefectsGenerator, lid)
+        assert any("Named isotopes ['D'] in the host structure" in str(warning.message) for warning in w)
+        assert {name.rsplit("_", 1)[0] for name in LiD_defect_gen.defect_entries} == {
+            "v_Li",
+            "v_H",
+            "Li_H",
+            "H_Li",
+            "Li_i_Td",
+            "H_i_Td",
+        }
+
+    def test_input_structure_site_properties(self):
+        r"""
+        Test |DefectsGenerator| with input structures with site properties,
+        such as ``ASE`` ``Atoms`` read from a ``VASP`` ``CONTCAR`` (which has a
+        velocities block, so ``ASE`` sets ``momenta``, which ``pymatgen``
+        converts to ``momenta`` / ``velocities`` site properties), or with
+        ``tags`` or ``selective_dynamics``.
+
+        Site properties other than ``magmom`` are removed, as previously they
+        were carried through to all generated structures, with ``None`` values
+        for new defect sites, giving malformed ``POSCAR``\s and errors when
+        rattling substitution & interstitial supercells (``to_ase_atoms``).
+        """
+        from ase.io import read
+
+        atoms = read(f"{EXAMPLE_DIR}/MgO/Bulk_relax/CONTCAR")
+        assert atoms.has("momenta")  # from CONTCAR velocities block
+        atoms.set_tags([1, 2])
+        structure = Structure.from_ase_atoms(atoms)  # with ``tags`` & ``velocities``/``momenta``
+        sd_magmom_structure = Structure.from_file(f"{EXAMPLE_DIR}/MgO/Bulk_relax/CONTCAR")
+        sd_magmom_structure.add_site_property("selective_dynamics", [[True, True, False], [True] * 3])
+        sd_magmom_structure.add_site_property("magmom", [1.0, 0.0])
+        defect_names = ["Mg_O_0", "Mg_i_Td_0", "v_Mg_0"]  # new-site substitution/interstitial, & vacancy
+
+        for structure_input in [atoms, structure, sd_magmom_structure]:
+            input_site_props = set(getattr(structure_input, "site_properties", {}))
+            mgo_defect_gen, _output = self._generate_and_test_no_warnings(structure_input)
+            for struct in [
+                mgo_defect_gen.structure,
+                mgo_defect_gen.primitive_structure,
+                mgo_defect_gen.bulk_supercell,
+                *(entry.defect_supercell for entry in mgo_defect_gen.values()),
+            ]:
+                assert not set(struct.site_properties) - {"magmom"}
+            assert set(getattr(structure_input, "site_properties", {})) == input_site_props  # unchanged
+            if structure_input is sd_magmom_structure:
+                assert "magmom" in mgo_defect_gen.bulk_supercell.site_properties  # retained
+
+            with tempfile.TemporaryDirectory() as tmp_dir:  # write rattled POSCARs:
+                DefectsSet({name: mgo_defect_gen[name] for name in defect_names}).write_files(
+                    output_path=tmp_dir, poscar=True
+                )
+                poscar_paths = [
+                    os.path.join(dirpath, "POSCAR")
+                    for dirpath, _dirnames, filenames in os.walk(tmp_dir)
+                    if "POSCAR" in filenames
+                ]
+                assert all(
+                    any(f"{os.sep}{name}{os.sep}" in path for path in poscar_paths)
+                    for name in defect_names
+                )
+                assert any("_bulk" in path for path in poscar_paths)
+                for path in poscar_paths:
+                    with open(path, encoding="utf-8") as f:
+                        poscar_lines = f.read().splitlines()
+                    num_sites = sum(int(i) for i in poscar_lines[6].split())
+                    assert len(poscar_lines) == 8 + num_sites  # no selective dynamics or velocities
 
     def test_P1_sanity_check(self):
         """
@@ -3937,7 +4070,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # distorted-octahedral D4h site has max coordination/symmetry; 1.43 Å distance to host, and is
         # 0.72 Å from the Voronoi site which has max distance-to-host of 1.6 Å (0.17 Å more), and so they
         # are within the clustering range with the default ``clustering_tol`` of 0.8 Å (indeed they relax
-        # to the same site as expected), so D2d site only preferred when symm_pref_dist_factor is >= 90%
+        # to the same site as expected), so D2d site only preferred when symm_pref_dist_factor is >= 90%.
+        # Bond-centre sites are excluded here, as otherwise the D4h site is re-added as the bond centre of
+        # the second-nearest-neighbour Fe-Fe bonds (bond-centre sites being added after site grouping, and
+        # so unaffected by ``symm_pref_dist_factor``; giving the same 3 sites as the default case above):
         defect_gen, output = self._generate_and_test_no_warnings(
             bcc_fe,
             generate_supercell=False,
@@ -3945,7 +4081,11 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             substitution_elements=[],
             vacancy_elements=[],
             neutral_only=True,
-            interstitial_gen_kwargs={"include_unique_wyckoffs": True, "symm_pref_dist_factor": 0.9},
+            interstitial_gen_kwargs={
+                "include_unique_wyckoffs": True,
+                "symm_pref_dist_factor": 0.9,
+                "include_bond_centres": False,
+            },
             min_image_distance=2.86,
         )
 
@@ -3984,15 +4124,14 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             + 1
         )
 
-        # included by default for hydrogen in ``DefectsGenerator``:
+        # included by default for hydrogen in ``DefectsGenerator``, but not for other elements (here Li):
         defect_gen, output = self._generate_and_test_no_warnings(
             self.conv_si,
-            extrinsic="H",
-            interstitial_elements=["H"],
+            extrinsic=["H", "Li"],
             substitution_elements=[],
             vacancy_elements=[],
             neutral_only=True,
         )
         assert "H_i_D3d_Si1.18_0" in defect_gen.defect_entries
-        assert "[0.125,0.125,0.125]  16c" in output
-        assert len(defect_gen.defect_entries) == n_voronoi_sites + 1
+        assert output.count("[0.125,0.125,0.125]  16c") == 1  # bond-centre site for H_i only
+        assert len(defect_gen.defect_entries) == 3 * n_voronoi_sites + 1  # Si_i, Li_i & H_i (+bond centre)

@@ -123,23 +123,6 @@ that it is rebuilt with the new ``numpy`` C API:
   pip install pymatgen
 
 
-``spglib`` Errors/Warnings
---------------------------
-A known issue with ``spglib`` is that it can give unnecessary errors or warnings similar to:
-
-.. code:: python
-
-  spglib: ssm_get_exact_positions failed (attempt=0).
-  spglib: No point group was found (line 405, ...).
-  ...
-  spglib: ssm_get_exact_positions failed (attempt=4).
-  spglib: get_bravais_exact_positions_and_lattice failed
-  spglib: ref_get_exact_structure_and_symmetry failed.
-
-Typically this can be fixed by updating to ``spglib>=2.5`` with ``pip install --upgrade spglib``.
-
-.. see doped_spglib_warnings.ipynb
-
 ``ShakeNBreak``
 -------------------
 

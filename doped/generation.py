@@ -28,7 +28,7 @@ from pymatgen.analysis.defects.generators import (
 from pymatgen.analysis.defects.utils import remove_collisions
 from pymatgen.core.adsorption import AdsorbateSiteFinder
 from pymatgen.core.entries import ComputedStructureEntry
-from pymatgen.core.periodic_table import DummySpecies
+from pymatgen.core.periodic_table import DummySpecies, Species, get_el_sp
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
 from tabulate import tabulate  # type: ignore[import-untyped]
@@ -1489,6 +1489,27 @@ class DefectsGenerator(MSONable):
         elif not isinstance(structure, Structure):  # assume ASE Atoms
             structure = Structure.from_ase_atoms(structure)
 
+        if extra_site_props := set(structure.site_properties) - {"magmom"}:
+            # e.g. ``velocities``/``momenta``, ``selective_dynamics`` or ``tags`` from (ASE) reads of VASP
+            # CONTCARs / MD frames; irrelevant for defect generation and causes various downstream issues:
+            structure = structure.copy()  # don't modify input structure
+            for prop in extra_site_props:
+                structure.remove_site_property(prop)
+
+        if isotopes := [sp for sp in structure.composition if getattr(sp, "name", sp.symbol) != sp.symbol]:
+            # pymatgen only partly keeps host D/T (giving mixes like v_D & H_Li), so use parent elements:
+            warnings.warn(
+                f"Named isotopes {[sp.name for sp in isotopes]} in the host structure are treated as "
+                "their parent element (e.g. D as H), as in written VASP inputs."
+            )
+            structure = structure.copy()  # don't modify input structure
+            structure.replace_species(
+                {
+                    sp: Species(sp.symbol, sp.oxi_state) if isinstance(sp, Species) else sp.symbol
+                    for sp in isotopes
+                }
+            )
+
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
         self.kwargs = kwargs
@@ -1850,7 +1871,7 @@ class DefectsGenerator(MSONable):
             self.defects["substitutions"] = [
                 sub
                 for sub in self.defects["substitutions"]
-                if any(sub.name.startswith(sub_elt) for sub_elt in sub_elts)
+                if sub.name.split("_", 1)[0] in sub_elts  # exact match, not prefix (e.g. T vs Te)
             ]
 
         if not self.defects["substitutions"]:  # no substitutions, single-element system, no extrinsic
@@ -1898,21 +1919,20 @@ class DefectsGenerator(MSONable):
 
         self.defects["interstitials"] = []
         for el in self.kwargs.get("interstitial_elements", self._element_list):
+            el_gen_kwargs, el_sites = interstitial_gen_kwargs, sorted_sites_mul_and_equiv_fpos
             if (
-                el == "H"
+                get_el_sp(el).symbol == "H"  # also D/T (named isotopes, with symbol "H")
                 and not self.interstitial_coords
                 and (H_gen_kwargs := {**_H_INTERSTITIAL_GEN_KWARGS, **interstitial_gen_kwargs})
                 != interstitial_gen_kwargs
             ):
                 # Hydrogen present, H-specific generation defaults not overridden, and no manually
                 # specified interstitial sites; so re-generate interstitial sites for H with these settings
-                interstitial_gen_kwargs = H_gen_kwargs
-                sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
-                    self.primitive_structure, **H_gen_kwargs
-                )
+                el_gen_kwargs = H_gen_kwargs
+                el_sites = get_interstitial_sites(self.primitive_structure, **H_gen_kwargs)
 
-            cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
-            inter_generator = InterstitialGenerator(interstitial_gen_kwargs.get("min_dist", 0.9)).generate(
+            cand_sites, multiplicity, equiv_fpos = zip(*el_sites, strict=False)
+            inter_generator = InterstitialGenerator(el_gen_kwargs.get("min_dist", 0.9)).generate(
                 self.primitive_structure,
                 insertions={el: cand_sites},
                 multiplicities={el: multiplicity},
@@ -2527,22 +2547,22 @@ def _first_and_second_element(defect_name: str) -> tuple[str, str]:
     )  # return name split if formatting fails
 
 
-def _element_sort_func(element_str: str) -> tuple[int, int]:
+def _element_sort_func(element_str: str) -> tuple[int, int, float]:
     """
     Return a tuple of the group (+16 if it's a transition metal, to move them
-    after main group elements) and atomic number of the element, for sorting
-    purposes.
+    after main group elements), atomic number and atomic mass (to order named
+    isotopes, i.e. H, D, T) of the element, for sorting purposes.
 
     Args:
         element_str (str): Element symbol.
 
     Returns:
-        tuple: Tuple of the group and atomic number of the
+        tuple: Tuple of the group, atomic number and atomic mass of the
             element.
     """
     elt = Element(element_str)
     group = elt.group + 16 if 3 <= elt.group <= 18 else elt.group
-    return (group, elt.Z)
+    return (group, elt.Z, elt.atomic_mass)
 
 
 def sort_defect_entries(defect_entries: dict | list, element_list: list | None = None):

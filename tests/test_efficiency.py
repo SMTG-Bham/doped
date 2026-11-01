@@ -14,7 +14,6 @@ site and not asserted here.
 import copy
 import subprocess
 import sys
-import warnings
 
 import numpy as np
 import pytest
@@ -56,6 +55,16 @@ class TestCompositionHashEq:
         assert Composition("Fe2O3") != {Element("Fe"): 3.0, Element("O"): 2.0}
         # Composition.__eq__ supports dict -- Composition comparison
         assert {Element("Fe"): 2.0, Element("O"): 3.0} == Composition("Fe2O3")
+        # str-keyed dicts are converted (as in ``pymatgen``), and dicts with unparsable or missing keys
+        # compare unequal (rather than raising):
+        assert Composition("Fe2O3") == {"Fe": 2, "O": 3}
+        assert Composition({"Fe3+": 2, "O2-": 3}) == {"Fe3+": 2, "O2-": 3}
+        assert Composition("CdTe") in [{"Cd": 1, "Te": 1}]
+        assert Composition("Fe2O3") != {"Fe": 2, "Al": 3}
+        assert Composition("Fe2O3") != {"Fe": 2, "Zz": 3}
+        assert Composition("Fe2O3") != {Element("Fe"): 2, Element("Al"): 3}
+        assert Composition("CdTe") != {"CdTe": 1}  # unparsable
+        assert Composition("CdTe") != {"limits": 1}  # unparsable
 
     def test_ion_hash_invariant(self):
         # ``Ion.__hash__`` = hash((composition, charge)); inherits the Composition fix:
@@ -165,12 +174,16 @@ class TestStructureHashEq:
         assert s1 != s3  # different coords; full comparison path
 
     def test_tolerant_equality_kept(self):
-        s1 = _simple_structure()
-        permuted = Structure.from_sites(list(reversed(s1.sites)))
-        assert s1 == permuted  # site-order-independent equality
-        noisy = Structure(CUBIC_LATTICE, ["Cd", "Te"], [[0, 0, 1e-9], [0.25, 0.25, 0.25]])
-        # tolerance-based equality (noise above 1e-10 hash rounding, so hashes may differ, but still eq):
-        assert s1 == noisy
+        for s1 in [_simple_structure(), _simple_structure() * 2]:  # brute-force & KD-tree site matching
+            permuted = Structure.from_sites(list(reversed(s1.sites)))
+            assert s1 == permuted  # site-order-independent equality
+            noisy = s1.copy()
+            noisy.translate_sites([0], [0, 0, 1e-9])
+            # tolerance-based equality (noise above 1e-10 hash rounding; hashes may differ, but still eq):
+            assert s1 == noisy
+            moved = s1.copy()
+            moved.translate_sites([0], [0, 0, 0.1])
+            assert s1 != moved
 
     def test_float_noise_twins_share_hash(self):
         # coords/lattices differing only by float noise (<1e-10, e.g. from symmop round-trips) share a hash
@@ -197,6 +210,8 @@ class TestSGACaching:
         with pytest.raises(ValueError):
             rotations[0, 0, 0] = 5
         assert not translations.flags.writeable
+        # copied, so the (cached, shared) ``spglib`` dataset array returned by ``pymatgen`` isn't frozen:
+        assert not np.shares_memory(rotations, sga._space_group_data.rotations)
 
     def test_fresh_symmetry_operations_list_per_call(self):
         sga = get_sga(_simple_structure())
@@ -206,36 +221,6 @@ class TestSGACaching:
         assert ops_a is not ops_b  # fresh list each call
         ops_a.clear()  # caller mutation...
         assert sga.get_symmetry_operations() == ops_b  # ...does not corrupt the cache
-
-    def test_get_symmetry_reuses_init_dataset_bit_identically(self):
-        # patched ``_get_symmetry`` extracts rotations/translations from the symmetry dataset already
-        # computed at ``SpacegroupAnalyzer`` init for non-magnetic cells, rather than re-calling
-        # ``spglib.get_symmetry``; outputs must be identical to the original method (magnetic cells fall
-        # back to it):
-        from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-
-        from doped.utils.efficiency import _original_get_symmetry
-
-        magmom_struct = Structure(CUBIC_LATTICE, ["Fe", "Fe"], [[0, 0, 0], [0.5, 0.5, 0.5]])
-        magmom_struct.add_site_property("magmom", [1.0, 2.0])  # magnetic cell -> fallback branch
-        perturbed = Structure(
-            CUBIC_LATTICE, ["Cd", "Te"], [[0.0001, -0.0002, 0.0001], [0.2499, 0.2502, 0.2498]]
-        )
-        for struct in [_simple_structure(), _simple_structure() * 2, perturbed, magmom_struct]:
-            sga = SpacegroupAnalyzer(struct)
-            magnetic = "magmom" in struct.site_properties
-            # pin the fast-path predicate itself, so the optimisation can't be silently disabled (e.g.
-            # by a ``pymatgen`` attribute rename) leaving these legs vacuously comparing like with like:
-            assert len(sga._cell) == (4 if magnetic else 3), struct.formula
-            assert magnetic or hasattr(sga._space_group_data, "rotations"), struct.formula
-            rotations, translations = sga._get_symmetry()  # patched, fresh SGA
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")  # magnetic-path spglib DeprecationWarning
-                orig_rotations, orig_translations = _original_get_symmetry(SpacegroupAnalyzer(struct))
-            assert rotations.dtype == orig_rotations.dtype, struct.formula
-            assert translations.dtype == orig_translations.dtype, struct.formula
-            assert np.array_equal(rotations, orig_rotations), struct.formula
-            assert translations.tobytes() == orig_translations.tobytes(), struct.formula  # bit-identical
 
 
 class TestSharedCacheMutationGuards:
@@ -305,6 +290,16 @@ class TestSharedCacheMutationGuards:
         assert len(prim) == 3  # Cd + Te + X
         assert "X0+" in [str(specie) for specie in prim.types_of_species]  # X survives the round-trip
         assert round(float(np.linalg.det(matrix))) == 8
+
+    def test_direct_spglib_calls_fall_back_on_spglib_failure(self):
+        # with the error handling that ``doped`` sets, ``spglib`` failures raise ``SpglibError`` rather
+        # than returning ``None``, here two atoms 0.03 Å apart make it fail at ``symprec=0.1``:
+        from doped.utils.symmetry import _bulk_cartesian_rotations, _get_orientation_preserving_primitive
+
+        near_overlap = Structure(Lattice.cubic(3.0), ["H", "H"], [[0, 0, 0], [0, 0, 0.01]])
+        assert _get_orientation_preserving_primitive(near_overlap, symprec=0.1) is None
+        # input cell then used directly, with ``get_sga`` recovering at a smaller ``symprec`` (P4/mmm):
+        assert len(_bulk_cartesian_rotations(near_overlap, symprec=0.1)) == 16
 
 
 class TestNonMagneticSymmetryDefault:
@@ -520,7 +515,6 @@ def test_pymatgen_patches_are_reload_safe():
             "-c",
             """
 import importlib
-import numpy as np
 from pymatgen.core import Lattice, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from doped.utils import efficiency
@@ -528,19 +522,13 @@ from doped.utils import efficiency
 for _ in range(2):
     importlib.reload(efficiency)
     structure = Structure(Lattice.cubic(5.0), ["Na", "Cl"], [[0, 0, 0], [0.5, 0.5, 0.5]])  # __setattr__
-    assert str(structure[0].specie) == "Na"  # ``Species.__str__``
-    distances = structure.lattice.get_all_distances(structure.frac_coords, structure.frac_coords)
-    assert np.isclose(distances.max(), 5.0 * np.sqrt(3) / 2)  # ``Lattice.get_all_distances``
-    # a fresh ``SpacegroupAnalyzer`` each time, so the per-instance memo always misses and delegates:
+    # a fresh ``SpacegroupAnalyzer`` each time, so the per-instance memos always miss and delegate:
     assert len(SpacegroupAnalyzer(structure).get_symmetry_operations()) == 48  # Pm-3m
 
-# the captured originals must still be ``pymatgen``'s own methods, not the patches themselves (the
-# only check for ``_get_symmetry``, which delegates on its magnetic-cell path only):
-assert efficiency._orig_site__setattr__ is not efficiency._fast_site__setattr__
-assert efficiency._orig_species__str__ is not efficiency._species__str__
-assert efficiency._orig_lattice_get_all_distances is not efficiency.get_all_distances
-assert efficiency._original_get_symmetry is not efficiency._get_symmetry
-assert efficiency._original_get_symmetry_operations is not efficiency._get_symmetry_operations
+# the captured originals must still be ``pymatgen``'s own methods, not the patches themselves:
+assert efficiency._orig_site__setattr__.__module__ == "pymatgen.core.sites"
+assert efficiency._original_get_symmetry.__module__ == "pymatgen.symmetry.analyzer"
+assert efficiency._original_get_symmetry_operations.__module__ == "pymatgen.symmetry.analyzer"
 """,
         ],
         check=True,

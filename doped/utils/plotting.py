@@ -1197,12 +1197,14 @@ def format_defect_name(
                 doped_site_info += "-" + "-".join(name_parts[3:-1])
             trimmed_pre_charge_name = pre_charge_name.replace(f"_{'_'.join(name_parts[2:-1])}", "")
 
+    name_for_matching = trimmed_pre_charge_name  # without doped site info, but with defect-type strings
     for substring in _trimmable_defect_type_strings:  # trim recognised defect-type strings from name
         trimmed_pre_charge_name = trimmed_pre_charge_name.replace(substring, "")
 
     # Note throughout the element-matching below: ``trimmed_pre_charge_name`` (pre/post vacancy and
-    # interstitial substrings removed) is used to `find` the constituent elements, while the untrimmed
-    # ``pre_charge_name`` is passed on to `match` the defect format (so the defect type strings remain):
+    # interstitial substrings removed) is used to `find` the constituent elements, while
+    # ``name_for_matching`` is passed on to `match` the defect format (so the defect type strings remain,
+    # but not any doped site info, which can otherwise be mistaken for elements:
     possible_two_character_elements = _valid_symbols(
         trimmed_pre_charge_name[i : i + 2] for i in range(len(trimmed_pre_charge_name) - 1)
     )
@@ -1210,7 +1212,7 @@ def format_defect_name(
     matching_kwargs: dict[str, Any] = {
         "charge_string": charge_string,
         "doped_site_info": doped_site_info,
-        "name": pre_charge_name,
+        "name": name_for_matching,
         "include_site_info": include_site_info,
     }
     if possible_two_character_elements:

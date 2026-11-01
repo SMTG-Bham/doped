@@ -20,7 +20,7 @@ from pymatgen.core import SETTINGS
 from pymatgen.core.entries import ComputedEntry
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Structure
-from pymatgen.io.vasp.inputs import BadIncarWarning, Kpoints, Poscar, Potcar
+from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
 from pymatgen.io.vasp.sets import VaspInputSet
 from pymatgen.util.typing import PathLike
 
@@ -95,7 +95,8 @@ singlepoint_incar_settings = loadfn(os.path.join(_MODULE_DIR, "VASP_sets/VASP_Si
 ]
 """
 ``INCAR`` setting overrides for single-point (static) calculations, applied on
-top of the relaxation settings, from |SinglePointSet.yaml|.
+top of the relaxation settings, from |SinglePointSet.yaml| (with ``EDIFF`` only
+used if ``EDIFF``/``EDIFF_PER_ATOM`` are not set by the user).
 """
 
 _potcar_setup_warning = (  # appended to with ", so ..." by the callers
@@ -180,6 +181,45 @@ def _kspacing_kpts(structure: Structure, kspacing: float | str | None) -> tuple[
     return tuple(max(1, ceil(b / kspacing)) for b in structure.lattice.reciprocal_lattice.abc)
 
 
+def _parse_incar_value(key: str, value):
+    """
+    Parse a (string) ``INCAR`` value as ``pymatgen`` does when writing it,
+    ignoring any comment (e.g. ``"0  # ..."`` -> 0, ``"False"`` -> ``False``).
+    """
+    return Incar.proc_val(key, value.split("#")[0].strip()) if isinstance(value, str) else value
+
+
+def _is_hybrid(user_incar_settings: dict | None) -> bool:
+    """
+    Whether hybrid DFT is used; i.e. unless ``LHFCALC`` is set to ``False`` (or
+    ``None``) in ``user_incar_settings``.
+    """
+    return bool(_parse_incar_value("LHFCALC", (user_incar_settings or {}).get("LHFCALC", True)))
+
+
+def _use_user_nupdown(user_incar_settings: dict, nelect: float) -> bool:
+    """
+    Whether to use the ``NUPDOWN`` setting in ``user_incar_settings``, rather
+    than the default of 0 or 1 for an even or odd number of electrons
+    (``nelect``); i.e. if set to ``None`` (unset), -1 (unconstrained) or a
+    value with the same parity as ``nelect``, otherwise warning (once) that the
+    default is used instead.
+    """
+    if "NUPDOWN" not in user_incar_settings:
+        return False
+    nupdown = _parse_incar_value("NUPDOWN", user_incar_settings["NUPDOWN"])
+    if nupdown is None or nupdown == -1 or (nelect - nupdown) % 2 == 0:
+        return True
+
+    warn_once(
+        f"NUPDOWN = {user_incar_settings['NUPDOWN']} in user_incar_settings is incompatible with "
+        f"supercells with an {'odd' if nelect % 2 else 'even'} number of electrons (NELECT), so the "
+        f"default NUPDOWN = {1 if nelect % 2 else 0} is used for these instead (see "
+        f"https://doped.readthedocs.io/en/latest/Tips.html#magnetization)."
+    )
+    return False
+
+
 class DopedDictSet(VaspInputSet):
     """
     Modified version of ``pymatgen`` |VaspInputSet|, to have more robust
@@ -257,8 +297,17 @@ class DopedDictSet(VaspInputSet):
         self.charge_state = charge_state
 
         if user_incar_settings is not None:
-            if "EDIFF_PER_ATOM" in user_incar_settings:
-                ediff_per_atom = user_incar_settings.pop("EDIFF_PER_ATOM")  # pop un-used tag
+            # copy (to not modify the input) without ``None`` values, which unset tags as in ``pymatgen``
+            # (which doesn't do this here, as ``DopedDictSet`` settings are passed via ``config_dict``):
+            user_incar_settings = {k: v for k, v in user_incar_settings.items() if v is not None}
+            ediff_per_atom = user_incar_settings.pop("EDIFF_PER_ATOM", None)  # pop un-used tag
+            if ediff_per_atom is not None and "EDIFF" in user_incar_settings:  # as in ``pymatgen``
+                warn_once(
+                    "EDIFF_PER_ATOM and EDIFF both set in user_incar_settings. EDIFF will be used "
+                    "(as in pymatgen).",
+                    BadIncarWarning,
+                )
+            elif ediff_per_atom is not None:
                 ediff = scaled_ediff(
                     len(structure),
                     ediff_per_atom=ediff_per_atom,
@@ -272,12 +321,6 @@ class DopedDictSet(VaspInputSet):
                         f"EDIFF_PER_ATOM was set to {ediff_per_atom:.2e} eV/atom, which gives an "
                         f"EDIFF of {ediff:.2e} eV here. This is a very large EDIFF for VASP, and "
                         f"may cause convergence issues. Please check your INCAR settings.",
-                        BadIncarWarning,
-                    )
-                if "EDIFF" in user_incar_settings:
-                    warnings.warn(
-                        "EDIFF_PER_ATOM and EDIFF both set in user_incar_settings. "
-                        "EDIFF_PER_ATOM will be used.",
                         BadIncarWarning,
                     )
                 user_incar_settings["EDIFF"] = ediff
@@ -298,6 +341,7 @@ class DopedDictSet(VaspInputSet):
 
         # check POTCAR settings not in config dict format:
         if isinstance(user_potcar_settings, dict):
+            user_potcar_settings = user_potcar_settings.copy()  # don't modify input (shared) dict
             if "POTCAR_FUNCTIONAL" in user_potcar_settings and user_potcar_functional == "PBE":
                 # i.e. default
                 user_potcar_functional = user_potcar_settings.pop("POTCAR_FUNCTIONAL")
@@ -308,6 +352,17 @@ class DopedDictSet(VaspInputSet):
         base_config_dict = {"POTCAR": potcar_settings}  # needs to be set with ``VaspInputSet``
         config_dict = deep_dict_update(base_config_dict, kwargs.pop("config_dict", {}))
         config_dict["INCAR"] = user_incar_settings or {}
+        magmom = config_dict["INCAR"].get("MAGMOM")
+        if isinstance(magmom, dict) and "magmom" in structure.site_properties:
+            # user ``MAGMOM``s take precedence over site magmoms, as in ``pymatgen`` (which does this for
+            # ``user_incar_settings``, rather than ``config_dict`` settings as here):
+            site_magmoms = [magmom.get(site.species_string, site.magmom) for site in structure]
+            structure = structure.copy(site_properties={"magmom": site_magmoms})
+        if magmom is not None and _parse_incar_value("ISPIN", config_dict["INCAR"].get("ISPIN", 1)) == 1:
+            warn_once(
+                "MAGMOM in user_incar_settings is ignored for calculations with ISPIN = 1 (no spin "
+                "polarisation, VASP default). Set ISPIN = 2 to allow spin polarisation."
+            )
 
         super().__init__(
             structure,
@@ -330,12 +385,7 @@ class DopedDictSet(VaspInputSet):
         """
         incar_obj = super().incar
 
-        if (kpoints := self.kpoints) is not None:  # ``None`` if ``KSPACING`` is set in the ``INCAR``,...
-            kpts: tuple[int, ...] | None = tuple(kpoints.kpts[0])
-        else:  # ...where ``VASP`` generates the k-point mesh itself, as predicted by ``_kspacing_kpts``:
-            kpts = _kspacing_kpts(self.structure, incar_obj.get("KSPACING"))
-
-        if kpts:  # k-point mesh known
+        if kpts := self._kpts:  # k-point mesh known
             if "KPAR" not in incar_obj and self.auto_kpar:  # determine appropriate KPAR setting
                 num_kpts_2_or_4_or_more = sum(i == 2 or i >= 4 for i in kpts)
                 if num_kpts_2_or_4_or_more == 1:
@@ -422,6 +472,18 @@ class DopedDictSet(VaspInputSet):
             doped_kpoints.comment = "KPOINTS from doped"
 
         return doped_kpoints
+
+    @property
+    def _kpts(self) -> tuple[int, ...] | None:
+        """
+        The k-point mesh, from ``self.kpoints``, or as generated by ``VASP``
+        from ``KSPACING`` if set in the ``INCAR`` (where ``self.kpoints`` is
+        ``None``), as predicted by ``_kspacing_kpts`` (``None`` if unknown).
+        """
+        if (kpoints := self.kpoints) is not None:
+            return tuple(kpoints.kpts[0])
+        kspacing = _parse_incar_value("KSPACING", self._config_dict["INCAR"].get("KSPACING"))
+        return _kspacing_kpts(self.structure, kspacing)
 
     @property
     def nelect(self):
@@ -641,7 +703,9 @@ class DefectDictSet(DopedDictSet):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 |VaspInputSet| format) e.g., ``{"reciprocal_density": 123}``,
                 or a ``Kpoints`` object. Default is Gamma-centred,
-                ``reciprocal_density = 100`` [kpoints/Å⁻³].
+                ``reciprocal_density = 100`` [kpoints/Å⁻³], or ``KSPACING`` if
+                set in ``user_incar_settings`` (with no ``KPOINTS`` file then
+                written).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -666,16 +730,10 @@ class DefectDictSet(DopedDictSet):
         # get base config and set EDIFF
         relax_set = copy.deepcopy(default_defect_relax_set)
 
-        lhfcalc = (
-            True if user_incar_settings is None else user_incar_settings.get("LHFCALC", True)
-        )  # True (hybrid) by default
-        if lhfcalc or (isinstance(lhfcalc, str) and lhfcalc.lower().startswith("t")):
+        if _is_hybrid(user_incar_settings):  # hybrid DFT by default
             relax_set = deep_dict_update(relax_set, default_HSE_set)  # HSE set is just INCAR settings
 
-        input_user_incar_settings = user_incar_settings or {}
-        relax_set["INCAR"].update(input_user_incar_settings)
-        if "EDIFF_PER_ATOM" in input_user_incar_settings:
-            relax_set["INCAR"].pop("EDIFF")  # remove base EDIFF setting and use input EDIFF_PER_ATOM
+        _update_incar_settings(relax_set["INCAR"], user_incar_settings)
 
         # if "length" in user kpoint settings then pop reciprocal_density and use length instead
         if user_kpoints_settings is not None and (
@@ -684,6 +742,8 @@ class DefectDictSet(DopedDictSet):
             else "length" in user_kpoints_settings.as_dict()
         ):
             relax_set["KPOINTS"].pop("reciprocal_density")
+        if relax_set["INCAR"].get("KSPACING") is not None:  # user ``KSPACING`` used in place of default
+            relax_set["KPOINTS"] = {}  # k-point density (``VASP`` generates mesh, no ``KPOINTS`` written)
 
         super(self.__class__, self).__init__(
             structure,
@@ -703,7 +763,9 @@ class DefectDictSet(DopedDictSet):
     def incar(self):
         """
         Returns the ``Incar`` object generated from ``DopedDictSet``, with
-        ``NUPDOWN`` set accordingly.
+        ``NUPDOWN`` set to 0 or 1 for an even or odd number of electrons,
+        unless set in ``user_incar_settings`` (and compatible with the number
+        of electrons; i.e. same parity, ``-1`` or ``None``).
 
         See the :ref:`Tips:Magnetization` tips section for discussion about
         appropriate ``NUPDOWN``/``MAGMOM`` settings.
@@ -713,7 +775,9 @@ class DefectDictSet(DopedDictSet):
         try:
             # getting NELECT can take time with many file IO calls, so only call once
             nelect = incar_obj.get("NELECT", self.nelect)
-            if nelect % 2 != 0:  # odd number of electrons
+            if _use_user_nupdown(self.user_incar_settings, nelect):
+                pass  # user setting already in ``incar_obj`` (or unset if ``None``)
+            elif nelect % 2 != 0:  # odd number of electrons
                 incar_obj["NUPDOWN"] = 1
             else:
                 nup_0_str = "0  # see https://doped.readthedocs.io/en/latest/Tips.html#magnetization"
@@ -728,6 +792,9 @@ class DefectDictSet(DopedDictSet):
                     "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
                     "this up)."
                 ) from e
+
+            if "NUPDOWN" in self.user_incar_settings:  # user setting used (parity unchecked)
+                return incar_obj
 
             warnings.warn(
                 f"NUPDOWN (i.e. spin state) INCAR flag cannot be set due to the non-availability of "
@@ -752,6 +819,22 @@ class DefectDictSet(DopedDictSet):
             f"doped DefectDictSet with supercell composition {self.structure.composition}. "
             f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
+
+
+def _update_incar_settings(incar_settings: dict, user_incar_settings: dict | None) -> None:
+    """
+    Update ``incar_settings`` (in place) with ``user_incar_settings``, where a
+    user ``EDIFF`` or ``EDIFF_PER_ATOM`` setting replaces any default ``EDIFF``
+    or ``EDIFF_PER_ATOM`` in ``incar_settings`` (so that default and user
+    settings are not mixed; if both are set by the user, ``EDIFF`` is used, as
+    in ``pymatgen``).
+    """
+    user_incar_settings = user_incar_settings or {}
+    if user_incar_settings.get("EDIFF") is not None:  # (``None`` = unset, as in ``pymatgen``)
+        incar_settings.pop("EDIFF_PER_ATOM", None)
+    if user_incar_settings.get("EDIFF_PER_ATOM") is not None:
+        incar_settings.pop("EDIFF", None)
+    incar_settings.update(user_incar_settings)
 
 
 def scaled_ediff(natoms: int, ediff_per_atom: float = 2e-7, max_ediff: float = 1e-4) -> float:
@@ -869,14 +952,24 @@ class DefectRelaxSet(MSONable):
                 to see what the default ``INCAR`` settings are. Note that any
                 flags which aren't numbers or ``True/False`` need to be input
                 as strings with quotation marks (e.g. ``{"ALGO": "All"}``).
-                (default: None)
+                ``MAGMOM`` keys should be element symbols (e.g. ``{"Fe": 5}``).
+                These settings are also used for the singlepoint (``vasp_ncl``
+                and bulk) calculations, except for the |SinglePointSet.yaml|
+                settings for no ionic relaxation and ``LSORBIT = True`` for
+                ``vasp_ncl``, which override them (with a warning). A user
+                ``NUPDOWN`` (default 0 or 1 for an even or odd number of
+                electrons) is used for all supercells (incl. bulk) with the
+                same electron number parity, and otherwise replaced by the
+                default (with a warning). Default is ``None``.
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 |VaspInputSet| format) e.g., ``{"reciprocal_density": 123}``,
                 or a ``Kpoints`` object, to use for the ``vasp_std``,
                 ``vasp_nkred_std`` and ``vasp_ncl`` ``DefectDictSet``\s (Γ-only
                 for ``vasp_gam``). Default is Gamma-centred,
-                ``reciprocal_density = 100`` [kpoints/Å⁻³].
+                ``reciprocal_density = 100`` [kpoints/Å⁻³], or ``KSPACING`` if
+                set in ``user_incar_settings`` (with no ``KPOINTS`` files then
+                written).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -963,6 +1056,25 @@ class DefectRelaxSet(MSONable):
             # than defect.defect_structure because could be e.g. a vacancy in a 2-atom primitive
             # structure where the atom being removed is the heavy (Z>=31) one
 
+        # warn (once) here if any user settings are overridden or ignored (e.g. in the singlepoint (static)
+        # calculations), as these sets are often generated under warning filters (e.g. in ``write_all()``):
+        if self.soc or self.bulk_supercell is not None:
+            self._singlepoint_incar_settings(soc=self.soc)
+        if self.user_kpoints_settings and self.user_incar_settings.get("KSPACING") is not None:
+            warn_once(
+                "KSPACING in user_incar_settings is ignored, as user_kpoints_settings is also set (so "
+                "KPOINTS files are written, as in pymatgen)."
+            )
+        if self.user_incar_settings:  # ``DefectDictSet`` init warns for e.g. ``MAGMOM`` with ``ISPIN = 1``
+            vasp_gam = self.vasp_gam
+            if "NUPDOWN" in self.user_incar_settings:  # check compatibility with the number of electrons
+                bulk_vasp_gam = self.bulk_vasp_gam if self.bulk_supercell is not None else None
+                for dds in filter(None, [vasp_gam, bulk_vasp_gam]):
+                    with contextlib.suppress(Exception):  # NELECT unknown if ``POTCAR``s unavailable
+                        _use_user_nupdown(self.user_incar_settings, dds.nelect)
+            # than defect.defect_structure because could be e.g. a vacancy in a 2-atom primitive
+            # structure where the atom being removed is the heavy (Z>=31) one
+
     @property
     def vasp_gam(
         self,
@@ -1005,14 +1117,17 @@ class DefectRelaxSet(MSONable):
         self, vasp_std_defect_set: DefectDictSet, warn: bool = True, info: bool = True
     ) -> DefectDictSet | None:
         try:
-            vasp_std = None if np.prod(vasp_std_defect_set.kpoints.kpts[0]) == 1 else vasp_std_defect_set
+            kpts = vasp_std_defect_set._kpts  # ``None`` if unknown (e.g. unresolved ``KSPACING``)
+            vasp_std = None if kpts is not None and np.prod(kpts) == 1 else vasp_std_defect_set
         except Exception:  # different kpoint generation scheme, not Gamma-only
             vasp_std = vasp_std_defect_set
 
         if vasp_std is None and (warn or info):
-            current_kpoint_settings = (
-                self.user_kpoints_settings
-                or "default `reciprocal_density = 100` [kpoints/Å⁻³] (see "
+            kspacing = self.user_incar_settings.get("KSPACING")
+            current_kpoint_settings = self.user_kpoints_settings or (
+                f"KSPACING = {kspacing}"
+                if kspacing is not None
+                else "default `reciprocal_density = 100` [kpoints/Å⁻³] (see "
                 "doped/io/vasp/VASP_sets/VASP_RelaxSet.yaml)"
             )
             info_message = (
@@ -1098,7 +1213,7 @@ class DefectRelaxSet(MSONable):
         (chemical potential) calculations -- this will be automatically checked
         upon defect & competing phases parsing in ``doped``.
         """
-        if self.user_incar_settings.get("LHFCALC", True) is False:  # GGA
+        if not _is_hybrid(self.user_incar_settings):  # GGA
             return None
 
         std_defect_set = self.vasp_std  # warns the user if Γ-only
@@ -1107,42 +1222,41 @@ class DefectRelaxSet(MSONable):
 
     @property
     def _vasp_nkred_std(self):
-        std_defect_set = self._vasp_std
-        # determine appropriate NKRED:
-        try:
-            kpt_mesh = np.array(std_defect_set.kpoints.kpts[0])
-            # if all divisible by 2 or 3, then set NKRED to 2 or 3, respectively:
-            nkred_dict = {
-                "NKRED": None,
-                "NKREDX": None,
-                "NKREDY": None,
-                "NKREDZ": None,
-            }  # type: dict[str, int | None]
-            for k in [2, 3]:
-                if np.all(kpt_mesh % k == 0):
-                    nkred_dict["NKRED"] = k
-                    break
+        incar_settings = copy.deepcopy(self.user_incar_settings)
+        if all("NKRED" not in k for k in incar_settings):  # determine appropriate NKRED, if not user-set
+            try:
+                kpt_mesh = np.array(self._vasp_std._kpts)
+                # if all divisible by 2 or 3, then set NKRED to 2 or 3, respectively:
+                nkred_dict = {
+                    "NKRED": None,
+                    "NKREDX": None,
+                    "NKREDY": None,
+                    "NKREDZ": None,
+                }  # type: dict[str, int | None]
+                for k in [2, 3]:
+                    if np.all(kpt_mesh % k == 0):
+                        nkred_dict["NKRED"] = k
+                        break
 
-                for idx, nkred_key in enumerate(["NKREDX", "NKREDY", "NKREDZ"]):
-                    if kpt_mesh[idx] % k == 0:  # set for _all_ divisible directions
-                        nkred_dict[nkred_key] = k
+                    for idx, nkred_key in enumerate(["NKREDX", "NKREDY", "NKREDZ"]):
+                        if kpt_mesh[idx] % k == 0:  # set for _all_ divisible directions
+                            nkred_dict[nkred_key] = k
 
-            incar_settings = copy.deepcopy(self.user_incar_settings)
-            if nkred_dict["NKRED"] is not None:
-                incar_settings["NKRED"] = nkred_dict["NKRED"]
-            else:
-                for nkred_key in ["NKREDX", "NKREDY", "NKREDZ"]:
-                    if nkred_dict[nkred_key] is not None:
-                        incar_settings[nkred_key] = nkred_dict[nkred_key]
+                if nkred_dict["NKRED"] is not None:
+                    incar_settings["NKRED"] = nkred_dict["NKRED"]
+                else:
+                    for nkred_key in ["NKREDX", "NKREDY", "NKREDZ"]:
+                        if nkred_dict[nkred_key] is not None:
+                            incar_settings[nkred_key] = nkred_dict[nkred_key]
 
-        except Exception:
-            warnings.warn(
-                f"The specified kpoint settings ({self.user_kpoints_settings}) do not give a "
-                f"grid-like k-point mesh and so the appropriate NKRED settings cannot be "
-                f"automatically determined. Either set NKRED manually using `user_incar_settings` "
-                f"with `vasp_std`/`write_std`, or adjust your k-point settings."
-            )
-            return None
+            except Exception:
+                warnings.warn(
+                    f"The specified kpoint settings ({self.user_kpoints_settings}) do not give a "
+                    f"grid-like k-point mesh and so the appropriate NKRED settings cannot be "
+                    f"automatically determined. Either set NKRED manually using `user_incar_settings`, "
+                    f"or adjust your k-point settings."
+                )
+                return None
 
         return DefectDictSet(
             self.defect_supercell,
@@ -1184,9 +1298,7 @@ class DefectRelaxSet(MSONable):
         if not self.soc:
             return None
 
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        user_incar_settings.update(singlepoint_incar_settings)
-        user_incar_settings.update({"LSORBIT": True})  # ISYM already 0
+        user_incar_settings = self._singlepoint_incar_settings(soc=True)
 
         return DefectDictSet(
             self.defect_supercell,
@@ -1210,7 +1322,51 @@ class DefectRelaxSet(MSONable):
             )
             return None
 
-        return self.bulk_supercell
+        # without oxidation states, matching the defect supercells, so species-keyed ``INCAR`` settings
+        # (i.e. ``MAGMOM``) apply equally to the bulk and defect calculations:
+        bulk_supercell = self.bulk_supercell.copy()
+        bulk_supercell.remove_oxidation_states()
+        return bulk_supercell
+
+    def _singlepoint_incar_settings(self, soc: bool = False) -> dict:
+        """
+        Returns ``self.user_incar_settings`` with the |SinglePointSet.yaml|
+        settings applied, for the singlepoint (static) calculations.
+
+        The
+        singlepoint ``EDIFF`` is only used if ``EDIFF``/``EDIFF_PER_ATOM`` are
+        not set in ``user_incar_settings``, while the other singlepoint
+        settings (for no ionic relaxation), and ``LSORBIT = True`` if ``soc``,
+        override any user settings, with a warning (once) if so.
+        """
+        user_incar_settings = copy.deepcopy(self.user_incar_settings)
+        if "EDIFF" not in user_incar_settings and user_incar_settings.get("EDIFF_PER_ATOM") is None:
+            user_incar_settings["EDIFF"] = singlepoint_incar_settings["EDIFF"]  # else user setting used
+
+        def _is_overridden(key, forced_value):  # compare to parsed user values (e.g. "0  # ..." -> 0)
+            return _parse_incar_value(key, user_incar_settings.get(key, forced_value)) != forced_value
+
+        forced_settings = {k: v for k, v in singlepoint_incar_settings.items() if k != "EDIFF"}
+        if overridden := {k: v for k, v in forced_settings.items() if _is_overridden(k, v)}:
+            warn_once(
+                "The following user_incar_settings are overridden for the singlepoint (static) "
+                "calculations (vasp_ncl and/or bulk), with the VASP_SinglePointSet.yaml settings (no "
+                "ionic relaxation): "
+                + ", ".join(
+                    f"{k} = {user_incar_settings[k]} -> {'not set' if v is None else v}"
+                    for k, v in overridden.items()
+                )
+            )
+        if soc:
+            if _is_overridden("LSORBIT", True):
+                warn_once(
+                    f"LSORBIT = {user_incar_settings['LSORBIT']} in user_incar_settings is overridden to "
+                    f"True for the SOC singlepoint (vasp_ncl) calculations."
+                )
+            forced_settings["LSORBIT"] = True  # ISYM already 0
+
+        user_incar_settings.update(forced_settings)
+        return user_incar_settings
 
     @property
     def bulk_vasp_gam(self) -> DefectDictSet | None:
@@ -1247,8 +1403,7 @@ class DefectRelaxSet(MSONable):
         if (bulk_supercell := self._check_bulk_supercell_and_warn()) is None:
             return None
 
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        user_incar_settings.update(singlepoint_incar_settings)
+        user_incar_settings = self._singlepoint_incar_settings()
 
         return DefectDictSet(
             bulk_supercell,
@@ -1302,8 +1457,7 @@ class DefectRelaxSet(MSONable):
         if (bulk_supercell := self._check_bulk_supercell_and_warn()) is None:
             return None
 
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        user_incar_settings.update(singlepoint_incar_settings)
+        user_incar_settings = self._singlepoint_incar_settings()
 
         return self._check_vstd_kpoints(
             DefectDictSet(
@@ -1368,8 +1522,7 @@ class DefectRelaxSet(MSONable):
         if (nkred_defect_dict_set := self.vasp_nkred_std) is None:  # check and get NKRED settings
             return None
 
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        user_incar_settings.update(singlepoint_incar_settings)
+        user_incar_settings = self._singlepoint_incar_settings()
         user_incar_settings.update(  # add NKRED settings; from the input settings rather than...
             {k: v for k, v in nkred_defect_dict_set.user_incar_settings.items() if "NKRED" in k}
         )  # ...``.incar``, which requires ``POTCAR``s (to set ``NELECT``) for charged defect supercells
@@ -1417,9 +1570,7 @@ class DefectRelaxSet(MSONable):
         if not self.soc:
             return None
 
-        user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        user_incar_settings.update(singlepoint_incar_settings)
-        user_incar_settings.update({"LSORBIT": True})  # ISYM already 0
+        user_incar_settings = self._singlepoint_incar_settings(soc=True)
 
         return DefectDictSet(
             bulk_supercell,
@@ -2333,14 +2484,24 @@ class DefectsSet(DefectsSetBase):
                 to see what the default ``INCAR`` settings are. Note that any
                 flags which aren't numbers or ``True/False`` need to be input as
                 strings with quotation marks (e.g. ``{"ALGO": "All"}``).
-                (default: None)
+                ``MAGMOM`` keys should be element symbols (e.g. ``{"Fe": 5}``).
+                These settings are also used for the singlepoint (``vasp_ncl``
+                and bulk) calculations, except for the |SinglePointSet.yaml|
+                settings for no ionic relaxation and ``LSORBIT = True`` for
+                ``vasp_ncl``, which override them (with a warning). A user
+                ``NUPDOWN`` (default 0 or 1 for an even or odd number of
+                electrons) is used for all supercells (incl. bulk) with the
+                same electron number parity, and otherwise replaced by the
+                default (with a warning). Default is ``None``.
             user_kpoints_settings (dict or Kpoints):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 |VaspInputSet| format) e.g., ``{"reciprocal_density": 123}``,
                 or a ``Kpoints`` object, to use for the ``vasp_std``,
                 ``vasp_nkred_std`` and ``vasp_ncl`` ``DefectDictSet``\s (Γ-only
                 for ``vasp_gam``). Default is Gamma-centred,
-                ``reciprocal_density = 100`` [kpoints/Å⁻³].
+                ``reciprocal_density = 100`` [kpoints/Å⁻³], or ``KSPACING`` if
+                set in ``user_incar_settings`` (with no ``KPOINTS`` files then
+                written).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2812,7 +2973,9 @@ def get_kpoint_convergence_sets(
             (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
     """
     base_incar_settings = copy.deepcopy(convergence_set["INCAR"])
-    base_incar_settings.update(user_incar_settings or {})
+    _update_incar_settings(base_incar_settings, user_incar_settings)
+    if base_incar_settings.pop("KSPACING", None) is not None:  # k-point meshes set here
+        warnings.warn("KSPACING in user_incar_settings is ignored for k-point convergence tests.")
     kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
     dict_sets: dict[str, DopedDictSet] = {}
     extrinsic_entries = getattr(competing_phases, "extrinsic_entries", [])
@@ -2842,18 +3005,16 @@ def get_kpoint_convergence_sets(
 
             _generated_kpoints_folders = []
             for kpoint in np.arange(min_k, max_k, step_k):
-                dict_set = copy.deepcopy(dict_set)
-                dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
-                kname = (
-                    "k"
-                    + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
-                    + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
-                )
+                kpoint_dict_set = copy.deepcopy(dict_set)  # copy base set, as ISMEAR may be reverted
+                kpoint_dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
+                kpts = kpoint_dict_set.kpoints.kpts[0]
+                kname = "k" + "_" * (kpts[0] // 10) + ",".join(str(k) for k in kpts)
                 if kname in _generated_kpoints_folders:
                     continue  # this set of kpoints already generated, bump reciprocal density more
 
+                _revert_sparse_tetrahedron_smearing(kpoint_dict_set, category)
                 fname = f"{output_path}/{folder_name}/kpoint_converge/{kname}"
-                dict_sets[fname] = dict_set
+                dict_sets[fname] = kpoint_dict_set
                 _generated_kpoints_folders.append(kname)
 
     molecular_entries_to_report = (
@@ -2932,6 +3093,8 @@ def get_relaxation_sets(
             Note that any non-numerical or non-``True``/``False`` flags
             need to be input as strings with quotation marks.
             See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+            ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+            and ``kpoints_nonmetals`` (except for the Γ-only molecules).
         user_potcar_functional (str):
             ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
             whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2962,16 +3125,10 @@ def get_relaxation_sets(
             (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
     """
     base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
-    if "EDIFF" in (user_incar_settings or {}):  # remove default EDIFF PER ATOM setting if EDIFF set
-        base_incar_settings.pop("EDIFF_PER_ATOM", None)
-
-    lhfcalc = (user_incar_settings or {}).get("LHFCALC", True)
-    if isinstance(lhfcalc, str):
-        lhfcalc = lhfcalc.lower().startswith("t")
-    if lhfcalc:
+    if _is_hybrid(user_incar_settings):
         base_incar_settings.update(default_HSE_set["INCAR"])
 
-    base_incar_settings.update(user_incar_settings or {})
+    _update_incar_settings(base_incar_settings, user_incar_settings)
     dict_sets: dict[str, DopedDictSet] = {}
     extrinsic_entries = getattr(competing_phases, "extrinsic_entries", [])
 
@@ -2982,6 +3139,8 @@ def get_relaxation_sets(
             user_kpoints_settings = Kpoints.gamma_automatic(
                 comment="Gamma-only kpoints for molecule-in-a-box"
             )
+        elif (user_incar_settings or {}).get("KSPACING") is not None:  # used in place of ``kpoints_...``
+            user_kpoints_settings = {}  # (``VASP`` generates the mesh; no ``KPOINTS`` file written)
         elif category == "non-metals":
             user_kpoints_settings = {"reciprocal_density": kpoints_nonmetals}
         else:  # metals
@@ -2991,8 +3150,6 @@ def get_relaxation_sets(
         if category == "molecules":
             incar_settings["ISIF"] = 2  # don't change the volume
             incar_settings["KPAR"] = 1  # don't use k-point parallelization, gamma only
-            if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing needs >1 kpoint:
-                incar_settings["ISMEAR"] = 0
 
         _set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
         if category == "metals":
@@ -3008,10 +3165,7 @@ def get_relaxation_sets(
                 user_potcar_functional=user_potcar_functional,
                 force_gamma=True,
             )
-            if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing; needs >= 4 k-points
-                kpts = dict_set.kpoints.kpts[0] if dict_set.kpoints is not None else None
-                if kpts and np.prod(kpts) < 4:  # ``pymatgen`` would revert to ISMEAR = 0 for all
-                    dict_set.user_incar_settings["ISMEAR"] = 2 if category == "metals" else 0
+            _revert_sparse_tetrahedron_smearing(dict_set, category)
 
             fname = f"{output_path}/{folder_name}/{subfolder}"
             dict_sets[fname] = dict_set
@@ -3131,6 +3285,8 @@ def get_singlepoint_sets(
             Note that any non-numerical or non-``True``/``False`` flags
             need to be input as strings with quotation marks.
             See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+            ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+            and ``kpoints_nonmetals`` (except for the Γ-only molecules).
         user_potcar_functional (str):
             ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
             whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -3179,13 +3335,13 @@ def get_singlepoint_sets(
                 "should be used for the final single-point energy calculations.",
             )
 
-    # build merged INCAR settings: singlepoint tags + SOC on top of user settings
+    # build merged INCAR settings: user settings on top of singlepoint tags (+ SOC)
     sp_incar_settings = copy.deepcopy(singlepoint_incar_settings)
     # tetrahedron smearing by default, to maximise k-point sampling accuracy; reverted to 0 for
     sp_incar_settings["ISMEAR"] = -5  # molecules and 2/0 for phases with < 4 k-points
     if soc:
         sp_incar_settings["LSORBIT"] = True
-    sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
+    _update_incar_settings(sp_incar_settings, user_incar_settings)  # user settings take precedence
 
     if subfolder is None:
         subfolder = "vasp_ncl" if soc else "SinglePoint"
@@ -3261,6 +3417,18 @@ def _set_default_metal_smearing(incar_settings: dict, user_incar_settings: dict)
     """
     incar_settings["ISMEAR"] = user_incar_settings.get("ISMEAR", 2)
     incar_settings["SIGMA"] = user_incar_settings.get("SIGMA", 0.2)
+
+
+def _revert_sparse_tetrahedron_smearing(dict_set: DopedDictSet, category: str) -> None:
+    """
+    Revert tetrahedron smearing (``ISMEAR = -5``) to 2 (Methfessel-Paxton) for
+    metals or 0 (Gaussian) otherwise, if there are too few (< 4) k-points for
+    the tetrahedron method (rather than ``pymatgen``'s blanket revert to
+    ``ISMEAR = 0``).
+    """
+    ismear = _parse_incar_value("ISMEAR", dict_set._config_dict["INCAR"].get("ISMEAR"))
+    if ismear == -5 and (kpts := dict_set._kpts) and np.prod(kpts) < 4:
+        dict_set.user_incar_settings["ISMEAR"] = 2 if category == "metals" else 0
 
 
 def write_kpoint_convergence_files(
@@ -3436,6 +3604,8 @@ def write_relaxation_files(
             Note that any non-numerical or non-``True``/``False`` flags
             need to be input as strings with quotation marks.
             See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+            ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+            and ``kpoints_nonmetals`` (except for the Γ-only molecules).
         user_potcar_functional (str):
             ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
             whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -3596,6 +3766,8 @@ def write_singlepoint_files(
             Note that any non-numerical or non-``True``/``False`` flags
             need to be input as strings with quotation marks.
             See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+            ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+            and ``kpoints_nonmetals`` (except for the Γ-only molecules).
         user_potcar_functional (str):
             ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
             whichever ``PBE`` ``POTCAR`` library is installed, resolved
