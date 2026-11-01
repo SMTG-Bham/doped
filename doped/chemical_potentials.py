@@ -64,6 +64,9 @@ from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_str
 from doped.vasp import (
     _MODULE_DIR,
     DopedDictSet,
+    _is_hybrid,
+    _parse_incar_value,
+    _update_incar_settings,
     default_HSE_set,
     default_relax_set,
     singlepoint_incar_settings,
@@ -1746,7 +1749,9 @@ class CompetingPhases(_EntriesMixin, MSONable):
         """
         user_incar_settings = user_incar_settings or {}
         base_incar_settings = copy.deepcopy(convergence_set["INCAR"])
-        base_incar_settings.update(user_incar_settings)
+        _update_incar_settings(base_incar_settings, user_incar_settings)
+        if base_incar_settings.pop("KSPACING", None) is not None:  # k-point meshes set here
+            warnings.warn("KSPACING in user_incar_settings is ignored for k-point convergence tests.")
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
         dict_sets: dict[str, DopedDictSet] = {}
         extrinsic_entries = getattr(self, "extrinsic_entries", [])
@@ -1776,17 +1781,18 @@ class CompetingPhases(_EntriesMixin, MSONable):
 
                 _generated_kpoints_folders = []
                 for kpoint in np.arange(min_k, max_k, step_k):
-                    dict_set = copy.deepcopy(dict_set)
-                    dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
-                    kpts = dict_set.kpoints.kpts[0]
+                    kpoint_dict_set = copy.deepcopy(dict_set)  # copy base set, as ISMEAR may be reverted
+                    kpoint_dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
+                    kpts = kpoint_dict_set.kpoints.kpts[0]
                     kname = "k" + "_" * (kpts[0] // 10) + ",".join(str(k) for k in kpts)
                     if kname in _generated_kpoints_folders:
                         continue  # this set of kpoints already generated, bump reciprocal density more
 
+                    self._revert_sparse_tetrahedron_smearing(kpoint_dict_set, category)
                     fname = (
                         f"{output_path}/{_get_competing_phase_folder_name(entry)}/kpoint_converge/{kname}"
                     )
-                    dict_sets[fname] = dict_set
+                    dict_sets[fname] = kpoint_dict_set
                     _generated_kpoints_folders.append(kname)
 
         molecular_entries_to_report = (
@@ -1977,6 +1983,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+                ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+                and ``kpoints_nonmetals`` (except for the Γ-only molecules).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2008,16 +2016,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
         """
         user_incar_settings = user_incar_settings or {}
         base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
-        if "EDIFF" in user_incar_settings:  # remove default EDIFF PER ATOM setting if EDIFF set
-            base_incar_settings.pop("EDIFF_PER_ATOM", None)
 
-        lhfcalc = user_incar_settings.get("LHFCALC", True)
-        if isinstance(lhfcalc, str):
-            lhfcalc = lhfcalc.lower().startswith("t")
-        if lhfcalc:
+        if _is_hybrid(user_incar_settings):
             base_incar_settings.update(default_HSE_set["INCAR"])
 
-        base_incar_settings.update(user_incar_settings)
+        _update_incar_settings(base_incar_settings, user_incar_settings)
         dict_sets: dict[str, DopedDictSet] = {}
         extrinsic_entries = getattr(self, "extrinsic_entries", [])
 
@@ -2028,6 +2031,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 user_kpoints_settings = Kpoints.gamma_automatic(
                     comment="Gamma-only kpoints for molecule-in-a-box"
                 )
+            elif user_incar_settings.get("KSPACING") is not None:  # used in place of ``kpoints_...``
+                user_kpoints_settings = {}  # (``VASP`` generates the mesh; no ``KPOINTS`` file written)
             elif category == "non-metals":
                 user_kpoints_settings = {"reciprocal_density": kpoints_nonmetals}
             else:  # metals
@@ -2037,8 +2042,6 @@ class CompetingPhases(_EntriesMixin, MSONable):
             if category == "molecules":
                 incar_settings["ISIF"] = 2  # don't change the volume
                 incar_settings["KPAR"] = 1  # don't use k-point parallelization, gamma only
-                if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing needs >1 kpoint:
-                    incar_settings["ISMEAR"] = 0
 
             self._set_spin_polarisation(incar_settings, user_incar_settings, entry)
             if category == "metals":
@@ -2054,10 +2057,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
                     user_potcar_functional=user_potcar_functional,
                     force_gamma=True,
                 )
-                if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing; needs >= 4 k-points
-                    kpts = dict_set.kpoints.kpts[0] if dict_set.kpoints is not None else None
-                    if kpts and np.prod(kpts) < 4:  # ``pymatgen`` would revert to ISMEAR = 0 for all
-                        dict_set.user_incar_settings["ISMEAR"] = 2 if category == "metals" else 0
+                self._revert_sparse_tetrahedron_smearing(dict_set, category)
 
                 fname = f"{output_path}/{_get_competing_phase_folder_name(entry)}/{subfolder}"
                 dict_sets[fname] = dict_set
@@ -2127,6 +2127,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+                ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+                and ``kpoints_nonmetals`` (except for the Γ-only molecules).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2295,6 +2297,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+                ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+                and ``kpoints_nonmetals`` (except for the Γ-only molecules).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2341,13 +2345,13 @@ class CompetingPhases(_EntriesMixin, MSONable):
                     "should be used for the final single-point energy calculations.",
                 )
 
-        # build merged INCAR settings: singlepoint tags + SOC on top of user settings
+        # build merged INCAR settings: user settings on top of singlepoint tags (+ SOC)
         sp_incar_settings = copy.deepcopy(singlepoint_incar_settings)
         # tetrahedron smearing by default, to maximise k-point sampling accuracy; reverted to 0 for
         sp_incar_settings["ISMEAR"] = -5  # molecules and 2/0 for phases with < 4 k-points
         if soc:
             sp_incar_settings["LSORBIT"] = True
-        sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
+        _update_incar_settings(sp_incar_settings, user_incar_settings)  # user settings take precedence
 
         if subfolder is None:
             subfolder = "vasp_ncl" if soc else "SinglePoint"
@@ -2476,6 +2480,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+                ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+                and ``kpoints_nonmetals`` (except for the Γ-only molecules).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2585,6 +2591,17 @@ class CompetingPhases(_EntriesMixin, MSONable):
         """
         incar_settings["ISMEAR"] = user_incar_settings.get("ISMEAR", 2)
         incar_settings["SIGMA"] = user_incar_settings.get("SIGMA", 0.2)
+
+    def _revert_sparse_tetrahedron_smearing(self, dict_set: DopedDictSet, category: str) -> None:
+        """
+        Revert tetrahedron smearing (``ISMEAR = -5``) to 2 (Methfessel-Paxton)
+        for metals or 0 (Gaussian) otherwise, if there are too few (< 4)
+        k-points for the tetrahedron method (rather than ``pymatgen``'s blanket
+        revert to ``ISMEAR = 0``).
+        """
+        ismear = _parse_incar_value("ISMEAR", dict_set._config_dict["INCAR"].get("ISMEAR"))
+        if ismear == -5 and (kpts := dict_set._kpts) and np.prod(kpts) < 4:
+            dict_set.user_incar_settings["ISMEAR"] = 2 if category == "metals" else 0
 
     def _generate_elemental_diatomic_phases(self, entries: list[ComputedEntry]) -> list[ComputedEntry]:
         r"""
