@@ -7,6 +7,7 @@ import contextlib
 import warnings
 from collections.abc import Iterable
 from functools import cached_property
+from math import comb
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -2040,7 +2041,7 @@ def guess_and_set_oxi_states_with_timeout(
         (
             break_early_if_expensive or _mp.current_process().daemon
         )  # if in a daemon process, can't spawn new `Process`s
-        and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1e6
+        and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 3e7  # ~10 s
     ):
         structure_with_oxi = False
 
@@ -2215,6 +2216,12 @@ def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites
     A cost function which roughly estimates the computational cost of guessing
     the oxidation states of a given composition, using the ICSD oxidation state
     probabilities approach.
+
+    Follows ``pymatgen``'s ``Composition.oxi_state_guesses()`` algorithm, which
+    enumerates the oxidation state combinations of each element, then all
+    combinations of their distinct oxidation state sums. The returned cost is
+    roughly the number of ``python`` operations, at ~2.5e6 per second on a
+    modern CPU.
     """
     if isinstance(comp, str):
         comp = Composition(comp)
@@ -2222,22 +2229,16 @@ def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites
     if max_sites:
         comp, _factor = comp.get_reduced_composition_and_factor()
 
-    el_amt = comp.get_el_amt_dict()
-    elements = list(el_amt)
+    combos_cost, num_sum_combos = 0, 1
+    for el, amt in comp.get_el_amt_dict().items():
+        oxi_states = Element(el).icsd_oxidation_states or Element(el).common_oxidation_states or (0,)
+        num_atoms = int(amt)
+        num_combos = comb(len(oxi_states) + num_atoms - 1, num_atoms)
+        num_sums = min(num_combos, num_atoms * (max(oxi_states) - min(oxi_states)) + 1)  # distinct sums
+        combos_cost += num_combos * (num_atoms + num_sums)
+        num_sum_combos *= num_sums
 
-    def num_possible_combinations(n, r):
-        from math import factorial
-
-        return factorial(n + r - 1) / factorial(r) / factorial(n - 1)
-
-    return np.prod(
-        [
-            num_possible_combinations(
-                len(Element(el).icsd_oxidation_states or Element(el).oxidation_states), int(el_amt[el])
-            )
-            for el in elements
-        ]
-    )
+    return combos_cost + num_sum_combos
 
 
 class Defect(core.Defect):
