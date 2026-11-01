@@ -257,13 +257,15 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         ]
 
         # Substitution:
-        # These benchmarks are for the displacement ellipsoid of Te_Cd^+1 in CdTe at quantile=0.8:
+        # These benchmarks are for the displacement ellipsoid of Te_Cd^+1 in CdTe at quantile=0.8, where
+        # the two longest radii are degenerate (by symmetry). Plots have deterministic axes; x projected
+        # onto the plane normal to the shortest (~[1, 1, -1]) axis, and its right-handed normal:
         ellipsoid_center_Te_Cd_1 = [6.19574587, 6.19525728, 6.88797036]
         ellipsoid_radii_Te_Cd_1 = [3.15467871, 5.13765138, 5.14004549]
         ellipsoid_rotation_Te_Cd_1 = [
-            [0.5772016, 0.57738077, 0.57746841],
-            [0.26610123, 0.80155036, 0.53545043],
-            [0.77202879, 0.15539778, 0.61629788],
+            [0.5772016, 0.57738077, -0.57746841],
+            [0.81660169, -0.40811219, 0.40817414],
+            [0.0, -0.70716044, -0.70705312],
         ]
 
         # Interstitial:
