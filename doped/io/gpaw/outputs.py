@@ -34,14 +34,14 @@ from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.util.typing import PathLike
 
+from doped.io import utils as _io_utils
 from doped.io.outputs import CalculationOutputs
 
 # ``doped`` accesses the remaining unimplemented protocol name directly (rather than probing with
 # ``getattr(backend, name, default)``), so it is intercepted here to fail informatively rather than with an
 # obscure ``AttributeError``. The optional, ``getattr``-probed protocol names (``SUBFOLDER_PRIORITY``,
-# ``MISMATCH_WARNING_SPECS``, ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``,
-# ``SITE_POTENTIALS_FILE``) must keep raising ``AttributeError``, so that those features degrade gracefully
-# as intended:
+# ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
+# ``AttributeError``, so that those features degrade gracefully as intended:
 _UNIMPLEMENTED_BACKEND_ATTRS = ("get_fermi_dos",)
 
 
@@ -490,9 +490,10 @@ _COMPATIBILITY_PARAMETERS = (
     "background_charge",  # explicit jellium (not standard uniform background for charged supercells)
 )
 """
-The ``GPAW`` calculation parameters which must match between the bulk and
-defect supercell calculations for their energies to be comparable; functional,
-basis/grid, k-points, PAW datasets and external fields.
+The ``GPAW`` calculation parameters which must match between calculations for
+their energies to be comparable; functional, basis/grid, k-points, PAW datasets
+and external fields (with k-point and real-space meshes only compared for
+defect & bulk supercells, not competing phases).
 """
 
 
@@ -513,56 +514,82 @@ def _comparable(value: Any) -> Any:
     return value
 
 
-def check_entry_compatibility(entries, template_candidates=None) -> None:
+MISMATCH_WARNING_SPECS = {
+    "mismatching_gpaw_parameters": {
+        "object_name": "GPAW parameters",
+        "data_key": "gpaw_parameters",
+        "per_defect_warning_prefix": "There are mismatching GPAW parameters",
+        "format": "{{parameter: ({name_1} value, {name_2} value)}}):",
+        "closing": (
+            "In general, the same GPAW settings should be used for all final calculations for accurate "
+            "results!"
+        ),
+    },
+}
+"""
+Specifications for collectively warning about mismatching ``GPAW`` calculation
+parameters (see :func:`compare_calculation_settings`), for defect & bulk
+supercell calculations and competing phases.
+"""
+
+
+def compare_calculation_settings(
+    settings: dict,
+    reference_settings: dict,
+    competing_phases: bool = False,
+    warn: bool = False,
+) -> dict[str, Any]:
     """
-    Check the compatibility of parsed competing phase entries, by comparing
-    their ``GPAW`` parameters against those of a reference (template) entry,
-    and warning about any mismatches (which can cause errors in the parsed
-    energies, and thus the chemical potential limits).
+    Compare the energy-affecting ``GPAW`` parameters (``"gpaw_parameters"``) of
+    a calculation to those of a reference calculation.
 
     The parameters in :data:`_COMPATIBILITY_PARAMETERS` are compared, except
-    for the k-point and real-space meshes (``kpts``, ``h``, ``gpts``), which
-    can differ between phases. Mismatches are recorded in ``entry.data`` under
-    ``"mismatching_gpaw_parameters"`` as a
-    ``{parameter: (value, reference value)}`` dict, or ``False`` if matching).
-    Entries without ``"gpaw_parameters"`` data are skipped.
+    for the k-point and real-space meshes (``kpts``, ``h``, ``gpts``) of
+    competing phases, which can differ between phases.
 
-    Used by |CompetingPhasesAnalyzer| when ``check_compatibility=True``
-    (default).
+    Used for both defect & bulk supercell calculations (by
+    :func:`check_run_compatibility`, with ``CalculationOutputs.run_metadata``
+    settings) and competing phases (by |CompetingPhasesAnalyzer| when
+    ``check_compatibility=True`` (default), with ``entry.data`` settings).
 
     Args:
-        entries (list[|ComputedEntry|]):
-            The competing phase entries to check.
-        template_candidates (list[|ComputedEntry|]):
-            Priority-ordered candidate entries from which to take the reference
-            (template) calculation settings; the first with
-            ``"gpaw_parameters"`` data is used. Default is ``None``, in which
-            case ``entries`` is used.
+        settings (dict):
+            The calculation settings, with the ``"gpaw_parameters"`` dict.
+        reference_settings (dict):
+            The settings of the reference calculation (e.g. the bulk
+            supercell).
+        competing_phases (bool):
+            Whether these are competing phase calculations (for which meshes
+            are not compared). Default is ``False``.
+        warn (bool):
+            Whether to warn about any mismatches found. Default is ``False``.
+
+    Returns:
+        dict:
+            ``"mismatching_gpaw_parameters"``: a
+            ``{parameter: (value, reference value)}`` dict, or ``False`` if
+            they match.
     """
-    candidates = entries if template_candidates is None else template_candidates
-    template = next((e for e in candidates if e.data.get("gpaw_parameters")), None)
-    if template is None:
-        return
-    reference = template.data["gpaw_parameters"]
-    parameters = sorted(set(_COMPATIBILITY_PARAMETERS) - {"kpts", "h", "gpts"})
-    differences = []
-    for entry in entries:
-        if not (settings := entry.data.get("gpaw_parameters")):
-            continue
-        mismatches = {
-            key: (settings.get(key), reference.get(key))
-            for key in parameters
-            if _comparable(settings.get(key)) != _comparable(reference.get(key))
-        }
-        entry.data["mismatching_gpaw_parameters"] = mismatches or False
-        if mismatches:
-            differences.append(f"{entry.name} ({entry.data.get('folder', '')}): {mismatches}")
-    if differences:
-        warnings.warn(
-            "There are mismatching GPAW parameters between competing phases, which may cause errors in "
-            "the relative energies and thus chemical potentials. "
-            f"Reference: {template.name}. Differences (phase, reference):\n" + "\n".join(differences)
+    parameters, reference = (s.get("gpaw_parameters") or {} for s in [settings, reference_settings])
+    mismatches = {
+        parameter: (parameters.get(parameter), reference.get(parameter))
+        for parameter in _COMPATIBILITY_PARAMETERS
+        if not (competing_phases and parameter in {"kpts", "h", "gpts"})
+        and _comparable(parameters.get(parameter)) != _comparable(reference.get(parameter))
+    }
+    if mismatches and warn:
+        labels = _io_utils._MISMATCH_WARNING_CONTEXTS[competing_phases]  # e.g. "defect" & "bulk"
+        mismatch_info = "\n".join(
+            f"{parameter}: {value!r} ({labels['name_1']}) vs {reference_value!r} ({labels['name_2']})"
+            for parameter, (value, reference_value) in mismatches.items()
         )
+        warnings.warn(
+            f"There are mismatching GPAW parameters between your {labels['name_2']} and "
+            f"{labels['name_1']} calculations, which may mean your energies are not comparable:\n"
+            f"{mismatch_info}"
+        )
+
+    return {"mismatching_gpaw_parameters": mismatches or False}
 
 
 def check_run_compatibility(
@@ -572,45 +599,35 @@ def check_run_compatibility(
 ) -> dict:
     """
     Check that the defect and bulk ``GPAW`` calculations used compatible
-    settings, and collect their parameters for
-    ``DefectEntry.calculation_metadata``.
+    settings (with :func:`compare_calculation_settings`), and collect their
+    parameters for ``DefectEntry.calculation_metadata``.
 
-    Only the parameters in :data:`_COMPATIBILITY_PARAMETERS` are compared;
     ``GPAW``'s full parameter dictionaries are returned either way.
 
     Args:
-        defect_outputs (CalculationOutputs): The parsed defect supercell outputs.
-        bulk_outputs (CalculationOutputs): The parsed bulk supercell outputs.
+        defect_outputs (CalculationOutputs):
+            The parsed defect supercell outputs.
+        bulk_outputs (CalculationOutputs):
+            The parsed bulk supercell outputs.
         warn (bool):
             Whether to warn about mismatched parameters. Default is ``True``.
 
     Returns:
-        dict: ``"run_metadata"`` (both parameter sets) and
-        ``"mismatching_gpaw_parameters"`` (a ``{parameter: (defect, bulk)}``
-        dict, or ``False`` if they match).
+        dict:
+            ``"run_metadata"`` (both parameter sets) and
+            ``"mismatching_gpaw_parameters"`` (a
+            ``{parameter: (defect, bulk)}`` dict, or ``False`` if they match).
     """
     run_metadata = {
         f"{label}_gpaw_parameters": (outputs.run_metadata or {}).get("gpaw_parameters", {})
         for label, outputs in (("defect", defect_outputs), ("bulk", bulk_outputs))
     }
-    defect_parameters = run_metadata["defect_gpaw_parameters"]
-    bulk_parameters = run_metadata["bulk_gpaw_parameters"]
-    mismatches = {
-        parameter: (defect_parameters.get(parameter), bulk_parameters.get(parameter))
-        for parameter in _COMPATIBILITY_PARAMETERS
-        if _comparable(defect_parameters.get(parameter)) != _comparable(bulk_parameters.get(parameter))
+    return {
+        **compare_calculation_settings(
+            defect_outputs.run_metadata or {}, bulk_outputs.run_metadata or {}, warn=warn
+        ),
+        "run_metadata": run_metadata,
     }
-    if mismatches and warn:
-        mismatch_info = "\n".join(
-            f"{parameter}: {defect!r} (defect) vs {bulk!r} (bulk)"
-            for parameter, (defect, bulk) in mismatches.items()
-        )
-        warnings.warn(
-            f"There are mismatching GPAW parameters between your bulk and defect calculations, which "
-            f"may mean your energies are not comparable:\n{mismatch_info}"
-        )
-
-    return {"mismatching_gpaw_parameters": mismatches or False, "run_metadata": run_metadata}
 
 
 def get_planar_averaged_potentials(

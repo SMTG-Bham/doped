@@ -7,15 +7,20 @@ import copy
 import os
 import pickle
 import runpy
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 import numpy as np
 import pytest
+from ase.build import bulk, molecule
 from ase.io import read
 from ase.io.trajectory import Trajectory
+from monty.json import MontyDecoder, MontyEncoder
+from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
+from pymatgen.io.ase import AseAtomsAdaptor
 from test_utils import (
     _run_func_and_capture_stdout_warnings,
     custom_mpl_image_compare,
@@ -23,10 +28,17 @@ from test_utils import (
     gpaw_data_dir,
 )
 
+from doped.chemical_potentials import CompetingPhasesAnalyzer
 from doped.generation import DefectsGenerator
 from doped.io import get_calculation_outputs
 from doped.io.gpaw.inputs import DefectDictSet, DefectsSet
-from doped.io.gpaw.outputs import _find_gpaw_output, get_competing_phase_entry, get_potentials_from_input
+from doped.io.gpaw.outputs import (
+    _find_gpaw_output,
+    get_competing_phase_entry,
+    get_gpaw_planar_averaged_potential,
+    get_gpaw_site_potentials,
+    get_potentials_from_input,
+)
 from doped.io.inputs import _get_bulk_folder_name
 from doped.parsing import DefectParser, DefectsParser
 from doped.thermodynamics import DefectThermodynamics
@@ -334,19 +346,26 @@ def test_relax_script_continues_from_trajectory(tmp_path):
         np.testing.assert_allclose(positions, expected.positions)
 
 
+def _gpaw_workflow_settings() -> dict:
+    """
+    GPAW settings for the end-to-end defect workflow tests (spin-paired, at
+    Gamma, for speed), as GPAW parameter objects.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    return {"mode": gpaw.PW(300), "eigensolver": gpaw.Davidson(3), "spinpol": False}
+
+
 def _gpaw_defect_workflow(tmp_path: Path, supercell: Structure, names: tuple[str, ...], **kwargs):
     """
     Generate, write, run and parse GPAW calculations for the named defects in
-    ``supercell`` (spin-paired, at Gamma, for speed), with GPAW parameter
-    objects in ``gpaw_settings`` (converted to their ``todict()`` forms for the
-    generated scripts and the ``DefectsSet`` JSON). ``kwargs`` are passed to
-    ``DefectsParser``.
+    ``supercell``, with the ``_gpaw_workflow_settings()`` GPAW parameter
+    objects (converted to their ``todict()`` forms for the generated scripts
+    and the ``DefectsSet`` JSON). ``kwargs`` are passed to ``DefectsParser``.
 
     Returns the ``DefectsParser``, and the warnings from defect generation and
     parsing.
     """
-    gpaw = pytest.importorskip("gpaw")
-    gpaw_settings = {"mode": gpaw.PW(300), "eigensolver": gpaw.Davidson(3), "spinpol": False}
+    gpaw_settings = _gpaw_workflow_settings()
     defect_gen, _, generation_warnings = _run_func_and_capture_stdout_warnings(
         DefectsGenerator, supercell, generate_supercell=False
     )
@@ -449,6 +468,42 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
         # separate GPAW calculations at these settings):
         mu = cls.entries[0].bulk_entry.energy_per_atom
         cls.chempots = {"Mg": mu - 3, "O": mu + 3}
+
+    def test_bulk_settings_mismatch_warning(self):
+        """
+        Mismatching defect & bulk GPAW parameters (here with the bulk
+        recalculated with LDA rather than PBE) are stored for each defect, and
+        warned about once by ``DefectsParser``, naming the affected defects
+        (with the per-defect warnings suppressed).
+        """
+        bulk_path = Path(self.enterContext(tempfile.TemporaryDirectory())) / "MgO_bulk_LDA"
+        bulk_structure = self.entries[0].bulk_entry.structure
+        _run_phase_calculation(bulk_structure, bulk_path, {**_gpaw_workflow_settings(), "xc": "LDA"})
+        dp, _, warnings = _run_func_and_capture_stdout_warnings(
+            DefectsParser,
+            output_path=self.dp.output_path,
+            bulk_path=bulk_path,
+            calculator="gpaw",
+            dielectric=8.8963,
+            json_filename=False,
+        )
+        assert set(dp.defect_dict) == set(self.names)
+        for entry in dp.defect_dict.values():  # (xc as a str or {"name": ...} dict, depending on version)
+            mismatches = entry.calculation_metadata["mismatching_gpaw_parameters"]
+            assert list(mismatches) == ["xc"]
+            assert "PBE" in str(mismatches["xc"][0])  # defect
+            assert "LDA" in str(mismatches["xc"][1])  # bulk
+        mismatch_warnings = [
+            str(w.message) for w in warnings if "mismatching GPAW parameters" in str(w.message)
+        ]
+        assert len(mismatch_warnings) == 1, mismatch_warnings  # grouped, without the per-defect warnings
+        assert mismatch_warnings[0].startswith(
+            "There are mismatching GPAW parameters for (some of) your defect and bulk calculations"
+        )
+        assert all(
+            f"{name}: {entry.calculation_metadata['mismatching_gpaw_parameters']}" in mismatch_warnings[0]
+            for name, entry in dp.defect_dict.items()
+        )
 
     def test_warnings(self):
         _check_warnings(  # (small supercell warnings)
@@ -557,9 +612,6 @@ def gpaw_competing_phases(tmp_path_factory):
     Compute real MgO, Mg and triplet O2 references in the example layout.
     """
     pytest.importorskip("gpaw")
-    from ase.build import bulk, molecule
-    from pymatgen.io.ase import AseAtomsAdaptor
-
     root = tmp_path_factory.mktemp("gpaw_phases") / "CompetingPhases_GPAW"
     oxygen = molecule("O2")
     oxygen.center(vacuum=3)
@@ -586,8 +638,6 @@ def test_competing_phase_entry_real_gpaw():
     Read the shipped neutral restart without loading defect potentials.
     """
     pytest.importorskip("gpaw")
-    from monty.json import MontyDecoder, MontyEncoder
-
     path = Path(gpaw_data_dir) / "MgO" / "bulk"
     entry = get_competing_phase_entry(path)
     assert entry.composition.reduced_formula == "MgO"
@@ -611,8 +661,6 @@ def test_competing_phase_analyzer_gpaw(gpaw_competing_phases):
     Parse the documented directory layout and check limits against real DFT
     energies.
     """
-    from doped.chemical_potentials import CompetingPhasesAnalyzer
-
     root, names, structures, _, energies = gpaw_competing_phases
     analyzer, _, warnings = _run_func_and_capture_stdout_warnings(
         CompetingPhasesAnalyzer, "MgO", entries=root, calculator="gpaw"
@@ -647,10 +695,6 @@ def test_restart_without_results_raises(tmp_path):
     silently re-running the calculation during parsing.
     """
     gpaw = pytest.importorskip("gpaw")
-    from ase.build import bulk
-
-    from doped.io.gpaw.outputs import get_gpaw_planar_averaged_potential, get_gpaw_site_potentials
-
     atoms = bulk("Mg", "hcp", a=3.19, c=5.18)
     atoms.calc = gpaw.GPAW(mode=gpaw.PW(200), kpts=(2, 2, 2), maxiter=2, txt=None)
     with pytest.raises(gpaw.KohnShamConvergenceError):
@@ -672,8 +716,6 @@ def test_gpaw_competing_phase_example_inputs(tmp_path):
     The example writes the host and elemental references into one phase
     directory.
     """
-    from pymatgen.core.lattice import Lattice
-
     script = Path(__file__).resolve().parents[1] / "examples/MgO_with_GPAW/Run1st_create_gpaw_workflow.py"
     write_inputs = runpy.run_path(str(script))["write_competing_phase_inputs"]
     host = Structure.from_spacegroup("Fm-3m", Lattice.cubic(4.21), ["Mg", "O"], [[0, 0, 0], [0.5] * 3])
@@ -694,10 +736,6 @@ def test_competing_phase_file_priority(gpaw_competing_phases, tmp_path):
     Use the GPAW filename priority in real phase directories (ignoring backup
     files), and the generic file choice for ambiguous or backup-only folders.
     """
-    import shutil
-
-    from doped.chemical_potentials import CompetingPhasesAnalyzer
-
     root, names, _, _, energies = gpaw_competing_phases
     target = tmp_path / "CompetingPhases_GPAW"
     shutil.copytree(root, target)
@@ -742,10 +780,6 @@ def test_competing_phase_settings_mismatch(gpaw_competing_phases, tmp_path, para
     Warn about genuinely different XC, PAW datasets and modes in real
     calculations.
     """
-    import shutil
-
-    from doped.chemical_potentials import CompetingPhasesAnalyzer
-
     root, names, structures, original_settings, _ = gpaw_competing_phases
     target = tmp_path / "CompetingPhases_GPAW"
     shutil.copytree(root, target)

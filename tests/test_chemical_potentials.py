@@ -2948,8 +2948,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             ),
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
             (
-                "In general, the same POTCAR settings should be used in all final calculations for these "
-                "tags which can affect energies!"
+                "In general, the same POTCAR settings should be used for all calculations for accurate "
+                "results!"
             ),
             (
                 "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull "

@@ -110,16 +110,25 @@ reference backend):
   the corresponding ``PLANAR_POTENTIALS_FILE`` / ``SITE_POTENTIALS_FILE``
   file-name constants): lazy loading of charge-correction data, when not
   parsed up-front into ``CalculationOutputs``.
-- ``check_run_compatibility(defect_outputs, bulk_outputs, warn)`` (and
-  ``MISMATCH_WARNING_SPECS``): defect/bulk calculation settings
-  compatibility checks, populating ``"run_metadata"`` (and any
-  ``"mismatching_..."`` entries) in ``DefectEntry.calculation_metadata``.
-- ``check_entry_compatibility(entries, template_candidates)``: the same
-  check for competing phase entries, comparing each against a reference
-  (template) entry and warning about mismatched calculation settings, for
-  :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` (with
-  ``check_compatibility=True``, the default). Entries lacking the relevant
-  settings data are skipped.
+- ``compare_calculation_settings(settings, reference_settings, competing_phases, warn)``
+  (and ``MISMATCH_WARNING_SPECS``): calculation settings compatibility checks,
+  comparing the energy-affecting settings of a calculation to a reference and returning
+  ``{"mismatching_...": mismatches or False}``. ``settings`` are
+  ``CalculationOutputs.run_metadata`` for defect/bulk supercells and ``entry.data``
+  for competing phases (with ``competing_phases=True``, for settings which can
+  legitimately differ between phases, such as k-point meshes).
+  ``MISMATCH_WARNING_SPECS`` gives, for each ``"mismatching_..."`` key, the settings
+  name (``"object_name"``), the settings ``"data_key"`` (used to choose the reference
+  competing phase and skip entries lacking the settings data), the ``"format"`` and
+  ``"closing"`` warning lines, the prefix of any per-defect warnings
+  (``"per_defect_warning_prefix"``) and optional ``"transform"``/``"body"``
+  functions, from which ``doped`` generates grouped mismatch warnings for
+  defects and competing phases (the latter with |CompetingPhasesAnalyzer| with
+  ``check_compatibility=True``, the default).
+- ``check_run_compatibility(defect_outputs, bulk_outputs, warn)``: defect/bulk
+  calculation settings compatibility checks (using ``compare_calculation_settings``),
+  populating ``"run_metadata"`` (and the ``"mismatching_..."`` entries) in
+  ``DefectEntry.calculation_metadata``.
 - ``load_eigenvalue_outputs(path, outputs, projections, label, run_metadata)``:
   loading of outputs `with orbital projections` for eigenvalue / band-edge
   analysis (``DefectEntry.get_eigenvalue_analysis()``), when not parsed
