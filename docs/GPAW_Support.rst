@@ -165,10 +165,8 @@ been applied):
 Chemical potentials and formation energies
 ------------------------------------------
 
-Neutral GPAW competing-phase outputs can be parsed directly with
-``CompetingPhasesAnalyzer(..., calculator="gpaw")``. Include the host calculation
-and an elemental reference for every element, together with all relevant
-competing phases:
+GPAW competing-phase outputs can be parsed directly with
+``CompetingPhasesAnalyzer(..., calculator="gpaw")``:
 
 .. code-block:: python
 
@@ -177,26 +175,23 @@ competing phases:
 
    phase_analyzer = CompetingPhasesAnalyzer(
        "MgO",
-       entries=["MgO_bulk", "CompetingPhases_GPAW"],
+       entries="CompetingPhases_GPAW",
        calculator="gpaw",
-       processes=1,
    )
    defect_thermodynamics = DefectThermodynamics(defect_dict, chempots=phase_analyzer.chempots)
    defect_thermodynamics.plot(limit="Mg-rich")
    defect_thermodynamics.plot(limit="O-rich")
 
-The parser reads structures, total energies and GPAW parameters, without loading
-the electrostatic potentials needed for defect charge corrections. Ionic
-convergence cannot be established from a restart file alone and is not reported;
-verify geometry convergence separately.
+The parser reads the stored structures, total energies and GPAW parameters.
 GPAW parameters are stored in each entry, but automatic cross-phase settings
-compatibility checks are not yet implemented. Ensure energies use consistent
-functionals, PAW datasets, basis sets and cutoffs with the bulk and defects.
-Competing-phase input generation with GPAW is also not yet implemented.
+compatibility checks are not yet implemented (TODO). Ensure energies use
+consistent functionals, PAW datasets, basis sets and cutoffs with the bulk
+and defects. Competing-phase input generation with GPAW is also not yet
+implemented (TODO).
 
-The complete MgO example prepares Mg structures obtained from the
-|CompetingPhases| workflow and an isolated triplet O2 reference, then generates
-Mg-rich and O-rich formation-energy diagrams.
+The complete MgO example prepares a primitive-cell MgO host calculation, Mg
+structures obtained from the |CompetingPhases| workflow and an isolated triplet
+O2 reference, then generates Mg-rich and O-rich formation-energy diagrams.
 
 Anisotropic and two-dimensional systems
 ---------------------------------------

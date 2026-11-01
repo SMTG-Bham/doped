@@ -610,7 +610,6 @@ def test_restart_without_results_raises(tmp_path):
     """
     gpaw = pytest.importorskip("gpaw")
     from ase.build import bulk
-    from ase.calculators.calculator import PropertyNotImplementedError
 
     from doped.io.gpaw.outputs import get_gpaw_planar_averaged_potential, get_gpaw_site_potentials
 
@@ -624,8 +623,7 @@ def test_restart_without_results_raises(tmp_path):
         lambda: get_calculation_outputs(tmp_path, calculator="gpaw"),
         lambda: get_gpaw_site_potentials(tmp_path),
         lambda: get_gpaw_planar_averaged_potential(tmp_path),
+        lambda: get_competing_phase_entry(tmp_path),  # (``ase`` reader; skipped with a warning by the CPA)
     ):  # without the check, GPAW re-runs the SCF here (failing again, with ``maxiter=2``)
         with pytest.raises(ValueError, match="holds no stored results"):
             parse()
-    with pytest.raises(PropertyNotImplementedError):  # (``ase`` reader; skipped with a warning by the CPA)
-        get_competing_phase_entry(tmp_path)

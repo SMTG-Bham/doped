@@ -436,13 +436,17 @@ def get_competing_phase_entry(path: PathLike, subfolder: PathLike | None = None)
             not reported: restart files have no ionic-step history. Band gaps
             are omitted pending occupation-based band edges (TODO).
     """
-    from ase.io.gpw import read_gpw  # not ``ase.io.read``, which imports ``gpaw`` via its IO plugin
+    from ase.io.gpw import read_gpw
     from ase.io.ulm import open as ulm_open
 
     gpw_file = _find_gpaw_output(path, subfolder)
-    atoms = read_gpw(gpw_file)  # with a ``SinglePointDFTCalculator`` holding the stored results
-    with ulm_open(gpw_file) as reader:
+    with ulm_open(gpw_file) as reader:  # first, so that non-ULM (e.g. empty) files give a clear error
         parameters = reader.parameters.asdict()
+    atoms = read_gpw(gpw_file)  # with a ``SinglePointDFTCalculator`` holding the stored results
+    if "energy" not in atoms.calc.results:
+        raise ValueError(
+            f"{gpw_file} holds no stored results (e.g. from an unconverged or unfinished calculation)"
+        )
 
     structure = _structure_from_calc(atoms.calc)
     entry = ComputedStructureEntry(structure, atoms.get_potential_energy(), parameters=parameters)
