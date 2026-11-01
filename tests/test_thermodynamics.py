@@ -24,6 +24,7 @@ import pandas as pd
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
+from pymatgen.electronic_structure.core import Spin
 from pymatgen.electronic_structure.dos import Dos, FermiDos
 from test_utils import (
     EXAMPLE_DIR,
@@ -499,6 +500,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         el_refs=None,
         check_compatibility=True,
         check_dists=True,
+        check_guessing=True,
     ):
         print(f"Checking defect_thermo: {defect_thermo}")
         defect_thermo = deepcopy(defect_thermo)  # don't edit! (e.g. saved symmetry info)
@@ -941,36 +943,38 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             for warning in w
         )
 
-        # test defect position guessing:
-        print("Checking defect position guessing")
-        guessed_def_pos_deviations = [
-            entry.defect_supercell_site.distance_and_image_from_frac_coords(
-                entry.bulk_supercell.lattice.get_fractional_coords(
-                    guess_defect_position(entry.defect_supercell)
-                )
-            )[0]
-            for entry in defect_thermo.defect_entries.values()
-        ]
-        print(np.mean(guessed_def_pos_deviations))
-        first_entry = next(iter(defect_thermo.defect_entries.values()))
-        # Note: V2O5 gives largest mismatch of test cases; average ~0.128*max(bulk_lattice.abc) mismatch:
-        assert np.mean(guessed_def_pos_deviations) < np.max(first_entry.bulk_supercell.lattice.abc) * 0.13
+        if check_guessing:  # test defect position guessing:
+            print("Checking defect position guessing")
+            guessed_def_pos_deviations = [
+                entry.defect_supercell_site.distance_and_image_from_frac_coords(
+                    entry.bulk_supercell.lattice.get_fractional_coords(
+                        guess_defect_position(entry.defect_supercell)
+                    )
+                )[0]
+                for entry in defect_thermo.defect_entries.values()
+            ]
+            print(np.mean(guessed_def_pos_deviations))
+            first_entry = next(iter(defect_thermo.defect_entries.values()))
+            # Note: V2O5 gives largest mismatch of test cases; average ~0.116*max(bulk_lattice.abc)
+            # mismatch:
+            assert (
+                np.mean(guessed_def_pos_deviations) < np.max(first_entry.bulk_supercell.lattice.abc) * 0.13
+            )
 
-        print("Checking defect position guessing with bulk supercell reference")
-        guessed_def_pos_deviations_w_bulk = [
-            entry.defect_supercell_site.distance_and_image_from_frac_coords(
-                entry.bulk_supercell.lattice.get_fractional_coords(
-                    guess_defect_position(entry.defect_supercell, bulk_supercell=entry.bulk_supercell)
-                )
-            )[0]
-            for entry in defect_thermo.defect_entries.values()
-        ]
-        print(np.mean(guessed_def_pos_deviations_w_bulk))
-        # with-bulk guessing should do at least as well as without, within minor (0.1 Å) noise
-        # tolerance (e.g. MgO / ZnS / SiSbTe3 / CdTe borderline cases where guessing without the bulk
-        # reference does very slightly (or negligibly) better):
-        assert np.mean(guessed_def_pos_deviations_w_bulk) <= np.mean(guessed_def_pos_deviations) + 0.1
-        assert np.mean(guessed_def_pos_deviations) < np.max(first_entry.bulk_supercell.lattice.abc) * 0.13
+            print("Checking defect position guessing with bulk supercell reference")
+            guessed_def_pos_deviations_w_bulk = [
+                entry.defect_supercell_site.distance_and_image_from_frac_coords(
+                    entry.bulk_supercell.lattice.get_fractional_coords(
+                        guess_defect_position(entry.defect_supercell, bulk_supercell=entry.bulk_supercell)
+                    )
+                )[0]
+                for entry in defect_thermo.defect_entries.values()
+            ]
+            print(np.mean(guessed_def_pos_deviations_w_bulk))
+            # with-bulk guessing should do at least as well as without, within minor (0.1 Å) noise
+            # tolerance (e.g. MgO / ZnS / SiSbTe3 / CdTe borderline cases where guessing without the bulk
+            # reference does very slightly (or negligibly) better):
+            assert np.mean(guessed_def_pos_deviations_w_bulk) <= np.mean(guessed_def_pos_deviations) + 0.1
 
         print("Checking dict attributes passed to defect_entries successfully")
         assert len(defect_thermo) == len(defect_thermo.defect_entries)  # __len__()
@@ -1228,7 +1232,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert not output
         _print_warning_info(w)
         assert not w
-        self._check_defect_thermo(thermo_wout_metadata, check_dists=check_dists)  # default values
+        # defect position guessing (independent of metadata) is checked on the full entry sets instead, as
+        # its mean error threshold is set for these, which random subsets of the hardest cases can exceed:
+        self._check_defect_thermo(thermo_wout_metadata, check_dists=check_dists, check_guessing=False)
 
         defect_entries_wout_metadata_or_degeneracy = random.sample(
             list(defect_thermo.defect_entries.values()), min(7, len(defect_thermo.defect_entries))
@@ -1242,8 +1248,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             defect_entries_wout_metadata_or_degeneracy, vbm=1.65, band_gap=1.499
         )
         self._check_defect_thermo(
-            thermo_wout_metadata_or_degeneracy, check_dists=check_dists
-        )  # default values
+            thermo_wout_metadata_or_degeneracy, check_dists=check_dists, check_guessing=False
+        )
         symm_df = thermo_wout_metadata_or_degeneracy.get_symmetries_and_degeneracies()
         assert symm_df["g_Spin"].apply(lambda x: isinstance(x, int)).all()
 
@@ -3969,7 +3975,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ]:
             _fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
             assert any(
-                "The band gap of the bulk DOS calculation (VBM = 1.45 eV, band gap = 1.71 eV) differs by "
+                "The band gap of the bulk DOS calculation (VBM = 1.45 eV, band gap = 1.73 eV) differs by "
                 ">0.05 eV from `DefectThermodynamics.vbm/gap` (VBM = 1.65 eV, band gap = 1.50 eV; "
                 in str(warn.message)
                 for warn in w
@@ -4059,9 +4065,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             assert ("Orig gap:" in output) == kwargs.get("verbose", False)
             if kwargs.get("delta_gap") == 0.3 and kwargs.get("verbose", False):
                 if kwargs.get("tol") == 1e-1:
-                    assert "Orig gap: 2.7555, new gap:3.0555" in output
+                    assert "Orig gap: 2.7555, new gap: 3.0555" in output
                 else:
-                    assert "Orig gap: 1.5126, new gap:1.8126" in output
+                    assert "Orig gap: 1.5126, new gap: 1.8126" in output
                     assert np.isclose(fermi_level, 0.35124, atol=1e-3)  # different
 
             assert not [
@@ -4969,3 +4975,19 @@ class ScissorDosMgOTestCase(unittest.TestCase):
             assert np.isclose(scissored_dos.efermi, scissored_fermi_dos.efermi)
             assert np.allclose(scissored_dos.energies, scissored_fermi_dos.energies)
             assert np.allclose(scissored_dos.get_densities(), scissored_fermi_dos.get_densities())
+
+    def test_scissor_dos_spin_channels(self):
+        """
+        ``scissor_dos`` should return the same spin channels as the input
+        (previously a ``Spin.down`` copy was always added, doubling
+        ``get_densities()`` for non-spin-polarised input).
+        """
+        fermi_dos = self.mgo_fermi_dos  # non-spin-polarised, so ``Spin.up`` only
+        up_densities = fermi_dos.densities[Spin.up]
+        spin_polarised_dos = Dos(
+            fermi_dos.efermi, fermi_dos.energies, {Spin.up: up_densities, Spin.down: up_densities}
+        )
+        for dos in [fermi_dos, spin_polarised_dos]:
+            scissored_dos = scissor_dos(dos, delta_CBM=0.5, verbose=False)
+            assert list(scissored_dos.densities) == list(dos.densities)
+            assert scissored_dos.get_densities().max() == dos.get_densities().max()  # not doubled

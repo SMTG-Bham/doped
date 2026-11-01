@@ -3595,10 +3595,10 @@ class DefectThermodynamics(MSONable):
             all_df = tl_thermo.get_transition_levels(all=True, unstable_entries=True)
             if all_df is None:
                 return
-            for defect_name, tl_df in all_df.groupby("Defect", sort=False):
-                bold_print(f"Defect: {defect_name}")
+            for group_name, tl_df in all_df.groupby("Defect", sort=False):
+                bold_print(f"Defect: {group_name}")
                 for index, row in tl_df.iterrows():
-                    tl_label = tuple(index)[1]
+                    tl_label = cast("tuple", index)[1]  # (Defect, Transition Level) MultiIndex
                     if tl_label != "None":  # TL to print
                         print(f"Transition level {tl_label} at {row['eV from VBM']:.3f} eV above the VBM")
                 print("")  # add space
@@ -5438,11 +5438,12 @@ def scissor_dos(
     densities[cbm_index:new_cbm_index] = 0  # zero DOS at any grid points added to the gap
 
     if verbose:
-        print(f"Orig gap: {dos_gap:.4f}, new gap:{dos_gap + delta_gap:.4f}")
+        print(f"Orig gap: {dos_gap:.4f}, new gap: {dos_gap + delta_gap:.4f}")
 
-    # now apply the rigid shift of all energies by delta_VBM, assuming non-spin-polarised bulk:
+    # now apply the rigid shift of all energies by delta_VBM, assuming non-spin-polarised bulk (so the
+    # scissored DOS is used for each of the input spin channels):
     scissored_dos = Dos(
-        dos.efermi + delta_VBM, energies + delta_VBM, {Spin.up: densities, Spin.down: densities}
+        dos.efermi + delta_VBM, energies + delta_VBM, dict.fromkeys(dos.densities, densities)
     )
     if isinstance(dos, FermiDos):
         return FermiDos(scissored_dos, structure=dos.structure, nelecs=dos.nelecs)

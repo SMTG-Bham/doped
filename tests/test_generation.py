@@ -14,6 +14,7 @@ import tempfile
 import unittest
 import warnings
 from io import StringIO
+from queue import SimpleQueue
 from unittest.mock import patch
 
 import numpy as np
@@ -24,7 +25,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.lattice import Lattice
-from pymatgen.core.structure import Species
+from pymatgen.core.structure import DummySpecies, Species
 from pymatgen.core.surface import SlabGenerator
 from pymatgen.io.vasp import Poscar
 from test_utils import (
@@ -32,6 +33,7 @@ from test_utils import (
     _compare_attributes,
     _compare_prim_interstitial_coords,
     _print_warning_info,
+    _run_func_and_capture_stdout_warnings,
     _run_heavy_tests,
     data_dir,
     if_present_rm,
@@ -44,6 +46,7 @@ from doped.core import (
     Substitution,
     Vacancy,
     _falling_back_to_common_oxi_states_warning,
+    _guess_and_set_struct_oxi_states_icsd_prob_process,
 )
 from doped.generation import (
     DefectsGenerator,
@@ -3463,6 +3466,13 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
         self._general_defect_gen_check(CdTe_defect_gen)
 
+        # errors in the oxi state guessing subprocess (here from a dummy species) must still put a result
+        # on the queue, otherwise ``queue.get()`` in the parent process hangs forever:
+        queue = SimpleQueue()
+        na_X = Structure(Lattice.cubic(4), ["Na", DummySpecies("X")], [[0, 0, 0], [0.5, 0.5, 0.5]])
+        _guess_and_set_struct_oxi_states_icsd_prob_process(na_X, queue)
+        assert queue.get() is False
+
     def test_agsbte2(self):
         """
         Test generating defects in a disordered supercell of AgSbTe2.
@@ -3707,6 +3717,20 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             interstitial_gen_kwargs=False,
         )
         assert {name.rsplit("_", 1)[0] for name in CdTe_defect_gen.defect_entries} == {"T_Cd", "T_Te"}
+
+        # host named isotopes are treated as their parent element, with a warning (as pymatgen only
+        # partially keeps them, which would otherwise give a mix of D and H defects, e.g. v_D & H_Li):
+        lid = Structure.from_spacegroup("Fm-3m", Lattice.cubic(4.07), ["Li", "D"], [[0, 0, 0], [0.5] * 3])
+        LiD_defect_gen, _stdout, w = _run_func_and_capture_stdout_warnings(DefectsGenerator, lid)
+        assert any("Named isotopes ['D'] in the host structure" in str(warning.message) for warning in w)
+        assert {name.rsplit("_", 1)[0] for name in LiD_defect_gen.defect_entries} == {
+            "v_Li",
+            "v_H",
+            "Li_H",
+            "H_Li",
+            "Li_i_Td",
+            "H_i_Td",
+        }
 
     def test_input_structure_site_properties(self):
         r"""
