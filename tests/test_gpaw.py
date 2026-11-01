@@ -5,11 +5,11 @@ Tests for the GPAW interface in ``doped.io.gpaw``.
 import contextlib
 import copy
 import os
+import pickle
 import runpy
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -555,63 +555,50 @@ def test_competing_phase_entry_real_gpaw():
     assert entry.data["nsites"] == len(entry.structure)
     assert entry.data["gpaw_parameters"]["mode"]["name"] == "pw"
     assert "converged_ionic" not in entry.data
-    # The entry contains no live GPAW/MPI objects and can be serialised for later analysis.
-    roundtrip = MontyDecoder().decode(MontyEncoder().encode(entry))
-    assert roundtrip.energy == entry.energy
-    assert roundtrip.structure == entry.structure
+    # JSON-serialisable, and picklable (as needed for multiprocessed parsing), which unlike the JSON round
+    # trip also fails if any live calculator or file objects remain attached:
+    json_roundtrip = MontyDecoder().decode(MontyEncoder().encode(entry))
+    for roundtrip in (json_roundtrip, pickle.loads(pickle.dumps(entry))):
+        assert roundtrip.energy == entry.energy
+        assert roundtrip.structure == entry.structure
 
 
-@pytest.mark.parametrize("new_parameters", [False, True])
-def test_competing_phase_analyzer_gpaw(tmp_path, monkeypatch, new_parameters):
+def test_competing_phase_analyzer_gpaw(tmp_path):
     """
-    Check discovery, elemental references and chemical potentials with
-    synthetic GPAW outputs.
+    Check discovery, elemental references and chemical potentials with real
+    (small, unconverged) GPAW MgO, Mg and O2 calculations.
     """
     gpaw = pytest.importorskip("gpaw")
+    from ase.build import bulk
+
     from doped.chemical_potentials import CompetingPhasesAnalyzer
 
-    atoms_and_energies = {
-        "MgO": (Atoms("MgO", positions=[[0, 0, 0], [2, 2, 2]], cell=[4, 4, 4], pbc=True), -12.0),
-        "Mg": (Atoms("Mg", cell=[3, 3, 3], pbc=True), -1.0),
-        "O2": (Atoms("O2", positions=[[0, 0, 0], [0, 0, 1.2]], cell=[12, 12, 12], pbc=True), -6.0),
+    phases = {  # atoms and k-point mesh; O2 is a spin-polarised triplet (from the initial moments)
+        "MgO": (bulk("MgO", "rocksalt", a=4.21), (2, 2, 2)),
+        "Mg": (bulk("Mg", "hcp", a=3.19, c=5.18), (4, 4, 2)),
+        "O2": (Atoms("O2", [[0, 0, 0], [0, 0, 1.23]], cell=[6] * 3, pbc=True, magmoms=[1, 1]), (1, 1, 1)),
     }
-    opened = []
+    energies = {}
+    for name, (atoms, kpts) in phases.items():
+        atoms.calc = gpaw.GPAW(mode=gpaw.PW(300), kpts={"size": kpts, "gamma": True}, txt=None)
+        energies[name] = atoms.get_potential_energy()
+        (tmp_path / name).mkdir()
+        atoms.calc.write(tmp_path / name / "singlepoint.gpw")
 
-    class PhaseCalculator:
-        def __init__(self, filename, **kwargs):
-            phase = Path(filename).parent.name
-            self.atoms, self.energy = atoms_and_energies[phase]
-            parameters = {"mode": {"name": "pw", "ecut": 400}, "xc": "PBE"}
-            self.parameters = SimpleNamespace(todict=lambda: parameters) if new_parameters else parameters
-            self.scf = SimpleNamespace(converged=True)
-            self.closed = False
-            opened.append(self)
-
-        def get_atoms(self):
-            return self.atoms.copy()
-
-        def get_potential_energy(self):
-            return self.energy
-
-        def get_magnetic_moment(self):
-            return 2.0 if self.atoms.get_chemical_formula() == "O2" else 0.0
-
-        def close(self):
-            self.closed = True
-
-    monkeypatch.setattr(gpaw, "GPAW", PhaseCalculator)
-    for phase in atoms_and_energies:
-        folder = tmp_path / phase
-        folder.mkdir()
-        (folder / "singlepoint.gpw").touch()
-
-    analyzer = CompetingPhasesAnalyzer("MgO", entries=tmp_path, calculator="gpaw", processes=1)
-    assert len(analyzer.entries) == 3
-    assert analyzer.chempots["elemental_refs"] == {"Mg": -1.0, "O": -3.0}
+    analyzer = CompetingPhasesAnalyzer("MgO", entries=tmp_path, calculator="gpaw")
+    assert set(analyzer.parsed_folders) == {str(tmp_path / name) for name in phases}
+    el_refs = {"Mg": energies["Mg"] / 2, "O": energies["O2"] / 2}
+    assert analyzer.chempots["elemental_refs"] == pytest.approx(el_refs, abs=1e-3)  # (rounded to meV)
+    formation_energy = energies["MgO"] - sum(el_refs.values())  # per formula unit
+    assert formation_energy < 0
     limits = list(analyzer.chempots["limits_wrt_el_refs"].values())
-    np.testing.assert_allclose(sorted((mu["Mg"], mu["O"]) for mu in limits), [(-8, 0), (0, -8)])
-    assert set(analyzer.parsed_folders) == {str(tmp_path / phase) for phase in atoms_and_energies}
-    assert all(calc.closed for calc in opened)
+    np.testing.assert_allclose(
+        sorted((mu["Mg"], mu["O"]) for mu in limits),
+        [(formation_energy, 0), (0, formation_energy)],
+        atol=1e-3,
+    )
+    o2_entry = next(entry for entry in analyzer.entries if entry.composition.reduced_formula == "O2")
+    assert o2_entry.data["summary"]["total_magnetization"] == pytest.approx(2, abs=0.05)
     assert len(analyzer.get_formation_energy_df()) == 3
 
 
