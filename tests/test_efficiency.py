@@ -14,7 +14,6 @@ site and not asserted here.
 import copy
 import subprocess
 import sys
-import warnings
 
 import numpy as np
 import pytest
@@ -207,6 +206,8 @@ class TestSGACaching:
         with pytest.raises(ValueError):
             rotations[0, 0, 0] = 5
         assert not translations.flags.writeable
+        # copied, so the (cached, shared) ``spglib`` dataset array returned by ``pymatgen`` isn't frozen:
+        assert not np.shares_memory(rotations, sga._space_group_data.rotations)
 
     def test_fresh_symmetry_operations_list_per_call(self):
         sga = get_sga(_simple_structure())
@@ -216,36 +217,6 @@ class TestSGACaching:
         assert ops_a is not ops_b  # fresh list each call
         ops_a.clear()  # caller mutation...
         assert sga.get_symmetry_operations() == ops_b  # ...does not corrupt the cache
-
-    def test_get_symmetry_reuses_init_dataset_bit_identically(self):
-        # patched ``_get_symmetry`` extracts rotations/translations from the symmetry dataset already
-        # computed at ``SpacegroupAnalyzer`` init for non-magnetic cells, rather than re-calling
-        # ``spglib.get_symmetry``; outputs must be identical to the original method (magnetic cells fall
-        # back to it):
-        from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-
-        from doped.utils.efficiency import _original_get_symmetry
-
-        magmom_struct = Structure(CUBIC_LATTICE, ["Fe", "Fe"], [[0, 0, 0], [0.5, 0.5, 0.5]])
-        magmom_struct.add_site_property("magmom", [1.0, 2.0])  # magnetic cell -> fallback branch
-        perturbed = Structure(
-            CUBIC_LATTICE, ["Cd", "Te"], [[0.0001, -0.0002, 0.0001], [0.2499, 0.2502, 0.2498]]
-        )
-        for struct in [_simple_structure(), _simple_structure() * 2, perturbed, magmom_struct]:
-            sga = SpacegroupAnalyzer(struct)
-            magnetic = "magmom" in struct.site_properties
-            # pin the fast-path predicate itself, so the optimisation can't be silently disabled (e.g.
-            # by a ``pymatgen`` attribute rename) leaving these legs vacuously comparing like with like:
-            assert len(sga._cell) == (4 if magnetic else 3), struct.formula
-            assert magnetic or hasattr(sga._space_group_data, "rotations"), struct.formula
-            rotations, translations = sga._get_symmetry()  # patched, fresh SGA
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")  # magnetic-path spglib DeprecationWarning
-                orig_rotations, orig_translations = _original_get_symmetry(SpacegroupAnalyzer(struct))
-            assert rotations.dtype == orig_rotations.dtype, struct.formula
-            assert translations.dtype == orig_translations.dtype, struct.formula
-            assert np.array_equal(rotations, orig_rotations), struct.formula
-            assert translations.tobytes() == orig_translations.tobytes(), struct.formula  # bit-identical
 
 
 class TestSharedCacheMutationGuards:
@@ -540,7 +511,6 @@ def test_pymatgen_patches_are_reload_safe():
             "-c",
             """
 import importlib
-import numpy as np
 from pymatgen.core import Lattice, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from doped.utils import efficiency
@@ -548,19 +518,13 @@ from doped.utils import efficiency
 for _ in range(2):
     importlib.reload(efficiency)
     structure = Structure(Lattice.cubic(5.0), ["Na", "Cl"], [[0, 0, 0], [0.5, 0.5, 0.5]])  # __setattr__
-    assert str(structure[0].specie) == "Na"  # ``Species.__str__``
-    distances = structure.lattice.get_all_distances(structure.frac_coords, structure.frac_coords)
-    assert np.isclose(distances.max(), 5.0 * np.sqrt(3) / 2)  # ``Lattice.get_all_distances``
-    # a fresh ``SpacegroupAnalyzer`` each time, so the per-instance memo always misses and delegates:
+    # a fresh ``SpacegroupAnalyzer`` each time, so the per-instance memos always miss and delegate:
     assert len(SpacegroupAnalyzer(structure).get_symmetry_operations()) == 48  # Pm-3m
 
-# the captured originals must still be ``pymatgen``'s own methods, not the patches themselves (the
-# only check for ``_get_symmetry``, which delegates on its magnetic-cell path only):
-assert efficiency._orig_site__setattr__ is not efficiency._fast_site__setattr__
-assert efficiency._orig_species__str__ is not efficiency._species__str__
-assert efficiency._orig_lattice_get_all_distances is not efficiency.get_all_distances
-assert efficiency._original_get_symmetry is not efficiency._get_symmetry
-assert efficiency._original_get_symmetry_operations is not efficiency._get_symmetry_operations
+# the captured originals must still be ``pymatgen``'s own methods, not the patches themselves:
+assert efficiency._orig_site__setattr__.__module__ == "pymatgen.core.sites"
+assert efficiency._original_get_symmetry.__module__ == "pymatgen.symmetry.analyzer"
+assert efficiency._original_get_symmetry_operations.__module__ == "pymatgen.symmetry.analyzer"
 """,
         ],
         check=True,

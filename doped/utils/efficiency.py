@@ -8,10 +8,9 @@ import copy
 import itertools
 from collections import defaultdict
 from collections.abc import Generator, Sequence
-from fractions import Fraction
 from functools import cached_property, lru_cache
 from string import digits
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -34,8 +33,6 @@ from pymatgen.util.misc import is_np_dict_equal
 from scipy.spatial import Voronoi
 
 if TYPE_CHECKING:
-    from numpy.typing import ArrayLike
-
     from doped.core import Vacancy
 
 # Note: overrides of ``__eq__`` should also override ``__hash__`` (and vice versa), preserving the
@@ -314,28 +311,6 @@ def _patch_method(cls, name, patch):
     return original
 
 
-# Species overrides:
-def _species__str__(self):
-    """
-    Memoized ``Species.__str__`` (immutable objects); avoids heavy string
-    formatting in the many millions of ``Species.__hash__`` (= ``hash(str)``)
-    calls from |Composition| ``dict`` operations.
-
-    We memoize the string, not
-    the hash: changing ``__hash__`` values breaks pre-built ``Species``-keyed
-    ``dict``s in ``pymatgen`` (e.g. ``bond_valence``), which store key hashes
-    at insertion.
-    """
-    try:
-        return self.__dict__["_doped_str"]
-    except KeyError:
-        self.__dict__["_doped_str"] = string = _orig_species__str__(self)
-        return string
-
-
-_orig_species__str__ = _patch_method(Species, "__str__", _species__str__)
-
-
 def _noise_rounded_bytes(arr) -> bytes:
     """
     Byte-image of a float array with noise below ``1e-10`` collapsed (rounded
@@ -523,43 +498,6 @@ PeriodicSite.__hash__ = _periodic_site__hash__
 _orig_site__setattr__ = _patch_method(Site, "__setattr__", _fast_site__setattr__)
 
 
-# Lattice overrides:
-# (note: memoizing ``Lattice.__hash__`` was tested and found to give negligible speedup (~0.1% of
-# ``DefectsGenerator`` runtime), as ``pymatgen`` already caches the lengths/angles used in its hash)
-@lru_cache(maxsize=int(1e4))  # maxsize on the order of 20 Mb for typical use cases
-def _cached_get_all_distances(self: Lattice, frac_coords1: tuple, frac_coords2: tuple):
-    return _orig_lattice_get_all_distances(self, np.array(frac_coords1), np.array(frac_coords2))
-
-
-def array_to_tuple(array: "ArrayLike | tuple") -> tuple:
-    """
-    Convert an array-like input to tuple.
-    """
-    array = np.array(array)
-    if array.ndim == 1:
-        return tuple(array)
-    return tuple(map(tuple, array))
-
-
-def get_all_distances(
-    self,
-    frac_coords1: "ArrayLike",
-    frac_coords2: "ArrayLike",
-) -> NDArray[np.floating[Any]]:
-    """
-    Get the distances between two lists of coordinates taking into account
-    periodic boundary conditions and the lattice.
-
-    See :meth:`~pymatgen.core.lattice.Lattice.get_all_distances`.
-    """
-    return _cached_get_all_distances(
-        self, array_to_tuple(frac_coords1), array_to_tuple(frac_coords2)
-    ).copy()
-
-
-_orig_lattice_get_all_distances = _patch_method(Lattice, "get_all_distances", get_all_distances)
-
-
 # Structure overrides:
 def _structure__hash__(self):
     """
@@ -711,27 +649,14 @@ def _get_symmetry(self) -> tuple[NDArray, NDArray]:
     Get the symmetry operations associated with the structure, memoised per-
     instance and ``get_sga`` already caches SGA construction by structure.
 
-    For non-magnetic cells, the rotations/translations are extracted from the
-    symmetry dataset already computed at ``SpacegroupAnalyzer`` init, rather
-    than re-calling the (expensive) ``spglib.get_symmetry`` function.
-
     The cached arrays are frozen so caller mutation raises loudly rather than
     silently corrupting the shared values.
     """
     try:
         return self._doped_symmetry
     except AttributeError:
-        dataset = getattr(self, "_space_group_data", None)
-        if dataset is not None and len(self._cell) == 3 and hasattr(dataset, "rotations"):
-            # non-magnetic cell (no magmoms in ``self._cell``): reuse the init dataset, replicating
-            # ``SpacegroupAnalyzer._get_symmetry``'s cleanup of small/unity translation values;
-            rotations = dataset.rotations.copy()  # copy, to not freeze the shared dataset arrays below
-            translations = np.array(
-                [[float(Fraction(c).limit_denominator(1000)) for c in row] for row in dataset.translations]
-            )
-            translations[np.abs(translations) == 1] = 0  # fractional translations of 1 -> 0
-        else:  # magnetic cell, or no/unrecognised dataset; use original (``spglib``-calling) method
-            rotations, translations = _original_get_symmetry(self)
+        rotations, translations = _original_get_symmetry(self)
+        rotations = rotations.copy()  # copy, to not freeze the shared (cached) spglib dataset array below
         rotations.flags.writeable = False  # freeze mutatable arrays
         translations.flags.writeable = False
         self._doped_symmetry = (rotations, translations)
