@@ -691,8 +691,8 @@ def test_gpaw_competing_phase_example_inputs(tmp_path):
 
 def test_competing_phase_file_priority(gpaw_competing_phases, tmp_path):
     """
-    Use the GPAW filename priority and ignore backup files in real phase
-    directories.
+    Use the GPAW filename priority in real phase directories (ignoring backup
+    files), and the generic file choice for ambiguous or backup-only folders.
     """
     import shutil
 
@@ -714,10 +714,26 @@ def test_competing_phase_file_priority(gpaw_competing_phases, tmp_path):
     assert str(mg / "relaxed.gpw") in analyzer.calc_output_paths
     entry = next(e for e in analyzer.entries if e.composition.reduced_formula == "Mg")
     assert entry.energy == pytest.approx(energies["Mg"])
-    (mg / "singlepoint.gpw").unlink()
-    (mg / "relaxed.gpw").unlink()
-    with pytest.raises(ValueError, match=r"No elemental reference.*Mg"):
-        CompetingPhasesAnalyzer("MgO", entries=target, calculator="gpaw")
+
+    # Folders with only non-priority names (ambiguous for ``_find_gpaw_output``) or only a backup (here a
+    # valid copy) fall back to the generic file choice; the former is parsed with a warning, and the latter
+    # reported as unparsable (rather than silently skipped):
+    (target / "Mg_renamed").mkdir()
+    for name in ("mg.gpw", "mg_relax.gpw"):
+        shutil.copyfile(mg / "relaxed.gpw", target / "Mg_renamed" / name)
+    backup = target / "Mg_backup" / "singlepoint.gpw.bak"
+    backup.parent.mkdir()
+    shutil.copyfile(mg / "relaxed.gpw", backup)
+    analyzer, _, warnings = _run_func_and_capture_stdout_warnings(
+        CompetingPhasesAnalyzer, "MgO", entries=target, calculator="gpaw"
+    )
+    messages = [str(w.message) for w in warnings]
+    assert any("Multiple `.gpw` files" in m and "Using mg_relax.gpw" in m for m in messages)
+    assert str(target / "Mg_renamed") in analyzer.parsed_folders
+    assert any(
+        "Failed to parse" in m and f"GPAW output must be a '.gpw' file: {backup}" in m for m in messages
+    )
+    assert str(backup.parent) not in analyzer.parsed_folders
 
 
 @pytest.mark.parametrize("parameter", ["xc", "setups", "mode"])

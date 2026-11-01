@@ -523,13 +523,12 @@ def check_entry_compatibility(entries, template_candidates=None) -> None:
     The parameters in :data:`_COMPATIBILITY_PARAMETERS` are compared, except
     for the k-point and real-space meshes (``kpts``, ``h``, ``gpts``), which
     can differ between phases. Mismatches are recorded in ``entry.data`` under
-    ``"mismatching_gpaw_parameters"`` (a ``{parameter: (value, reference
-    value)}`` dict, or ``False`` if they match). Entries without
-    ``"gpaw_parameters"`` data are skipped.
+    ``"mismatching_gpaw_parameters"`` as a
+    ``{parameter: (value, reference value)}`` dict, or ``False`` if matching).
+    Entries without ``"gpaw_parameters"`` data are skipped.
 
-    Part of the ``doped.io`` backend protocol (optional; used by
-    :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` when
-    ``check_compatibility=True``).
+    Used by |CompetingPhasesAnalyzer| when ``check_compatibility=True``
+    (default).
 
     Args:
         entries (list[|ComputedEntry|]):
@@ -560,8 +559,8 @@ def check_entry_compatibility(entries, template_candidates=None) -> None:
             differences.append(f"{entry.name} ({entry.data.get('folder', '')}): {mismatches}")
     if differences:
         warnings.warn(
-            "There are mismatching GPAW parameters between competing phases, which may mean their "
-            "energies and chemical potentials are not comparable. "
+            "There are mismatching GPAW parameters between competing phases, which may cause errors in "
+            "the relative energies and thus chemical potentials. "
             f"Reference: {template.name}. Differences (phase, reference):\n" + "\n".join(differences)
         )
 
