@@ -15,8 +15,6 @@ Not implemented, and so unavailable with GPAW:
   the ``.gpw`` files, but are not yet mapped to ``pymatgen``'s format.
 - ``get_fermi_dos()``: bulk DOS parsing, for Fermi level / carrier
   concentration analysis (``FermiSolver``).
-- ``get_competing_phase_entry()``: competing phase parsing, for chemical
-  potential analysis (``CompetingPhasesAnalyzer``).
 - Occupation-based band edges, see
   :func:`_get_eigenvalue_properties_from_calc`.
 
@@ -30,23 +28,21 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.util.typing import PathLike
 
+from doped.io import utils as _io_utils
 from doped.io.outputs import CalculationOutputs
 
-# ``doped`` accesses these two remaining unimplemented protocol names directly (rather than probing
-# with ``getattr(backend, name, default)``), so they are intercepted here to fail informatively rather
-# than with an obscure ``AttributeError``. The optional, ``getattr``-probed protocol names
-# (``SUBFOLDER_PRIORITY``, ``MISMATCH_WARNING_SPECS``, ``check_entry_compatibility``,
+# ``doped`` accesses the remaining unimplemented protocol name directly (rather than probing with
+# ``getattr(backend, name, default)``), so it is intercepted here to fail informatively rather than with an
+# obscure ``AttributeError``. The optional, ``getattr``-probed protocol names (``SUBFOLDER_PRIORITY``,
 # ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
 # ``AttributeError``, so that those features degrade gracefully as intended:
-_UNIMPLEMENTED_BACKEND_ATTRS = (
-    "get_competing_phase_entry",
-    "get_fermi_dos",
-)
+_UNIMPLEMENTED_BACKEND_ATTRS = ("get_fermi_dos",)
 
 
 def __getattr__(name: str) -> Any:
@@ -58,11 +54,8 @@ def __getattr__(name: str) -> Any:
     if name in _UNIMPLEMENTED_BACKEND_ATTRS:
         raise NotImplementedError(
             f"`{__name__}.{name}` is not implemented; GPAW support in `doped` is experimental, and "
-            f"does not yet cover competing phase or bulk DOS parsing. Defect & bulk supercells are "
-            f'parsed as usual, with `DefectsParser(..., calculator="gpaw")`. For competing phases or '
-            f"a bulk DOS, build the `pymatgen` `ComputedStructureEntry` / `FermiDos` objects yourself "
-            f'(e.g. from `get_calculation_outputs(..., calculator="gpaw")`) and pass them to '
-            f"`CompetingPhasesAnalyzer` / `DefectThermodynamics` directly. See the GPAW tracking issue."
+            f"does not yet cover bulk DOS parsing. For a bulk DOS, build a `pymatgen` `FermiDos` "
+            f"object yourself and pass it to `DefectThermodynamics` directly. See the GPAW tracking issue."
         )
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -115,6 +108,51 @@ def _find_gpaw_output(
     )
 
 
+@contextlib.contextmanager
+def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
+    """
+    Load a ``GPAW`` calculator from the ``gpw_file`` restart file, as a context
+    manager which closes it and detaches it from its ``Atoms`` on exit.
+
+    Raises a ``ValueError`` if the file holds no stored results (e.g. from an
+    unconverged calculation).
+
+    Args:
+        gpw_file (PathLike):
+            Path to the ``GPAW`` ``.gpw`` restart file.
+        **kwargs:
+            Passed to ``GPAW()`` (e.g. ``txt=None``).
+
+    Yields:
+        GPAW:
+            The ``GPAW`` calculator.
+    """
+    from gpaw import GPAW
+
+    calc = GPAW(gpw_file, **kwargs)
+    try:
+        if calc.calculation_required(calc.atoms, ["energy"]):
+            raise ValueError(
+                f"{gpw_file} holds no stored results (e.g. from an unconverged or unfinished calculation)"
+            )
+        yield calc
+    finally:
+        if hasattr(calc, "close"):  # removed in GPAW >= 26
+            calc.close()
+        if getattr(calc, "atoms", None) is not None:  # break the ``Atoms`` <-> calculator reference
+            calc.atoms.calc = None
+
+
+def _get_gpaw_parameters(calc) -> dict:
+    """
+    Get the parameters of a ``GPAW`` calculator as a ``dict``.
+
+    With GPAW >= 26, these are only the explicitly-set values, while with older
+    versions they also include the defaults.
+    """
+    return calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
+
+
 def _get_site_potentials_from_calc(calc) -> np.ndarray:
     """
     Get the atom-centred electrostatic site potentials from a ``GPAW``
@@ -149,7 +187,9 @@ def _structure_from_calc(calc) -> Structure:
     re-attached as a site property.
 
     Args:
-        calc (GPAW): ``GPAW`` calculator object.
+        calc (Calculator):
+            ``GPAW`` calculator object, or ``ase`` single-point calculator with
+            the results read from a ``.gpw`` file.
 
     Returns:
         Structure: The calculation structure.
@@ -211,19 +251,8 @@ def get_gpaw_site_potentials(
     """
     Extracts atomic site potentials from a ``GPAW`` ``.gpw`` file.
     """
-    from gpaw import GPAW
-
-    gpw_file = _find_gpaw_output(gpw_file)
-    calc = GPAW(gpw_file)
-    site_potentials = _get_site_potentials_from_calc(calc)
-
-    if hasattr(calc, "close"):
-        calc.close()
-
-    if hasattr(calc, "atoms") and calc.atoms:
-        calc.atoms.calc = None
-
-    return site_potentials
+    with _open_gpaw_restart(_find_gpaw_output(gpw_file)) as calc:
+        return _get_site_potentials_from_calc(calc)
 
 
 def get_gpaw_planar_averaged_potential(
@@ -232,16 +261,8 @@ def get_gpaw_planar_averaged_potential(
     """
     Extracts planar-averaged potential from a ``GPAW`` ``.gpw`` file.
     """
-    from gpaw import GPAW
-
-    gpw_file = _find_gpaw_output(gpw_file)
-    calc = GPAW(gpw_file)
-    planar_averages = _get_planar_averaged_potential_from_calc(calc)
-
-    if hasattr(calc, "close"):
-        calc.close()
-
-    return planar_averages
+    with _open_gpaw_restart(_find_gpaw_output(gpw_file)) as calc:
+        return _get_planar_averaged_potential_from_calc(calc)
 
 
 def get_potentials_from_input(
@@ -298,6 +319,7 @@ def get_potentials_from_input(
     return potentials_input
 
 
+find_calc_output = _find_gpaw_output  # used by CompetingPhasesAnalyzer for file selection
 CALC_OUTPUT_MASK = (".gpw",)
 """
 Filename patterns identifying ``GPAW`` calculation output files, used for
@@ -350,14 +372,9 @@ def get_calculation_outputs(
     Returns:
         CalculationOutputs: The parsed calculation outputs.
     """
-    from gpaw import GPAW
-
     gpw_file = _find_gpaw_output(path, subfolder)
-    calc = GPAW(gpw_file, txt=None)
-    try:
-        parameters = (
-            calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
-        )  # retain GPAW<26 compatibility
+    with _open_gpaw_restart(gpw_file, txt=None) as calc:
+        parameters = _get_gpaw_parameters(calc)
         charge = parameters.get("charge") or 0  # parameters only holds explicitly-set, non-default values
         band_gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
         eigenvalues = {}
@@ -381,7 +398,7 @@ def get_calculation_outputs(
             energy=calc.get_potential_energy(),
             calculator="gpaw",
             directory=str(path),
-            converged_electronic=bool(getattr(getattr(calc, "scf", None), "converged", True)),
+            converged_electronic=True,  # (as results-less restarts are rejected by _open_gpaw_restart)
             # a ``.gpw`` restart file holds the final state only, with no ionic-step history to check:
             converged_ionic=None,
             efermi=efermi,
@@ -402,11 +419,63 @@ def get_calculation_outputs(
             site_potentials=_get_site_potentials_from_calc(calc),
             run_metadata={"gpaw_parameters": parameters},
         )
-    finally:
-        if hasattr(calc, "close"):
-            calc.close()
-        if getattr(calc, "atoms", None) is not None:
-            calc.atoms.calc = None
+
+
+def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
+    """
+    Parse a competing-phase calculation for ``CompetingPhasesAnalyzer``,
+    reading the stored structure, energy and calculation parameters, and
+    creating a |ComputedStructureEntry|.
+
+    Args:
+        path (PathLike):
+            Calculation directory or a GPAW ``.gpw`` restart file.
+
+    Returns:
+        ComputedStructureEntry:
+            The uncorrected total energy and structure, with GPAW parameters
+            (as set for the calculation), formula, volume, atom count, source
+            folder, k-point mesh and magnetization in ``entry.data``. Ionic
+            convergence is not reported: restart files have no ionic-step
+            history. Band gaps are omitted pending occupation-based band edges
+            (TODO).
+    """
+    from ase.dft.kpoints import get_monkhorst_pack_size_and_offset
+    from ase.io.gpw import read_gpw
+    from ase.io.ulm import open as ulm_open
+
+    gpw_file = _find_gpaw_output(path)
+    with ulm_open(gpw_file) as reader:  # first, so that non-ULM (e.g. empty) files give a clear error
+        parameters = reader.parameters.asdict()
+    atoms = read_gpw(gpw_file)  # with a ``SinglePointDFTCalculator`` holding the stored results
+    if "energy" not in atoms.calc.results:
+        raise ValueError(
+            f"{gpw_file} holds no stored results (e.g. from an unconverged or unfinished calculation)"
+        )
+
+    structure = _structure_from_calc(atoms.calc)
+    entry = ComputedStructureEntry(structure, atoms.get_potential_energy())  # parameters in ``entry.data``
+    elements = sorted(el.symbol for el in entry.composition.elements)
+    entry.data.update(
+        {
+            "calculator": "gpaw",
+            "gpaw_parameters": parameters,
+            "formula_pretty": entry.composition.reduced_formula,
+            "nsites": len(structure),
+            "volume": structure.volume,
+            "energy_per_atom": entry.energy_per_atom,
+            "elements": elements,
+            "nelements": len(elements),
+            "summary": {"total_magnetization": atoms.calc.get_magnetic_moment()},
+            "folder": str(Path(gpw_file).parent),
+            "converged_electronic": True,  # (as results-less restarts are rejected above)
+        }
+    )
+    with contextlib.suppress(ValueError):  # non-Monkhorst-Pack sampling has no mesh dimensions
+        entry.data["kpoints"] = [
+            get_monkhorst_pack_size_and_offset(atoms.calc.get_bz_k_points())[0].tolist()
+        ]
+    return entry
 
 
 _COMPATIBILITY_PARAMETERS = (
@@ -421,9 +490,10 @@ _COMPATIBILITY_PARAMETERS = (
     "background_charge",  # explicit jellium (not standard uniform background for charged supercells)
 )
 """
-The ``GPAW`` calculation parameters which must match between the bulk and
-defect supercell calculations for their energies to be comparable; functional,
-basis/grid, k-points, PAW datasets and external fields.
+The ``GPAW`` calculation parameters which must match between calculations for
+their energies to be comparable; functional, basis/grid, k-points, PAW datasets
+and external fields (with k-point and real-space meshes only compared for
+defect & bulk supercells, not competing phases).
 """
 
 
@@ -444,6 +514,84 @@ def _comparable(value: Any) -> Any:
     return value
 
 
+MISMATCH_WARNING_SPECS = {
+    "mismatching_gpaw_parameters": {
+        "object_name": "GPAW parameters",
+        "data_key": "gpaw_parameters",
+        "per_defect_warning_prefix": "There are mismatching GPAW parameters",
+        "format": "{{parameter: ({name_1} value, {name_2} value)}}):",
+        "closing": (
+            "In general, the same GPAW settings should be used for all final calculations for accurate "
+            "results!"
+        ),
+    },
+}
+"""
+Specifications for collectively warning about mismatching ``GPAW`` calculation
+parameters (see :func:`compare_calculation_settings`), for defect & bulk
+supercell calculations and competing phases.
+"""
+
+
+def compare_calculation_settings(
+    settings: dict,
+    reference_settings: dict,
+    competing_phases: bool = False,
+    warn: bool = False,
+) -> dict[str, Any]:
+    """
+    Compare the energy-affecting ``GPAW`` parameters (``"gpaw_parameters"``) of
+    a calculation to those of a reference calculation.
+
+    The parameters in :data:`_COMPATIBILITY_PARAMETERS` are compared, except
+    for the k-point and real-space meshes (``kpts``, ``h``, ``gpts``) of
+    competing phases, which can differ between phases.
+
+    Used for both defect & bulk supercell calculations (by
+    :func:`check_run_compatibility`, with ``CalculationOutputs.run_metadata``
+    settings) and competing phases (by |CompetingPhasesAnalyzer| when
+    ``check_compatibility=True`` (default), with ``entry.data`` settings).
+
+    Args:
+        settings (dict):
+            The calculation settings, with the ``"gpaw_parameters"`` dict.
+        reference_settings (dict):
+            The settings of the reference calculation (e.g. the bulk
+            supercell).
+        competing_phases (bool):
+            Whether these are competing phase calculations (for which meshes
+            are not compared). Default is ``False``.
+        warn (bool):
+            Whether to warn about any mismatches found. Default is ``False``.
+
+    Returns:
+        dict:
+            ``"mismatching_gpaw_parameters"``: a
+            ``{parameter: (value, reference value)}`` dict, or ``False`` if
+            they match.
+    """
+    parameters, reference = (s.get("gpaw_parameters") or {} for s in [settings, reference_settings])
+    mismatches = {
+        parameter: (parameters.get(parameter), reference.get(parameter))
+        for parameter in _COMPATIBILITY_PARAMETERS
+        if not (competing_phases and parameter in {"kpts", "h", "gpts"})
+        and _comparable(parameters.get(parameter)) != _comparable(reference.get(parameter))
+    }
+    if mismatches and warn:
+        labels = _io_utils._MISMATCH_WARNING_CONTEXTS[competing_phases]  # e.g. "defect" & "bulk"
+        mismatch_info = "\n".join(
+            f"{parameter}: {value!r} ({labels['name_1']}) vs {reference_value!r} ({labels['name_2']})"
+            for parameter, (value, reference_value) in mismatches.items()
+        )
+        warnings.warn(
+            f"There are mismatching GPAW parameters between your {labels['name_2']} and "
+            f"{labels['name_1']} calculations, which may mean your energies are not comparable:\n"
+            f"{mismatch_info}"
+        )
+
+    return {"mismatching_gpaw_parameters": mismatches or False}
+
+
 def check_run_compatibility(
     defect_outputs: CalculationOutputs,
     bulk_outputs: CalculationOutputs,
@@ -451,45 +599,35 @@ def check_run_compatibility(
 ) -> dict:
     """
     Check that the defect and bulk ``GPAW`` calculations used compatible
-    settings, and collect their parameters for
-    ``DefectEntry.calculation_metadata``.
+    settings (with :func:`compare_calculation_settings`), and collect their
+    parameters for ``DefectEntry.calculation_metadata``.
 
-    Only the parameters in :data:`_COMPATIBILITY_PARAMETERS` are compared;
     ``GPAW``'s full parameter dictionaries are returned either way.
 
     Args:
-        defect_outputs (CalculationOutputs): The parsed defect supercell outputs.
-        bulk_outputs (CalculationOutputs): The parsed bulk supercell outputs.
+        defect_outputs (CalculationOutputs):
+            The parsed defect supercell outputs.
+        bulk_outputs (CalculationOutputs):
+            The parsed bulk supercell outputs.
         warn (bool):
             Whether to warn about mismatched parameters. Default is ``True``.
 
     Returns:
-        dict: ``"run_metadata"`` (both parameter sets) and
-        ``"mismatching_gpaw_parameters"`` (a ``{parameter: (defect, bulk)}``
-        dict, or ``False`` if they match).
+        dict:
+            ``"run_metadata"`` (both parameter sets) and
+            ``"mismatching_gpaw_parameters"`` (a
+            ``{parameter: (defect, bulk)}`` dict, or ``False`` if they match).
     """
     run_metadata = {
         f"{label}_gpaw_parameters": (outputs.run_metadata or {}).get("gpaw_parameters", {})
         for label, outputs in (("defect", defect_outputs), ("bulk", bulk_outputs))
     }
-    defect_parameters = run_metadata["defect_gpaw_parameters"]
-    bulk_parameters = run_metadata["bulk_gpaw_parameters"]
-    mismatches = {
-        parameter: (defect_parameters.get(parameter), bulk_parameters.get(parameter))
-        for parameter in _COMPATIBILITY_PARAMETERS
-        if _comparable(defect_parameters.get(parameter)) != _comparable(bulk_parameters.get(parameter))
+    return {
+        **compare_calculation_settings(
+            defect_outputs.run_metadata or {}, bulk_outputs.run_metadata or {}, warn=warn
+        ),
+        "run_metadata": run_metadata,
     }
-    if mismatches and warn:
-        mismatch_info = "\n".join(
-            f"{parameter}: {defect!r} (defect) vs {bulk!r} (bulk)"
-            for parameter, (defect, bulk) in mismatches.items()
-        )
-        warnings.warn(
-            f"There are mismatching GPAW parameters between your bulk and defect calculations, which "
-            f"may mean your energies are not comparable:\n{mismatch_info}"
-        )
-
-    return {"mismatching_gpaw_parameters": mismatches or False, "run_metadata": run_metadata}
 
 
 def get_planar_averaged_potentials(

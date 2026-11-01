@@ -19,10 +19,11 @@ from monty.serialization import dumpfn, loadfn
 from mp_api.client.core.exceptions import MPRestWarning
 from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.core.composition import Composition
-from pymatgen.core.entries import ComputedEntry
+from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import Potcar
+from pymatgen.io.vasp.outputs import Vasprun
 from test_utils import (
     EXAMPLE_DIR,
     _potcars_available,
@@ -40,7 +41,7 @@ from test_utils import (
 
 from doped import chemical_potentials
 from doped.io.vasp.inputs import DopedDictSet
-from doped.io.vasp.outputs import _find_calc_outputs, _get_calc_files_df
+from doped.io.vasp.outputs import _find_calc_outputs, _get_calc_files_df, get_competing_phase_entry
 from doped.utils.symmetry import get_primitive_structure
 
 
@@ -2867,6 +2868,79 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         )
         self._general_cpa_check(MgO_cpa)
 
+    def test_competing_phase_pressures(self):
+        """
+        Test that the final pressures of VASP competing phase calculations are
+        parsed (when the stress was calculated), that large residual pressures
+        are warned about (sorted by magnitude, and only with
+        ``check_compatibility=True``).
+        """
+
+        def first_ionic_step_entry(path, **data):  # real phase at its unrelaxed (MP) lattice
+            first_step = Vasprun(path, parse_dos=False, parse_eigen=False).ionic_steps[0]
+            return ComputedStructureEntry(
+                first_step["structure"],
+                first_step["electronic_steps"][-1]["e_0_energy"],  # (ionic-step value can be 0)
+                data={"pressure": float(np.trace(first_step["stress"]) / 30), **data},  # GPa
+            )
+
+        zro2_path = f"{self.ZrO2_path}/ZrO2_EaH_0.0/vasp_std/vasprun.xml.gz"
+        ytos_path = f"{EXAMPLE_DIR}/YTOS/Bulk/vasprun.xml.gz"  # (ENCUT = 0.75 x ENMAX; large Pulay stress)
+        zro2, ytos = (get_competing_phase_entry(path) for path in [zro2_path, ytos_path])
+        for entry, path in [(zro2, zro2_path), (ytos, ytos_path)]:
+            vasprun = Vasprun(path, parse_dos=False, parse_eigen=False)
+            assert entry.data["pressure"] == pytest.approx(
+                np.trace(vasprun.ionic_steps[-1]["stress"]) / 30
+            )
+        assert abs(zro2.data["pressure"]) < 0.1  # relaxed (ISIF = 3)
+        assert ytos.data["pressure"] == pytest.approx(-17.37, abs=0.01)
+
+        # no stress calculated (hybrid DFT calculation with ISIF unset, i.e. ISIF = 0), so no pressure:
+        cdte = get_competing_phase_entry(f"{vasp_data_dir}/CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
+        assert "pressure" not in cdte.data
+
+        # first ionic steps of real relaxations, at their unrelaxed lattices; ZrO2 without a folder:
+        la_path = f"{EXAMPLE_DIR}/La_ZrO2_CompetingPhases/La_EaH_0.0/vasp_std/vasprun.xml.gz"
+        la = first_ionic_step_entry(la_path, folder="La_EaH_0.0")
+        mgo = first_ionic_step_entry(
+            f"{EXAMPLE_DIR}/MgO/CompetingPhases/MgO_Fm-3m_EaH_0/vasp_std/vasprun.xml.gz", folder="MgO"
+        )
+        polymorph = first_ionic_step_entry(f"{self.ZrO2_path}/ZrO2_EaH_0.009/vasp_std/vasprun.xml.gz")
+        assert polymorph.data["pressure"] < -5
+        assert mgo.data["pressure"] == pytest.approx(-0.99, abs=0.01)  # within the tolerance
+
+        _, _, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials._check_entry_pressures, [mgo, la, zro2, cdte, polymorph, ytos]
+        )
+        assert len(w) == 1
+        message = str(w[0].message)
+        tolerance = chemical_potentials._PRESSURE_TOLERANCE_GPA
+        assert message.startswith(f"There are large final pressures (|P| > {tolerance} GPa) for (some of)")
+        assert message.split("(positive = compressive stress):\n")[1].splitlines() == [  # sorted by |P|
+            f"{ytos.name} ({ytos.data['folder']}): -17.37 GPa",
+            f"ZrO2: {polymorph.data['pressure']:+.2f} GPa",
+            "La (La_EaH_0.0): +1.21 GPa",
+        ]
+
+        # pressures parsed for all phases in a real analysis, with no warnings for these relaxed phases:
+        cpa, _, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", self.ZrO2_path
+        )
+        assert not w
+        assert all(abs(entry.data["pressure"]) < 0.1 for entry in cpa.entries)
+
+        # but warned about in the analysis for the polymorph at its unrelaxed lattice (with checks on):
+        entries = [e for e in cpa.entries if "ZrO2_EaH_0.009" not in e.data["folder"]] + [polymorph]
+        for check_compatibility in [True, False]:
+            _, _, w = _run_func_and_capture_stdout_warnings(
+                chemical_potentials.CompetingPhasesAnalyzer,
+                "ZrO2",
+                entries=entries,
+                check_compatibility=check_compatibility,
+            )
+            expected = [f"ZrO2: {polymorph.data['pressure']:+.2f} GPa"] if check_compatibility else []
+            assert [str(x.message).split("(positive = compressive stress):\n")[1] for x in w] == expected
+
     def test_mismatching_potcar_warnings(self):
         """
         Test warnings for mismatching POTCAR settings.
@@ -2978,8 +3052,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             ),
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
             (
-                "In general, the same POTCAR settings should be used in all final calculations for these "
-                "tags which can affect energies!"
+                "In general, the same POTCAR settings should be used for all calculations for accurate "
+                "results!"
             ),
             (
                 "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull "
