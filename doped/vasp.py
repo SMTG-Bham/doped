@@ -733,7 +733,7 @@ class DefectDictSet(DopedDictSet):
         if _is_hybrid(user_incar_settings):  # hybrid DFT by default
             relax_set = deep_dict_update(relax_set, default_HSE_set)  # HSE set is just INCAR settings
 
-        _update_incar_settings(relax_set["INCAR"], user_incar_settings)
+        _handle_EDIFF_and_update_incar_settings(relax_set["INCAR"], user_incar_settings)
 
         # if "length" in user kpoint settings then pop reciprocal_density and use length instead
         if user_kpoints_settings is not None and (
@@ -821,7 +821,9 @@ class DefectDictSet(DopedDictSet):
         )
 
 
-def _update_incar_settings(incar_settings: dict, user_incar_settings: dict | None) -> None:
+def _handle_EDIFF_and_update_incar_settings(
+    incar_settings: dict, user_incar_settings: dict | None
+) -> None:
     """
     Update ``incar_settings`` (in place) with ``user_incar_settings``, where a
     user ``EDIFF`` or ``EDIFF_PER_ATOM`` setting replaces any default ``EDIFF``

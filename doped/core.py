@@ -1942,18 +1942,13 @@ def _guess_and_set_struct_oxi_states_icsd_prob(
                 return structure
 
     # else try to use the reduced cell since oxidation state assignment scales poorly with system size:
-    try:
-        attempt = 0
-        structure.add_oxidation_state_by_guess(max_sites=-1)
-        while attempt < 2 and (  # retry if oxi states all zero or not whole numbers:
-            all(specie.oxi_state == 0 for specie in structure.species)
-            or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species)
-        ):
-            attempt += 1
-            if attempt == 1:
-                structure.add_oxidation_state_by_guess(max_sites=-1, all_oxi_states=True)
-            else:
-                structure.add_oxidation_state_by_guess()
+    try:  # retry with broader guesses if oxi states are all zero or not whole numbers:
+        for kwargs in ({"max_sites": -1}, {"max_sites": -1, "all_oxi_states": True}, {}):
+            structure.add_oxidation_state_by_guess(**kwargs)
+            if not all(specie.oxi_state == 0 for specie in structure.species) and all(
+                np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species
+            ):
+                break
         if not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
             return False  # non-integer (e.g. mixed-valence average) oxidation states from every guess
     except Exception:
