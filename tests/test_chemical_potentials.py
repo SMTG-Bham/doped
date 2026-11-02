@@ -1933,7 +1933,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         if_present_rm(
             os.path.join(
-                data_dir,
+                vasp_data_dir,
                 "Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/duplicate_for_testing_vasprun.xml.gz",
             )
         )
