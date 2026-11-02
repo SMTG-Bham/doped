@@ -1902,7 +1902,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         }
 
     def tearDown(self):
-        for i in ["cpa.json"]:
+        for i in ["cpa.json", "ZrO2_competing_phases_analyzer.json.gz"]:
             if_present_rm(i)
 
         if_present_rm(os.path.join(data_dir, "ZrO2_LaTeX_Tables/test.tex"))
@@ -2416,6 +2416,20 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self._compare_cpas(lst_fols_cpa, cpa)
         self._general_cpa_check(lst_fols_cpa)
 
+        # list entries are not searched recursively, so a phase folder (rather than its ``vasp_std``
+        # subfolder) is skipped, with a warning:
+        skipped_folder = next(os.path.dirname(folder) for folder in all_folders if "Zr2O_EaH" in folder)
+        entries = [skipped_folder if "Zr2O_EaH" in folder else folder for folder in all_folders]
+        skip_cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", entries=entries
+        )
+        assert len(skip_cpa.vasprun_paths) == 7
+        assert any(
+            "vasprun.xml files could not be found in the following directories, and so they will be "
+            f"skipped for parsing:\n{skipped_folder}" in str(warning.message)
+            for warning in w
+        )
+
     def test_vaspruns_hidden_files(self):
         with open(f"{self.ZrO2_path}/._OUTCAR", "w") as f:
             f.write("test pop")
@@ -2492,9 +2506,17 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
-            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder="vasp_ncl")
+            cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
+                chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", tmp_dir, subfolder="vasp_ncl"
+            )
             assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
             assert len(cpa.vasprun_paths) == 3
+            # the ignored phase folder (no ``vasp_ncl`` subfolder) is warned about:
+            assert any(
+                f"vasprun.xml files could not be found in the following directories (in {tmp_dir}), and "
+                "so they will be skipped for parsing:\nZr3O_EaH_0.0/vasp_ncl" in str(warning.message)
+                for warning in w
+            )
 
     def test_subfolder_auto_detect_picks_highest_priority(self):
         """
@@ -2758,12 +2780,20 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         reloaded_cpa = loadfn("cpa.json")
         self._compare_cpas(cpa, reloaded_cpa)
 
+        cpa.to_json("cpa.json")
+        self._compare_cpas(cpa, chemical_potentials.CompetingPhasesAnalyzer.from_json("cpa.json"))
+
     def test_general_cpa_reloading(self):
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
         _print_warning_info(w)  # for debugging
         assert not w
         self._general_cpa_check(cpa)
+        cpa.to_json()  # default filename (compressed)
+        json_cpa = chemical_potentials.CompetingPhasesAnalyzer.from_json(
+            "ZrO2_competing_phases_analyzer.json.gz"
+        )
+        self._compare_cpas(cpa, json_cpa)
 
         with warnings.catch_warnings(record=True) as w:
             la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.La_ZrO2_path)
