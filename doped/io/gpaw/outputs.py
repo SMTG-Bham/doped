@@ -38,8 +38,8 @@ from doped.io.outputs import CalculationOutputs
 # ``doped`` accesses the remaining unimplemented protocol name directly (rather than probing with
 # ``getattr(backend, name, default)``), so it is intercepted here to fail informatively rather than with an
 # obscure ``AttributeError``. The optional, ``getattr``-probed protocol names (``SUBFOLDER_PRIORITY``,
-# ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
-# ``AttributeError``, so that those features degrade gracefully as intended:
+# ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising ``AttributeError``, so that those
+# features degrade gracefully as intended (``load_eigenvalue_outputs`` is defined below, to fail fast):
 _UNIMPLEMENTED_BACKEND_ATTRS = ("get_fermi_dos",)
 
 
@@ -201,55 +201,66 @@ def _structure_from_calc(calc) -> Structure:
     return structure
 
 
-def _get_eigenvalue_properties_from_calc(
-    calc, occupation_tolerance: float = 0.1
-) -> tuple[float, float, float, float]:
+def _get_band_edges(
+    eigenvalues: dict[Spin, np.ndarray], kpoint_weights: np.ndarray, efermi: float
+) -> tuple[float | None, float | None, float | None]:
     """
-    Get ``(band_gap, cbm, vbm, efermi)`` (eV) using band occupations.
+    Get ``(band_gap, cbm, vbm)`` (in eV) by filling the lowest bands of each
+    spin channel, with the number of filled bands given by its `k`-point-
+    weighted occupation sum, so that the band edges do not depend on the
+    occupation smearing (which gives non-integer band-edge occupations in
+    narrow-gap semiconductors).
 
-    GPAW's raw occupations exclude spin degeneracy and k-point weights, so
-    fully occupied states have occupation one in either spin channel. States
-    between ``occupation_tolerance`` and ``1 - occupation_tolerance`` are
-    partially occupied and give a zero gap, as do bands whose occupation
-    changes across k-points or overlapping occupied and empty states. For
-    these metallic cases both edges are set to the Fermi level. Missing
-    occupied or empty states raise an informative error rather than
-    substituting the Fermi level for an uncomputed band edge.
+    Fractional band filling, or overlapping (or degenerate) band edges, i.e.
+    metals, give a zero band gap with both band edges at ``efermi``, while
+    ``None`` values are returned if a spin channel has no unoccupied bands (too
+    few bands calculated to determine the conduction band minimum).
 
-    These are the edges of the supplied calculation, not host band edges
-    inferred from defect states. Charged supercell outputs omit band edges.
+    Args:
+        eigenvalues (dict[Spin, np.ndarray]):
+            Band energies and raw occupations (in [0, 1], without spin
+            degeneracy or `k`-point weights) as ``{spin: array}``, with array
+            shape ``(nkpoints, nbands, 2)``.
+        kpoint_weights (np.ndarray):
+            Weights of the (irreducible) `k`-points.
+        efermi (float):
+            Fermi level in eV, used as both band edges for metals.
+
+    Returns:
+        tuple[float | None, float | None, float | None]:
+            ``(band_gap, cbm, vbm)`` in eV.
     """
-    if not 0 < occupation_tolerance < 0.5:
-        raise ValueError("occupation_tolerance must be between zero and 0.5")
-    efermi = calc.get_fermi_level()
-    occupied: list[float] = []
-    empty: list[float] = []
-    partial = False
-    crosses_fermi_surface = False
-    for spin in range(calc.get_number_of_spins()):
-        filled_counts = []
-        for kpt in range(len(calc.get_ibz_k_points())):
-            energies = np.asarray(calc.get_eigenvalues(kpt=kpt, spin=spin))
-            occupations = np.asarray(calc.get_occupation_numbers(kpt=kpt, spin=spin, raw=True))
-            filled = occupations >= 1 - occupation_tolerance
-            vacant = occupations <= occupation_tolerance
-            filled_counts.append(np.count_nonzero(filled))
-            partial |= bool(np.any(~(filled | vacant)))
-            occupied.extend(energies[filled])
-            empty.extend(energies[vacant])
-        crosses_fermi_surface |= bool(np.ptp(filled_counts))
+    weights = np.asarray(kpoint_weights) / np.sum(kpoint_weights)
+    vbm, cbm = -np.inf, np.inf
+    for eig_occs in eigenvalues.values():
+        energies, occupations = eig_occs[..., 0], eig_occs[..., 1]
+        n_filled = weights @ occupations.sum(axis=1)  # number of filled bands in this spin channel
+        n_bands = int(np.rint(n_filled))
+        if abs(n_filled - n_bands) > 0.1:  # fractional band filling: metal
+            return 0.0, float(efermi), float(efermi)
+        if n_bands == energies.shape[1]:  # no unoccupied bands calculated in this spin channel
+            return None, None, None
+        if n_bands:  # (a spin channel may hold no electrons)
+            vbm = max(vbm, energies[:, n_bands - 1].max())
+        cbm = min(cbm, energies[:, n_bands].min())
 
-    if partial or crosses_fermi_surface:
-        return 0.0, efermi, efermi, efermi
-    if not occupied or not empty:
-        raise ValueError(
-            "Cannot determine GPAW band edges: no fully occupied or empty states were found. "
-            "Include both occupied and unoccupied bands (increase nbands if necessary)."
-        )
-    vbm, cbm = max(occupied), min(empty)
-    if cbm <= vbm:
-        return 0.0, efermi, efermi, efermi
-    return cbm - vbm, cbm, vbm, efermi
+    if cbm - vbm < 1e-2:  # overlapping (or degenerate) band edges: metal
+        return 0.0, float(efermi), float(efermi)
+    return float(cbm - vbm), float(cbm), float(vbm)
+
+
+def load_eigenvalue_outputs(**kwargs) -> CalculationOutputs:
+    """
+    Raise ``NotImplementedError``, as projected eigenvalues (needed for
+    eigenvalue analysis) are not yet parsed from GPAW outputs (see the module
+    docstring); TODO.
+
+    Defined so that eigenvalue analysis fails immediately for GPAW.
+    """
+    raise NotImplementedError(
+        "Eigenvalue analysis is not yet implemented for GPAW, as projected eigenvalues are not parsed "
+        "from GPAW outputs; see the GPAW tracking issue."
+    )
 
 
 def _get_planar_averaged_potential_from_calc(calc) -> dict[str, np.ndarray]:
@@ -376,8 +387,10 @@ def get_calculation_outputs(
             Path to the calculation directory, or directly to a ``.gpw`` file.
         label (str):
             Label for the type of calculation being parsed (e.g. ``"bulk"``,
-            ``"defect"``), for informative warnings. Default is
-            ``"calculation"``.
+            ``"defect"``), for informative warnings. Fractionally-occupied band
+            edge states (from a large smearing) are only warned about for
+            labels starting with ``"bulk"``, as only bulk band edges are used.
+            Default is ``"calculation"``.
         parse_projected_eigen (bool):
             Accepted for backend-protocol compatibility and otherwise
             **unused**: mapping ``GPAW``'s PAW projections to ``pymatgen``'s
@@ -398,12 +411,12 @@ def get_calculation_outputs(
     with _open_gpaw_restart(gpw_file, txt=None) as calc:
         parameters = _get_gpaw_parameters(calc)
         charge = parameters.get("charge") or 0  # parameters only holds explicitly-set, non-default values
-        if charge:
-            band_gap = cbm = vbm = None
+        try:
             efermi = calc.get_fermi_level()
-        else:
-            band_gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
-        eigenvalues = {}
+        except (AssertionError, ValueError):  # fixed magnetic moment (``fixmagmom``): one per spin channel
+            efermi = float(np.mean(calc.get_fermi_levels()))  # (as in ``ase.io.gpw.read_gpw``)
+        kpoint_weights = calc.get_k_point_weights()
+        eigenvalues = {}  # occupations read once per k-point & spin (as GPAW 25.7 rescales them in place)
         for spin_index, spin in enumerate((Spin.up, Spin.down)[: calc.get_number_of_spins()]):
             eigenvalues[spin] = np.array(
                 [  # (n_kpoints, n_bands, 2); energy and occupancy, as ``pymatgen`` expects
@@ -419,6 +432,19 @@ def get_calculation_outputs(
                 ]
             )
 
+        band_gap = cbm = vbm = None  # defect states cannot establish the host edges of a charged supercell
+        if not charge:  # (undetermined/metallic bulk band edges are warned about where used, when parsing)
+            band_gap, cbm, vbm = _get_band_edges(eigenvalues, kpoint_weights, efermi)
+            fractional = any(np.any((e[..., 1] > 0.1) & (e[..., 1] < 0.9)) for e in eigenvalues.values())
+            if label.startswith("bulk") and band_gap and fractional:  # smearing-occupied band edges
+                warnings.warn(
+                    f"Band-edge states in the {label} GPAW calculation ({gpw_file}) are fractionally "
+                    f"occupied, as the occupation smearing is large compared to the band gap "
+                    f"({band_gap:.3f} eV). The band-edge assignment uses band filling and is unaffected, "
+                    f"but the smearing still perturbs the calculation (including the eigenvalues), so a "
+                    f"smaller smearing width (`occupations`) is recommended."
+                )
+
         return CalculationOutputs(
             structure=_structure_from_calc(calc),
             energy=calc.get_potential_energy(),
@@ -430,11 +456,10 @@ def get_calculation_outputs(
             efermi=efermi,
             eigenvalues=eigenvalues,
             kpoint_coords=calc.get_ibz_k_points(),
-            kpoint_weights=calc.get_k_point_weights(),
+            kpoint_weights=kpoint_weights,
             nelect=calc.get_number_of_electrons(),
             charge=charge,
             magnetization=calc.get_magnetic_moment(),
-            # Defect states cannot establish the host edges of a charged supercell.
             vbm=vbm,
             cbm=cbm,
             band_gap=band_gap,
