@@ -13,7 +13,6 @@ unavailable with GPAW:
 See the GPAW tracking issue.
 """
 
-import copy
 import os
 import warnings
 from typing import Any, Literal
@@ -67,10 +66,19 @@ def _gpaw_settings_to_dicts(gpaw_settings: dict[str, Any] | None) -> dict[str, A
     """
     Convert GPAW parameter objects in ``gpaw_settings`` (e.g. ``PW(400)`` or
     ``Davidson(3)``) to their ``todict()`` forms (as ASE does when saving
-    calculator parameters), so that they can be written to the generated
-    scripts and serialised to JSON.
+    calculator parameters), and paths (e.g. for ``txt``) to strings, so that
+    they can be written to the generated scripts and serialised to JSON.
     """
-    return {k: v.todict() if hasattr(v, "todict") else v for k, v in (gpaw_settings or {}).items()}
+    return {
+        key: (
+            value.todict()
+            if hasattr(value, "todict")
+            else os.fspath(value)
+            if isinstance(value, os.PathLike)
+            else value
+        )
+        for key, value in (gpaw_settings or {}).items()
+    }
 
 
 class DefectDictSet:
@@ -161,61 +169,21 @@ class DefectDictSet:
         """
         Generates the content of the GPAW script.
         """
-        settings = copy.deepcopy(default_gpaw_settings | self.gpaw_settings)  # (copy: modified below)
-
-        # Extract known parameters
-        mode_params = settings.pop("mode")
-        xc = settings.pop("xc")
-        kpts = settings.pop("kpts")
-        txt = settings.pop("txt")
-        txt = os.fspath(txt) if isinstance(txt, os.PathLike) else txt  # e.g. ``Path``, as a plain string
-        convergence = settings.pop("convergence")
-        occupations = settings.pop("occupations")
-        optimizer = settings.pop("optimizer")
-        initial_magnetic_moments = settings.pop("initial_magnetic_moments", None)
-
-        magnetic_moments_line = ""
-        if isinstance(initial_magnetic_moments, dict):  # {element: moment}, expanded for this supercell
-            initial_magnetic_moments = [
-                initial_magnetic_moments.get(site.specie.symbol, 0.0) for site in self.structure
-            ]
-        if initial_magnetic_moments is not None:
-            if len(initial_magnetic_moments) != len(self.structure):
-                raise ValueError(
-                    "initial_magnetic_moments must contain one value per atom "
-                    f"({len(self.structure)} values required)"
-                )
-            magnetic_moments_line = (
-                f"atoms.set_initial_magnetic_moments({list(initial_magnetic_moments)!r})\n"
+        settings = default_gpaw_settings | self.gpaw_settings | {"charge": self.charge_state}
+        # settings used by the script itself, with the rest passed directly to ``GPAW()``:
+        optimizer, fmax = settings.pop("optimizer"), settings.pop("fmax")
+        magmoms = settings.pop("initial_magnetic_moments", None)
+        if isinstance(magmoms, dict):  # {element: moment}, expanded for this supercell
+            magmoms = [magmoms.get(site.specie.symbol, 0.0) for site in self.structure]
+        if magmoms is not None and len(magmoms) != len(self.structure):
+            raise ValueError(
+                f"initial_magnetic_moments must contain one value per atom ({len(self.structure)} values "
+                f"required)"
             )
-
-        spinpol = settings.pop("spinpol")
-
-        # Relaxation params
-        fmax = settings.pop("fmax")
-
-        # ``basis`` belongs to GPAW, not to the mode classes (none of ``PW``/``LCAO``/``FD`` accept it).
-        # Accept the existing nested form as well as the native top-level setting:
-        if isinstance(mode_params, dict):
-            name = mode_params.pop("name", "pw")
-            if "basis" in mode_params:
-                basis = mode_params.pop("basis")
-                if "basis" in settings and settings["basis"] != basis:
-                    raise ValueError(
-                        f"Conflicting basis settings: {basis!r} in gpaw_settings['mode'] and "
-                        f"{settings['basis']!r} in gpaw_settings['basis']. Set the basis in one place "
-                        "only (preferably gpaw_settings['basis'])."
-                    )
-                settings["basis"] = basis
-            args = ", ".join([f"{k}={v!r}" for k, v in mode_params.items()])
-            mode_str = f"{name.upper()}({args})"
-        else:
-            mode_str = repr(mode_params)
-
-        # Prepare other settings
-        other_kwargs = ""
-        if settings:
-            other_kwargs = ",\n    " + ",\n    ".join([f"{k}={v!r}" for k, v in settings.items()])
+        magmoms_line = (
+            "" if magmoms is None else f"atoms.set_initial_magnetic_moments({list(magmoms)!r})\n"
+        )
+        gpaw_kwargs = ",\n    ".join(f"{key}={value!r}" for key, value in settings.items())
 
         if self.calculation_type == "relax":
             optimizer_import = f"from ase.optimize import {optimizer}\n"
@@ -249,23 +217,16 @@ calc.write('singlepoint.gpw')
 import os
 
 from ase.io import read
-from gpaw import GPAW, PW, LCAO, FD
+from gpaw import GPAW
 {optimizer_import}
 
 # Read structure
 {read_structure}
-{magnetic_moments_line}
+{magmoms_line}
 
 # Setup calculator
 calc = GPAW(
-    mode={mode_str},
-    xc={xc!r},
-    kpts={kpts},
-    txt={txt!r},
-    convergence={convergence},
-    occupations={occupations!r},
-    charge={self.charge_state},
-    spinpol={spinpol}{other_kwargs}
+    {gpaw_kwargs},
 )
 
 atoms.calc = calc
