@@ -2,11 +2,15 @@
 # can be overridden with ``gpaw_settings``. ``optimizer`` & ``fmax`` are used for the relaxations, and the
 # rest are passed to the ``GPAW`` calculator.
 mode: {name: pw, ecut: 400}  # plane-wave basis, with a 400 eV cutoff
-xc: PBE
+xc: HSE06  # (with ω = 0.11 bohr⁻¹ = 0.208 Å⁻¹); requires plane-wave mode
 kpts: {size: [1, 1, 1], gamma: true}  # Gamma-only
 occupations: {name: methfessel-paxton, width: 0.05, order: 0}  # Gaussian smearing of width 0.05 eV
 spinpol: true  # spin polarisation
+symmetry: {point_group: false}  # Symmetry breaking extremely likely for defects
 convergence: {}  # GPAW defaults
 txt: gpaw_output.txt
-optimizer: BFGS  # any ``ase.optimize`` optimizer
+# Any ``ase.optimize`` (or ``ase.optimize.precon``) optimizer, as a name or a dict of its name and keyword
+# arguments; here ``PreconLBFGS`` with the settings tuned for defect relaxations in
+# https://github.com/ddmms/ml-peg/pull/863:
+optimizer: {name: PreconLBFGS, precon: Exp, maxstep: 0.2}
 fmax: 0.01  # force convergence criterion for relaxations, in eV/Å
