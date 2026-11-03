@@ -98,6 +98,10 @@ class DefectDictSet:
                 - "kpts": {"size": (1, 1, 1), "gamma": True}
                 - "txt": "gpaw_output.txt"
                 - "spinpol": True
+                - "occupations": {"name": "methfessel-paxton", "width": 0.05,
+                  "order": 0}, i.e. Gaussian smearing of 0.05 eV; set to
+                  ``None`` for GPAW's own default (Fermi-Dirac smearing of 0.1
+                  eV for periodic systems, intended for metals)
                 - "fmax": 0.05
                 - "optimizer": "BFGS" (any ``ase.optimize`` optimizer)
                 - "initial_magnetic_moments": None; one value per site in a
@@ -169,6 +173,7 @@ class DefectDictSet:
         txt = settings.pop("txt", "gpaw_output.txt")
         txt = os.fspath(txt) if isinstance(txt, os.PathLike) else txt  # e.g. ``Path``, as a plain string
         convergence = settings.pop("convergence", {})
+        occupations = settings.pop("occupations", {"name": "methfessel-paxton", "width": 0.05, "order": 0})
         optimizer = settings.pop("optimizer", "BFGS")
         initial_magnetic_moments = settings.pop("initial_magnetic_moments", None)
 
@@ -261,6 +266,7 @@ calc = GPAW(
     kpts={kpts},
     txt={txt!r},
     convergence={convergence},
+    occupations={occupations!r},
     charge={self.charge_state},
     spinpol={spinpol}{other_kwargs}
 )
