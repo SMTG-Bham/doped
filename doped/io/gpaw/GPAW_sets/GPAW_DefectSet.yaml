@@ -1,0 +1,12 @@
+# Default GPAW settings for defect (relaxation) & bulk (single-point) supercell calculations, any of which
+# can be overridden with ``gpaw_settings``. ``optimizer`` & ``fmax`` are used for the relaxations, and the
+# rest are passed to the ``GPAW`` calculator.
+mode: {name: pw, ecut: 400}  # plane-wave basis, with a 400 eV cutoff
+xc: PBE
+kpts: {size: [1, 1, 1], gamma: true}  # Gamma-only
+occupations: {name: methfessel-paxton, width: 0.05, order: 0}  # Gaussian smearing of width 0.05 eV
+spinpol: true  # spin polarisation
+convergence: {}  # GPAW defaults
+txt: gpaw_output.txt
+optimizer: BFGS  # any ``ase.optimize`` optimizer
+fmax: 0.01  # force convergence criterion for relaxations, in eV/Å

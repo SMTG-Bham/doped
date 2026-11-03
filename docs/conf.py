@@ -234,4 +234,5 @@ rst_prolog = """
 .. |SinglePointSet.yaml| replace:: :ref:`VASP_SinglePointSet.yaml <SinglePointSet.yaml>`
 .. |ConvergenceSet.yaml| replace:: :ref:`VASP_ConvergenceSet.yaml <ConvergenceSet.yaml>`
 .. |PotcarSet.yaml| replace:: :ref:`VASP_PotcarSet.yaml <PotcarSet.yaml>`
+.. |GPAW_DefectSet.yaml| replace:: :ref:`GPAW_DefectSet.yaml <GPAW_DefectSet.yaml>`
 """

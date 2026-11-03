@@ -9,10 +9,6 @@ unavailable with GPAW:
   ``get_singlepoint_sets()``, ``write_input_sets()`` and the corresponding
   ``write_*_files()``), so ``CompetingPhases(..., calculator="gpaw")`` is
   not supported.
-- Default calculation parameters live hard-coded in
-  ``DefectDictSet._generate_script()``, rather than in data files
-  alongside this module (as with ``doped/io/vasp/VASP_sets``), so they
-  cannot be inspected or overridden as a set.
 
 See the GPAW tracking issue.
 """
@@ -22,12 +18,20 @@ import os
 import warnings
 from typing import Any, Literal
 
+from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
 from pymatgen.io.cif import CifWriter
 from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry, _get_bulk_supercell, _get_defect_supercell
 from doped.io.inputs import DefectsSetBase, _get_bulk_folder_name
+
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+default_gpaw_settings = loadfn(os.path.join(_MODULE_DIR, "GPAW_sets/GPAW_DefectSet.yaml"))
+"""
+Default GPAW settings for defect and bulk supercell calculations, from
+|GPAW_DefectSet.yaml|.
+"""
 
 # ``doped`` accesses the competing phase functions below directly on this backend module (and
 # ``write_input_sets`` is the documented protocol name a user would reach for), so they are intercepted
@@ -90,23 +94,16 @@ class DefectDictSet:
                 Charge state of the defect, which sets GPAW's ``charge``
                 parameter. Default is 0.
             gpaw_settings (dict):
-                Dictionary of GPAW settings. GPAW parameter objects (e.g.
-                ``PW(400)``) are converted to their ``todict()`` forms.
-                Defaults used if not specified:
-                - "mode": {"name": "pw", "ecut": 400}
-                - "xc": "PBE"
-                - "kpts": {"size": (1, 1, 1), "gamma": True}
-                - "txt": "gpaw_output.txt"
-                - "spinpol": True
-                - "occupations": {"name": "methfessel-paxton", "width": 0.05,
-                  "order": 0}, i.e. Gaussian smearing of 0.05 eV; set to
-                  ``None`` for GPAW's own default (Fermi-Dirac smearing of 0.1
-                  eV for periodic systems, intended for metals)
-                - "fmax": 0.05
-                - "optimizer": "BFGS" (any ``ase.optimize`` optimizer)
-                - "initial_magnetic_moments": None; one value per site in a
-                  list matching the structure order, or a ``{element: moment}``
-                  dict (unlisted elements set to zero)
+                Dictionary of GPAW settings, which override the defaults in
+                |GPAW_DefectSet.yaml| (:data:`default_gpaw_settings`); e.g. set
+                ``"occupations": None`` for GPAW's own default smearing
+                (Fermi-Dirac smearing of 0.1 eV for periodic systems, intended
+                for metals) rather than Gaussian smearing of 0.05 eV. GPAW
+                parameter objects (e.g. ``PW(400)``) are converted to their
+                ``todict()`` forms. Initial magnetic moments can be set with
+                ``"initial_magnetic_moments"``, as one value per site in a list
+                matching the structure order, or as a ``{element: moment}``
+                dict (unlisted elements set to zero).
             calculation_type (str):
                 Type of calculation script to generate. Supported values are
                 "relax" (default) and "singlepoint". The relaxation script
@@ -164,17 +161,17 @@ class DefectDictSet:
         """
         Generates the content of the GPAW script.
         """
-        settings = copy.deepcopy(self.gpaw_settings)
+        settings = copy.deepcopy(default_gpaw_settings | self.gpaw_settings)  # (copy: modified below)
 
         # Extract known parameters
-        mode_params = settings.pop("mode", {"name": "pw", "ecut": 400})
-        xc = settings.pop("xc", "PBE")
-        kpts = settings.pop("kpts", {"size": (1, 1, 1), "gamma": True})
-        txt = settings.pop("txt", "gpaw_output.txt")
+        mode_params = settings.pop("mode")
+        xc = settings.pop("xc")
+        kpts = settings.pop("kpts")
+        txt = settings.pop("txt")
         txt = os.fspath(txt) if isinstance(txt, os.PathLike) else txt  # e.g. ``Path``, as a plain string
-        convergence = settings.pop("convergence", {})
-        occupations = settings.pop("occupations", {"name": "methfessel-paxton", "width": 0.05, "order": 0})
-        optimizer = settings.pop("optimizer", "BFGS")
+        convergence = settings.pop("convergence")
+        occupations = settings.pop("occupations")
+        optimizer = settings.pop("optimizer")
         initial_magnetic_moments = settings.pop("initial_magnetic_moments", None)
 
         magnetic_moments_line = ""
@@ -192,10 +189,10 @@ class DefectDictSet:
                 f"atoms.set_initial_magnetic_moments({list(initial_magnetic_moments)!r})\n"
             )
 
-        spinpol = settings.pop("spinpol", True)
+        spinpol = settings.pop("spinpol")
 
         # Relaxation params
-        fmax = settings.pop("fmax", 0.05)
+        fmax = settings.pop("fmax")
 
         # ``basis`` belongs to GPAW, not to the mode classes (none of ``PW``/``LCAO``/``FD`` accept it).
         # Accept the existing nested form as well as the native top-level setting:
