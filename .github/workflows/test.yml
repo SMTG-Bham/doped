@@ -103,11 +103,13 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libxc-dev libblas-dev liblapack-dev libfftw3-dev
           python -m pip install --upgrade pip
           pip install --no-deps git+https://github.com/SMTG-Bham/ShakeNBreak@develop
-          # GPAW 26.7 compiles its ``.c`` sources as C++, but with Python's default C compiler unless one
-          # is set (failing with ``algorithm: No such file or directory``), hence ``CC=g++``. ``ase``
-          # 3.29.0's ``.gpw`` reader sets ``ndarray.shape``, deprecated in NumPy 2.5, which the test config
-          # treats as an error; drop the ``numpy`` pin at the next ``ase`` release (TODO):
-          CC=g++ pip install -e ".[tests,gpaw]" "numpy<2.5"
+          # TODO: hybrid relaxations (the default) fail at the second ionic step with GPAW 26.7.0 (fixed on
+          # master), so GPAW master is tested for now; at the next GPAW release, install it from PyPI again
+          # (``.[tests,gpaw]``), make it the ``gpaw`` minimum version in ``pyproject.toml``, and remove the
+          # notes there and in ``docs/GPAW_Support.rst`` about installing the development version.
+          # ``ase`` 3.29.0's ``.gpw`` reader sets ``ndarray.shape``, deprecated in NumPy 2.5, which the
+          # test config treats as an error; drop the ``numpy`` pin at the next ``ase`` release (TODO):
+          pip install -e ".[tests]" "numpy<2.5" git+https://gitlab.com/gpaw/gpaw.git
 
       - name: Check GPAW is importable  # the GPAW tests skip without it, so a broken install must fail here
         run: python -c "import gpaw; print(gpaw.__version__)"

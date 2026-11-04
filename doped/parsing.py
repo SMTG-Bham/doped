@@ -1825,6 +1825,10 @@ def _handle_charge_correction_errors(
             Additional keyword arguments, such as
             ``shallow_charge_stability_tolerance``.
     """
+    if any(
+        e.calculation_metadata.get(k) is None for e in defect_dict.values() for k in ("vbm", "band_gap")
+    ):
+        return  # no VBM reference / band gap (bulk band edges undetermined, as warned when parsing)
     defect_thermo = DefectThermodynamics(
         list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
     )
@@ -2862,12 +2866,15 @@ class DefectParser:
                 bulk_band_gap_outputs.vbm,
             )
 
-        gap_calculation_metadata.update(
-            {
-                "cbm": cbm,
-                "vbm": vbm,
-                "band_gap": band_gap,
-            }
+        if band_gap is None:
+            warnings.warn(
+                "The bulk band edges could not be determined (e.g. as no unoccupied bands were "
+                "calculated, in at least one spin channel), so calculate more bands, or supply them with "
+                "`vbm` and `band_gap` in `DefectThermodynamics`."
+            )
+
+        gap_calculation_metadata.update(  # (undetermined band edges are omitted, not stored as None)
+            {k: v for k, v in {"cbm": cbm, "vbm": vbm, "band_gap": band_gap}.items() if v is not None}
         )
         if mpid is not None:
             gap_calculation_metadata["mpid"] = mpid

@@ -198,14 +198,14 @@ class DefectDictSet:
         gpaw_kwargs = ",\n    ".join(f"{key}={value!r}" for key, value in settings.items())
 
         # GPAW only supports these hybrid functionals in plane-wave mode (failing at run time otherwise, or
-        # silently omitting the exact exchange, in FD mode with GPAW 26.7 -- TODO: Check if still the case
-        #  with latest GPAW release):
+        # silently omitting the exact exchange in FD mode, as of GPAW 26.7.1b1):
         xc, mode = (  # (names, or dicts of their names & parameters)
             value if isinstance(value, dict) else {"name": value}
             for value in (settings.get("xc"), settings.get("mode"))
         )
-        pw_hybrid = xc.get("name") in {"HSE03", "HSE06", "YS-PBE0"} or xc.get("backend") == "pw"
-        if pw_hybrid and mode.get("name") != "pw":
+        # GPAW uses its PW-only hybrid implementation for these, or any with the ``"pw"`` xc backend:
+        needs_pw_mode = xc.get("name") in {"HSE03", "HSE06", "YS-PBE0"} or xc.get("backend") == "pw"
+        if needs_pw_mode and mode.get("name") != "pw":
             raise ValueError(
                 f"GPAW only supports the {xc.get('name')} hybrid functional in plane-wave mode, so set "
                 f"'mode' to 'pw', or 'xc' to a non-hybrid functional (e.g. 'PBE'; the default is HSE06), "

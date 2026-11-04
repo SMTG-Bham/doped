@@ -135,7 +135,7 @@ def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
             )
         yield calc
     finally:
-        if hasattr(calc, "close"):  # removed in GPAW >= 26
+        if hasattr(calc, "close"):  # (only the legacy GPAW calculator, e.g. with external potentials)
             calc.close()
         if getattr(calc, "atoms", None) is not None:  # break the ``Atoms`` <-> calculator reference
             calc.atoms.calc = None
@@ -145,8 +145,9 @@ def _get_gpaw_parameters(calc) -> dict:
     """
     Get the parameters of a ``GPAW`` calculator as a ``dict``.
 
-    With GPAW >= 26, these are only the explicitly-set values, while with older
-    versions they also include the defaults.
+    These are only the explicitly-set values, except for the legacy ``GPAW``
+    calculator (which ``GPAW`` uses e.g. for calculations with ``external``
+    potentials), where they also include the defaults.
     """
     return calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
 
