@@ -106,9 +106,14 @@ class DefectDictSet:
                 |GPAW_DefectSet.yaml| (:data:`default_gpaw_settings`); e.g. set
                 ``"occupations": None`` for GPAW's own default smearing
                 (Fermi-Dirac smearing of 0.1 eV for periodic systems, intended
-                for metals) rather than Gaussian smearing of 0.05 eV. GPAW
-                parameter objects (e.g. ``PW(400)``) are converted to their
-                ``todict()`` forms. Initial magnetic moments can be set with
+                for metals) rather than Gaussian smearing of 0.05 eV.
+                Relaxations use the ``"fmax"`` and ``"optimizer"`` settings;
+                any ``ase.optimize`` (or ``ase.optimize.precon``) optimizer, as
+                a name or a dict of its name and keyword arguments, with the
+                default ``PreconLBFGS`` settings tuned for defect relaxations
+                in https://github.com/ddmms/ml-peg/pull/863. GPAW parameter
+                objects (e.g. ``PW(400)``) are converted to their ``todict()``
+                forms. Initial magnetic moments can be set with
                 ``"initial_magnetic_moments"``, as one value per site in a list
                 matching the structure order, or as a ``{element: moment}``
                 dict (unlisted elements set to zero).
@@ -119,8 +124,15 @@ class DefectDictSet:
                 if present (e.g. when resubmitting a timed-out calculation),
                 otherwise starting from ``structure.cif``.
         """
-        if "charge" in (gpaw_settings or {}):  # would be repeated in the generated ``GPAW()`` call
+        # (settings which would be repeated in the generated ``GPAW()`` & optimizer calls):
+        if "charge" in (gpaw_settings or {}):
             raise ValueError("Set the charge with `charge_state`, not gpaw_settings['charge'].")
+        optimizer = (gpaw_settings or {}).get("optimizer")
+        if isinstance(optimizer, dict) and {"trajectory", "append_trajectory"} & optimizer.keys():
+            raise ValueError(
+                "The relaxation trajectory (relax.traj, which is continued if present) is set by doped, "
+                "so cannot be set in gpaw_settings['optimizer']."
+            )
         if calculation_type not in {"relax", "singlepoint"}:
             raise ValueError("calculation_type must be 'relax' or 'singlepoint'")
 
@@ -185,8 +197,28 @@ class DefectDictSet:
         )
         gpaw_kwargs = ",\n    ".join(f"{key}={value!r}" for key, value in settings.items())
 
+        # GPAW only supports these hybrid functionals in plane-wave mode (failing at run time otherwise, or
+        # silently omitting the exact exchange, in FD mode with GPAW 26.7 -- TODO: Check if still the case
+        #  with latest GPAW release):
+        xc, mode = (  # (names, or dicts of their names & parameters)
+            value if isinstance(value, dict) else {"name": value}
+            for value in (settings.get("xc"), settings.get("mode"))
+        )
+        pw_hybrid = xc.get("name") in {"HSE03", "HSE06", "YS-PBE0"} or xc.get("backend") == "pw"
+        if pw_hybrid and mode.get("name") != "pw":
+            raise ValueError(
+                f"GPAW only supports the {xc.get('name')} hybrid functional in plane-wave mode, so set "
+                f"'mode' to 'pw', or 'xc' to a non-hybrid functional (e.g. 'PBE'; the default is HSE06), "
+                f"in gpaw_settings."
+            )
+
         if self.calculation_type == "relax":
-            optimizer_import = f"from ase.optimize import {optimizer}\n"
+            optimizer = optimizer.copy() if isinstance(optimizer, dict) else {"name": optimizer}
+            name = optimizer.pop("name")
+            module = "ase.optimize.precon" if name.startswith("Precon") else "ase.optimize"
+            extra_imports = f"from {module} import {name}\n"
+            optimizer_kwargs = "".join(f"{key}={value!r}, " for key, value in optimizer.items())
+            dyn = f"dyn = {name}(atoms, {optimizer_kwargs}trajectory='relax.traj', append_trajectory=True)"
             # Continue from the last frame of a previous (e.g. timed-out) relaxation if present:
             read_structure = (
                 "frames = read('relax.traj', ':') if os.path.isfile('relax.traj') and "
@@ -197,15 +229,20 @@ class DefectDictSet:
             )
             calculation_block = f"""
 # Relaxation
-dyn = {optimizer}(atoms, trajectory='relax.traj', append_trajectory=True)
-dyn.run(fmax={fmax})
+{dyn}
+try:
+    dyn.run(fmax={fmax})
+except RuntimeError as exc:  # e.g. a failed line search (from SCF noise), so restart the optimizer
+    print(f"{{exc}}; restarting the optimizer")
+    {dyn}
+    dyn.run(fmax={fmax})
 
 # Save the final state
 energy = atoms.get_potential_energy()
 calc.write('relaxed.gpw')
 """
         else:
-            optimizer_import = ""
+            extra_imports = ""
             read_structure = f"atoms = read('{structure_filename}')"
             calculation_block = """
 # Static single-point calculation
@@ -218,7 +255,7 @@ import os
 
 from ase.io import read
 from gpaw import GPAW
-{optimizer_import}
+{extra_imports}
 
 # Read structure
 {read_structure}
