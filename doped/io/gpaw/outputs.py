@@ -211,10 +211,11 @@ def _get_band_edges(
     occupation smearing (which gives non-integer band-edge occupations in
     narrow-gap semiconductors).
 
-    Fractional band filling, or overlapping (or degenerate) band edges, i.e.
-    metals, give a zero band gap with both band edges at ``efermi``, while
-    ``None`` values are returned if a spin channel has no unoccupied bands (too
-    few bands calculated to determine the conduction band minimum).
+    Fractional band filling, or overlapping (or near-degenerate, within 10 meV)
+    band edges, i.e. metals, give a zero band gap with both band edges at
+    ``efermi``, while ``None`` values are returned if a spin channel has no
+    unoccupied bands (too few bands calculated to determine the conduction band
+    minimum).
 
     Args:
         eigenvalues (dict[Spin, np.ndarray]):
@@ -244,9 +245,34 @@ def _get_band_edges(
             vbm = max(vbm, energies[:, n_bands - 1].max())
         cbm = min(cbm, energies[:, n_bands].min())
 
-    if cbm - vbm < 1e-2:  # overlapping (or degenerate) band edges: metal
+    if cbm - vbm < 1e-2:  # overlapping or (near-)degenerate band edges: metal
         return 0.0, float(efermi), float(efermi)
     return float(cbm - vbm), float(cbm), float(vbm)
+
+
+def _get_eigenvalues(calc, **kwargs) -> dict[Spin, np.ndarray]:
+    """
+    Get the band energies and raw occupations (in [0, 1], without spin
+    degeneracy or `k`-point weights) from a ``GPAW`` calculator (with
+    ``raw=True`` in ``kwargs``) or an ``ase`` single-point calculator read from
+    a ``.gpw`` file (which stores raw occupations), as ``{spin: array}`` with
+    array shape ``(nkpoints, nbands, 2)``, as ``pymatgen`` expects.
+    """
+    return {
+        spin: np.array(
+            [
+                np.stack(
+                    [
+                        calc.get_eigenvalues(kpt=kpt, spin=spin_index),
+                        calc.get_occupation_numbers(kpt=kpt, spin=spin_index, **kwargs),
+                    ],
+                    axis=-1,
+                )
+                for kpt in range(len(calc.get_ibz_k_points()))
+            ]
+        )
+        for spin_index, spin in enumerate((Spin.up, Spin.down)[: calc.get_number_of_spins()])
+    }
 
 
 def load_eigenvalue_outputs(**kwargs) -> CalculationOutputs:
@@ -387,10 +413,8 @@ def get_calculation_outputs(
             Path to the calculation directory, or directly to a ``.gpw`` file.
         label (str):
             Label for the type of calculation being parsed (e.g. ``"bulk"``,
-            ``"defect"``), for informative warnings. Fractionally-occupied band
-            edge states (from a large smearing) are only warned about for
-            labels starting with ``"bulk"``, as only bulk band edges are used.
-            Default is ``"calculation"``.
+            ``"defect"``). Accepted for backend-protocol compatibility but
+            unused. Default is ``"calculation"``.
         parse_projected_eigen (bool):
             Accepted for backend-protocol compatibility and otherwise
             **unused**: mapping ``GPAW``'s PAW projections to ``pymatgen``'s
@@ -416,34 +440,8 @@ def get_calculation_outputs(
         except (AssertionError, ValueError):  # fixed magnetic moment (``fixmagmom``): one per spin channel
             efermi = float(np.mean(calc.get_fermi_levels()))  # (as in ``ase.io.gpw.read_gpw``)
         kpoint_weights = calc.get_k_point_weights()
-        eigenvalues = {}  # occupations read once per k-point & spin (as GPAW 25.7 rescales them in place)
-        for spin_index, spin in enumerate((Spin.up, Spin.down)[: calc.get_number_of_spins()]):
-            eigenvalues[spin] = np.array(
-                [  # (n_kpoints, n_bands, 2); energy and occupancy, as ``pymatgen`` expects
-                    np.stack(
-                        [
-                            calc.get_eigenvalues(kpt=kpt, spin=spin_index),
-                            # ``raw`` = in [0, 1], without k-point weights or spin degeneracy:
-                            calc.get_occupation_numbers(kpt=kpt, spin=spin_index, raw=True),
-                        ],
-                        axis=-1,
-                    )
-                    for kpt in range(len(calc.get_ibz_k_points()))
-                ]
-            )
-
-        band_gap = cbm = vbm = None  # defect states cannot establish the host edges of a charged supercell
-        if not charge:  # (undetermined/metallic bulk band edges are warned about where used, when parsing)
-            band_gap, cbm, vbm = _get_band_edges(eigenvalues, kpoint_weights, efermi)
-            fractional = any(np.any((e[..., 1] > 0.1) & (e[..., 1] < 0.9)) for e in eigenvalues.values())
-            if label.startswith("bulk") and band_gap and fractional:  # smearing-occupied band edges
-                warnings.warn(
-                    f"Band-edge states in the {label} GPAW calculation ({gpw_file}) are fractionally "
-                    f"occupied, as the occupation smearing is large compared to the band gap "
-                    f"({band_gap:.3f} eV). The band-edge assignment uses band filling and is unaffected, "
-                    f"but the smearing still perturbs the calculation (including the eigenvalues), so a "
-                    f"smaller smearing width (`occupations`) is recommended."
-                )
+        eigenvalues = _get_eigenvalues(calc, raw=True)
+        band_gap, cbm, vbm = _get_band_edges(eigenvalues, kpoint_weights, efermi)
 
         return CalculationOutputs(
             structure=_structure_from_calc(calc),
@@ -486,10 +484,10 @@ def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
         ComputedStructureEntry:
             The uncorrected total energy and structure, with GPAW parameters
             (as set for the calculation), formula, volume, atom count, source
-            folder, k-point mesh and magnetization in ``entry.data``. Ionic
+            folder, k-point mesh and calculation summary info (``"summary"``;
+            band gap & total magnetization) in ``entry.data``. Ionic
             convergence is not reported: restart files have no ionic-step
-            history. Band gaps are omitted pending occupation-based band edges
-            (TODO).
+            history.
     """
     from ase.dft.kpoints import get_monkhorst_pack_size_and_offset
     from ase.io.gpw import read_gpw
@@ -504,8 +502,11 @@ def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
             f"{gpw_file} holds no stored results (e.g. from an unconverged or unfinished calculation)"
         )
 
-    structure = _structure_from_calc(atoms.calc)
+    calc = atoms.calc
+    structure = _structure_from_calc(calc)
     entry = ComputedStructureEntry(structure, atoms.get_potential_energy())  # parameters in ``entry.data``
+    eigenvalues, kpoint_weights = _get_eigenvalues(calc), calc.get_k_point_weights()
+    band_gap = _get_band_edges(eigenvalues, kpoint_weights, calc.get_fermi_level())[0]
     elements = sorted(el.symbol for el in entry.composition.elements)
     entry.data.update(
         {
@@ -517,7 +518,7 @@ def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
             "energy_per_atom": entry.energy_per_atom,
             "elements": elements,
             "nelements": len(elements),
-            "summary": {"total_magnetization": atoms.calc.get_magnetic_moment()},
+            "summary": {"band_gap": band_gap, "total_magnetization": calc.get_magnetic_moment()},
             "folder": str(Path(gpw_file).parent),
             "converged_electronic": True,  # (as results-less restarts are rejected above)
         }
