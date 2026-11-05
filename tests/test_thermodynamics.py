@@ -1548,6 +1548,20 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert list(tl_df.index.to_numpy()[5]) == ["Int_Te_3_Unperturbed", "None"]
         assert list(tl_df.iloc[5]) == [np.inf, False, 0]
 
+    def test_zero_band_gap(self):
+        """
+        Test a zero band gap (as for metallic hosts), supplied as an integer.
+        """
+        defect_thermo = DefectThermodynamics(list(self.CdTe_defect_dict.values()), vbm=1, band_gap=0)
+        assert (defect_thermo.vbm, defect_thermo.band_gap) == (1.0, 0.0)
+        assert all(isinstance(value, float) for value in (defect_thermo.vbm, defect_thermo.band_gap))
+        for tl_df in (
+            defect_thermo.get_transition_levels(),
+            defect_thermo.get_transition_levels(all=True),
+        ):
+            assert tl_df["In Band Gap?"].dtype == bool
+            assert not tl_df["In Band Gap?"].any()
+
     def test_transition_levels_unstable_entries(self):
         """
         Test the ``unstable_entries`` keyword argument for

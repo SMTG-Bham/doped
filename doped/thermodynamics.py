@@ -1085,12 +1085,13 @@ class DefectThermodynamics(MSONable):
                     _raise_VBM_band_gap_value_error(band_gap_vals, type="band_gap")
                 self.band_gap = next(iter(band_gap_vals))
 
-        for i, name in [(self.vbm, "VBM eigenvalue"), (self.band_gap, "band gap value")]:
-            if i is None:
-                raise ValueError(
-                    f"No {name} was supplied or able to be parsed from the defect entries "
-                    f"(calculation_metadata attributes). Please specify the {name} in the function input."
-                )
+        if self.vbm is None or self.band_gap is None:
+            name = "VBM eigenvalue" if self.vbm is None else "band gap value"
+            raise ValueError(
+                f"No {name} was supplied or able to be parsed from the defect entries "
+                f"(calculation_metadata attributes). Please specify the {name} in the function input."
+            )
+        self.vbm, self.band_gap = float(self.vbm), float(self.band_gap)  # ensure float (not int, e.g. 0)
 
         # all required to be set before parsing defect entries:
         self.check_compatibility = check_compatibility
@@ -3425,7 +3426,9 @@ class DefectThermodynamics(MSONable):
                             else transition_level_charges
                         ),
                         "eV from VBM": round(TL, 3),
-                        "In Band Gap?": (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL),
+                        "In Band Gap?": bool(
+                            (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL)
+                        ),
                         "-q_pos": -transition_level_charges[0],  # for sorting
                         "-q_neg": -transition_level_charges[1],  # for sorting
                     }
@@ -3450,7 +3453,9 @@ class DefectThermodynamics(MSONable):
                                 else transition_level_charges
                             ),
                             "eV from VBM": round(TL, 3),
-                            "In Band Gap?": (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL),
+                            "In Band Gap?": bool(
+                                (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL)
+                            ),
                             "N(Metastable)": [pos_meta, neg_meta].count(True),
                             "-q_pos": -transition_level_charges[0],  # for sorting
                             "-q_neg": -transition_level_charges[1],  # for sorting
