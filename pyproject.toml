@@ -28,6 +28,7 @@ dependencies = [
     # https://github.com/materialsproject/api/issues/1104, https://github.com/materialsproject/api/pull/1126
     # TODO: Bump to the first mp-api release that fixes ``get_entries_in_chemsys(property_data=...)``
     # https://github.com/materialsproject/api/pull/1140
+    "boto3>=1.34",  # TODO: Remove once https://github.com/materialsproject/api/pull/1147 merged (next mp-api release)
     "shakenbreak>=3.4.5",  # parameter re-ordering for ``get_defect_type_...`` functions
     "pandas",
     "pydefect>=0.9.9",  # eigenvalue parsing updates
