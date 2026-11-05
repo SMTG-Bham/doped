@@ -18,14 +18,15 @@ jobs:
       fail-fast: false
 
       matrix:
-        os: [ ubuntu-latest, macos-14, windows-latest ]
-        python-version: [ '3.11', '3.14' ]  # lowest and highest supported Python versions; 3.10 should still be possible, but latest ``pymatgen`` (2026) only supports 3.11-3.14
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        python-version: [ '3.12', '3.14' ]  # lowest and highest supported Python versions; ``mp-api`` >= 0.47 requires Python >= 3.12
 
         # if durations files present, pytest-split will use them to intelligently distribute tests
         split: [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
 
     env:
       MPLBACKEND: Agg  # non-interactive backend for matplotlib
+      MP_API_KEY: ${{ secrets.MP_API_KEY }}  # SK's 910 GMail MP API key (with GNoMe access), for MP query tests; unset for PRs from forks, so those tests are skipped
 
     runs-on: ${{ matrix.os }}
 
@@ -38,47 +39,21 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sleep 360  # wait 10 minutes for PyPI to update with the new release
-          python -m pip install --upgrade pip
-          # TODO: temporary until doped v4 released:
-          pip install --no-deps git+https://github.com/SMTG-Bham/ShakeNBreak@develop
+          sleep 300  # wait 5 minutes for PyPI to update with the new release
           pip install doped[tests]  # install only from PyPI
 
       - name: Test
         shell: bash
-        run: |  # update durations file with ``export DOPED_SKIP_HEAVY_TESTS=False; pytest -vv -m "not mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_non_plotting``
-          pytest -vv -m "not mpl_image_compare" \
+        run: |  # update durations file with ``export DOPED_SKIP_HEAVY_TESTS=True; pytest -vv --mpl tests --store-durations --durations-path tests/.pytest_split_durations`` (heavy tests skipped, as on CI w/out POTCARs)
+          pytest -vv --mpl --mpl-results-path=tests/remote_baseline --durations=20 \
             --splits 10 --group ${{ matrix.split }} \
-            --durations-path tests/.pytest_split_durations_non_plotting \
+            --durations-path tests/.pytest_split_durations \
             --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
 
-      - name: Plotting Tests
-        shell: bash
-        if: always()  # run even if non-plotting tests fail
-        id: plotting_tests  # Add an ID to this step for reference
-        env:
-          MPLBACKEND: Agg  # non-interactive backend for matplotlib
-        run: |  # update durations file with ``export DOPED_SKIP_HEAVY_TESTS=False; pytest -vv -m "mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_plotting``
-          pytest -vv --mpl -m "mpl_image_compare" \
-            --splits 10 --group ${{ matrix.split }} \
-            --durations-path tests/.pytest_split_durations_plotting \
-            --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
-
-      - name: Generate GH Actions test plots
-        shell: bash
-        if: failure() && steps.plotting_tests.outcome == 'failure'  # Run only if plotting tests fail
-        env:
-          MPLBACKEND: Agg  # non-interactive backend for matplotlib
-        run: |  # Generate the test plots in case there were any failures:
-          pytest -vv --mpl-generate-path=tests/remote_baseline -m "mpl_image_compare" \
-            --splits 10 --group ${{ matrix.split }} \
-            --durations-path tests/.pytest_split_durations_plotting \
-            --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
-
-      # Upload test plots
-      - name: Archive test plots
-        if: always()
+      - name: Archive test plots  # result, baseline and diff images for any failed image comparisons
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: doped_GH_test_plots_${{ matrix.os }}_${{ matrix.split }}
+          name: doped_GH_test_plots_${{ matrix.os }}_${{ matrix.python-version }}_${{ matrix.split }}
           path: tests/remote_baseline
+          if-no-files-found: ignore  # no image comparison failures (i.e. only non-plotting tests failed)
