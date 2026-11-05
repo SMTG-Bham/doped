@@ -20,6 +20,7 @@ from ase.io.trajectory import Trajectory
 from monty.json import MontyDecoder, MontyEncoder
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
+from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.ase import AseAtomsAdaptor
 from test_utils import (
     _run_func_and_capture_stdout_warnings,
@@ -31,17 +32,18 @@ from test_utils import (
 from doped.chemical_potentials import CompetingPhasesAnalyzer
 from doped.generation import DefectsGenerator
 from doped.io import get_calculation_outputs
-from doped.io.gpaw.inputs import DefectDictSet, DefectsSet
+from doped.io.gpaw.inputs import DefectDictSet, DefectsSet, default_gpaw_settings
 from doped.io.gpaw.outputs import (
     _find_gpaw_output,
-    _get_eigenvalue_properties_from_calc,
+    _get_band_edges,
     get_competing_phase_entry,
     get_gpaw_planar_averaged_potential,
     get_gpaw_site_potentials,
     get_potentials_from_input,
 )
 from doped.io.inputs import _get_bulk_folder_name
-from doped.parsing import DefectParser, DefectsParser
+from doped.io.outputs import nelect_from_eigenvalues
+from doped.parsing import DefectParser, DefectsParser, _handle_charge_correction_errors
 from doped.thermodynamics import DefectThermodynamics
 
 
@@ -56,7 +58,6 @@ class GPAWTest(unittest.TestCase):
         assert Structure.from_file(os.path.join(self.output_dir, "structure.cif")).matches(self.structure)
         content = Path(self.output_dir, "relax.py").read_text()
         assert "charge=1" in content
-        assert "mode=PW(ecut=400)" in content  # default
         assert "append_trajectory=True" in content  # continues an interrupted relaxation
         compile(content, "relax.py", "exec")  # valid Python
 
@@ -65,33 +66,64 @@ class GPAWTest(unittest.TestCase):
         with pytest.warns(UserWarning, match="relax.traj already exists"):
             relax_set.write_input(self.output_dir)
 
+    def test_gpaw_default_settings(self):
+        # the ``GPAW_DefectSet.yaml`` defaults are used unless overridden, and are not modified when
+        # generating scripts:
+        defaults = copy.deepcopy(default_gpaw_settings)
+        content = DefectDictSet(self.structure)._generate_script("structure.cif")
+        for expected in (
+            "mode={'name': 'pw', 'ecut': 400},",
+            "xc='HSE06',",
+            "kpts={'size': [1, 1, 1], 'gamma': True},",
+            "occupations={'name': 'methfessel-paxton', 'width': 0.05, 'order': 0},",
+            "spinpol=True,",
+            "symmetry={'point_group': False},",
+            "from ase.optimize.precon import PreconLBFGS\n",
+            "dyn = PreconLBFGS(atoms, precon='Exp', maxstep=0.2, trajectory=",
+            "dyn.run(fmax=0.01)",
+        ):
+            assert expected in content
+        for gpaw_settings in ({"mode": {"name": "lcao"}, "xc": "PBE"}, {"optimizer": "FIRE"}):
+            DefectDictSet(self.structure, gpaw_settings=gpaw_settings)._generate_script("structure.cif")
+        assert default_gpaw_settings == defaults
+
     def test_gpaw_defect_dict_set_custom(self):
         # including non-string ``xc`` (e.g. dict-form hybrid functional settings) and ``txt`` values:
-        for gpaw_settings, expected in (
+        for gpaw_settings, *expected in (
             ({"kpts": {"size": (2, 2, 2), "gamma": True}}, "kpts={'size': (2, 2, 2), 'gamma': True},"),
             ({"xc": {"name": "HSE06", "backend": "pw"}}, "xc={'name': 'HSE06', 'backend': 'pw'},"),
             ({"txt": None}, "txt=None,"),
             ({"txt": Path("log.txt")}, "txt='log.txt',"),
+            ({"occupations": None}, "occupations=None,"),  # GPAW's own default
+            # optimizer names or {name & kwargs} dicts, from ``ase.optimize`` or ``ase.optimize.precon``:
+            ({"optimizer": "FIRE"}, "from ase.optimize import FIRE\n", "dyn = FIRE(atoms, trajectory="),
+            (
+                {"optimizer": {"name": "PreconFIRE", "precon": "Exp"}},
+                "from ase.optimize.precon import PreconFIRE\n",
+                "dyn = PreconFIRE(atoms, precon='Exp', trajectory=",
+            ),
         ):
             relax_set = DefectDictSet(self.structure, gpaw_settings=gpaw_settings)
-            assert expected in relax_set._generate_script("structure.cif")
+            content = relax_set._generate_script("structure.cif")
+            assert all(string in content for string in expected)
 
     def test_gpaw_defect_dict_set_lcao(self):
-        gpaw_settings = {"mode": {"name": "lcao", "basis": "dzp"}}
-        relax_set = DefectDictSet(self.structure, gpaw_settings=gpaw_settings)
-        content = relax_set._generate_script("structure.cif")
-        assert "mode=LCAO()" in content
-        assert "basis='dzp'" in content
-        assert "from gpaw import GPAW, PW, LCAO, FD" in content
-        assert gpaw_settings == {"mode": {"name": "lcao", "basis": "dzp"}}  # not modified
+        gpaw_settings = {"mode": {"name": "lcao"}, "basis": "dzp", "xc": "PBE"}  # (no LCAO hybrids)
+        content = DefectDictSet(self.structure, gpaw_settings=gpaw_settings)._generate_script(
+            "structure.cif"
+        )
+        assert "mode={'name': 'lcao'}," in content
+        assert "basis='dzp'," in content
+        assert gpaw_settings == {"mode": {"name": "lcao"}, "basis": "dzp", "xc": "PBE"}  # not modified
 
     def test_gpaw_invalid_settings_write_nothing(self):
         # invalid settings raise before the output folder is created or any file is written:
         output_path = os.path.join(self.output_dir, "new_folder")
         for gpaw_settings, match in [
             ({"charge": 1}, r"gpaw_settings\['charge'\]"),  # set with ``charge_state`` instead
-            ({"mode": {"name": "pw", "basis": "dzp"}, "basis": "sz"}, "Conflicting basis settings"),
+            ({"optimizer": {"name": "BFGS", "trajectory": "bfgs.traj"}}, "relaxation trajectory"),
             ({"initial_magnetic_moments": [1.0] * (len(self.structure) + 1)}, "one value per atom"),
+            ({"mode": {"name": "lcao"}}, "the HSE06 hybrid functional in plane-wave mode"),  # default xc
         ]:
             with pytest.raises(ValueError, match=match):
                 DefectDictSet(self.structure, gpaw_settings=gpaw_settings).write_input(output_path)
@@ -140,7 +172,7 @@ class GPAWTest(unittest.TestCase):
             assert sorted(os.listdir(folder_path)) == [script_name, "structure.cif"]
             script = (folder_path / script_name).read_text()
             n_atoms = len(Structure.from_file(folder_path / "structure.cif"))
-            assert "mode=PW(ecut=500)" in script
+            assert "mode={'name': 'pw', 'ecut': 500}," in script
             assert f"charge={charge}" in script
             assert f"atoms.set_initial_magnetic_moments({[1.0] * n_atoms!r})" in script
 
@@ -151,7 +183,7 @@ class GPAWTest(unittest.TestCase):
         gpaw_settings = {"mode": gpaw.PW(400), "eigensolver": gpaw.Davidson(3)}
         DefectDictSet(self.structure, gpaw_settings=gpaw_settings).write_input(self.output_dir)
         content = Path(self.output_dir, "relax.py").read_text()
-        assert "mode=PW(ecut=400" in content
+        assert "mode={'name': 'pw', 'ecut': 400" in content
         assert "eigensolver={'name': 'davidson', 'niter': 3}" in content
         _run_script_setup(Path(self.output_dir, "relax.py"))  # runs, with GPAW input validation
 
@@ -198,7 +230,7 @@ class GPAWTest(unittest.TestCase):
             assert entry.calculation_metadata["calculator"] == "gpaw"
             run_metadata = entry.calculation_metadata["run_metadata"]
             assert run_metadata["defect_gpaw_parameters"]["mode"]["name"] == "pw"
-            assert run_metadata["bulk_gpaw_parameters"].get("charge", 0) == 0  # GPAW >= 26 omits defaults
+            assert "charge" not in run_metadata["bulk_gpaw_parameters"]  # (defaults are omitted)
             # the bulk & defect calculations here differ only in charge, which is excluded:
             assert entry.calculation_metadata["mismatching_gpaw_parameters"] is False
             assert entry.calculation_metadata["relaxed point symmetry"]
@@ -222,6 +254,23 @@ class GPAWTest(unittest.TestCase):
             )
             assert entry.corrections["freysoldt_charge_correction"] == pytest.approx(expected, abs=1e-3)
 
+        # charge-correction errors (any, with ``error_tolerance=0``) and the mixed FNV/eFNV schemes are
+        # still warned about without bulk band edges (with no charge-state stability filtering then):
+        for entry in dp.defect_dict.values():
+            for key in ("vbm", "cbm", "band_gap"):
+                entry.calculation_metadata.pop(key)
+        _, _, warnings = _run_func_and_capture_stdout_warnings(
+            _handle_charge_correction_errors, dp.defect_dict, 0
+        )
+        _check_warnings(
+            warnings,
+            [
+                ("Freysoldt (FNV) charge correction for certain defects", "v_Mg_-2", "Mg_O_+1"),
+                ("Kumagai (eFNV) charge correction for certain defects", "Mg_O_unrelaxed_+1"),
+                ("Freysoldt (FNV) charge correction scheme has been used for some defects",),
+            ],
+        )
+
     def test_gpaw_calculation_outputs(self):
         """
         Test ``get_calculation_outputs()``, the ``doped.io`` backend protocol
@@ -238,8 +287,14 @@ class GPAWTest(unittest.TestCase):
         assert set(bulk_outputs.planar_averaged_potentials) == {0, 1, 2}
         assert bulk_outputs.converged_electronic
         assert bulk_outputs.nelect > 0
-        assert bulk_outputs.band_gap > 0  # band edges are only taken for the (neutral) bulk
+        assert (bulk_outputs.band_gap, bulk_outputs.vbm, bulk_outputs.cbm) == pytest.approx(
+            (3.3648, 5.4150, 8.7798), abs=1e-3
+        )
         assert bulk_outputs.vbm < bulk_outputs.efermi < bulk_outputs.cbm
+        # the stored occupations are consistent with the electron count:
+        assert nelect_from_eigenvalues(
+            bulk_outputs.eigenvalues, bulk_outputs.kpoint_weights
+        ) == pytest.approx(bulk_outputs.nelect)
         assert "gpaw_parameters" in bulk_outputs.run_metadata
         # eigenvalues are (n_kpoints, n_bands, 2), i.e. energy and occupancy, as pymatgen expects:
         assert all(eigs.ndim == 3 and eigs.shape[-1] == 2 for eigs in bulk_outputs.eigenvalues.values())
@@ -249,7 +304,7 @@ class GPAWTest(unittest.TestCase):
             os.path.join(gpaw_data_dir, "MgO", "v_Mg_-2"), calculator="gpaw", label="defect"
         )
         assert defect_outputs.charge == -2
-        assert defect_outputs.band_gap is None  # charged defect levels cannot establish host edges
+        assert 0 < defect_outputs.band_gap < bulk_outputs.band_gap  # (occupied in-gap defect levels)
         assert len(defect_outputs.structure) == len(bulk_outputs.structure) - 1  # a vacancy
 
         # the potentials loaded lazily from the folder match (with string axis keys):
@@ -300,11 +355,9 @@ def _run_script_setup(script_path: Path) -> dict:
 @pytest.mark.parametrize(
     "gpaw_settings",
     [
-        {"mode": {"name": "lcao", "basis": "dzp"}},
-        {"mode": {"name": "lcao"}, "basis": {"Cu": "dzp"}},
-        {"mode": "lcao", "basis": "dzp"},
-        {"mode": {"name": "lcao", "basis": "dzp"}, "basis": "dzp"},
-        {"mode": {"name": "pw", "basis": "dzp"}},
+        {"mode": {"name": "lcao"}, "basis": "dzp", "xc": "PBE"},
+        {"mode": {"name": "lcao"}, "basis": {"Cu": "dzp"}, "xc": "PBE"},
+        {"mode": "lcao", "basis": "dzp", "xc": "PBE"},
     ],
 )
 def test_basis_script_initializes_gpaw(gpaw_settings, tmp_path):
@@ -318,8 +371,8 @@ def test_basis_script_initializes_gpaw(gpaw_settings, tmp_path):
         tmp_path
     )
     basis = _run_script_setup(tmp_path / "singlepoint.py")["calc"].parameters.basis
-    expected = gpaw_settings.get("basis", "dzp")
-    assert basis in (expected, {"default": expected})  # GPAW >= 26 normalises a string basis to this
+    expected = gpaw_settings["basis"]
+    assert basis == (expected if isinstance(expected, dict) else {"default": expected})  # (normalised)
 
 
 def test_relax_script_continues_from_trajectory(tmp_path):
@@ -353,7 +406,7 @@ def _gpaw_workflow_settings() -> dict:
     Gamma, for speed), as GPAW parameter objects.
     """
     gpaw = pytest.importorskip("gpaw")
-    return {"mode": gpaw.PW(300), "eigensolver": gpaw.Davidson(3), "spinpol": False}
+    return {"mode": gpaw.PW(300), "xc": "PBE", "eigensolver": gpaw.Davidson(3), "spinpol": False}
 
 
 def _gpaw_defect_workflow(tmp_path: Path, supercell: Structure, names: tuple[str, ...], **kwargs):
@@ -433,7 +486,14 @@ class GPAWCuEndToEndTest(unittest.TestCase):
 
     def test_formation_energies(self):  # ~1 eV for the v_Cu, 6 eV for Cu_i, as expected for Cu
         formation_energies = [entry.formation_energy(chempots=self.chempots) for entry in self.entries]
-        assert formation_energies == pytest.approx([0.989, 6.017], abs=0.01)
+        assert formation_energies == pytest.approx([0.914, 5.845], abs=0.01)
+
+    def test_metallic_bulk_band_edges(self):
+        # zero band gap from the degenerate, partially-filled levels at the Fermi level in this metallic
+        # Gamma-only bulk supercell (where a Fermi-level partition gives a spurious 2.6 eV gap):
+        metadata = self.entries[0].calculation_metadata
+        assert metadata["band_gap"] == 0
+        assert metadata["vbm"] == metadata["cbm"]
 
     def test_geometries(self):
         # unrelaxed vacancy (12 nearest neighbours at a/sqrt(2)), and symmetric outward relaxation of the
@@ -489,11 +549,9 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
             json_filename=False,
         )
         assert set(dp.defect_dict) == set(self.names)
-        for entry in dp.defect_dict.values():  # (xc as a str or {"name": ...} dict, depending on version)
+        for entry in dp.defect_dict.values():
             mismatches = entry.calculation_metadata["mismatching_gpaw_parameters"]
-            assert list(mismatches) == ["xc"]
-            assert "PBE" in str(mismatches["xc"][0])  # defect
-            assert "LDA" in str(mismatches["xc"][1])  # bulk
+            assert mismatches == {"xc": ({"name": "PBE"}, {"name": "LDA"})}  # (defect, bulk)
         mismatch_warnings = [
             str(w.message) for w in warnings if "mismatching GPAW parameters" in str(w.message)
         ]
@@ -527,7 +585,7 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
         corrections = [entry.corrections.get("kumagai_charge_correction", 0) for entry in self.entries]
         assert corrections == pytest.approx([0, 0, 7.324, 4.830], abs=0.01)
         formation_energies = [entry.formation_energy(chempots=self.chempots) for entry in self.entries]
-        assert formation_energies == pytest.approx([0.459, 2.558, 7.690, 8.375], abs=0.01)  # at the VBM
+        assert formation_energies == pytest.approx([0.459, 2.710, 7.690, 8.375], abs=0.01)  # at the VBM
 
     def test_geometries(self):
         # unrelaxed vacancies (6 nearest neighbours at a/2), and Td-symmetric relaxation around the
@@ -542,7 +600,7 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
     def test_formation_energy_plot(self):
         thermo = DefectThermodynamics(self.entries, chempots=self.chempots)
         ((transition_level, charges),) = thermo.transition_level_map["v_Mg"].items()
-        assert (transition_level, charges) == (pytest.approx(2.566, abs=0.01), [0, -2])  # in the gap
+        assert (transition_level, charges) == (pytest.approx(2.490, abs=0.01), [0, -2])  # in the gap
         fig, _, warnings = _run_func_and_capture_stdout_warnings(thermo.plot)
         _check_warnings(warnings, [])
         return fig
@@ -687,6 +745,10 @@ def test_competing_phase_analyzer_gpaw(gpaw_competing_phases):
     assert np.prod(magnesium.data["kpoints"][0]) > 1
     oxygen = next(e for e in analyzer.entries if e.composition.reduced_formula == "O2")
     assert oxygen.data["summary"]["total_magnetization"] == pytest.approx(2.0, abs=0.01)
+    band_gaps = {e.composition.reduced_formula: e.data["summary"]["band_gap"] for e in analyzer.entries}
+    assert band_gaps["Mg"] == 0
+    assert band_gaps["MgO"] > 3
+    assert band_gaps["O2"] > 0
 
 
 def test_restart_without_results_raises(tmp_path):
@@ -816,85 +878,153 @@ def test_competing_phase_kpoint_mesh(gpaw_competing_phases, tmp_path, kpts):
     assert get_competing_phase_entry(tmp_path).data["kpoints"] == [[2, 1, 1]]
 
 
-@pytest.fixture(scope="module", params=["MgO", "Cu", "Cu_sharp", "O2"])
-def band_edge_calculation(request, tmp_path_factory):
+def _band_edge_calculation(system: str, folder: Path, **settings):
     """
-    Compute a small insulator, metal and spin-polarised molecule.
+    Run a small GPAW single-point calculation of ``system`` in ``folder`` for
+    the band-edge tests (spin-paired, except for triplet O2, with a 300 eV
+    plane-wave cutoff, unless otherwise set in ``settings``).
     """
-    gpaw = pytest.importorskip("gpaw")
-    from ase.build import bulk, molecule
-
-    name = request.param
-    if name == "O2":
+    if system == "O2":  # triplet O2 in a box
         atoms = molecule("O2")
         atoms.center(vacuum=3)
         atoms.pbc = True
-        atoms.set_initial_magnetic_moments([1, 1])
+        settings = {"spinpol": True, "initial_magnetic_moments": {"O": 1.0}} | settings
     else:
-        atoms = bulk("MgO", "rocksalt", a=4.21) if name == "MgO" else bulk("Cu", "fcc", a=3.6)
-    folder = tmp_path_factory.mktemp(f"band_edges_{name}")
-    atoms.calc = gpaw.GPAW(
-        mode=gpaw.PW(300),
-        xc="PBE",
-        kpts=(1, 1, 1) if name == "O2" else (2, 2, 2),
-        occupations=gpaw.FermiDirac(0 if name == "Cu_sharp" else 0.1),
-        spinpol=name == "O2",
-        txt=str(folder / "gpaw.txt"),
-    )
-    atoms.get_potential_energy()
-    atoms.calc.write(folder / "singlepoint.gpw")
-    yield name, atoms.calc, folder
-    atoms.calc = None
+        atoms = {
+            "GaAs": bulk("GaAs", "zincblende", a=5.75),
+            "Cu": bulk("Cu", "fcc", a=3.6),
+        }[system]
+    settings = {"mode": {"name": "pw", "ecut": 300}, "xc": "PBE", "spinpol": False} | settings
+    _run_phase_calculation(AseAtomsAdaptor.get_structure(atoms), folder, settings)
 
 
-def test_occupation_band_edges(band_edge_calculation):
+@pytest.mark.parametrize(
+    ("system", "settings", "metallic"),
+    [
+        # narrow-gap (0.14 eV) semiconductor with GPAW's (broad) default Fermi-Dirac smearing, which moves
+        # the Fermi level into the conduction band at Gamma, so that both occupation thresholds and a
+        # Fermi-level partition misplace the band edges:
+        (
+            "GaAs",
+            {
+                "kpts": {"size": (2, 2, 2), "gamma": True},
+                "occupations": {"name": "fermi-dirac", "width": 0.1},
+            },
+            False,
+        ),
+        (  # spin-polarised (7 and 5 filled bands), with fixed magnetic moment (one Fermi level per spin):
+            "O2",
+            {"occupations": {"name": "methfessel-paxton", "width": 0.05, "order": 0, "fixmagmom": True}},
+            False,
+        ),
+        ("Cu", {"kpts": (2, 2, 2)}, True),  # fractional band filling (11 valence electrons)
+    ],
+)
+def test_gpaw_band_edges(system, settings, metallic, tmp_path):
     """
-    Compare edges to independently selected occupied and empty DFT states.
-    """
-    name, calc, folder = band_edge_calculation
-    gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
-    eigenvalues, occupations = [], []
-    for spin in range(calc.get_number_of_spins()):
-        for kpt in range(len(calc.get_ibz_k_points())):
-            eigenvalues.extend(calc.get_eigenvalues(kpt=kpt, spin=spin))
-            occupations.extend(calc.get_occupation_numbers(kpt=kpt, spin=spin, raw=True))
-    eigenvalues, occupations = np.array(eigenvalues), np.array(occupations)
-    if name.startswith("Cu"):
-        if name == "Cu":
-            assert np.any((occupations > 0.1) & (occupations < 0.9))
-        # The previous Fermi-level partition reports a spurious finite gap on this mesh.
-        assert min(eigenvalues[eigenvalues > efermi]) - max(eigenvalues[eigenvalues <= efermi]) > 0
-        assert (gap, cbm, vbm) == (0, efermi, efermi)
-    else:
-        assert gap > 0
-        assert vbm == pytest.approx(max(eigenvalues[occupations >= 0.9]))
-        assert cbm == pytest.approx(min(eigenvalues[occupations <= 0.1]))
-        assert gap == pytest.approx(cbm - vbm)
-        if name == "O2":
-            assert calc.get_number_of_spins() == 2
-            assert calc.get_magnetic_moment() == pytest.approx(2, abs=0.01)
-        if name == "MgO":
-            # Recompute with exactly the occupied bands: this has no calculated CBM.
-            truncated = calc.fixed_density(
-                nbands=int(calc.get_number_of_electrons() / 2), txt=str(folder / "occupied_only.txt")
-            )
-            try:
-                with pytest.raises(ValueError, match="increase nbands"):
-                    _get_eigenvalue_properties_from_calc(truncated)
-            finally:
-                truncated.atoms.calc = None
-
-
-def test_band_edges_survive_restart(band_edge_calculation):
-    """
-    Stored restart occupations give the same edges as the live calculation.
+    Test the bulk band edges from band filling, which match GPAW's own
+    (electron-counting) HOMO and LUMO for gapped systems regardless of the
+    smearing, and give a zero band gap with both edges at the Fermi level for
+    metals, with the stored occupations consistent with the electron count.
     """
     gpaw = pytest.importorskip("gpaw")
-    _, calc, folder = band_edge_calculation
-    restarted = gpaw.GPAW(folder / "singlepoint.gpw", txt=None)
-    try:
-        assert _get_eigenvalue_properties_from_calc(restarted) == pytest.approx(
-            _get_eigenvalue_properties_from_calc(calc)
+    _band_edge_calculation(system, tmp_path, **settings)
+    outputs, _, warnings = _run_func_and_capture_stdout_warnings(
+        get_calculation_outputs, tmp_path, calculator="gpaw", label="bulk"
+    )
+    _check_warnings(warnings, [])
+    assert nelect_from_eigenvalues(outputs.eigenvalues, outputs.kpoint_weights) == pytest.approx(
+        outputs.nelect
+    )
+    if system == "GaAs":  # Fermi level in the conduction band at Gamma, so a Fermi-level partition fails
+        assert outputs.efermi > outputs.cbm
+    if metallic:
+        assert outputs.band_gap == 0
+        assert outputs.vbm == outputs.cbm == outputs.efermi
+    else:  # (``get_homo_lumo()`` gives spurious gaps for odd-electron metals, e.g. 5.9 eV for Cu here)
+        calc = gpaw.GPAW(tmp_path / "singlepoint.gpw", txt=None)
+        homo, lumo = calc.get_homo_lumo()
+        calc.atoms.calc = None
+        assert (outputs.vbm, outputs.cbm, outputs.band_gap) == pytest.approx(
+            (homo, lumo, lumo - homo), abs=1e-6
         )
-    finally:
-        restarted.atoms.calc = None
+
+
+def test_gpaw_defects_parser_without_bulk_band_edges(tmp_path):
+    """
+    Test parsing defects when the bulk band edges cannot be determined (here
+    with only the occupied bands calculated for the bulk supercell), which
+    warns (once) rather than failing, with no band edges stored (so that they
+    can be supplied to ``DefectThermodynamics``), or which uses the band edges
+    from ``bulk_band_gap_outputs`` if given (with no warning, unless that
+    calculation also has no unoccupied bands).
+    """
+    pytest.importorskip("gpaw")
+    bulk_supercell = Structure.from_spacegroup(
+        "Fm-3m", np.eye(3) * 4.21, ["Mg", "O"], [[0] * 3, [0.5] * 3]
+    )
+    vacancy_supercell = bulk_supercell.copy()
+    vacancy_supercell.remove_sites([0])
+    settings = {"mode": {"name": "pw", "ecut": 300}, "xc": "PBE", "spinpol": False}
+    calcs = tmp_path / "calcs"
+    _run_phase_calculation(bulk_supercell, calcs / "MgO_bulk", {**settings, "nbands": 0})  # occupied only
+    _run_phase_calculation(vacancy_supercell, calcs / "v_Mg_0", settings)
+    _run_phase_calculation(  # separate (primitive cell) band gap calculation
+        bulk_supercell.get_primitive_structure(),
+        tmp_path / "MgO_band_gap",
+        {**settings, "kpts": {"size": (2, 2, 2), "gamma": True}},
+    )
+
+    def parse(bulk_band_gap_outputs=None):
+        dp, _, warnings = _run_func_and_capture_stdout_warnings(
+            DefectsParser,
+            output_path=calcs,
+            bulk_path=calcs / "MgO_bulk",
+            bulk_band_gap_outputs=bulk_band_gap_outputs,
+            calculator="gpaw",
+            json_filename=False,
+        )
+        (entry,) = dp.defect_dict.values()
+        return entry, warnings
+
+    entry, warnings = parse()
+    _check_warnings(warnings, [("band edges could not be determined",)])  # (and none from the backend)
+    assert not {"vbm", "cbm", "band_gap"} & set(entry.calculation_metadata)  # not stored as None
+    DefectThermodynamics([entry], vbm=5.4, band_gap=3.7)  # (supplying the band edges, as advised)
+
+    entry, warnings = parse(tmp_path / "MgO_band_gap")  # band edges from ``bulk_band_gap_outputs``
+    assert not any("band edges could not be determined" in str(w.message) for w in warnings)
+    assert entry.calculation_metadata["band_gap"] == pytest.approx(3.71, abs=0.05)
+
+    _, warnings = parse(calcs / "MgO_bulk")  # (no unoccupied bands in ``bulk_band_gap_outputs`` either)
+    _check_warnings(warnings, [("band edges could not be determined",)])
+
+
+def test_get_band_edges_synthetic():
+    """
+    Test band-edge branches which depend on numerical noise in real
+    calculations (degenerate band edges split by rounding errors, and band
+    fillings just below an integer) or unusual settings (spin channels without
+    electrons or unoccupied bands).
+    """
+
+    def eigs(energies, occupations):  # (one k-point)
+        return np.stack([energies, occupations], axis=-1)[None]
+
+    # partially-filled degenerate level, split by rounding errors: metal (both edges at the Fermi level)
+    edges = _get_band_edges({Spin.up: eigs([0, 1, 1 + 1e-8, 2], [1, 0.5, 0.5, 0])}, [1], 1.002)
+    assert edges == (0, 1.002, 1.002)
+    # integer band filling, but near-degenerate (within 10 meV) band edges: metal
+    assert _get_band_edges({Spin.up: eigs([0, 1, 1.005, 2], [1, 1, 0, 0])}, [1], 1.002) == (
+        0,
+        1.002,
+        1.002,
+    )
+    # band filling just below an integer, and a spin channel without electrons:
+    edges = _get_band_edges(
+        {Spin.up: eigs([0, 1, 3], [1, 1 - 1e-9, 0]), Spin.down: eigs([2, 4, 5], [0, 0, 0])}, [1], 1.5
+    )
+    assert edges == pytest.approx((1, 2, 1))
+    # no unoccupied bands in one spin channel (e.g. too few bands for the majority spin): undetermined
+    edges = _get_band_edges({Spin.up: eigs([0, 2], [1, 0]), Spin.down: eigs([0, 1], [1, 1])}, [1], 0.5)
+    assert edges == (None, None, None)
