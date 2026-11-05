@@ -15,8 +15,6 @@ Not implemented, and so unavailable with GPAW:
   the ``.gpw`` files, but are not yet mapped to ``pymatgen``'s format.
 - ``get_fermi_dos()``: bulk DOS parsing, for Fermi level / carrier
   concentration analysis (``FermiSolver``).
-- Occupation-based band edges, see
-  :func:`_get_eigenvalue_properties_from_calc`.
 
 See the GPAW tracking issue.
 """
@@ -40,8 +38,8 @@ from doped.io.outputs import CalculationOutputs
 # ``doped`` accesses the remaining unimplemented protocol name directly (rather than probing with
 # ``getattr(backend, name, default)``), so it is intercepted here to fail informatively rather than with an
 # obscure ``AttributeError``. The optional, ``getattr``-probed protocol names (``SUBFOLDER_PRIORITY``,
-# ``load_eigenvalue_outputs``, ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising
-# ``AttributeError``, so that those features degrade gracefully as intended:
+# ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising ``AttributeError``, so that those
+# features degrade gracefully as intended (``load_eigenvalue_outputs`` is defined below, to fail fast):
 _UNIMPLEMENTED_BACKEND_ATTRS = ("get_fermi_dos",)
 
 
@@ -137,7 +135,7 @@ def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
             )
         yield calc
     finally:
-        if hasattr(calc, "close"):  # removed in GPAW >= 26
+        if hasattr(calc, "close"):  # (only the legacy GPAW calculator, e.g. with external potentials)
             calc.close()
         if getattr(calc, "atoms", None) is not None:  # break the ``Atoms`` <-> calculator reference
             calc.atoms.calc = None
@@ -147,8 +145,9 @@ def _get_gpaw_parameters(calc) -> dict:
     """
     Get the parameters of a ``GPAW`` calculator as a ``dict``.
 
-    With GPAW >= 26, these are only the explicitly-set values, while with older
-    versions they also include the defaults.
+    These are only the explicitly-set values, except for the legacy ``GPAW``
+    calculator (which ``GPAW`` uses e.g. for calculations with ``external``
+    potentials), where they also include the defaults.
     """
     return calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
 
@@ -203,31 +202,92 @@ def _structure_from_calc(calc) -> Structure:
     return structure
 
 
-def _get_eigenvalue_properties_from_calc(calc) -> tuple[float, float, float, float]:
+def _get_band_edges(
+    eigenvalues: dict[Spin, np.ndarray], kpoint_weights: np.ndarray, efermi: float
+) -> tuple[float | None, float | None, float | None]:
     """
-    Get ``(band_gap, cbm, vbm, efermi)`` (eV) from a ``GPAW`` calculator.
+    Get ``(band_gap, cbm, vbm)`` (in eV) by filling the lowest bands of each
+    spin channel, with the number of filled bands given by its `k`-point-
+    weighted occupation sum, so that the band edges do not depend on the
+    occupation smearing (which gives non-integer band-edge occupations in
+    narrow-gap semiconductors).
+
+    Fractional band filling, or overlapping (or near-degenerate, within 10 meV)
+    band edges, i.e. metals, give a zero band gap with both band edges at
+    ``efermi``, while ``None`` values are returned if a spin channel has no
+    unoccupied bands (too few bands calculated to determine the conduction band
+    minimum).
+
+    Args:
+        eigenvalues (dict[Spin, np.ndarray]):
+            Band energies and raw occupations (in [0, 1], without spin
+            degeneracy or `k`-point weights) as ``{spin: array}``, with array
+            shape ``(nkpoints, nbands, 2)``.
+        kpoint_weights (np.ndarray):
+            Weights of the (irreducible) `k`-points.
+        efermi (float):
+            Fermi level in eV, used as both band edges for metals.
+
+    Returns:
+        tuple[float | None, float | None, float | None]:
+            ``(band_gap, cbm, vbm)`` in eV.
     """
-    # TODO: Band edges are taken purely from the Fermi level here (VBM = highest eigenvalue at or below
-    # E_F, CBM = lowest above it), with no reference to occupations. That is only safe for a gapped
-    # bulk with E_F in the gap: it gives meaningless edges for a metallic or heavily-smeared bulk, and
-    # silently returns ``efermi`` for both edges (i.e. a zero gap) if no eigenvalue falls on one side.
-    # It is also outright wrong for charged defect supercells, where a partially-occupied in-gap state
-    # would be reported as a band edge -- so ``get_calculation_outputs`` only takes the band edges from
-    # the bulk. Replace with an occupation-based determination, as done for VASP in
-    # ``doped.utils.eigenvalues.band_edge_properties_from_outputs``; the occupations are available from
-    # ``calc.get_occupation_numbers()``. See the GPAW tracking issue.
-    efermi = calc.get_fermi_level()
-    energies: list[float] = []
-    for spin in range(calc.get_number_of_spins()):
-        for kpt in range(len(calc.get_ibz_k_points())):
-            energies.extend(calc.get_eigenvalues(kpt=kpt, spin=spin))
+    weights = np.asarray(kpoint_weights) / np.sum(kpoint_weights)
+    vbm, cbm = -np.inf, np.inf
+    for eig_occs in eigenvalues.values():
+        energies, occupations = eig_occs[..., 0], eig_occs[..., 1]
+        n_filled = weights @ occupations.sum(axis=1)  # number of filled bands in this spin channel
+        n_bands = int(np.rint(n_filled))
+        if abs(n_filled - n_bands) > 0.1:  # fractional band filling: metal
+            return 0.0, float(efermi), float(efermi)
+        if n_bands == energies.shape[1]:  # no unoccupied bands calculated in this spin channel
+            return None, None, None
+        if n_bands:  # (a spin channel may hold no electrons)
+            vbm = max(vbm, energies[:, n_bands - 1].max())
+        cbm = min(cbm, energies[:, n_bands].min())
 
-    below = [energy for energy in energies if energy <= efermi]
-    above = [energy for energy in energies if energy > efermi]
-    vbm = max(below) if below else efermi
-    cbm = min(above) if above else efermi
+    if cbm - vbm < 1e-2:  # overlapping or (near-)degenerate band edges: metal
+        return 0.0, float(efermi), float(efermi)
+    return float(cbm - vbm), float(cbm), float(vbm)
 
-    return cbm - vbm, cbm, vbm, efermi
+
+def _get_eigenvalues(calc, **kwargs) -> dict[Spin, np.ndarray]:
+    """
+    Get the band energies and raw occupations (in [0, 1], without spin
+    degeneracy or `k`-point weights) from a ``GPAW`` calculator (with
+    ``raw=True`` in ``kwargs``) or an ``ase`` single-point calculator read from
+    a ``.gpw`` file (which stores raw occupations), as ``{spin: array}`` with
+    array shape ``(nkpoints, nbands, 2)``, as ``pymatgen`` expects.
+    """
+    return {
+        spin: np.array(
+            [
+                np.stack(
+                    [
+                        calc.get_eigenvalues(kpt=kpt, spin=spin_index),
+                        calc.get_occupation_numbers(kpt=kpt, spin=spin_index, **kwargs),
+                    ],
+                    axis=-1,
+                )
+                for kpt in range(len(calc.get_ibz_k_points()))
+            ]
+        )
+        for spin_index, spin in enumerate((Spin.up, Spin.down)[: calc.get_number_of_spins()])
+    }
+
+
+def load_eigenvalue_outputs(**kwargs) -> CalculationOutputs:
+    """
+    Raise ``NotImplementedError``, as projected eigenvalues (needed for
+    eigenvalue analysis) are not yet parsed from GPAW outputs (see the module
+    docstring); TODO.
+
+    Defined so that eigenvalue analysis fails immediately for GPAW.
+    """
+    raise NotImplementedError(
+        "Eigenvalue analysis is not yet implemented for GPAW, as projected eigenvalues are not parsed "
+        "from GPAW outputs; see the GPAW tracking issue."
+    )
 
 
 def _get_planar_averaged_potential_from_calc(calc) -> dict[str, np.ndarray]:
@@ -354,8 +414,8 @@ def get_calculation_outputs(
             Path to the calculation directory, or directly to a ``.gpw`` file.
         label (str):
             Label for the type of calculation being parsed (e.g. ``"bulk"``,
-            ``"defect"``), for informative warnings. Default is
-            ``"calculation"``.
+            ``"defect"``). Accepted for backend-protocol compatibility but
+            unused. Default is ``"calculation"``.
         parse_projected_eigen (bool):
             Accepted for backend-protocol compatibility and otherwise
             **unused**: mapping ``GPAW``'s PAW projections to ``pymatgen``'s
@@ -376,22 +436,13 @@ def get_calculation_outputs(
     with _open_gpaw_restart(gpw_file, txt=None) as calc:
         parameters = _get_gpaw_parameters(calc)
         charge = parameters.get("charge") or 0  # parameters only holds explicitly-set, non-default values
-        band_gap, cbm, vbm, efermi = _get_eigenvalue_properties_from_calc(calc)
-        eigenvalues = {}
-        for spin_index, spin in enumerate((Spin.up, Spin.down)[: calc.get_number_of_spins()]):
-            eigenvalues[spin] = np.array(
-                [  # (n_kpoints, n_bands, 2); energy and occupancy, as ``pymatgen`` expects
-                    np.stack(
-                        [
-                            calc.get_eigenvalues(kpt=kpt, spin=spin_index),
-                            # ``raw`` = in [0, 1], without k-point weights or spin degeneracy:
-                            calc.get_occupation_numbers(kpt=kpt, spin=spin_index, raw=True),
-                        ],
-                        axis=-1,
-                    )
-                    for kpt in range(len(calc.get_ibz_k_points()))
-                ]
-            )
+        try:
+            efermi = calc.get_fermi_level()
+        except (AssertionError, ValueError):  # fixed magnetic moment (``fixmagmom``): one per spin channel
+            efermi = float(np.mean(calc.get_fermi_levels()))  # (as in ``ase.io.gpw.read_gpw``)
+        kpoint_weights = calc.get_k_point_weights()
+        eigenvalues = _get_eigenvalues(calc, raw=True)
+        band_gap, cbm, vbm = _get_band_edges(eigenvalues, kpoint_weights, efermi)
 
         return CalculationOutputs(
             structure=_structure_from_calc(calc),
@@ -404,14 +455,13 @@ def get_calculation_outputs(
             efermi=efermi,
             eigenvalues=eigenvalues,
             kpoint_coords=calc.get_ibz_k_points(),
-            kpoint_weights=calc.get_k_point_weights(),
+            kpoint_weights=kpoint_weights,
             nelect=calc.get_number_of_electrons(),
             charge=charge,
             magnetization=calc.get_magnetic_moment(),
-            # the Fermi-level band edges are only meaningful for a gapped, neutral bulk:
-            vbm=vbm if not charge else None,
-            cbm=cbm if not charge else None,
-            band_gap=band_gap if not charge else None,
+            vbm=vbm,
+            cbm=cbm,
+            band_gap=band_gap,
             planar_averaged_potentials={
                 int(axis): potentials
                 for axis, potentials in _get_planar_averaged_potential_from_calc(calc).items()
@@ -435,10 +485,10 @@ def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
         ComputedStructureEntry:
             The uncorrected total energy and structure, with GPAW parameters
             (as set for the calculation), formula, volume, atom count, source
-            folder, k-point mesh and magnetization in ``entry.data``. Ionic
+            folder, k-point mesh and calculation summary info (``"summary"``;
+            band gap & total magnetization) in ``entry.data``. Ionic
             convergence is not reported: restart files have no ionic-step
-            history. Band gaps are omitted pending occupation-based band edges
-            (TODO).
+            history.
     """
     from ase.dft.kpoints import get_monkhorst_pack_size_and_offset
     from ase.io.gpw import read_gpw
@@ -453,8 +503,11 @@ def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
             f"{gpw_file} holds no stored results (e.g. from an unconverged or unfinished calculation)"
         )
 
-    structure = _structure_from_calc(atoms.calc)
+    calc = atoms.calc
+    structure = _structure_from_calc(calc)
     entry = ComputedStructureEntry(structure, atoms.get_potential_energy())  # parameters in ``entry.data``
+    eigenvalues, kpoint_weights = _get_eigenvalues(calc), calc.get_k_point_weights()
+    band_gap = _get_band_edges(eigenvalues, kpoint_weights, calc.get_fermi_level())[0]
     elements = sorted(el.symbol for el in entry.composition.elements)
     entry.data.update(
         {
@@ -466,7 +519,7 @@ def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
             "energy_per_atom": entry.energy_per_atom,
             "elements": elements,
             "nelements": len(elements),
-            "summary": {"total_magnetization": atoms.calc.get_magnetic_moment()},
+            "summary": {"band_gap": band_gap, "total_magnetization": calc.get_magnetic_moment()},
             "folder": str(Path(gpw_file).parent),
             "converged_electronic": True,  # (as results-less restarts are rejected above)
         }

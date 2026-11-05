@@ -10,16 +10,19 @@ generation, correction and thermodynamic-analysis tools.
 Installation
 ------------
 
-Install GPAW and its PAW datasets following the
+Install GPAW (which includes its PAW datasets) following the
 `GPAW installation guide <https://gpaw.readthedocs.io/install.html>`__. A typical
 ``pip`` installation is:
 
 .. code-block:: bash
 
+   pip install git+https://gitlab.com/gpaw/gpaw.git  # until the next GPAW release
    pip install doped[gpaw]
-   gpaw install-data
 
-``GPAW`` 25.7.0 or later is required.
+A ``GPAW`` version newer than 26.7.0 is required, as relaxations with hybrid
+functionals (the default) fail at the second ionic step with GPAW 26.7.0, so
+until the next ``GPAW`` release the development version is installed first, as
+above.
 
 .. note::
 
@@ -42,13 +45,20 @@ The GPAW workflow follows the usual ``doped`` sequence:
 Input generation
 ----------------
 
-The calculator settings are supplied as a dictionary. Settings consumed by the
-input generator, such as ``optimizer`` and ``fmax``, are not passed on to the
-GPAW calculator. :class:`~doped.io.gpaw.inputs.DefectsSet` writes the inputs
-for all defects from a |DefectsGenerator| (or a dictionary/list of
-|DefectEntry| objects), with ``structure.cif`` and a ``relax.py`` GPAW script in
-a ``<defect name>/`` folder for each, and a static ``singlepoint.py`` reference
-calculation for the bulk supercell in ``{formula}_bulk/`` (e.g. ``MgO_bulk/``):
+The calculator settings are supplied as a dictionary, which overrides the
+default settings in |GPAW_DefectSet.yaml|. Settings consumed by the input
+generator, such as ``optimizer`` and ``fmax``, are not passed on to the GPAW
+calculator. The HSE06 hybrid DFT functional is used by default (which
+requires plane-wave mode in GPAW), no point-group symmetry, and Gaussian
+smearing of 0.05 eV. Relaxations use ``PreconLBFGS`` by default, with the
+settings tuned for defect relaxations in
+`ML-PEG <https://github.com/ddmms/ml-peg/pull/863>`__.
+
+:class:`~doped.io.gpaw.inputs.DefectsSet` writes the inputs for all defects
+from a |DefectsGenerator| (or a dictionary/list of |DefectEntry| objects), with
+``structure.cif`` and a ``relax.py`` GPAW script in a ``<defect name>/`` folder
+for each, and a static ``singlepoint.py`` reference calculation for the bulk
+supercell in ``{formula}_bulk/`` (e.g. ``MgO_bulk/``):
 
 .. code-block:: python
 
@@ -105,7 +115,7 @@ are set to zero), or per site with a list of one value per atom (e.g.
 the per-element form, as defect and bulk supercells differ in composition.
 
 To specify the basis setting (e.g. for LCAO calculations), supply the basis as a
-GPAW calculator setting, e.g. ``gpaw_settings={"mode": {"name": "lcao"}, "basis": "dzp"}``.
+GPAW calculator setting, e.g. ``gpaw_settings={"mode": {"name": "lcao"}, "basis": "dzp", "xc": "PBE"}``.
 
 Running the calculations
 ------------------------

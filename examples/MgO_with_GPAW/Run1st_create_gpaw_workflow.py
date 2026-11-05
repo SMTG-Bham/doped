@@ -36,6 +36,9 @@ def write_competing_phase_inputs(gpaw_settings, host_structure):
             **gpaw_settings,
             "kpts": {"density": 4.0, "gamma": True},
             "occupations": {"name": "fermi-dirac", "width": 0.1},
+            # symmetry is off by default (for defect supercells), but use for competing phases to reduce
+            # the k-points):
+            "symmetry": {"point_group": True},
         }
         if phase_name.startswith("O2_"):
             # Isolated triplet O2: Gamma-only sampling and one initial moment

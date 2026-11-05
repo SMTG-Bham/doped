@@ -19,3 +19,4 @@ Modules
    doped.utils
    doped.io
    doped.VASP_sets
+   doped.GPAW_sets

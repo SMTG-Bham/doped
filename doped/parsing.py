@@ -1826,22 +1826,29 @@ def _handle_charge_correction_errors(
             Additional keyword arguments, such as
             ``shallow_charge_stability_tolerance``.
     """
-    defect_thermo = DefectThermodynamics(
-        list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
-    )
-    shallow_tol = kwargs.get(
-        "shallow_charge_stability_tolerance",
-        min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
-    )
+    defect_thermo = None
+    if all(  # (no charge-state stability filtering if the bulk band edges are undetermined)
+        e.calculation_metadata.get(k) is not None
+        for e in defect_dict.values()
+        for k in ("vbm", "band_gap")
+    ):
+        defect_thermo = DefectThermodynamics(
+            list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
+        )
+        shallow_tol = kwargs.get(
+            "shallow_charge_stability_tolerance",
+            min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
+        )
     fmt = ".3f" if error_tolerance >= 0.01 else ".2e"  # meV rounding if tol >= 10 meV, else sci notation
     correction_errors: dict[tuple, list[str]] = {("Freysoldt", "FNV"): [], ("Kumagai", "eFNV"): []}
 
     for name, defect_entry in defect_dict.items():
         # no charge correction warnings for unstable charge states (we avoid prune_to_stable_entries()
         # here, as this would require two |DefectThermodynamics| inits):
-        window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
-        if window < 0 or (defect_entry.is_shallow and window < shallow_tol):
-            continue
+        if defect_thermo is not None:
+            window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
+            if window < 0 or (defect_entry.is_shallow and window < shallow_tol):
+                continue
         for (long_name, _), errors in correction_errors.items():
             err = defect_entry.corrections_metadata.get(f"{long_name.lower()}_charge_correction_error", 0)
             if err > error_tolerance:
@@ -2868,12 +2875,15 @@ class DefectParser:
                 bulk_band_gap_outputs.vbm,
             )
 
-        gap_calculation_metadata.update(
-            {
-                "cbm": cbm,
-                "vbm": vbm,
-                "band_gap": band_gap,
-            }
+        if vbm is None:
+            warnings.warn(
+                "The bulk band edges could not be determined (e.g. as no unoccupied bands were "
+                "calculated, in at least one spin channel), so calculate more bands, or supply them with "
+                "`vbm` and `band_gap` in `DefectThermodynamics`."
+            )
+
+        gap_calculation_metadata.update(  # (undetermined band edges are omitted, not stored as None)
+            {k: v for k, v in {"cbm": cbm, "vbm": vbm, "band_gap": band_gap}.items() if v is not None}
         )
         if mpid is not None:
             gap_calculation_metadata["mpid"] = mpid
