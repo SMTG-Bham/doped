@@ -27,7 +27,7 @@ from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
-from monty.serialization import loadfn
+from monty.serialization import dumpfn, loadfn
 from mp_api.client.mprester import DEFAULT_THERMOTYPE_CRITERIA, MPRester, MPRestError
 from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
@@ -628,7 +628,7 @@ def get_MP_summary_dicts(
 def _entries_sort_func(
     entry: ComputedEntry,
     bulk_composition: str | Composition | dict | list | None = None,
-) -> tuple[float, bool, int, list[tuple[int, int]], str]:
+) -> tuple[float, bool, int, list[tuple[int, int, float]], str]:
     r"""
     Function to sort |ComputedEntry|\s by energy above hull, then if
     composition matches ``bulk_composition`` (if provided), then by the number
@@ -646,7 +646,7 @@ def _entries_sort_func(
             Default is ``None`` (don't sort according to this).
 
     Returns:
-        tuple[float, bool, int, list[tuple[int, int]], str]:
+        tuple[float, bool, int, list[tuple[int, int, float]], str]:
             Sort key: energy above hull, whether the composition differs from
             the bulk composition (when ``bulk_composition`` is set), number of
             species in ``entry.name``, periodic-table ordering tuples for each
@@ -1333,9 +1333,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
             if set(entry.composition.elements) <= intrinsic_el_set
             and entry.data.get("energy_above_hull", 0) <= self.energy_above_hull
         ]
-        # record the effective ``mp-api`` thermo-type criteria (for reference/serialisation); placed after
-        # ``get_entries_in_chemsys``, to show the ``mp-api`` warning about updated default thermo type
-        # criteria. Copies avoid mutating the caller's dict or aliasing the ``mp-api`` module-level list:
+        # record the effective ``mp-api`` thermo-type criteria (for reference/serialisation). Copies avoid
+        # mutating the caller's dict or aliasing the ``mp-api`` module-level list:
         self._get_entries_kwargs["additional_criteria"] = {
             "thermo_types": list(DEFAULT_THERMOTYPE_CRITERIA["thermo_types"]),
             **(self._get_entries_kwargs.get("additional_criteria") or {}),
@@ -2884,8 +2883,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
                 by comparing their calculation settings (e.g. ``INCAR`` tags
-                and ``POTCAR`` symbols with VASP), if available. Default is
-                ``True``.
+                and ``POTCAR`` symbols with VASP) and checking their final
+                pressures, if available. Default is ``True``.
             calculator (str):
                 Name of the calculator used for the competing phase
                 calculations (matching a ``doped.io.<calculator>`` parsing
@@ -2997,7 +2996,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
                 by comparing their calculation settings (e.g. ``INCAR`` tags
-                and ``POTCAR`` symbols with VASP). Default is ``True``.
+                and ``POTCAR`` symbols with VASP) and checking their final
+                pressures, if available. Default is ``True``.
         """
         self.entries = entries
         intrinsic_entries: list[ComputedEntry | ComputedStructureEntry] = []
@@ -3086,6 +3086,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 entries,
                 template_candidates=[self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries],
             )
+            _check_entry_pressures(self.entries)  # are the phases at their equilibrium volumes?
 
         # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
         # and add to self.elements:
@@ -3222,11 +3223,12 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
                 by comparing their calculation settings (e.g. ``INCAR`` tags
-                and ``POTCAR`` symbols with VASP). Default is ``True``.
+                and ``POTCAR`` symbols with VASP) and checking their final
+                pressures, if available. Default is ``True``.
         """
         output_file = self._backend.CALC_OUTPUT_MASK[0]  # e.g. "vasprun.xml" with VASP
         if isinstance(path, list):
-            self._collect_calc_outputs_from_list(path)
+            self._collect_calc_outputs_from_list(path, verbose)
         else:
             self._collect_calc_outputs_from_directory(path, subfolder, verbose)
 
@@ -3332,13 +3334,17 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         """
         return get_backend(getattr(self, "calculator", "vasp"))
 
-    def _collect_calc_outputs_from_list(self, path_list: list[PathLike]) -> None:
+    def _collect_calc_outputs_from_list(self, path_list: list[PathLike], verbose: bool = True) -> None:
         """
         Populate ``self.calc_output_paths`` from a list of paths, where each
         entry can be a direct calculation output file path
-        (``vasprun.xml(.gz)`` with ``VASP``) or a directory containing one.
+        (``vasprun.xml(.gz)`` with ``VASP``) or the directory directly
+        containing one.
+
+        Directories without one are skipped, with a warning if ``verbose``.
         """
         output_file = self._backend.CALC_OUTPUT_MASK[0]
+        skipped_folders = []
         for entry_path in path_list:
             if str(output_file) in str(entry_path) and not os.path.basename(entry_path).startswith("."):
                 self.calc_output_paths.append(str(entry_path))
@@ -3347,6 +3353,11 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             calc_output_path = self._find_calc_output_in_directory(entry_path)
             if calc_output_path is not None:
                 self.calc_output_paths.append(str(calc_output_path))
+            else:
+                skipped_folders.append(str(entry_path))
+
+        if verbose:
+            _warn_skipped_folders(output_file, skipped_folders)
 
     def _collect_calc_outputs_from_directory(
         self,
@@ -3376,21 +3387,39 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         if calc_files_df.empty:
             return
 
+        subfolder_suffix = ""  # for the skipped folders warning
         if resolved_subfolder != ".":  # actual subfolder found
             filtered = calc_files_df[
                 calc_files_df["folder_path"].apply(lambda p: p.name == resolved_subfolder)
             ]
             if not filtered.empty:
                 calc_files_df = filtered
+                subfolder_suffix = f"/{resolved_subfolder}"
             elif verbose:
                 warnings.warn(
                     f"No {output_file} files found in '{resolved_subfolder}' subfolders under {path}. "
                     f"Using all {len(calc_files_df)} {output_file} files found."
                 )
 
+        parsed_folders = set()  # top-level folders in ``path`` with parsed outputs
         for directory in sorted(calc_files_df["folder_path"].unique()):
             if (calc_output_path := self._find_calc_output_in_directory(directory)) is not None:
                 self.calc_output_paths.append(calc_output_path)
+                parsed_folders.add(os.path.relpath(directory, root).split(os.sep)[0])
+
+        if verbose:  # warn about calculation folders in ``path`` without parsed outputs
+            _warn_skipped_folders(
+                output_file,
+                [
+                    f"{folder.name}{subfolder_suffix}"
+                    for folder in sorted(root.iterdir())
+                    if folder.is_dir()
+                    and not folder.name.startswith(".")
+                    and folder.name not in parsed_folders
+                    and _is_calc_folder_name(folder.name)
+                ],
+                path,
+            )
 
     def _find_calc_output_in_directory(self, directory: PathLike) -> str | None:
         """
@@ -4043,6 +4072,44 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         cpa.calculator = d.get("calculator", cpa.calculator)
         return cpa
 
+    def to_json(self, filename: PathLike | None = None):
+        """
+        Save the |CompetingPhasesAnalyzer| object as a json file, which can be
+        reloaded with the ``CompetingPhasesAnalyzer.from_json()`` class method.
+
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
+        Args:
+            filename (PathLike):
+                Filename to save ``json`` file as. If ``None``, set to
+                ``{Chemical Formula}_competing_phases_analyzer.json.gz`` by
+                default, where ``{Chemical Formula}`` is the reduced chemical
+                formula of the host material.
+        """
+        if filename is None:
+            formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            filename = f"{formula}_competing_phases_analyzer.json.gz"
+
+        dumpfn(self, filename)
+
+    @classmethod
+    def from_json(cls, filename: PathLike):
+        """
+        Load a |CompetingPhasesAnalyzer| object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
+
+        Args:
+            filename (PathLike):
+                Filename of json file to load |CompetingPhasesAnalyzer| object
+                from.
+
+        Returns:
+            |CompetingPhasesAnalyzer| object
+        """
+        return loadfn(filename)
+
     @property
     def chempot_grid(self) -> ChemicalPotentialGrid:
         """
@@ -4649,6 +4716,58 @@ def _check_entry_compatibility(
         )
 
 
+_PRESSURE_RANGE_GPA = (-3, 1)
+"""
+Range (in GPa) of final (residual) pressures for competing phase calculations,
+outside of which |CompetingPhasesAnalyzer| warns that they may not be at their
+equilibrium volumes (see :func:`_check_entry_pressures`).
+
+The lower bound is looser, as large negative pressures can be Pulay stress (in
+fixed-cell calculations with low plane-wave cutoffs) rather than volume errors.
+"""
+
+
+def _check_entry_pressures(entries: list[ComputedEntry]) -> None:
+    """
+    Warn about competing phase ``entries`` with large final (residual)
+    pressures (outside :data:`_PRESSURE_RANGE_GPA`), which indicate that their
+    cells are not at their equilibrium volumes for the calculation settings
+    used (e.g. fixed-cell or single-point calculations at lattices from other
+    functionals, codes or cutoffs, or unconverged relaxations), and so can
+    cause errors in their energies and thus the chemical potential limits.
+
+    Large negative pressures in fixed-cell calculations with low plane-wave
+    cutoffs are usually Pulay stress, so the lower bound is looser.
+
+    The pressures are taken from ``entry.data["pressure"]`` (in GPa, positive
+    for compressive stress). Entries without a numerical pressure are skipped.
+
+    Args:
+        entries (list[|ComputedEntry|]):
+            The competing phase entries to check.
+    """
+    min_pressure, max_pressure = _PRESSURE_RANGE_GPA
+    high_pressures = []
+    for entry in entries:
+        pressure = entry.data.get("pressure")  # (``None`` and NaN pressures are skipped below)
+        if isinstance(pressure, int | float) and (pressure < min_pressure or pressure > max_pressure):
+            folder = entry.data.get("folder")
+            high_pressures.append((f"{entry.name} ({folder})" if folder else entry.name, pressure))
+
+    if high_pressures:
+        high_pressures.sort(key=lambda x: -abs(x[1]))
+        warnings.warn(
+            f"There are large final pressures (P < {min_pressure} GPa or P > {max_pressure} GPa) for "
+            f"(some of) your competing phase calculations, suggesting that their cells are not at their "
+            f"equilibrium volumes for the calculation settings used (e.g. fixed-cell or single-point "
+            f"calculations at lattices from other functionals, codes or cutoffs, or unconverged "
+            f"relaxations), which can cause errors in their energies. Negative pressures in fixed-cell "
+            f"calculations with low plane-wave cutoffs can be Pulay stress, which may have a negligible "
+            f"effect on energies. Final pressures (positive = compressive stress):\n"
+            + "\n".join(f"{label}: {pressure:+.2f} GPa" for label, pressure in high_pressures)
+        )
+
+
 def _parse_entry_and_catch_exception(
     calc_output_path: PathLike, calculator: str = "vasp"
 ) -> tuple[str | ComputedStructureEntry, PathLike, bool, bool]:
@@ -4672,6 +4791,37 @@ def _parse_entry_and_catch_exception(
         )
     except Exception as e:
         return str(e), calc_output_path, False, False
+
+
+def _is_calc_folder_name(folder_name: str) -> bool:
+    """
+    Whether ``folder_name`` looks like the name of a (competing phase)
+    calculation folder, i.e. contains ``"EaH"`` (as in the default
+    ``{Formula}_{spg}_EaH_{EaH}`` folder names) or a composition (e.g.
+    ``"ZrO2"``) in its ``"_"``-separated parts.
+    """
+    if "EaH" in folder_name:
+        return True
+    for name_part in folder_name.split("_"):
+        with contextlib.suppress(ValueError):  # not a composition
+            if name_part and Composition(name_part):
+                return True
+    return False
+
+
+def _warn_skipped_folders(
+    output_file: str, folders: list[str], parent_folder: PathLike | None = None
+) -> None:
+    """
+    Warn that calculation output files (``output_file``) could not be found in
+    ``folders`` (in ``parent_folder``, if given), and so they are skipped.
+    """
+    if folders:
+        parent_folder_string = f" (in {parent_folder})" if parent_folder is not None else ""
+        warnings.warn(
+            f"{output_file} files could not be found in the following directories{parent_folder_string}, "
+            f"and so they will be skipped for parsing:\n" + "\n".join(folders)
+        )
 
 
 def _possible_label_positions_from_bbox_intersections(

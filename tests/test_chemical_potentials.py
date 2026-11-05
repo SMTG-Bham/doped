@@ -19,10 +19,11 @@ from monty.serialization import dumpfn, loadfn
 from mp_api.client.core.exceptions import MPRestWarning
 from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.core.composition import Composition
-from pymatgen.core.entries import ComputedEntry
+from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import Potcar
+from pymatgen.io.vasp.outputs import Vasprun
 from test_utils import (
     EXAMPLE_DIR,
     _potcars_available,
@@ -40,7 +41,7 @@ from test_utils import (
 
 from doped import chemical_potentials
 from doped.io.vasp.inputs import DopedDictSet
-from doped.io.vasp.outputs import _find_calc_outputs, _get_calc_files_df
+from doped.io.vasp.outputs import _find_calc_outputs, _get_calc_files_df, get_competing_phase_entry
 from doped.utils.symmetry import get_primitive_structure
 
 
@@ -1904,7 +1905,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         }
 
     def tearDown(self):
-        for i in ["cpa.json"]:
+        for i in ["cpa.json", "ZrO2_competing_phases_analyzer.json.gz"]:
             if_present_rm(i)
 
         if_present_rm(os.path.join(data_dir, "ZrO2_LaTeX_Tables/test.tex"))
@@ -1932,7 +1933,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         if_present_rm(
             os.path.join(
-                data_dir,
+                vasp_data_dir,
                 "Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/duplicate_for_testing_vasprun.xml.gz",
             )
         )
@@ -2418,6 +2419,20 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self._compare_cpas(lst_fols_cpa, cpa)
         self._general_cpa_check(lst_fols_cpa)
 
+        # list entries are not searched recursively, so a phase folder (rather than its ``vasp_std``
+        # subfolder) is skipped, with a warning:
+        skipped_folder = next(os.path.dirname(folder) for folder in all_folders if "Zr2O_EaH" in folder)
+        entries = [skipped_folder if "Zr2O_EaH" in folder else folder for folder in all_folders]
+        skip_cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", entries=entries
+        )
+        assert len(skip_cpa.calc_output_paths) == 7
+        assert any(
+            "vasprun.xml files could not be found in the following directories, and so they will be "
+            f"skipped for parsing:\n{skipped_folder}" in str(warning.message)
+            for warning in w
+        )
+
     def test_vaspruns_hidden_files(self):
         with open(f"{self.ZrO2_path}/._OUTCAR", "w") as f:
             f.write("test pop")
@@ -2494,9 +2509,17 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
-            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder="vasp_ncl")
+            cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
+                chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", tmp_dir, subfolder="vasp_ncl"
+            )
             assert set(map(os.path.realpath, cpa.calc_output_paths)) == ncl_paths
             assert len(cpa.calc_output_paths) == 3
+            # the ignored phase folder (no ``vasp_ncl`` subfolder) is warned about:
+            assert any(
+                f"vasprun.xml files could not be found in the following directories (in {tmp_dir}), and "
+                "so they will be skipped for parsing:\nZr3O_EaH_0.0/vasp_ncl" in str(warning.message)
+                for warning in w
+            )
 
     def test_subfolder_auto_detect_picks_highest_priority(self):
         """
@@ -2760,12 +2783,20 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         reloaded_cpa = loadfn("cpa.json")
         self._compare_cpas(cpa, reloaded_cpa)
 
+        cpa.to_json("cpa.json")
+        self._compare_cpas(cpa, chemical_potentials.CompetingPhasesAnalyzer.from_json("cpa.json"))
+
     def test_general_cpa_reloading(self):
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
         _print_warning_info(w)  # for debugging
         assert not w
         self._general_cpa_check(cpa)
+        cpa.to_json()  # default filename (compressed)
+        json_cpa = chemical_potentials.CompetingPhasesAnalyzer.from_json(
+            "ZrO2_competing_phases_analyzer.json.gz"
+        )
+        self._compare_cpas(cpa, json_cpa)
 
         with warnings.catch_warnings(record=True) as w:
             la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.La_ZrO2_path)
@@ -2836,6 +2867,94 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             ]
         )
         self._general_cpa_check(MgO_cpa)
+
+    def test_competing_phase_pressures(self):
+        """
+        Test that the final pressures of VASP competing phase calculations are
+        parsed (when the stress was calculated), that large residual pressures
+        are warned about (outside asymmetric bounds, sorted by magnitude, and
+        only with ``check_compatibility=True``).
+        """
+
+        def first_ionic_step_entry(path, **data):  # real phase at its unrelaxed (MP) lattice
+            first_step = Vasprun(path, parse_dos=False, parse_eigen=False).ionic_steps[0]
+            return ComputedStructureEntry(
+                first_step["structure"],
+                first_step["electronic_steps"][-1]["e_0_energy"],  # (ionic-step value can be 0)
+                data={"pressure": float(np.trace(first_step["stress"]) / 30), **data},  # GPa
+            )
+
+        zro2_path = f"{self.ZrO2_path}/ZrO2_EaH_0.0/vasp_std/vasprun.xml.gz"
+        ytos_path = f"{EXAMPLE_DIR}/YTOS/Bulk/vasprun.xml.gz"  # (ENCUT = 0.75 x ENMAX; large Pulay stress)
+        zro2, ytos = (get_competing_phase_entry(path) for path in [zro2_path, ytos_path])
+        for entry, path in [(zro2, zro2_path), (ytos, ytos_path)]:
+            vasprun = Vasprun(path, parse_dos=False, parse_eigen=False)
+            assert entry.data["pressure"] == pytest.approx(
+                np.trace(vasprun.ionic_steps[-1]["stress"]) / 30
+            )
+        assert abs(zro2.data["pressure"]) < 0.1  # relaxed (ISIF = 3)
+        assert ytos.data["pressure"] == pytest.approx(-17.37, abs=0.01)
+
+        # no stress calculated (hybrid DFT calculation with ISIF unset, i.e. ISIF = 0), so no pressure:
+        cdte = get_competing_phase_entry(f"{vasp_data_dir}/CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
+        assert "pressure" not in cdte.data
+
+        # first ionic steps of real relaxations, at their unrelaxed lattices; ZrO2 without a folder:
+        la_path = f"{EXAMPLE_DIR}/La_ZrO2_CompetingPhases/La_EaH_0.0/vasp_std/vasprun.xml.gz"
+        la = first_ionic_step_entry(la_path, folder="La_EaH_0.0")
+        mgo = first_ionic_step_entry(
+            f"{EXAMPLE_DIR}/MgO/CompetingPhases/MgO_Fm-3m_EaH_0/vasp_std/vasprun.xml.gz", folder="MgO"
+        )
+        polymorph = first_ionic_step_entry(f"{self.ZrO2_path}/ZrO2_EaH_0.009/vasp_std/vasprun.xml.gz")
+        assert polymorph.data["pressure"] < -5
+        assert mgo.data["pressure"] == pytest.approx(-0.99, abs=0.01)  # within the bounds
+        # and just inside (MgO after a lower-cutoff relaxation, La2O3) and outside (Zr3O) the bounds:
+        mgo_tight = first_ionic_step_entry(
+            f"{EXAMPLE_DIR}/MgO/Dielectric/Ionic/Relax_tight/vasprun.xml.gz"
+        )
+        la2o3_path = f"{EXAMPLE_DIR}/La_ZrO2_CompetingPhases/La2O3_EaH_0.0/vasp_std/vasprun.xml.gz"
+        la2o3 = first_ionic_step_entry(la2o3_path)
+        zr3o_path = f"{self.ZrO2_path}/Zr3O_EaH_0.004/vasp_std/vasprun.xml.gz"
+        zr3o = first_ionic_step_entry(zr3o_path, folder="Zr3O_EaH_0.004")
+        assert mgo_tight.data["pressure"] == pytest.approx(0.97, abs=0.01)
+        assert la2o3.data["pressure"] == pytest.approx(-2.10, abs=0.01)
+        assert zr3o.data["pressure"] == pytest.approx(-3.46, abs=0.01)
+
+        _, _, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials._check_entry_pressures,
+            [mgo, mgo_tight, la, la2o3, zro2, cdte, polymorph, zr3o, ytos],
+        )
+        assert len(w) == 1
+        message = str(w[0].message)
+        min_pressure, max_pressure = chemical_potentials._PRESSURE_RANGE_GPA
+        assert message.startswith(
+            f"There are large final pressures (P < {min_pressure} GPa or P > {max_pressure} GPa) for"
+        )
+        assert message.split("(positive = compressive stress):\n")[1].splitlines() == [  # sorted by |P|
+            f"{ytos.name} ({ytos.data['folder']}): -17.37 GPa",
+            f"ZrO2: {polymorph.data['pressure']:+.2f} GPa",
+            "Zr3O (Zr3O_EaH_0.004): -3.46 GPa",
+            "La (La_EaH_0.0): +1.21 GPa",
+        ]
+
+        # pressures parsed for all phases in a real analysis, with no warnings for these relaxed phases:
+        cpa, _, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", self.ZrO2_path
+        )
+        assert not w
+        assert all(abs(entry.data["pressure"]) < 0.1 for entry in cpa.entries)
+
+        # but warned about in the analysis for the polymorph at its unrelaxed lattice (with checks on):
+        entries = [e for e in cpa.entries if "ZrO2_EaH_0.009" not in e.data["folder"]] + [polymorph]
+        for check_compatibility in [True, False]:
+            _, _, w = _run_func_and_capture_stdout_warnings(
+                chemical_potentials.CompetingPhasesAnalyzer,
+                "ZrO2",
+                entries=entries,
+                check_compatibility=check_compatibility,
+            )
+            expected = [f"ZrO2: {polymorph.data['pressure']:+.2f} GPa"] if check_compatibility else []
+            assert [str(x.message).split("(positive = compressive stress):\n")[1] for x in w] == expected
 
     def test_mismatching_potcar_warnings(self):
         """

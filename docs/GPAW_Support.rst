@@ -196,8 +196,10 @@ The parser reads the stored structures, total energies and GPAW parameters, and
 warns if the functional, PAW datasets, basis set or mode (e.g. plane-wave
 cutoff) differ between competing phases (while k-point and real-space meshes
 can differ). Ensure energies use consistent functionals, PAW datasets, basis
-sets and cutoffs with the bulk and defects. Competing-phase input generation
-with GPAW is not yet implemented (TODO).
+sets and cutoffs with the bulk and defects. Pressures in GPAW competing phases
+are not checked, as GPAW's plane-wave stress includes a large Pulay error at
+the cutoffs typically used for energies (which are far less sensitive to this).
+Competing-phase input generation with GPAW is not yet implemented (TODO).
 
 The complete MgO example prepares a primitive-cell MgO host calculation, Mg
 structures obtained from the |CompetingPhases| workflow and an isolated triplet

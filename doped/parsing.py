@@ -2704,19 +2704,22 @@ class DefectParser:
                 check_run_compatibility(self.defect_outputs, self.bulk_outputs)
             )
 
-        # check if the bulk and defect supercells are the same size:
-        if not np.isclose(
-            self.defect_entry.sc_entry.structure.volume,
-            self.defect_entry.bulk_entry.structure.volume,
-            rtol=1e-2,
-        ):
+        # check if the bulk and defect supercells have the same lattice (i.e. a fixed cell), to within 1%:
+        defect_lattice = self.defect_entry.sc_entry.structure.lattice
+        bulk_lattice = self.defect_entry.bulk_entry.structure.lattice
+        if not np.allclose(defect_lattice.parameters, bulk_lattice.parameters, rtol=1e-2):
+            lattice_parameters = " and ".join(
+                f"({', '.join(f'{x:.3f}' for x in lattice.abc)} Å; "
+                f"{', '.join(f'{x:.1f}' for x in lattice.angles)}°)"
+                for lattice in [defect_lattice, bulk_lattice]
+            )
             warnings.warn(
-                f"The defect and bulk supercells are not the same size, having volumes of "
-                f"{self.defect_entry.sc_entry.structure.volume:.1f} and"
-                f" {self.defect_entry.bulk_entry.structure.volume:.1f} Å^3 respectively. This may cause "
-                f"errors in parsing and/or output energies. In most cases (unless looking at extremely "
-                f"high doping concentrations) the same fixed supercell (ISIF = 2) should be used for "
-                f"both the defect and bulk calculations! (i.e. assuming the dilute limit)"
+                f"The defect and bulk supercells have different lattices, with lattice parameters (a, b, "
+                f"c; angles) of {lattice_parameters}, and volumes of {defect_lattice.volume:.1f} and "
+                f"{bulk_lattice.volume:.1f} Å^3 respectively. This may cause errors in parsing and/or "
+                f"output energies. In most cases (unless looking at extremely high doping concentrations) "
+                f"the same fixed supercell should be used for both the defect and bulk calculations! ("
+                f"i.e. assuming the dilute limit)"
             )
 
     def load_bulk_gap_data(

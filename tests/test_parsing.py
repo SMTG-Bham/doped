@@ -3570,8 +3570,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             _print_warning_info(w)
             assert any(
-                "The defect and bulk supercells are not the same size, having volumes of 513790.5 and "
-                "2241.3 Å^3 respectively." in str(warning.message)
+                "The defect and bulk supercells have different lattices, with lattice parameters (a, b, "
+                "c; angles) of (3000.000, 13.087, 13.087 Å; 90.0, 90.0, 90.0°) and (13.087, 13.087, "
+                "13.087 Å; 90.0, 90.0, 90.0°), and volumes of 513790.5 and 2241.3 Å^3 respectively."
+                in str(warning.message)
                 for warning in w
             )
 

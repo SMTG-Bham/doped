@@ -21,7 +21,6 @@ _MOVED = {
     **dict.fromkeys(
         (
             "find_archived_fname",
-            "parse_projected_eigen",
             "get_vasprun",
             "get_locpot",
             "get_outcar",
