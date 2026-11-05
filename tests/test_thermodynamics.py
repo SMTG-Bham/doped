@@ -38,6 +38,7 @@ from test_utils import (
     if_present_rm,
     module_path,
     plot_chempot_heatmap_and_test_no_warnings,
+    requires_api_key,
 )
 
 from doped.analysis import DefectsParser, guess_defect_position
@@ -162,8 +163,9 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
             os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )
 
-        cls.YTOS_cp = CompetingPhases("Y2Ti2S2O5", api_key=api_key)
-        cls.MP_YTOS_doped_chempots = get_doped_chempots_from_entries(cls.YTOS_cp.entries, "Y2Ti2S2O5")
+        if api_key:  # live MP query, only needed for the YTOS heatmap tests (``requires_api_key``)
+            cls.YTOS_cp = CompetingPhases("Y2Ti2S2O5", api_key=api_key)
+            cls.MP_YTOS_doped_chempots = get_doped_chempots_from_entries(cls.YTOS_cp.entries, "Y2Ti2S2O5")
 
         cls.orig_Sb2Se3_defect_dict = loadfn(
             os.path.join(cls.Sb2Se3_DATA_DIR, "defect/Sb2Se3_O_example_defect_dict.json")
@@ -3420,6 +3422,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         return fig
 
     @custom_mpl_image_compare(filename="YTOS_chempot_heatmap_default.png", tolerance=4)
+    @requires_api_key
     def test_YTOS_chempot_heatmap_default(self):
         """
         Test chemical potential heatmap plotting via |DefectThermodynamics|.
@@ -3451,6 +3454,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         return plot
 
     @custom_mpl_image_compare(filename="YTOS_chempot_heatmap_default.png")
+    @requires_api_key
     def test_YTOS_chempot_heatmap_default_from_cpa(self):
         """
         Test chemical potential heatmap plotting via |CompetingPhasesAnalyzer|
@@ -3475,6 +3479,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         filename="YTOS_chempot_heatmap_custom.png",
         style=f"{module_path}/../doped/utils/displacement.mplstyle",
     )
+    @requires_api_key
     def test_YTOS_chempot_heatmap_custom(self):
         self.YTOS_defect_thermo.chempots = self.MP_YTOS_doped_chempots
         plot = plot_chempot_heatmap_and_test_no_warnings(

@@ -14,7 +14,7 @@ from copy import copy
 from functools import lru_cache, partial, reduce
 from itertools import chain, product
 from operator import methodcaller
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6556,8 +6556,8 @@ class FermiSolver(MSONable):
         site_competition: bool | str = True,
         **user_kwargs,
     ) -> pd.DataFrame:
-        PseudoSolveFunc: TypeAlias = Callable[..., pd.DataFrame]  # 'type aliases' for function signatures
-        EquilibriumSolveFunc: TypeAlias = Callable[..., pd.DataFrame]
+        type PseudoSolveFunc = Callable[..., pd.DataFrame]  # 'type aliases' for function signatures
+        type EquilibriumSolveFunc = Callable[..., pd.DataFrame]
         solve_func: PseudoSolveFunc | EquilibriumSolveFunc = (
             self._pseudo_equilibrium_solve
             if annealing_temperature is not None

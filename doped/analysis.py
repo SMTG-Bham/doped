@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from emmet.core.mpid import AlphaID
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn
-from mp_api.client import MPRester
+from mp_api.client import MPRester, MPRestError
 from pymatgen.analysis.defects.corrections.freysoldt import (
     _get_dielectric_tensor,
     get_spherically_averaged_dielectric,
@@ -2757,12 +2758,17 @@ class DefectParser:
         ``"band_gap"`` and ``"vbm"`` are used by default when generating
         |DefectThermodynamics| objects, to be used in plotting & analysis.
 
-        Alternatively, one can specify query the Materials Project (MP)
-        database for the bulk gap data, using ``use_MP = True``, in which case
-        the MP entry with the lowest number ID and composition matching the
-        bulk will be used, or the MP ID (``mpid``) of the bulk material to use
-        can be specified. This is not recommended as it will correspond to a
-        severely-underestimated GGA DFT bandgap!
+        Alternatively, one can query the Materials Project (MP) database for
+        the bulk gap data (from the MP band structure calculation), using
+        ``use_MP = True``, in which case the MP material with a structure
+        matching the bulk supercell (or that with the lowest number MP ID, if
+        multiple match) will be used, or the MP ID (``mpid``) of the bulk
+        material to use can be specified. If no MP band structure can be
+        obtained, the bulk supercell values are used (with a warning). **Note**
+        that this is *not* recommended as it will correspond to a severely
+        underestimated GGA DFT bandgap, and the MP VBM eigenvalue (used as the
+        Fermi level reference) is only consistent with the parsed supercell
+        energies if the same functional and calculation settings were used!
 
         Args:
             bulk_band_gap_vr (PathLike or |Vasprun|):
@@ -2812,69 +2818,62 @@ class DefectParser:
         api_key = api_key or self.kwargs.get("api_key", None)
 
         if use_MP and mpid is None:
-            try:
+            try:  # material docs (one per material ID, with structure) for the bulk formula:
                 with MPRester(api_key=api_key) as mpr:
-                    tmp_mplist = mpr.get_entries_in_chemsys(list(bulk_sc_structure.symbol_set))
-                mplist = [
-                    mp_ent.entry_id
-                    for mp_ent in tmp_mplist
-                    if mp_ent.composition.reduced_composition
-                    == bulk_sc_structure.composition.reduced_composition
-                ]
+                    mp_docs = mpr.materials.search(
+                        formula=bulk_sc_structure.composition.reduced_formula,
+                        fields=["material_id", "structure"],
+                    )
+                mplist = [str(doc.material_id) for doc in mp_docs]
             except Exception as exc:
                 raise ValueError(
                     f"Error with querying MPRester for {bulk_sc_structure.composition.reduced_formula}:"
                 ) from exc
 
             mpid_fit_list = []
-            for trial_mpid in mplist:
-                with MPRester(api_key=api_key) as mpr:
-                    mpstruct = mpr.get_structure_by_material_id(trial_mpid)
+            for doc in mp_docs:
                 if StructureMatcher_scan_stol(
                     bulk_sc_structure,
-                    mpstruct,
+                    doc.structure,
                     func_name="fit",
                     primitive_cell=True,
                     scale=False,
                     attempt_supercell=True,
                     allow_subset=False,
                 ):
-                    mpid_fit_list.append(trial_mpid)
+                    mpid_fit_list.append(str(doc.material_id))
 
             if len(mpid_fit_list) == 1:
                 mpid = mpid_fit_list[0]
-                print(f"Single mp-id found for bulk structure:{mpid}.")
+                print(f"Single mp-id found for bulk structure: {mpid}.")
             elif len(mpid_fit_list) > 1:
-                mpid = f"mp-{min(int(mpid.split('-')[1]) for mpid in mpid_fit_list)}"
+                mpid = min(mpid_fit_list, key=AlphaID)  # handles legacy (mp-<int>) & new (mp-<abc>) IDs
                 print(
-                    f"Multiple mp-ids found for bulk structure:{mpid_fit_list}. Will use lowest "
+                    f"Multiple mp-ids found for bulk structure: {mpid_fit_list}. Will use lowest "
                     f"number mpid for bulk band structure = {mpid}."
                 )
             else:
-                print(
-                    "Could not find bulk structure in MP database after tying the following "
-                    f"list:\n{mplist}"
+                warnings.warn(
+                    "Could not find bulk structure in MP database after trying the following list:\n"
+                    f"{mplist}\nReverting to use of bulk supercell calculation for band edge extrema."
                 )
                 mpid = None
 
         if mpid is not None:
-            print(f"Using user-provided mp-id for bulk structure: {mpid}.")
-            with MPRester(api_key=api_key) as mpr:
-                bs = mpr.get_bandstructure_by_material_id(mpid)
-            if bs:
+            print(f"Using mp-id for bulk band structure: {mpid}.")
+            try:
+                with MPRester(api_key=api_key) as mpr:
+                    bs = mpr.get_bandstructure_by_material_id(mpid)  # raises MPRestError if no BS
                 cbm = bs.get_cbm()["energy"]
                 vbm = bs.get_vbm()["energy"]
                 band_gap = bs.get_band_gap()["energy"]
                 gap_calculation_metadata["MP_gga_BScalc_data"] = bs.get_band_gap().copy()
-
-        if (vbm is None or band_gap is None or cbm is None or not bulk_band_gap_vr) and (
-            mpid and band_gap is None
-        ):
-            warnings.warn(
-                f"MPID {mpid} was provided, but no bandstructure entry currently exists for it. "
-                f"Reverting to use of bulk supercell calculation for band edge extrema."
-            )
-            gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
+            except MPRestError as exc:
+                warnings.warn(
+                    f"No Materials Project band structure could be obtained for MPID {mpid}, got error: "
+                    f"{exc!r}\nReverting to use of bulk supercell calculation for band edge extrema."
+                )
+                gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
 
         if bulk_band_gap_vr:
             if not isinstance(bulk_band_gap_vr, Vasprun):

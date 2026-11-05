@@ -64,9 +64,9 @@ from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_str
 from doped.vasp import (
     _MODULE_DIR,
     DopedDictSet,
+    _handle_EDIFF_and_update_incar_settings,
     _is_hybrid,
     _parse_incar_value,
-    _update_incar_settings,
     default_HSE_set,
     default_relax_set,
     singlepoint_incar_settings,
@@ -1749,7 +1749,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
         """
         user_incar_settings = user_incar_settings or {}
         base_incar_settings = copy.deepcopy(convergence_set["INCAR"])
-        _update_incar_settings(base_incar_settings, user_incar_settings)
+        _handle_EDIFF_and_update_incar_settings(base_incar_settings, user_incar_settings)
         if base_incar_settings.pop("KSPACING", None) is not None:  # k-point meshes set here
             warnings.warn("KSPACING in user_incar_settings is ignored for k-point convergence tests.")
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
@@ -2020,7 +2020,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
         if _is_hybrid(user_incar_settings):
             base_incar_settings.update(default_HSE_set["INCAR"])
 
-        _update_incar_settings(base_incar_settings, user_incar_settings)
+        _handle_EDIFF_and_update_incar_settings(base_incar_settings, user_incar_settings)
         dict_sets: dict[str, DopedDictSet] = {}
         extrinsic_entries = getattr(self, "extrinsic_entries", [])
 
@@ -2351,7 +2351,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
         sp_incar_settings["ISMEAR"] = -5  # molecules and 2/0 for phases with < 4 k-points
         if soc:
             sp_incar_settings["LSORBIT"] = True
-        _update_incar_settings(sp_incar_settings, user_incar_settings)  # user settings take precedence
+        # user settings take precedence:
+        _handle_EDIFF_and_update_incar_settings(sp_incar_settings, user_incar_settings)
 
         if subfolder is None:
             subfolder = "vasp_ncl" if soc else "SinglePoint"
