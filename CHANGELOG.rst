@@ -3,6 +3,56 @@ Change Log
 
 ..  Release checklist: Version bump, update changelog, possibly update pytest timings if significant new tests added, check tutorials run, update SnB?
 
+Unreleased
+--------------
+- ``doped.analysis`` has been renamed to ``doped.parsing`` (matching its contents -- defect calculation
+  parsing & defect identification -- and the ``parsing_tutorial``), with a deprecated ``doped.analysis``
+  alias retained, which warns on use.
+
+  - ``shallow_dopant_binding_energy`` has moved to ``doped.thermodynamics``.
+
+- Major restructuring for multi-calculator support beyond VASP: calculator-specific code now lives in the new
+  ``doped.io`` subpackage, with ``doped.io.<calculator>.inputs``/``outputs`` modules per calculator.
+
+  - ``doped.vasp`` -> ``doped.io.vasp.inputs`` (deprecated alias retained, warns on use).
+  - VASP output parsing (``get_vasprun``, ``get_locpot``, ``get_outcar``, ``get_procar``, core potentials,
+    ``INCAR``/``KPOINTS``/``POTCAR`` compatibility checks, magnetization/``NELECT``/spin parsing, calculation folder
+    discovery...) moved from ``doped.utils.parsing`` to ``doped.io.vasp.outputs`` (deprecated aliases retained, warn on
+    use).
+  - New calculator-agnostic ``doped.io.outputs.CalculationOutputs`` container as the data contract between calculator
+    backends and analysis functions (accepted by the finite-size charge correction functions, ``DefectsParser`` /
+    ``DefectParser``, eigenvalue analyses...), with ``doped.io.get_calculation_outputs()`` dispatching to the
+    appropriate calculator parser.
+  - ``DefectsParser``/``DefectParser`` and the eigenvalue / band-edge analyses are now fully calculator-agnostic,
+    working off ``CalculationOutputs`` via a small backend protocol (``doped.io.get_backend()``;
+    ``get_calculation_outputs()``, ``CALC_OUTPUT_MASK``, ``SUBFOLDER_PRIORITY``, potential loaders, compatibility
+    checks... -- see the "Adding Support for a New Calculator" docs page), selected with a new
+    ``calculator="vasp"`` option.
+  - New ``doped.io.serialized`` escape-hatch backend, parsing pre-serialised ``CalculationOutputs`` JSON files
+    (``calculation_outputs.json.gz`` per calculation directory) so the full parsing/analysis workflow can be used
+    with `any` calculator without a dedicated backend (``DefectsParser(..., calculator="serialized")``).
+  - New ``doped.io.inputs.DefectsSetBase`` base class with the calculator-agnostic input-generation orchestration
+    (defect entry formatting/naming, per-defect input sets, folder writing & provenance serialisation), which the
+    VASP ``DefectsSet`` now subclasses.
+  - ``doped/VASP_sets`` -> ``doped/io/vasp/VASP_sets``, with the set YAMLs renamed with explicit ``VASP``
+    prefixes (e.g. ``VASP_RelaxSet.yaml``).
+  - New ``doped.io.utils`` module with the calculator-agnostic calculation-file discovery helpers
+    (``_find_calc_outputs``, ``_determine_subfolder`` etc.), parameterised by calculator-specific filename
+    masks / subfolder priorities (VASP-defaulted wrappers in ``doped.io.vasp.outputs``).
+  - ``doped.utils.parsing`` dissolved: defect identification & site-mapping utilities renamed to
+    ``doped.utils.mappings``; ``DefectEntry`` structure accessors moved to ``doped.core``;
+    electron-count/spin-degeneracy helpers moved to ``doped.utils.symmetry`` (deprecated
+    ``doped.utils.parsing`` aliases retained for all, warn on use).
+  - VASP test data moved under ``tests/data/vasp/``.
+  - New docs page on adding support for additional calculators.
+  - Calculator-agnostic renaming of parsing/analysis options: ``bulk_vr``/``defect_vr`` -> ``bulk_outputs``/
+    ``defect_outputs`` in the eigenvalue analysis functions (``get_eigenvalue_analysis`` etc.), and
+    ``bulk_band_gap_vr`` -> ``bulk_band_gap_outputs`` (now taking a path -- parsed with the chosen calculator
+    backend -- or a ``CalculationOutputs`` object). The VASP-specific ``defect_vr``/``bulk_vr``/``bulk_procar``
+    options and attributes of ``DefectsParser``/``DefectParser`` have been removed (``CalculationOutputs`` objects,
+    which retain the raw parsed VASP objects in ``CalculationOutputs.raw``, are used instead), along with the
+    ``parse_procar`` option (``PROCAR`` fallback parsing is now controlled by ``parse_projected_eigen``).
+
 v.3.2.1
 ----------
 - Add ``per_site``, ``per_charge`` and ``return_annealing_values`` options to ``FermiSolver`` methods, for more flexible output formatting.

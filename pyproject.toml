@@ -28,6 +28,7 @@ dependencies = [
     # https://github.com/materialsproject/api/issues/1104, https://github.com/materialsproject/api/pull/1126
     # TODO: Bump to the first mp-api release that fixes ``get_entries_in_chemsys(property_data=...)``
     # https://github.com/materialsproject/api/pull/1140
+    "boto3>=1.34",  # TODO: Remove once https://github.com/materialsproject/api/pull/1147 merged (next mp-api release)
     "shakenbreak>=3.4.5",  # parameter re-ordering for ``get_defect_type_...`` functions
     "pandas",
     "pydefect>=0.9.9",  # eigenvalue parsing updates
@@ -53,6 +54,13 @@ tests = [
     "pytest-split>=0.10.0",  # for test splitting
     "ase",  # ase build utilities used in some tests
 ]
+gpaw = [
+    # Experimental GPAW support (``doped.io.gpaw``). ``.gpw`` outputs are read with GPAW's own reader, so
+    # GPAW must be installed; see https://gpaw.readthedocs.io/install.html for build requirements. Hybrid
+    # relaxations (the default) fail with GPAW 26.7.0, so until the next GPAW release, first install the
+    # development version with ``pip install git+https://gitlab.com/gpaw/gpaw.git`` (TODO, update with next release):
+    "gpaw>26.7.0",
+]
 docs = [
     "sphinx>7,<9",  # current issue with Sphinx 9: https://github.com/sphinx-doc/sphinx/issues/14270; remove limit once resolved
     "myst-nb>=1.0",
@@ -75,7 +83,8 @@ exclude = ["examples*", "*testing", "tests*", "docs*"]
 
 [tool.setuptools.package-data]
 "doped" = ["py.typed"]
-"doped.VASP_sets" = ["*.yaml"]
+"doped.io.vasp.VASP_sets" = ["*.yaml"]
+"doped.io.gpaw.GPAW_sets" = ["*.yaml"]
 "doped.utils" = ["*.dat", "*.mplstyle"]
 
 [tool.ruff]

@@ -27,6 +27,11 @@ If you use the corrections implemented in this module, please cite:
     or
     Freysoldt, Neugebauer, and Van de Walle, Phys. Rev. Lett. 2009 for FNV.
 
+The required electrostatic potential inputs (planar-averaged potentials for
+FNV, atomic-site potentials for eFNV) can be provided as calculator-agnostic
+:class:`~doped.io.outputs.CalculationOutputs` objects, or directly as ``VASP``
+``LOCPOT``/``OUTCAR`` outputs.
+
 **Note**: Ideally, the "defect site" used for all charge corrections should
 actually be the centre of the localised charge in the defect supercell. Usually
 this coincides with the defect site, but not always (e.g. vacancy where the
@@ -36,8 +41,9 @@ centre-of-charge sites are close enough that any resulting quantitative error
 in the correction is negligible. However, in cases where we have large
 finite-size correction values, this can be significant. If some efficient
 methods for determining the centroid of charge difference between bulk/defect
-LOCPOTs (for FNV) or bulk/defect site potentials (for eFNV) were developed,
-they should be used here.
+planar-averaged electrostatic potentials (e.g. ``LOCPOT`` with ``VASP``) (for
+FNV) or bulk/defect site potentials (for eFNV) were developed, they should be
+used here.
 """
 
 import contextlib
@@ -54,18 +60,17 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.util.typing import PathLike
 
-from doped.analysis import _custom_formatwarning
-from doped.utils import vise_handling
-from doped.utils.parsing import (
+from doped.core import (
     _get_bulk_supercell,
-    _get_core_potentials_from_outcar_obj,
+    _get_calculation_metadata,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
-    get_core_potentials_from_outcar,
-    get_half_max_face_distance,
-    get_locpot,
-    get_site_mappings,
 )
+from doped.generation import _custom_formatwarning
+from doped.io import get_backend
+from doped.io.outputs import CalculationOutputs
+from doped.utils import vise_handling
+from doped.utils.mappings import get_half_max_face_distance, get_site_mappings
 from doped.utils.plotting import doped_plot_style, format_defect_name
 from doped.utils.supercells import _get_min_image_distance_from_matrix, _get_unwrapped_complex_fc
 
@@ -96,43 +101,58 @@ def _check_if_None_and_raise_error_if_so(var, var_name, display_name):
 
 
 def _get_and_check_metadata(entry, key, display_name):
-    value = entry.calculation_metadata.get(key, None)
+    value = _get_calculation_metadata(entry, key)  # handles renamed (pre-v4.0) metadata keys
     _check_if_None_and_raise_error_if_so(value, display_name, key)
     return value
 
 
-def _check_if_pathlike_and_get_locpot_or_core_pots(
-    locpot_or_outcar: Locpot | Outcar | PathLike | dict,
-    obj_type: str = "locpot",
+def _get_potentials(
+    potentials_input: Locpot | Outcar | PathLike | dict | CalculationOutputs,
+    potential_type: str = "planar",
     dir_type: str = "",
-    total_energy: list | float | None = None,
+    defect_entry=None,
 ):
-    if isinstance(locpot_or_outcar, PathLike):
-        if obj_type == "locpot":
-            return get_locpot(locpot_or_outcar)
-        return get_core_potentials_from_outcar(  # otherwise OUTCAR
-            locpot_or_outcar, dir_type=dir_type, total_energy=total_energy
+    """
+    Get planar-averaged (``potential_type="planar"``) or atomic-site
+    (``"site"``) electrostatic potentials from ``potentials_input``, for
+    finite-size charge corrections.
+
+    Calculator-agnostic inputs (a
+    :class:`~doped.io.outputs.CalculationOutputs` object) are handled here;
+    anything else is a calculator-native input (e.g. a ``LOCPOT``/``OUTCAR``
+    path or object with VASP) and is passed to the ``doped.io`` output-parsing
+    backend's ``get_potentials_from_input()`` function.
+    """
+    if isinstance(potentials_input, CalculationOutputs):
+        if potential_type == "planar":
+            potentials_input.require(
+                "planar_averaged_potentials", task="The FNV (Freysoldt) charge correction"
+            )
+            return potentials_input.planar_averaged_potentials
+        potentials_input.require("site_potentials", task="The eFNV (Kumagai) charge correction")
+        return list(potentials_input.site_potentials)  # type: ignore[arg-type]
+
+    calculation_metadata = getattr(defect_entry, "calculation_metadata", None) or {}
+    entry_energy = None
+    with contextlib.suppress(Exception):  # for cross-checking a supplied OUTCAR against the calculation
+        entry_energy = (
+            defect_entry.sc_entry.energy if dir_type == "defect" else defect_entry.bulk_entry.energy
         )
 
-    if isinstance(locpot_or_outcar, Outcar):
-        return _get_core_potentials_from_outcar_obj(
-            locpot_or_outcar, dir_type=dir_type, total_energy=total_energy
-        )
-
-    if not isinstance(locpot_or_outcar, Locpot | Outcar | dict):
-        raise TypeError(
-            f"`{obj_type}` input must be either a path to a {obj_type.upper()} file or a pymatgen "
-            f"{obj_type.upper()[0] + obj_type[1:]} object, but got {type(locpot_or_outcar)} instead."
-        )
-
-    return locpot_or_outcar
+    return get_backend(calculation_metadata.get("calculator", "vasp")).get_potentials_from_input(
+        potentials_input,
+        potential_type=potential_type,
+        dir_type=dir_type,
+        entry_energy=entry_energy,
+        run_metadata=calculation_metadata.get("run_metadata"),
+    )
 
 
 def get_freysoldt_correction(
     defect_entry,
     dielectric: float | np.ndarray | list | None = None,
-    defect_locpot: PathLike | Locpot | dict | None = None,
-    bulk_locpot: PathLike | Locpot | dict | None = None,
+    defect_planar_averaged_potentials: PathLike | Locpot | dict | CalculationOutputs | None = None,
+    bulk_planar_averaged_potentials: PathLike | Locpot | dict | CalculationOutputs | None = None,
     plot: bool = False,
     filename: PathLike | None = None,
     axis: int | None = None,
@@ -179,19 +199,22 @@ def get_freysoldt_correction(
             ``defect_entry`` ``calculation_metadata`` if available. See the
             |Dielectric Constant| tutorial section for information on
             calculating and converging the dielectric constant.
-        defect_locpot:
-            Path to the output VASP LOCPOT file from the defect supercell
-            calculation, or the corresponding ``pymatgen`` ``Locpot`` object,
-            or a dictionary of the planar-averaged potential in the form:
-            ``{i: Locpot.get_average_along_axis(i) for i in [0,1,2]}``.
-            If ``None``, will try to use ``defect_locpot_dict`` from the
-            ``defect_entry`` ``calculation_metadata`` if available.
-        bulk_locpot:
-            Path to the output ``VASP`` ``LOCPOT`` file from the bulk supercell
-            calculation, or the corresponding ``pymatgen`` ``Locpot`` object,
-            or a dictionary of the planar-averaged potential in the form:
-            ``{i: Locpot.get_average_along_axis(i) for i in [0,1,2]}``.
-            If ``None``, will try to use ``bulk_locpot_dict`` from the
+        defect_planar_averaged_potentials:
+            The planar-averaged electrostatic potential from the defect
+            supercell calculation, as a dictionary in the form:
+            ``{i: 1D array of potential along axis i, for i in [0,1,2]}``
+            (i.e. ``{i: Locpot.get_average_along_axis(i)}`` with VASP), a
+            :class:`~doped.io.outputs.CalculationOutputs` object with
+            ``planar_averaged_potentials``, a path to the output VASP
+            ``LOCPOT`` file, or the corresponding ``pymatgen`` ``Locpot``
+            object. If ``None``, will try to use
+            ``defect_planar_averaged_potentials`` from the ``defect_entry``
+            ``calculation_metadata`` if available.
+        bulk_planar_averaged_potentials:
+            The planar-averaged electrostatic potential from the bulk supercell
+            calculation, in any of the formats accepted for
+            ``defect_planar_averaged_potentials`` above. If ``None``, will
+            try to use ``bulk_planar_averaged_potentials`` from the
             ``defect_entry`` ``calculation_metadata`` if available.
         plot (bool):
             Whether to plot the FNV electrostatic potential plots (for
@@ -236,20 +259,28 @@ def get_freysoldt_correction(
     if dielectric is None:
         dielectric = _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
 
-    defect_locpot = defect_locpot or _get_and_check_metadata(
-        defect_entry, "defect_locpot_dict", "Defect LOCPOT"
+    defect_planar_averaged_potentials = defect_planar_averaged_potentials or _get_and_check_metadata(
+        defect_entry, "defect_planar_averaged_potentials", "Defect planar-averaged potentials"
     )
-    bulk_locpot = bulk_locpot or _get_and_check_metadata(defect_entry, "bulk_locpot_dict", "Bulk LOCPOT")
+    bulk_planar_averaged_potentials = bulk_planar_averaged_potentials or _get_and_check_metadata(
+        defect_entry, "bulk_planar_averaged_potentials", "Bulk planar-averaged potentials"
+    )
 
-    defect_locpot = _check_if_pathlike_and_get_locpot_or_core_pots(defect_locpot, obj_type="locpot")
-    bulk_locpot = _check_if_pathlike_and_get_locpot_or_core_pots(bulk_locpot, obj_type="locpot")
+    defect_planar_averaged_potentials = _get_potentials(
+        defect_planar_averaged_potentials, dir_type="defect", defect_entry=defect_entry
+    )
+    bulk_planar_averaged_potentials = _get_potentials(
+        bulk_planar_averaged_potentials, dir_type="bulk", defect_entry=defect_entry
+    )
 
     fnv_correction = freysoldt.get_freysoldt_correction(
         q=defect_entry.charge_state,
         dielectric=dielectric,
-        defect_locpot=defect_locpot,
-        bulk_locpot=bulk_locpot,
-        lattice=_get_defect_supercell(defect_entry).lattice if isinstance(defect_locpot, dict) else None,
+        defect_locpot=defect_planar_averaged_potentials,  # ``pymatgen`` (VASP-named) argument names
+        bulk_locpot=bulk_planar_averaged_potentials,
+        lattice=_get_defect_supercell(defect_entry).lattice
+        if isinstance(defect_planar_averaged_potentials, dict)
+        else None,
         defect_frac_coords=kwargs.pop(
             "defect_frac_coords", _get_defect_supercell_frac_coords(defect_entry)
         ),  # _relaxed_ defect coords (except for vacancies)
@@ -363,8 +394,8 @@ def get_kumagai_correction(
     defect_region_radius: float | None = None,
     excluded_indices: list[int] | None = None,
     point_charges: list[tuple[float, np.ndarray | list]] | None = None,
-    defect_outcar: PathLike | Outcar | None = None,
-    bulk_outcar: PathLike | Outcar | None = None,
+    defect_site_potentials: PathLike | Outcar | CalculationOutputs | None = None,
+    bulk_site_potentials: PathLike | Outcar | CalculationOutputs | None = None,
     plot: bool = False,
     filename: PathLike | None = None,
     verbose: bool = True,
@@ -442,16 +473,19 @@ def get_kumagai_correction(
             and the potential sampling region is then defined by the distance
             to the nearest point charge (so ``defect_region_radius`` applies
             around each). Default is ``None`` (single point charge).
-        defect_outcar (PathLike or |Outcar|):
-            Path to the output ``VASP`` ``OUTCAR`` file from the defect
-            supercell calculation, or the corresponding ``pymatgen`` |Outcar|
-            object. If ``None``, will try to use the ``defect_site_potentials``
-            from the ``defect_entry`` ``calculation_metadata`` if available.
-        bulk_outcar (PathLike or |Outcar|):
-            Path to the output ``VASP`` ``OUTCAR`` file from the bulk supercell
-            calculation, or the corresponding ``pymatgen`` |Outcar| object.
-            If ``None``, will try to use the ``bulk_site_potentials``
-            from the ``defect_entry`` ``calculation_metadata`` if available.
+        defect_site_potentials (PathLike, |Outcar| or CalculationOutputs):
+            The atomic-site electrostatic potentials from the defect supercell
+            calculation, as a :class:`~doped.io.outputs.CalculationOutputs`
+            object with ``site_potentials``, a path to the output ``VASP``
+            ``OUTCAR`` file, or the corresponding ``pymatgen`` |Outcar| object.
+            If ``None``, will try to use the ``defect_site_potentials`` from
+            the ``defect_entry`` ``calculation_metadata`` if available.
+        bulk_site_potentials (PathLike, |Outcar| or CalculationOutputs):
+            The atomic-site electrostatic potentials from the bulk supercell
+            calculation, in any of the formats accepted for
+            ``defect_site_potentials`` above. If ``None``, will try to use
+            the ``bulk_site_potentials`` from the ``defect_entry``
+            ``calculation_metadata`` if available.
         plot (bool):
             Whether to plot the Kumagai site potential plots (for
             manually checking the behaviour of the charge correction here).
@@ -594,6 +628,8 @@ def get_kumagai_correction(
         if defect_region_radius is None:
             defect_region_radius = get_half_max_face_distance(lattice)
         site_distances = np.array([site.distance for site in sites])
+        if not site_distances.size:
+            raise ValueError("No matched atomic sites are available for eFNV potential sampling.")
         min_sampled = min(3, len(site_distances))  # ensure >= 3 sampled sites (e.g. for slabs with vacuum)
         if np.count_nonzero(site_distances > defect_region_radius) < min_sampled:
             # reduce to just below the 3rd-furthest site distance (with tolerance for equidistant sites):
@@ -633,21 +669,12 @@ def get_kumagai_correction(
         dielectric = _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
 
     core_potentials_dict = {}
-    for key, outcar in zip(["defect", "bulk"], [defect_outcar, bulk_outcar], strict=False):
-        total_energy = []
-        with contextlib.suppress(Exception):
-            total_energy.append(
-                defect_entry.sc_entry.energy if key == "defect" else defect_entry.bulk_entry.energy
-            )
-            total_energy.append(
-                defect_entry.calculation_metadata["run_metadata"][f"{key}_vasprun_dict"]["output"][
-                    "ionic_steps"
-                ][-1]["electronic_steps"][-1]["e_0_energy"]
-            )
-
-        if outcar is not None:
-            core_potentials_dict[key] = _check_if_pathlike_and_get_locpot_or_core_pots(
-                outcar, obj_type="outcar", dir_type=key, total_energy=total_energy
+    for key, site_potentials in zip(
+        ["defect", "bulk"], [defect_site_potentials, bulk_site_potentials], strict=False
+    ):
+        if site_potentials is not None:
+            core_potentials_dict[key] = _get_potentials(
+                site_potentials, potential_type="site", dir_type=key, defect_entry=defect_entry
             )
         else:
             core_potentials_dict[key] = _get_and_check_metadata(

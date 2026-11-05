@@ -5672,7 +5672,7 @@
         "calculation_metadata": {
             "band_gap": 2.2243,
             "bulk site symmetry": "Cs",
-            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/V2O5/V2O5_bulk",
+            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/vasp/V2O5/V2O5_bulk",
             "bulk_site": {
                 "@class": "PeriodicSite",
                 "@module": "pymatgen.core.sites",
@@ -5730,7 +5730,7 @@
                 ],
                 "dtype": "float64"
             },
-            "defect_path": "/Users/kavanase/Packages/doped/tests/data/V2O5/v_O_1",
+            "defect_path": "/Users/kavanase/Packages/doped/tests/data/vasp/V2O5/v_O_1",
             "defect_site_index": null,
             "dielectric": {
                 "@class": "array",
@@ -65344,7 +65344,7 @@
         "calculation_metadata": {
             "band_gap": 2.2243,
             "bulk site symmetry": "Cs",
-            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/V2O5/V2O5_bulk",
+            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/vasp/V2O5/V2O5_bulk",
             "bulk_site": {
                 "@class": "PeriodicSite",
                 "@module": "pymatgen.core.sites",
@@ -65402,7 +65402,7 @@
                 ],
                 "dtype": "float64"
             },
-            "defect_path": "/Users/kavanase/Packages/doped/tests/data/V2O5/v_O_2",
+            "defect_path": "/Users/kavanase/Packages/doped/tests/data/vasp/V2O5/v_O_2",
             "defect_site_index": null,
             "dielectric": {
                 "@class": "array",
@@ -125016,7 +125016,7 @@
         "calculation_metadata": {
             "band_gap": 2.2243,
             "bulk site symmetry": "Cs",
-            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/V2O5/V2O5_bulk",
+            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/vasp/V2O5/V2O5_bulk",
             "bulk_site": {
                 "@class": "PeriodicSite",
                 "@module": "pymatgen.core.sites",
@@ -125074,7 +125074,7 @@
                 ],
                 "dtype": "float64"
             },
-            "defect_path": "/Users/kavanase/Packages/doped/tests/data/V2O5/v_O_3",
+            "defect_path": "/Users/kavanase/Packages/doped/tests/data/vasp/V2O5/v_O_3",
             "defect_site_index": null,
             "dielectric": {
                 "@class": "array",
