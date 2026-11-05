@@ -733,7 +733,7 @@ class DefectDictSet(DopedDictSet):
         if _is_hybrid(user_incar_settings):  # hybrid DFT by default
             relax_set = deep_dict_update(relax_set, default_HSE_set)  # HSE set is just INCAR settings
 
-        _update_incar_settings(relax_set["INCAR"], user_incar_settings)
+        _handle_EDIFF_and_update_incar_settings(relax_set["INCAR"], user_incar_settings)
 
         # if "length" in user kpoint settings then pop reciprocal_density and use length instead
         if user_kpoints_settings is not None and (
@@ -821,7 +821,9 @@ class DefectDictSet(DopedDictSet):
         )
 
 
-def _update_incar_settings(incar_settings: dict, user_incar_settings: dict | None) -> None:
+def _handle_EDIFF_and_update_incar_settings(
+    incar_settings: dict, user_incar_settings: dict | None
+) -> None:
     """
     Update ``incar_settings`` (in place) with ``user_incar_settings``, where a
     user ``EDIFF`` or ``EDIFF_PER_ATOM`` setting replaces any default ``EDIFF``
@@ -2945,7 +2947,7 @@ def get_kpoint_convergence_sets(
             (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
     """
     base_incar_settings = copy.deepcopy(convergence_set["INCAR"])
-    _update_incar_settings(base_incar_settings, user_incar_settings)
+    _handle_EDIFF_and_update_incar_settings(base_incar_settings, user_incar_settings)
     if base_incar_settings.pop("KSPACING", None) is not None:  # k-point meshes set here
         warnings.warn("KSPACING in user_incar_settings is ignored for k-point convergence tests.")
     kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
@@ -3100,7 +3102,7 @@ def get_relaxation_sets(
     if _is_hybrid(user_incar_settings):
         base_incar_settings.update(default_HSE_set["INCAR"])
 
-    _update_incar_settings(base_incar_settings, user_incar_settings)
+    _handle_EDIFF_and_update_incar_settings(base_incar_settings, user_incar_settings)
     dict_sets: dict[str, DopedDictSet] = {}
     extrinsic_entries = getattr(competing_phases, "extrinsic_entries", [])
 
@@ -3313,7 +3315,8 @@ def get_singlepoint_sets(
     sp_incar_settings["ISMEAR"] = -5  # molecules and 2/0 for phases with < 4 k-points
     if soc:
         sp_incar_settings["LSORBIT"] = True
-    _update_incar_settings(sp_incar_settings, user_incar_settings)  # user settings take precedence
+    # user settings take precedence:
+    _handle_EDIFF_and_update_incar_settings(sp_incar_settings, user_incar_settings)
 
     if subfolder is None:
         subfolder = "vasp_ncl" if soc else "SinglePoint"

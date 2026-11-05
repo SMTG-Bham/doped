@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.11"  # dictated by pymatgen-core>=2026.8.30
+requires-python = ">=3.12"  # dictated by mp-api>=0.47 (& its emmet-core>=0.88 requirement)
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
@@ -24,7 +24,10 @@ dependencies = [
     "pymatgen-core>=2026.10.31",  # serialisable ``FermiDos.as_dict()``, proper-rotation Niggli bases, SGA caching
     # requires spglib >= 2.5
     "pymatgen-analysis-defects>=2026.10.16",  # anisotropic FNV & ``get_spherically_averaged_dielectric``
-    "mp-api>=0.45",  # for Materials Project queries via ``mp_api.client.MPRester``
+    "mp-api>=0.47",  # served mixed-thermo-type phase diagrams (also with ``property_data``);
+    # https://github.com/materialsproject/api/issues/1104, https://github.com/materialsproject/api/pull/1126
+    # TODO: Bump to the first mp-api release that fixes ``get_entries_in_chemsys(property_data=...)``
+    # https://github.com/materialsproject/api/pull/1140
     "shakenbreak>=3.4.5",  # parameter re-ordering for ``get_defect_type_...`` functions
     "pandas",
     "pydefect>=0.9.9",  # eigenvalue parsing updates
