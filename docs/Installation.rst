@@ -62,6 +62,23 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
    the ``api_key`` parameter, or set via the ``MP_API_KEY`` environment variable (e.g.
    ``export MP_API_KEY=your_api_key``).
 
+   .. note::
+
+      Materials Project data for the (r2SCAN-calculated) materials from Google DeepMind's GNoME dataset is
+      licensed for non-commercial use only (CC BY-NC 4.0), and so is only provided to API keys whose
+      account has opted in to the GNoME terms of use. To opt in, log in to the Materials Project website
+      (https://next-gen.materialsproject.org) with the account linked to your API key, open the GNoME
+      Explorer and accept the GNoME terms in the pop-up, which then also applies to your API key. Without
+      this, GNoME materials are not included in the competing phases and phase diagrams obtained by
+      ``doped`` from the Materials Project, which can change the chemical potential limits, as GNoME
+      materials are often stable (on the convex hull).
+
+      .. TODO: Remove the following once an mp-api release fixing this is out and required by doped
+
+      Note that ``mp-api`` 0.47.0 raises a ``KeyError`` for queries of chemical systems which include GNoME
+      materials (~19% of chemical systems) with API keys without GNoME access. Until this is fixed in
+      ``mp-api``, it can be avoided by opting in to the GNoME terms as above.
+
    .. tip::
 
       To debug or verify that your ``pymatgen`` config file is correctly located and parsed, you can run 

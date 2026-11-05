@@ -12,9 +12,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from emmet.core.mpid import AlphaID
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn
-from mp_api.client import MPRester
+from mp_api.client import MPRester, MPRestError
 from pymatgen.analysis.defects.corrections.freysoldt import _get_dielectric_tensor
 from pymatgen.core import Element
 from pymatgen.core.sites import PeriodicSite
@@ -2739,12 +2740,17 @@ class DefectParser:
         ``"band_gap"`` and ``"vbm"`` are used by default when generating
         |DefectThermodynamics| objects, to be used in plotting & analysis.
 
-        Alternatively, one can specify query the Materials Project (MP)
-        database for the bulk gap data, using ``use_MP = True``, in which case
-        the MP entry with the lowest number ID and composition matching the
-        bulk will be used, or the MP ID (``mpid``) of the bulk material to use
-        can be specified. This is not recommended as it will correspond to a
-        severely-underestimated GGA DFT bandgap!
+        Alternatively, one can query the Materials Project (MP) database for
+        the bulk gap data (from the MP band structure calculation), using
+        ``use_MP = True``, in which case the MP material with a structure
+        matching the bulk supercell (or that with the lowest number MP ID, if
+        multiple match) will be used, or the MP ID (``mpid``) of the bulk
+        material to use can be specified. If no MP band structure can be
+        obtained, the bulk supercell values are used (with a warning). **Note**
+        that this is *not* recommended as it will correspond to a severely
+        underestimated GGA DFT bandgap, and the MP VBM eigenvalue (used as the
+        Fermi level reference) is only consistent with the parsed supercell
+        energies if the same functional and calculation settings were used!
 
         Args:
             bulk_band_gap_outputs (PathLike or CalculationOutputs):
@@ -2798,64 +2804,61 @@ class DefectParser:
         mpid = mpid or self.kwargs.get("mpid", None)
         api_key = api_key or self.kwargs.get("api_key", None)
 
-        if mpid is not None:
-            print(f"Using user-provided mp-id for bulk structure: {mpid}.")
-        elif use_MP:  # search MP for lowest-number mp-id with matching composition & structure:
-            try:
+        if use_MP and mpid is None:
+            try:  # material docs (one per material ID, with structure) for the bulk formula:
                 with MPRester(api_key=api_key) as mpr:
-                    candidate_mpids = [
-                        entry.entry_id
-                        for entry in mpr.get_entries_in_chemsys(list(bulk_sc_structure.symbol_set))
-                        if entry.composition.reduced_composition
-                        == bulk_sc_structure.composition.reduced_composition
-                    ]
-                    matching_mpids = [
-                        trial_mpid
-                        for trial_mpid in candidate_mpids
-                        if StructureMatcher_scan_stol(
-                            bulk_sc_structure,
-                            mpr.get_structure_by_material_id(trial_mpid),
-                            func_name="fit",
-                            primitive_cell=True,
-                            scale=False,
-                            attempt_supercell=True,
-                            allow_subset=False,
-                        )
-                    ]
+                    mp_docs = mpr.materials.search(
+                        formula=bulk_sc_structure.composition.reduced_formula,
+                        fields=["material_id", "structure"],
+                    )
+                mplist = [str(doc.material_id) for doc in mp_docs]
             except Exception as exc:
                 raise ValueError(
                     f"Error with querying MPRester for {bulk_sc_structure.composition.reduced_formula}:"
                 ) from exc
 
-            if matching_mpids:
-                mpid = min(matching_mpids, key=lambda mp_string: int(mp_string.split("-")[1]))
-                if len(matching_mpids) > 1:
-                    print(
-                        f"Multiple mp-ids found for bulk structure: {matching_mpids}. Will use lowest "
-                        f"number mpid for bulk band structure = {mpid}."
-                    )
-                else:
-                    print(f"Single mp-id found for bulk structure: {mpid}.")
-            else:
+            mpid_fit_list = []
+            for doc in mp_docs:
+                if StructureMatcher_scan_stol(
+                    bulk_sc_structure,
+                    doc.structure,
+                    func_name="fit",
+                    primitive_cell=True,
+                    scale=False,
+                    attempt_supercell=True,
+                    allow_subset=False,
+                ):
+                    mpid_fit_list.append(str(doc.material_id))
+
+            if len(mpid_fit_list) == 1:
+                mpid = mpid_fit_list[0]
+                print(f"Single mp-id found for bulk structure: {mpid}.")
+            elif len(mpid_fit_list) > 1:
+                mpid = min(mpid_fit_list, key=AlphaID)  # handles legacy (mp-<int>) & new (mp-<abc>) IDs
                 print(
-                    "Could not find bulk structure in MP database after trying the following "
-                    f"list:\n{candidate_mpids}"
+                    f"Multiple mp-ids found for bulk structure: {mpid_fit_list}. Will use lowest "
+                    f"number mpid for bulk band structure = {mpid}."
                 )
+            else:
+                warnings.warn(
+                    "Could not find bulk structure in MP database after trying the following list:\n"
+                    f"{mplist}\nReverting to use of bulk supercell calculation for band edge extrema."
+                )
+                mpid = None
 
         if mpid is not None:
-            bs = None
-            with MPRester(api_key=api_key) as mpr, contextlib.suppress(Exception):
-                bs = mpr.get_bandstructure_by_material_id(mpid)  # None/error if no bandstructure entry
-
-            if bs:
+            print(f"Using mp-id for bulk band structure: {mpid}.")
+            try:
+                with MPRester(api_key=api_key) as mpr:
+                    bs = mpr.get_bandstructure_by_material_id(mpid)  # raises MPRestError if no BS
                 cbm = bs.get_cbm()["energy"]
                 vbm = bs.get_vbm()["energy"]
                 band_gap = bs.get_band_gap()["energy"]
                 gap_calculation_metadata["MP_gga_BScalc_data"] = bs.get_band_gap().copy()
-            else:
+            except MPRestError as exc:
                 warnings.warn(
-                    f"MPID {mpid} was provided, but no bandstructure entry currently exists for it. "
-                    f"Reverting to use of bulk supercell calculation for band edge extrema."
+                    f"No Materials Project band structure could be obtained for MPID {mpid}, got error: "
+                    f"{exc!r}\nReverting to use of bulk supercell calculation for band edge extrema."
                 )
                 gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
 

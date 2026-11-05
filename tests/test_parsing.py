@@ -22,10 +22,12 @@ from test_utils import (
     EXAMPLE_DIR,
     _print_warning_info,
     _run_func_and_capture_stdout_warnings,
+    api_key,
     assert_df_rows_equal,
     custom_mpl_image_compare,
     data_dir,
     if_present_rm,
+    requires_api_key,
     vasp_data_dir,
 )
 
@@ -666,6 +668,41 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert isinstance(dp.bulk_band_gap_outputs, CalculationOutputs)
         assert dp.processes == 4
         assert dp.json_filename == "test_pop.json"
+
+    @requires_api_key
+    def test_bulk_gap_data_from_MP(self):
+        """
+        Test obtaining the bulk band gap & band edges from the Materials
+        Project (MP) with ``use_MP`` / ``mpid`` (live MP queries).
+        """
+        parse_kwargs = {
+            "defect_path": f"{self.CdTe_EXAMPLE_DIR}/v_Cd_0/vasp_ncl",  # neutral, no LOCPOT/OUTCAR; fast
+            "bulk_path": self.CdTe_BULK_DATA_DIR,
+            "parse_projected_eigen": False,  # just for fast testing, not recommended in general!
+            "api_key": api_key,
+        }
+        metadata = DefectParser.from_paths(**parse_kwargs, use_MP=True).defect_entry.calculation_metadata
+        assert metadata["mpid"] == "mp-406"  # zinc blende CdTe, structure-matched to the bulk supercell
+        assert metadata["MP_gga_BScalc_data"]["direct"]  # ``get_band_gap()`` dict of MP band structure
+        assert np.isclose(metadata["MP_gga_BScalc_data"]["energy"], metadata["band_gap"])
+        assert np.isclose(metadata["cbm"] - metadata["vbm"], metadata["band_gap"])
+        # MP GGA values (0.585 & 1.752 eV with MP database v2026.09.28), vs 1.499 & 1.647 eV for the
+        # (HSE+SOC) bulk supercell:
+        assert np.isclose(metadata["band_gap"], 0.585, atol=0.05)
+        assert np.isclose(metadata["vbm"], 1.752, atol=0.05)
+
+        # MP ID with no MP band structure -> reverts to bulk supercell values, with a warning:
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectParser.from_paths(**parse_kwargs, mpid="mp-0")
+        metadata = dp.defect_entry.calculation_metadata
+        assert any(
+            "No Materials Project band structure could be obtained for MPID mp-0" in str(warn.message)
+            for warn in w
+        )
+        assert metadata["mpid"] == "mp-0"
+        assert metadata["MP_gga_BScalc_data"] is None
+        assert np.isclose(metadata["band_gap"], 1.499, atol=1e-3)
+        assert np.isclose(metadata["vbm"], 1.647, atol=1e-3)
 
     def test_DefectsParser_CdTe_unrecognised_subfolder(self):
         # test setting subfolder to unrecognised one:

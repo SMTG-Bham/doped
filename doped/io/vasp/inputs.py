@@ -10,6 +10,7 @@ import warnings
 from functools import lru_cache
 from importlib import resources
 from math import ceil
+from numbers import Real
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -357,6 +358,13 @@ class DopedDictSet(VaspInputSet):
             # user ``MAGMOM``s take precedence over site magmoms, as in ``pymatgen`` (which does this for
             # ``user_incar_settings``, rather than ``config_dict`` settings as here):
             site_magmoms = [magmom.get(site.species_string, site.magmom) for site in structure]
+            if any(
+                _parse_incar_value(tag, config_dict["INCAR"].get(tag))
+                for tag in ["LSORBIT", "LNONCOLLINEAR"]
+            ):
+                # non-collinear, so set collinear moments along z (default ``SAXIS``), as ``pymatgen``
+                # otherwise writes scalar ``MAGMOM``\s in a ``3*N*m`` format here:
+                site_magmoms = [[0, 0, m] if isinstance(m, Real) else m for m in site_magmoms]
             structure = structure.copy(site_properties={"magmom": site_magmoms})
         if magmom is not None and _parse_incar_value("ISPIN", config_dict["INCAR"].get("ISPIN", 1)) == 1:
             warn_once(
