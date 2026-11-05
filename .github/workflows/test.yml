@@ -36,7 +36,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10.3.3
       - name: Install dependencies
         run: |  # TODO: temporary until doped v4 released; SnB develop install:
           uv pip install --system --no-deps "shakenbreak @ git+https://github.com/SMTG-Bham/ShakeNBreak@develop"
