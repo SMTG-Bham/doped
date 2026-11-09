@@ -9,10 +9,6 @@ machinery, as for any other calculator:
 
 Not implemented, and so unavailable with GPAW:
 
-- ``projected_eigenvalues``, and thus ``load_eigenvalue_outputs()`` and
-  eigenvalue analysis of band-edge & in-gap states
-  (``DefectEntry.get_eigenvalue_analysis()``). GPAW's PAW projections are in
-  the ``.gpw`` files, but are not yet mapped to ``pymatgen``'s format.
 - ``get_fermi_dos()``: bulk DOS parsing, for Fermi level / carrier
   concentration analysis (``FermiSolver``).
 
@@ -39,7 +35,7 @@ from doped.io.outputs import CalculationOutputs
 # ``getattr(backend, name, default)``), so it is intercepted here to fail informatively rather than with an
 # obscure ``AttributeError``. The optional, ``getattr``-probed protocol names (``SUBFOLDER_PRIORITY``,
 # ``PLANAR_POTENTIALS_FILE``, ``SITE_POTENTIALS_FILE``) must keep raising ``AttributeError``, so that those
-# features degrade gracefully as intended (``load_eigenvalue_outputs`` is defined below, to fail fast):
+# features degrade gracefully as intended:
 _UNIMPLEMENTED_BACKEND_ATTRS = ("get_fermi_dos",)
 
 
@@ -276,18 +272,71 @@ def _get_eigenvalues(calc, **kwargs) -> dict[Spin, np.ndarray]:
     }
 
 
-def load_eigenvalue_outputs(**kwargs) -> CalculationOutputs:
+def _get_projected_eigenvalues(
+    gpw_file: PathLike, calc, eigenvalues: dict[Spin, np.ndarray]
+) -> dict[Spin, np.ndarray]:
     """
-    Raise ``NotImplementedError``, as projected eigenvalues (needed for
-    eigenvalue analysis) are not yet parsed from GPAW outputs (see the module
-    docstring); TODO.
+    Map stored collinear PAW amplitudes to orbital weights per spin, k-point,
+    band and atom, using the bound projectors from GPAW's PDOS.
 
-    Defined so that eigenvalue analysis fails immediately for GPAW.
+    The real spherical harmonics for each angular momentum are in the same
+    order as pymatgen (e.g. py, pz, px). Sum squared amplitudes from radial
+    projectors with the same angular character without rescaling the weights
+    across atoms.
     """
-    raise NotImplementedError(
-        "Eigenvalue analysis is not yet implemented for GPAW, as projected eigenvalues are not parsed "
-        "from GPAW outputs; see the GPAW tracking issue."
-    )
+    from ase.io.ulm import open as ulm_open
+    from gpaw.dos import get_projector_numbers
+
+    with ulm_open(gpw_file) as reader:
+        try:
+            coefficients = reader.wave_functions.projections
+        except AttributeError as exc:
+            raise ValueError(
+                f"{gpw_file} has no stored PAW projections. Write a GPAW restart with "
+                "include_projections=True for eigenvalue analysis."
+            ) from exc
+
+    setups = [calc.setups[a] for a in range(len(calc.atoms))]
+    nkpoints, nbands = next(iter(eigenvalues.values())).shape[:2]
+    expected_shape = (len(eigenvalues), nkpoints, nbands, sum(setup.ni for setup in setups))
+    if coefficients.shape != expected_shape:
+        raise ValueError(
+            f"Unexpected PAW projection shape in {gpw_file}: {coefficients.shape}, expected "
+            f"{expected_shape} for a collinear calculation."
+        )
+
+    weights = np.zeros((*expected_shape[:3], len(setups), 16))  # s, p, d and f harmonics
+    offset = 0
+    for atom_index, setup in enumerate(setups):
+        for ell in range(4):
+            if indices := get_projector_numbers(setup, ell):
+                amplitudes = coefficients[..., offset + np.asarray(indices)]
+                shells = amplitudes.reshape(*expected_shape[:3], -1, 2 * ell + 1)
+                weights[..., atom_index, ell**2 : (ell + 1) ** 2] = (abs(shells) ** 2).sum(axis=-2)
+        offset += setup.ni
+    return {spin: weights[i] for i, spin in enumerate(eigenvalues)}
+
+
+def load_eigenvalue_outputs(
+    path: PathLike | None = None,
+    outputs: PathLike | None = None,
+    projections: PathLike | None = None,
+    label: str = "calculation",
+    **kwargs,
+) -> CalculationOutputs:
+    """
+    Load GPAW eigenvalues and PAW projections from a single restart file.
+
+    An explicit ``outputs`` path takes precedence over the recorded
+    calculation ``path``. GPAW stores projections with the eigenvalues,
+    so a separate ``projections`` file is not supported.
+    """
+    if projections is not None:
+        raise ValueError("GPAW reads projections from the .gpw output, not a separate projections file.")
+    source = outputs if outputs is not None else path
+    if source is None:
+        raise FileNotFoundError(f"No GPAW .gpw output path was supplied for the {label} calculation.")
+    return get_calculation_outputs(source, label=label, parse_projected_eigen=True)
 
 
 def _get_planar_averaged_potential_from_calc(calc) -> dict[str, np.ndarray]:
@@ -417,11 +466,8 @@ def get_calculation_outputs(
             ``"defect"``). Accepted for backend-protocol compatibility but
             unused. Default is ``"calculation"``.
         parse_projected_eigen (bool):
-            Accepted for backend-protocol compatibility and otherwise
-            **unused**: mapping ``GPAW``'s PAW projections to ``pymatgen``'s
-            ``projected_eigenvalues`` format is not yet implemented, so
-            eigenvalue analysis is unavailable with ``GPAW``. Default is
-            ``None``.
+            Parse collinear PAW projections for eigenvalue analysis when
+            ``True``. Default is ``None`` (projections are loaded on demand).
         subfolder (PathLike):
             Optional subfolder within ``path`` containing the ``.gpw`` file.
             Default is ``None``.
@@ -454,6 +500,9 @@ def get_calculation_outputs(
             converged_ionic=None,
             efermi=efermi,
             eigenvalues=eigenvalues,
+            projected_eigenvalues=(
+                _get_projected_eigenvalues(gpw_file, calc, eigenvalues) if parse_projected_eigen else None
+            ),
             kpoint_coords=calc.get_ibz_k_points(),
             kpoint_weights=kpoint_weights,
             nelect=calc.get_number_of_electrons(),

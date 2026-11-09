@@ -282,6 +282,7 @@ class GPAWTest(unittest.TestCase):
         bulk_dir = os.path.join(gpaw_data_dir, "MgO", "bulk")
         bulk_outputs = get_calculation_outputs(bulk_dir, calculator="gpaw", label="bulk")
         assert bulk_outputs.calculator == "gpaw"
+        assert bulk_outputs.projected_eigenvalues is None
         assert bulk_outputs.charge == 0
         assert len(bulk_outputs.structure) == len(bulk_outputs.site_potentials)
         assert set(bulk_outputs.planar_averaged_potentials) == {0, 1, 2}
@@ -690,6 +691,70 @@ def gpaw_competing_phases(tmp_path_factory):
             settings[phase].update(spinpol=True, initial_magnetic_moments={"O": 1.0})
         energies[phase] = _run_phase_calculation(structures[phase], root / names[phase], settings[phase])
     return root, names, structures, settings, energies
+
+
+@pytest.mark.parametrize("phase", ["MgO", "O2"])
+def test_gpaw_projected_eigenvalues_match_pdos(gpaw_competing_phases, phase):
+    """
+    Match GPAW's own PDOS weights across atoms, orbitals, k-points and spins.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    from gpaw.dos import DOSCalculator, get_projector_numbers
+
+    root, names, _, _, _ = gpaw_competing_phases
+    path = root / names[phase] / "singlepoint.gpw"
+    outputs = get_calculation_outputs(path, calculator="gpaw", parse_projected_eigen=True)
+    calc = gpaw.GPAW(path, txt=None)
+    try:
+        dos = DOSCalculator.from_calculator(calc)
+        expected_spins = [Spin.up, Spin.down] if phase == "O2" else [Spin.up]
+        assert list(outputs.projected_eigenvalues) == expected_spins
+        for atom in range(len(outputs.structure)):
+            for ell in range(4):
+                indices = get_projector_numbers(calc.setups[atom], ell)
+                for m in range(2 * ell + 1):
+                    expected = dos.wfs.pdos_weights(atom, indices[m :: 2 * ell + 1])
+                    for spin_index, projections in enumerate(outputs.projected_eigenvalues.values()):
+                        np.testing.assert_allclose(
+                            projections[:, :, atom, ell**2 + m], expected[:, :, spin_index], atol=1e-12
+                        )
+    finally:
+        calc.atoms.calc = None
+
+
+def test_gpaw_eigenvalue_analysis_requires_stored_projections(gpaw_competing_phases, tmp_path):
+    """
+    Report missing projections in a real restart written without them.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    root, names, _, _, _ = gpaw_competing_phases
+    calc = gpaw.GPAW(root / names["MgO"] / "singlepoint.gpw", txt=None)
+    path = tmp_path / "singlepoint.gpw"
+    try:
+        calc.write(path, include_projections=False)
+    finally:
+        calc.atoms.calc = None
+
+    with pytest.raises(ValueError, match="no stored PAW projections"):
+        get_calculation_outputs(path, calculator="gpaw", parse_projected_eigen=True)
+
+
+def test_gpaw_eigenvalue_analysis_from_restart():
+    """
+    Load PAW projections on demand for the shipped Mg vacancy analysis.
+    """
+    pytest.importorskip("gpaw")
+    root = Path(gpaw_data_dir) / "MgO"
+    parser = DefectParser.from_paths(
+        root / "v_Mg_-2", bulk_path=root / "bulk", calculator="gpaw", skip_corrections=True
+    )
+    entry = parser.defect_entry
+    assert "eigenvalue_data" not in entry.calculation_metadata
+    entry.get_eigenvalue_analysis(plot=False)
+    data = entry.calculation_metadata["eigenvalue_data"]
+    assert data["vbm_info"].orbital_info.energy == pytest.approx(5.4150, abs=1e-3)
+    assert data["cbm_info"].orbital_info.energy == pytest.approx(8.7798, abs=1e-3)
+    assert data["vbm_info"].orbital_info.orbitals["O"][1] > 0  # O p character
 
 
 def test_competing_phase_entry_real_gpaw():
