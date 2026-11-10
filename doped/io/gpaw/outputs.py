@@ -367,12 +367,25 @@ def load_eigenvalue_outputs(
     return get_calculation_outputs(source, label=label, parse_projected_eigen=True)
 
 
-def _get_planar_averaged_potential_from_calc(calc) -> dict[str, np.ndarray]:
+def _get_planar_averaged_potential_from_calc(calc, electrostatic_potential=None) -> dict[str, np.ndarray]:
     """
-    Helper to extract planar-averaged potentials from a GPAW calculator.
+    Helper to extract planar-averaged potentials from a GPAW calculator, using
+    its already-evaluated ``calc.dft.electrostatic_potential()`` if given (to
+    avoid ``GPAW`` re-evaluating it here).
     """
     # note that the FNV correction requires the bulk and defect potentials to be on the same grid
-    v_ext = calc.get_electrostatic_potential()
+    if electrostatic_potential is None:
+        v_ext = calc.get_electrostatic_potential()  # dominates runtime
+    else:  # its pseudo Hartree potential on the real-space grid, as in ``get_electrostatic_potential()``
+        from ase.units import Ha
+        from gpaw.core import UGArray
+
+        v_ext = electrostatic_potential.vHt_x
+        if isinstance(v_ext, UGArray):  # FD and LCAO modes
+            v_ext = v_ext.gather(broadcast=True).to_pbc_grid().data * Ha
+        else:  # PW mode
+            v_ext = v_ext.ifft(grid=calc.dft.pot_calc.fine_grid).gather(broadcast=True).data * Ha
+
     planar_averages = {}
     for i in range(3):
         axes = [0, 1, 2]
