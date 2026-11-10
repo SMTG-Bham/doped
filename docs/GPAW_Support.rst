@@ -175,17 +175,12 @@ been applied):
 Eigenvalue and orbital analysis
 -------------------------------
 
-Use ``defect_dict["v_Mg_-2"].get_eigenvalue_analysis()`` to analyse the
-band edge and in-gap states of a GPAW defect. The bulk and defect
-``.gpw`` files must contain collinear PAW projections. GPAW writes these
-by default, including in restarts saved without ``mode="all"``.
-``parse_projected_eigen=True`` can also be passed to the parser to load
-the orbital data during defect parsing.
-
-Orbital weights are sums of squared bound-projector amplitudes over radial
-channels with the same angular character, as in GPAW's projected DOS.
-Use consistent PAW setups for the bulk and defect calculations when
-comparing orbital character.
+Use :meth:`~doped.core.DefectEntry.get_eigenvalue_analysis` (e.g.
+``defect_dict["v_Mg_-2"].get_eigenvalue_analysis()``) to analyse the band edge
+and in-gap states of a GPAW defect calculation, as described in the
+:ref:`eigenvalue analysis tips <Tips:Eigenvalue / Electronic Structure Analysis>`,
+using the (collinear) PAW projections stored in the bulk and defect ``.gpw``
+files.
 
 Chemical potentials and formation energies
 ------------------------------------------
