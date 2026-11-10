@@ -1826,8 +1826,10 @@ def _handle_charge_correction_errors(
             Additional keyword arguments, such as
             ``shallow_charge_stability_tolerance``.
     """
-    defect_thermo = None
-    if all(  # (no charge-state stability filtering if the bulk band edges are undetermined)
+    # no charge correction warnings for unstable / shallow charge states (avoid prune_to_stable_entries()
+    # here, as this would require two |DefectThermodynamics| inits):
+    entries_to_check = defect_dict
+    if all(  # no stability filtering if the bulk band edges are undetermined
         e.calculation_metadata.get(k) is not None
         for e in defect_dict.values()
         for k in ("vbm", "band_gap")
@@ -1835,20 +1837,27 @@ def _handle_charge_correction_errors(
         defect_thermo = DefectThermodynamics(
             list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
         )
-        shallow_tol = kwargs.get(
-            "shallow_charge_stability_tolerance",
-            min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
-        )
+        shallow_tol = kwargs.get("shallow_charge_stability_tolerance")
+        if shallow_tol is None:  # default
+            shallow_tol = min(
+                error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05
+            )
+
+        entries_to_check = {
+            name: entry
+            for name, entry in defect_dict.items()
+            if (window := defect_thermo._get_in_gap_fermi_level_stability_window(entry)) >= 0
+            and not (  # shallow check here (in ``DefectsParser``) only uses already-parsed eigenvalues
+                window < shallow_tol
+                and entry.calculation_metadata.get("eigenvalue_data")
+                and entry.is_shallow
+            )
+        }
+
     fmt = ".3f" if error_tolerance >= 0.01 else ".2e"  # meV rounding if tol >= 10 meV, else sci notation
     correction_errors: dict[tuple, list[str]] = {("Freysoldt", "FNV"): [], ("Kumagai", "eFNV"): []}
 
-    for name, defect_entry in defect_dict.items():
-        # no charge correction warnings for unstable charge states (we avoid prune_to_stable_entries()
-        # here, as this would require two |DefectThermodynamics| inits):
-        if defect_thermo is not None:
-            window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
-            if window < 0 or (defect_entry.is_shallow and window < shallow_tol):
-                continue
+    for name, defect_entry in entries_to_check.items():
         for (long_name, _), errors in correction_errors.items():
             err = defect_entry.corrections_metadata.get(f"{long_name.lower()}_charge_correction_error", 0)
             if err > error_tolerance:

@@ -404,8 +404,8 @@ the following section for an example of this analysis. The
 `easyunfold <https://smtg-bham.github.io/easyunfold/>`__ package for band structure unfolding can also be
 quite useful for extending this electronic structure analysis.
 
-The optional argument ``parse_projected_eigen`` in |DefectsParser| (``True`` by
-default) controls whether to load the projected eigenvalues & orbitals, which then allows
+The optional argument ``parse_projected_eigen`` in |DefectsParser| (``None`` by default, loading these if
+available) controls whether to load the projected eigenvalues & orbitals, which then allows
 :meth:`~doped.core.DefectEntry.get_eigenvalue_analysis` to be called -- returning information about the
 nature of the band edge and in-gap states, allowing defect states (and whether they are deep or
 shallow/PHS) to be automatically identified and characterised.
