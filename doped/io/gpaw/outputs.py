@@ -163,7 +163,7 @@ def _get_gpaw_parameters(calc) -> dict:
     return calc.parameters.todict() if hasattr(calc.parameters, "todict") else dict(calc.parameters)
 
 
-def _get_site_potentials_from_calc(calc) -> np.ndarray:
+def _get_site_potentials_from_calc(calc, electrostatic_potential=None) -> np.ndarray:
     """
     Get the atom-centred electrostatic site potentials from a ``GPAW``
     calculator.
@@ -177,11 +177,24 @@ def _get_site_potentials_from_calc(calc) -> np.ndarray:
 
     Args:
         calc (GPAW): ``GPAW`` calculator object.
+        electrostatic_potential (ElectrostaticPotential):
+            The already-evaluated ``calc.dft.electrostatic_potential()``, to
+            avoid ``GPAW`` re-evaluating it here. Default is ``None``.
 
     Returns:
         np.ndarray: Atomic site potentials (in eV), one per atom.
     """
-    return -1.0 * np.array(calc.get_atomic_electrostatic_potentials())
+    if calc.old:  # legacy ``GPAW`` calculator
+        return -1.0 * np.array(calc.get_atomic_electrostatic_potentials())
+
+    from ase.units import Ha
+
+    if electrostatic_potential is None:
+        electrostatic_potential = calc.dft.electrostatic_potential()
+
+    # as in ``get_atomic_electrostatic_potentials()``, but with the L=0 coefficient of each atom:
+    W_aL = electrostatic_potential.W_aL.gather(broadcast=True)
+    return -1.0 * np.array([W_aL[atom][0] for atom in range(len(calc.atoms))]) * (Ha / (4 * np.pi) ** 0.5)
 
 
 def _structure_from_calc(calc) -> Structure:
