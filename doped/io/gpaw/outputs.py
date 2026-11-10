@@ -109,7 +109,8 @@ def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
     manager which closes it and detaches it from its ``Atoms`` on exit.
 
     Raises a ``ValueError`` if the file holds no stored results (e.g. from an
-    unconverged calculation).
+    unconverged calculation), and a ``NotImplementedError`` for calculations
+    with an explicit jellium ``background_charge``.
 
     Args:
         gpw_file (PathLike):
@@ -121,11 +122,25 @@ def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
         GPAW:
             The ``GPAW`` calculator.
     """
+    from ase.io.ulm import open as ulm_open
     from gpaw import GPAW
+
+    # the electrons compensated by an explicit jellium are in neither the ``charge`` parameter nor GPAW's
+    # electron count, so would be parsed as a neutral cell (if/when GPAW can re-read these restart files):
+    with ulm_open(gpw_file) as reader:
+        background_charge = reader.parameters.asdict().get("background_charge")
+    if background_charge:
+        raise NotImplementedError(
+            f"{gpw_file} is from a calculation with an explicit jellium `background_charge` "
+            f"({background_charge}), which is not supported by `doped` (it is not included in the GPAW "
+            f"`charge` parameter, from which the charge state is determined). Use the `charge` parameter "
+            f"instead (with the opposite sign), which is equivalent for a uniform jellium."
+        )
 
     calc = GPAW(gpw_file, **kwargs)
     try:
-        if calc.calculation_required(calc.atoms, ["energy"]):
+        # (not ``calculation_required()``, which is always True for restarts with ``external`` potentials)
+        if "energy" not in calc.results:
             raise ValueError(
                 f"{gpw_file} holds no stored results (e.g. from an unconverged or unfinished calculation)"
             )
