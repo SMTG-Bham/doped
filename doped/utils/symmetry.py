@@ -4062,7 +4062,9 @@ def point_symmetry_from_structure(
             when ``relaxed=True`` (``centre_error_range``, ``bulk_symprec``),
             or ``get_all_equiv_sites`` when ``relaxed=False`` (such as
             ``dist_tol_factor``); kwargs not applicable to the chosen mode are
-            ignored.
+            ignored. ``site_tol`` is passed to
+            ``template_defect_entry_from_structures`` when ``bulk_structure``
+            is provided (see ``defect_site_from_structures``).
 
     Returns:
         str: Defect point symmetry (Schoenflies symbol).
@@ -4076,6 +4078,7 @@ def point_symmetry_from_structure(
             bulk_structure,
             oxi_state="Undetermined",
             multiplicity=1,
+            site_tol=kwargs.pop("site_tol", None),
         )
 
         return point_symmetry_from_defect_entry(
