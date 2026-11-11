@@ -1663,9 +1663,7 @@ def load_eigenvalue_outputs(
             ``"defect"``), for informative warnings/errors. Default is
             ``"bulk"``.
         run_metadata (dict):
-            The ``DefectEntry.calculation_metadata["run_metadata"]`` dict, to
-            re-hydrate the |Vasprun| from its serialised
-            ``{label}_vasprun_dict`` as a last resort. Default is ``None``.
+            Accepted for backend-protocol compatibility but unused.
 
     Returns:
         CalculationOutputs:
@@ -1684,10 +1682,6 @@ def load_eigenvalue_outputs(
             _multiple_files_warning("vasprun.xml", path, vr_path, dir_type=label)
         with contextlib.suppress(Exception):
             vr = get_vasprun(vr_path, parse_projected_eigen=True)
-
-    if vr is None and procar is not None:  # then try take from serialised vasprun dict:
-        with contextlib.suppress(Exception):
-            vr = Vasprun.from_dict((run_metadata or {})[f"{label}_vasprun_dict"])
 
     if not isinstance(vr, Vasprun):
         raise FileNotFoundError(

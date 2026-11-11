@@ -496,9 +496,7 @@ def get_eigenvalue_analysis(
             ``pymatgen`` |Vasprun| object or a
             :class:`~doped.io.outputs.CalculationOutputs` object, for the
             reference bulk supercell calculation. If ``None`` (default), tries
-            to load the |Vasprun| object from
-            ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``
-            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            to load from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
         bulk_projections (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
@@ -518,9 +516,7 @@ def get_eigenvalue_analysis(
             ``pymatgen`` |Vasprun| object or a
             :class:`~doped.io.outputs.CalculationOutputs` object, for the
             defect supercell calculation. If ``None`` (default), tries to load
-            the |Vasprun| object from
-            ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``
-            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
         defect_projections (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
