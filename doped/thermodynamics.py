@@ -2782,7 +2782,11 @@ class DefectThermodynamics(MSONable):
             if stability_tol is not None and fermi_stability_window < stability_tol:
                 continue  # skip
 
-            if defect_entry.is_shallow and fermi_stability_window < shallow_tol:
+            if (
+                fermi_stability_window < shallow_tol
+                and defect_entry.calculation_metadata.get("eigenvalue_data")
+                and defect_entry.is_shallow
+            ):
                 continue  # skip
 
             pruned_defect_entries[name] = defect_entry
