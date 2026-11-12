@@ -152,6 +152,28 @@ def _open_gpaw_restart(gpw_file: PathLike, **kwargs):
             calc.atoms.calc = None
 
 
+def _check_non_collinear_occupations(gpw_file: PathLike, collinear: bool) -> None:
+    """
+    Raise a ``NotImplementedError`` for non-collinear calculations written by
+    the legacy ``GPAW`` calculator (``.gpw`` format version < 4; e.g. with GPAW
+    < 26.7, ``external`` potentials or ``legacy_gpaw=True``), for which
+    incorrect (halved) band occupations are stored.
+    """
+    from ase.io.ulm import open as ulm_open
+
+    if collinear:
+        return
+    with ulm_open(gpw_file) as reader:
+        if reader.version >= 4:
+            return
+    raise NotImplementedError(
+        f"{gpw_file} is a non-collinear calculation written by the legacy GPAW calculator (e.g. with GPAW "
+        f"< 26.7, or `external` potentials), for which GPAW stores incorrect band occupations, so is not "
+        f"supported. Re-run its final single point with GPAW >= 26.7 (without `external` potentials or "
+        f"`legacy_gpaw=True`)."
+    )
+
+
 def _get_gpaw_parameters(calc) -> dict:
     """
     Get the parameters of a ``GPAW`` calculator as a ``dict``.
@@ -368,21 +390,40 @@ def load_eigenvalue_outputs(
     outputs: PathLike | None = None,
     projections: PathLike | None = None,
     label: str = "calculation",
-    **kwargs,
+    run_metadata: dict | None = None,
 ) -> CalculationOutputs:
     """
-    Load GPAW eigenvalues and PAW projections from a single restart file.
+    Load ``GPAW`` calculation outputs `with orbital projections` (from the PAW
+    projections stored in the ``.gpw`` restart file) for eigenvalue / band-edge
+    analysis, raising an informative error if they cannot be parsed.
 
-    An explicit ``outputs`` path takes precedence over the recorded
-    calculation ``path``. GPAW stores projections with the eigenvalues,
-    so a separate ``projections`` file is not supported.
+    Args:
+        path (PathLike):
+            Path to the calculation directory or ``.gpw`` file (e.g.
+            ``DefectEntry.calculation_metadata["bulk_path"]``), used if
+            ``outputs`` is not provided.
+        outputs (PathLike):
+            Path to the calculation directory or ``.gpw`` file, which takes
+            precedence over ``path``. Default is ``None``.
+        projections (PathLike):
+            Not supported; ``GPAW`` stores the projections in the ``.gpw``
+            file, rather than in a separate projections file.
+        label (str):
+            Label for the type of calculation being parsed (e.g. ``"bulk"``,
+            ``"defect"``), for informative errors. Default is
+            ``"calculation"``.
+        run_metadata (dict):
+            Accepted for backend-protocol compatibility but unused.
+
+    Returns:
+        CalculationOutputs:
+            The parsed calculation outputs, with ``projected_eigenvalues``.
     """
     if projections is not None:
         raise ValueError("GPAW reads projections from the .gpw output, not a separate projections file.")
-    source = outputs if outputs is not None else path
-    if source is None:
-        raise FileNotFoundError(f"No GPAW .gpw output path was supplied for the {label} calculation.")
-    return get_calculation_outputs(source, label=label, parse_projected_eigen=True)
+    if (source := outputs if outputs is not None else path) is None:
+        raise FileNotFoundError(f"No {label} '.gpw' file path supplied. Required for eigenvalue analysis!")
+    return _parse_gpaw_restart(source, label=label, eigenvalue_analysis_only=True)
 
 
 def _get_planar_averaged_potential_from_calc(calc, electrostatic_potential=None) -> dict[str, np.ndarray]:
@@ -496,8 +537,9 @@ calculation folder discovery.
 
 FILE_PARSING_ACTIONS = {
     ".gpw": (
-        "parse the calculation energy, metadata and electrostatic potentials (planar-averaged and "
-        "atomic-site), and compute the charged-defect finite-size corrections."
+        "parse the calculation energy, metadata, orbital projections (for eigenvalue analysis) and "
+        "electrostatic potentials (planar-averaged and atomic-site), and compute the charged-defect "
+        "finite-size corrections."
     ),
 }
 """
@@ -522,11 +564,13 @@ def get_calculation_outputs(
             Path to the calculation directory, or directly to a ``.gpw`` file.
         label (str):
             Label for the type of calculation being parsed (e.g. ``"bulk"``,
-            ``"defect"``). Accepted for backend-protocol compatibility but
-            unused. Default is ``"calculation"``.
+            ``"defect"``), for informative warnings. Default is
+            ``"calculation"``.
         parse_projected_eigen (bool):
-            Parse collinear PAW projections for eigenvalue analysis when
-            ``True``. Default is ``None`` (projections are loaded on demand).
+            Whether to parse the (collinear) PAW projections stored in the
+            ``.gpw`` file, for eigenvalue analysis. If ``None`` (default),
+            tries to parse projections but with no warning if this fails; if
+            ``True``, warns on failure; if ``False``, skips projection parsing.
         subfolder (PathLike):
             Optional subfolder within ``path`` containing the ``.gpw`` file.
             Default is ``None``.
@@ -537,8 +581,29 @@ def get_calculation_outputs(
     Returns:
         CalculationOutputs: The parsed calculation outputs.
     """
+    return _parse_gpaw_restart(path, label, parse_projected_eigen, subfolder)
+
+
+def _parse_gpaw_restart(
+    path: PathLike,
+    label: str = "calculation",
+    parse_projected_eigen: bool | None = None,
+    subfolder: PathLike | None = None,
+    eigenvalue_analysis_only: bool = False,
+) -> CalculationOutputs:
+    """
+    Parse a ``GPAW`` restart file to a ``CalculationOutputs`` object; see
+    :func:`get_calculation_outputs` for the shared arguments.
+
+    If ``eigenvalue_analysis_only`` is ``True`` (as used by
+    :func:`load_eigenvalue_outputs`), any error in parsing the PAW projections
+    is raised, and the electrostatic potentials (which take most of the parsing
+    time, and are not needed for eigenvalue analysis) are skipped.
+    """
     gpw_file = _find_gpaw_output(path, subfolder)
     with _open_gpaw_restart(gpw_file, txt=None) as calc:
+        density = calc.density if calc.old else calc.dft.density  # (legacy or new ``GPAW`` calculator)
+        _check_non_collinear_occupations(gpw_file, density.collinear)
         parameters = _get_gpaw_parameters(calc)
         charge = parameters.get("charge") or 0  # parameters only holds explicitly-set, non-default values
         try:
@@ -549,8 +614,27 @@ def get_calculation_outputs(
         eigenvalues = _get_eigenvalues(calc, raw=True)
         band_gap, cbm, vbm = _get_band_edges(eigenvalues, kpoint_weights, efermi)
 
+        projected_eigenvalues = None
+        if parse_projected_eigen is not False:
+            try:
+                projected_eigenvalues = _get_projected_eigenvalues(gpw_file, calc, eigenvalues)
+            except Exception as exc:
+                if eigenvalue_analysis_only:  # projections required; fail fast (before the potentials)
+                    raise
+                if parse_projected_eigen is True:  # only warn if set to True (not None)
+                    warnings.warn(f"Could not parse PAW projections from the {label} .gpw file: {exc}")
+
+        structure, magnetization = _structure_from_calc(calc), calc.get_magnetic_moment()
+        if not density.collinear:
+            # GPAW's ``magmom(s)`` results are only their z components, so get the full (x, y, z) vectors:
+            magnetization, magmoms = density.calculate_magnetic_moments()
+            structure.add_site_property("final_magmom", magmoms.tolist())
+
+        # extract potential once for efficiency (don't re-evaluate); legacy calculator needs to re-compute
+        potential = None if eigenvalue_analysis_only or calc.old else calc.dft.electrostatic_potential()
+
         return CalculationOutputs(
-            structure=_structure_from_calc(calc),
+            structure=structure,
             energy=calc.get_potential_energy(),
             calculator="gpaw",
             directory=str(path),
@@ -559,22 +643,26 @@ def get_calculation_outputs(
             converged_ionic=None,
             efermi=efermi,
             eigenvalues=eigenvalues,
-            projected_eigenvalues=(
-                _get_projected_eigenvalues(gpw_file, calc, eigenvalues) if parse_projected_eigen else None
-            ),
+            projected_eigenvalues=projected_eigenvalues,
             kpoint_coords=calc.get_ibz_k_points(),
             kpoint_weights=kpoint_weights,
             nelect=calc.get_number_of_electrons(),
             charge=charge,
-            magnetization=calc.get_magnetic_moment(),
+            magnetization=magnetization,
             vbm=vbm,
             cbm=cbm,
             band_gap=band_gap,
-            planar_averaged_potentials={
-                int(axis): potentials
-                for axis, potentials in _get_planar_averaged_potential_from_calc(calc).items()
-            },
-            site_potentials=_get_site_potentials_from_calc(calc),
+            planar_averaged_potentials=(
+                None
+                if eigenvalue_analysis_only
+                else {
+                    int(axis): v
+                    for axis, v in _get_planar_averaged_potential_from_calc(calc, potential).items()
+                }
+            ),
+            site_potentials=(
+                None if eigenvalue_analysis_only else _get_site_potentials_from_calc(calc, potential)
+            ),
             run_metadata={"gpaw_parameters": parameters},
         )
 
@@ -604,18 +692,30 @@ def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
 
     gpw_file = _find_gpaw_output(path)
     with ulm_open(gpw_file) as reader:  # first, so that non-ULM (e.g. empty) files give a clear error
-        parameters = reader.parameters.asdict()
+        parameters, results = reader.parameters.asdict(), reader.results.asdict()
+        if "energy" not in results:
+            raise ValueError(
+                f"{gpw_file} holds no stored results (e.g. from an unconverged or unfinished calculation)"
+            )
+        # band energies & raw occupations, read here as ``ase`` misreads those of non-collinear
+        # calculations (stored without a spin axis). TODO: once ``doped`` requires an ``ase`` with this
+        # fixed, use ``_get_eigenvalues(calc)`` and ``calc.get_k_point_weights()`` instead
+        eigenvalues = np.stack([reader.wave_functions.eigenvalues, reader.wave_functions.occupations], -1)
+        kpoint_weights = reader.wave_functions.kpts.weights
+    _check_non_collinear_occupations(gpw_file, collinear=eigenvalues.ndim == 4)  # (spin axis if collinear)
     atoms = read_gpw(gpw_file)  # with a ``SinglePointDFTCalculator`` holding the stored results
-    if "energy" not in atoms.calc.results:
-        raise ValueError(
-            f"{gpw_file} holds no stored results (e.g. from an unconverged or unfinished calculation)"
-        )
 
     calc = atoms.calc
-    structure = _structure_from_calc(calc)
+    structure, total_magnetization = _structure_from_calc(calc), calc.get_magnetic_moment()
+    if eigenvalues.ndim == 3:  # non-collinear: one set of spinor bands, and (x, y, z) moments (if stored)
+        eigenvalues = eigenvalues[None]  # spin axis (TODO: drop with the ``ase`` workaround above)
+        total_magnetization = results.get("non_collinear_magmom", total_magnetization)
+        if (magmoms := results.get("non_collinear_magmoms")) is not None:
+            structure.add_site_property("final_magmom", magmoms.tolist())
     entry = ComputedStructureEntry(structure, atoms.get_potential_energy())  # parameters in ``entry.data``
-    eigenvalues, kpoint_weights = _get_eigenvalues(calc), calc.get_k_point_weights()
-    band_gap = _get_band_edges(eigenvalues, kpoint_weights, calc.get_fermi_level())[0]
+    band_gap = _get_band_edges(
+        dict(zip((Spin.up, Spin.down), eigenvalues, strict=False)), kpoint_weights, calc.get_fermi_level()
+    )[0]
     elements = sorted(el.symbol for el in entry.composition.elements)
     entry.data.update(
         {
@@ -627,7 +727,7 @@ def get_competing_phase_entry(path: PathLike) -> ComputedStructureEntry:
             "energy_per_atom": entry.energy_per_atom,
             "elements": elements,
             "nelements": len(elements),
-            "summary": {"band_gap": band_gap, "total_magnetization": calc.get_magnetic_moment()},
+            "summary": {"band_gap": band_gap, "total_magnetization": total_magnetization},
             "folder": str(Path(gpw_file).parent),
             "converged_electronic": True,  # (as results-less restarts are rejected above)
         }
