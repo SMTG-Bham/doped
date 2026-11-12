@@ -376,9 +376,10 @@ class DefectsSetBase(MSONable, ABC):
         Redirects an unknown attribute/method call to the ``defect_sets``
         dictionary attribute, if the attribute doesn't exist in this class.
         """
-        # Return the attribute if it exists in self.__dict__
-        if attr in self.__dict__:
-            return self.__dict__[attr]
+        # ``defect_sets`` not yet set (e.g. on a partially-initialised object during copying/unpickling,
+        # which looks up ``__setstate__``), so avoid infinite recursion:
+        if attr == "defect_sets":
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
         # Check if the attribute exists in defect_sets:
         if hasattr(self.defect_sets, attr):

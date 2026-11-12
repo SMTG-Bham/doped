@@ -8,7 +8,10 @@ on:
       - completed  # only release when tests have passed
 
   workflow_dispatch:  # or if manually run
-  
+
+permissions:
+  contents: write  # to create the release tag & GitHub release
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -25,19 +28,11 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install setuptools setuptools_scm wheel
-          # TODO: ShakeNBreak ``IO_refactor`` branch (with the ``doped.io`` import paths) until doped v4 is
-          # released; change to the matching ShakeNBreak release just before the doped release:
-          pip install --no-deps git+https://github.com/SMTG-Bham/ShakeNBreak@IO_refactor
-          pip install -e .
-
       - name: Check if version has changed
         id: check_version
         run: |
-          current_pip_version=$(pip index versions doped | grep LATEST | awk '{print $NF}')
+          # (first output line is ``doped (<latest version>)``; the ``LATEST:`` line is only printed if installed)
+          current_pip_version=$(pip index versions doped | awk 'NR==1 {gsub(/[()]/, "", $2); print $2}')
           current_repo_version=$(grep version pyproject.toml | awk '{print $NF}' | tr -d '"' | head -1)
           if [ "$current_pip_version" != "$current_repo_version" ]; then
             echo "version_changed=true" >> $GITHUB_ENV
@@ -45,7 +40,7 @@ jobs:
             echo "version_changed=false" >> $GITHUB_ENV
           fi
 
-      - name: Build packages
+      - name: Build packages  # isolated build environment, so doped & its dependencies aren't needed
         if: env.version_changed == 'true'
         run: |
           python3 -m pip install --upgrade build
@@ -70,14 +65,8 @@ jobs:
 
       - name: Release
         if: env.version_changed == 'true'
-        uses: actions/create-release@v1
-        id: create_release
-
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ env.version }}
-          release_name: ${{ env.version }}
-          body_path: release_info.txt
-          draft: false
-          prerelease: false
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ env.version }}" --title "${{ env.version }}" --notes-file release_info.txt \
+            --target "$GITHUB_SHA"

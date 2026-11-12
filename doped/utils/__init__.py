@@ -203,7 +203,7 @@ def _doped_obj_properties_methods(obj):
     methods = set()
     for k in dir(obj):
         with contextlib.suppress(Exception):
-            if callable(getattr(obj, k)) and not k.startswith("_"):
+            if callable(getattr(type(obj), k, None)) and not k.startswith("_"):
                 methods.add(k)
     properties = {name for name, value in inspect.getmembers(type(obj)) if isinstance(value, property)}
     return attrs | properties, methods

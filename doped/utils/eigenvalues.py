@@ -658,13 +658,13 @@ def get_eigenvalue_analysis(
 
     try:
         bes = pydefect.analyzer.make_band_edge_states.make_band_edge_states(band_orb, perfect)
-    except ValueError:  # increase to pydefect defaults:
-        defaults._similar_orb_criterion = 0.35
-        defaults._similar_energy_criterion = 0.5
+    except ValueError:  # increase to pydefect defaults (never tightening a wider first-pass criterion):
+        defaults._similar_orb_criterion = max(0.35, defaults._similar_orb_criterion)
+        defaults._similar_energy_criterion = max(0.5, defaults._similar_energy_criterion)
         try:
             bes = pydefect.analyzer.make_band_edge_states.make_band_edge_states(band_orb, perfect)
         except ValueError:
-            defaults._similar_orb_criterion = 0.5
+            defaults._similar_orb_criterion = max(0.5, defaults._similar_orb_criterion)
             # if fails, let it raise pydefect error:
             bes = pydefect.analyzer.make_band_edge_states.make_band_edge_states(band_orb, perfect)
 

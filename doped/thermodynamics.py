@@ -2724,7 +2724,11 @@ class DefectThermodynamics(MSONable):
             if stability_tol is not None and fermi_stability_window < stability_tol:
                 continue  # skip
 
-            if fermi_stability_window < shallow_tol and defect_entry.is_shallow:  # (cheap check first)
+            if (
+                fermi_stability_window < shallow_tol
+                and defect_entry.calculation_metadata.get("eigenvalue_data")
+                and defect_entry.is_shallow
+            ):
                 continue  # skip
 
             pruned_defect_entries[name] = defect_entry
@@ -4980,12 +4984,9 @@ class DefectThermodynamics(MSONable):
         dictionary attribute, if the attribute doesn't exist in
         |DefectThermodynamics|.
         """
-        try:
-            super().__getattribute__(attr)
-        except AttributeError as exc:
-            if attr == "_defect_entries":
-                raise exc
-            return getattr(self._defect_entries, attr)
+        if attr == "_defect_entries":  # not yet set (e.g. partially-initialised object), avoid recursion:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
+        return getattr(self._defect_entries, attr)
 
     def __getitem__(self, key):
         """

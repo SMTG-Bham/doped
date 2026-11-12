@@ -2322,12 +2322,9 @@ class DefectsGenerator(MSONable):
         dictionary attribute, if the attribute doesn't exist in
         |DefectsGenerator|.
         """
-        try:
-            super().__getattribute__(attr)
-        except AttributeError as exc:
-            if attr == "defect_entries":
-                raise exc
-            return getattr(self.defect_entries, attr)
+        if attr == "defect_entries":  # not yet set (e.g. partially-initialised object), avoid recursion:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
+        return getattr(self.defect_entries, attr)
 
     def __getitem__(self, key):
         """
