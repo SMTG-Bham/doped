@@ -34,6 +34,7 @@ from test_utils import (
 from doped.analysis import (
     DefectParser,
     DefectsParser,
+    _handle_charge_correction_errors,
     defect_from_structures,
     defect_site_from_structures,
     guess_defect_position,
@@ -1597,6 +1598,15 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
 
+        # an explicit ``shallow_charge_stability_tolerance=None`` uses the default tolerance:
+        _result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            _handle_charge_correction_errors,
+            dp.defect_dict,
+            0.005,
+            shallow_charge_stability_tolerance=None,
+        )
+        assert not any("Estimated error" in str(warn.message) for warn in w)
+
         dp, w = _create_dp_and_capture_warnings(
             # error above tol, shallow but with larger stability window, warning
             output_path=self.shallow_O_Se_DATA_DIR,
@@ -2473,6 +2483,26 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert defect_type == "complex"
         assert sorted(missing_bulk_site_indices) == [0, far_idx]
         assert sorted(additional_defect_site_indices) == [0, len(si) - 1]
+
+        # ``site_tol`` is passed through ``defect_from_structures``, where multiple identified defect sites
+        # fall back to the single point defect case (with a warning; no defect complex handling yet):
+        split_structure = si.copy()
+        split_structure.translate_sites([0], 0.35 * si_si_bond * direction, frac_coords=False)
+        split_structure.append(
+            "Si", si[0].coords - 0.35 * si_si_bond * direction, coords_are_cartesian=True
+        )
+        defect, _stdout, w = _run_func_and_capture_stdout_warnings(
+            defect_from_structures, split_structure, si, site_tol=0.4, _parameter_order_warn=False
+        )
+        assert any(
+            "Multiple defect sites (1 missing bulk site(s) and 2 additional defect site(s)) were "
+            "identified with ``site_tol`` = 0.4" in str(warning.message)
+            for warning in w
+        )
+        assert defect.name == "Si_i"
+        with pytest.raises(ValueError) as exc:
+            defect_from_structures(frenkel_structure, si, site_tol=0.4, _parameter_order_warn=False)
+        assert "parsing of complex defects is not yet supported here" in str(exc.value)
 
         # similar displacements, but not split across the site (bent at 90°), so not a split interstitial:
         bent_structure = si.copy()
@@ -4115,6 +4145,19 @@ class DefectsParsingTestCase(unittest.TestCase):
             "similar_orb_criterion=0.35, similar_energy_criterion=0.5 eV." in str(w[0].message)
         )
         assert not bes.has_unoccupied_localized_state  # no longer identified
+
+        # fallback criteria never tighten a wider first-pass criterion (here 0.8 eV, kept over 0.5 eV):
+        _bes, _stdout, w = _run_func_and_capture_stdout_warnings(
+            v_Cd_minus1.get_eigenvalue_analysis,
+            similar_orb_criterion=0.01,
+            similar_energy_criterion=0.8,
+            plot=False,
+        )
+        assert any(
+            "but succeeded with similar_orb_criterion=0.35, similar_energy_criterion=0.8 eV."
+            in str(warning.message)
+            for warning in w
+        )
 
         return fig
 
