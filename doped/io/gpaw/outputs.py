@@ -304,24 +304,31 @@ def _get_projected_eigenvalues(
     gpw_file: PathLike, calc, eigenvalues: dict[Spin, np.ndarray]
 ) -> dict[Spin, np.ndarray]:
     """
-    Map stored collinear PAW amplitudes to orbital weights per spin, k-point,
-    band and atom, using the bound projectors from GPAW's PDOS.
+    Map stored (collinear) PAW projections to orbital weights per spin,
+    k-point, band and atom.
 
-    The real spherical harmonics for each angular momentum are in the same
-    order as pymatgen (e.g. py, pz, px). Sum squared amplitudes from radial
-    projectors with the same angular character without rescaling the weights
-    across atoms.
+    The weight of projector ``i`` is ``Re[conj(P_i) * sum_j N0_ij P_j]``, with
+    ``N0`` (``setup.N0_p``) the overlaps of the all-electron partial waves
+    within the PAW augmentation sphere, as used by ``GPAW`` for local magnetic
+    moments. These are summed over the radial channels of each harmonic, which
+    for each angular momentum are in the same order as ``pymatgen`` (e.g. py,
+    pz, px).
+
+    Atoms with non-PAW setups (e.g. ``HGH`` pseudopotentials) have no partial
+    waves, so their weights are instead the squared projections onto their
+    pseudopotential projector functions (as in ``GPAW``'s projected DOS), with
+    a warning.
     """
     from ase.io.ulm import open as ulm_open
-    from gpaw.dos import get_projector_numbers
+    from gpaw.utilities import unpack_hermitian
 
     with ulm_open(gpw_file) as reader:
         try:
             coefficients = reader.wave_functions.projections
         except AttributeError as exc:
             raise ValueError(
-                f"{gpw_file} has no stored PAW projections. Write a GPAW restart with "
-                "include_projections=True for eigenvalue analysis."
+                f"{gpw_file} has no stored PAW projections, as required for eigenvalue analysis (was it "
+                f"written with `include_projections=False`?)."
             ) from exc
 
     setups = [calc.setups[a] for a in range(len(calc.atoms))]
@@ -330,18 +337,29 @@ def _get_projected_eigenvalues(
     if coefficients.shape != expected_shape:
         raise ValueError(
             f"Unexpected PAW projection shape in {gpw_file}: {coefficients.shape}, expected "
-            f"{expected_shape} for a collinear calculation."
+            f"{expected_shape} (note that non-collinear calculations are not yet supported here)."
         )
 
     weights = np.zeros((*expected_shape[:3], len(setups), 16))  # s, p, d and f harmonics
     offset = 0
     for atom_index, setup in enumerate(setups):
-        for ell in range(4):
-            if indices := get_projector_numbers(setup, ell):
-                amplitudes = coefficients[..., offset + np.asarray(indices)]
-                shells = amplitudes.reshape(*expected_shape[:3], -1, 2 * ell + 1)
-                weights[..., atom_index, ell**2 : (ell + 1) ** 2] = (abs(shells) ** 2).sum(axis=-2)
+        projections = coefficients[..., offset : offset + setup.ni]
+        # plain squared projections for non-PAW setups (all-zero ``N0_p``), as in GPAW's PDOS:
+        metric = unpack_hermitian(setup.N0_p) if np.any(setup.N0_p) else np.eye(setup.ni)
+        charges = (projections.conj() * (projections @ metric)).real  # (in-sphere) charge per projector
+        ells = [pt.get_angular_momentum_number() for pt in setup.pt_j]  # of each radial projector function
+        harmonics = np.array([ell**2 + m for ell in ells for m in range(2 * ell + 1)], dtype=int)
+        weights[..., atom_index, :] = charges @ (harmonics[:, None] == np.arange(16))  # sum over channels
         offset += setup.ni
+
+    if not all(np.any(setup.N0_p) for setup in setups):
+        warnings.warn(
+            "This GPAW calculation has non-PAW setups, for which the orbital weights of the corresponding "
+            "atoms are their squared projections onto the pseudopotential projector functions (as in "
+            "GPAW's projected DOS), rather than the charges within PAW augmentation spheres. These are "
+            "smaller (and zero for atoms or angular momenta with no projector functions), so eigenvalue "
+            "analysis (orbital characters and localisation) for these calculations is only qualitative."
+        )
     return {spin: weights[i] for i, spin in enumerate(eigenvalues)}
 
 
