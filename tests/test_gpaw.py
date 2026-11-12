@@ -263,8 +263,8 @@ class GPAWTest(unittest.TestCase):
         entries = copy.deepcopy(dp.defect_dict)
         for entry in entries.values():
             entry.calculation_metadata.pop("eigenvalue_data")
-        _run_func_and_capture_stdout_warnings(  # (in a ``lambda``, as the ``repr`` of an entry loads it)
-            lambda: _handle_charge_correction_errors(entries, 0.05, shallow_charge_stability_tolerance=1e3)
+        _run_func_and_capture_stdout_warnings(
+            _handle_charge_correction_errors, entries, 0.05, shallow_charge_stability_tolerance=1e3
         )
         assert all("eigenvalue_data" not in entry.calculation_metadata for entry in entries.values())
 
