@@ -53,7 +53,7 @@ from doped.parsing import (
     parse_symmetry_and_degeneracy_metadata,
 )
 from doped.utils.efficiency import Structure
-from doped.utils.eigenvalues import get_eigenvalue_analysis
+from doped.utils.eigenvalues import _as_calculation_outputs, get_eigenvalue_analysis
 from doped.utils.mappings import (
     _create_unrelaxed_defect_structure,
     get_defect_type_and_composition_diff,
@@ -3694,13 +3694,17 @@ class DefectsParsingTestCase(unittest.TestCase):
         """
         vr = get_vasprun(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/no_eig_vr.xml.gz")
         procars = {
-            name: f"{self.Cu2SiSe3_EXAMPLE_DIR}/{name}/vasp_std/PROCAR.gz" for name in ("v_Cu_0", "bulk")
+            name: get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/{name}/vasp_std/PROCAR.gz")
+            for name in ("v_Cu_0", "bulk")
         }
-        assert calculation_outputs_from_vasprun(vr, procar=procars["v_Cu_0"]).projected_eigenvalues
-        with pytest.warns(UserWarning, match="do not match the vasprun"):
-            outputs = calculation_outputs_from_vasprun(vr, procar=procars["bulk"])
-        assert outputs.projected_eigenvalues is None
-        assert outputs.raw["procar"] is None
+        # whether as a fallback (if the vasprun has no projections) or when explicitly supplied (as e.g.
+        # with ``get_band_edge_info()``, then taking precedence):
+        for parse in (calculation_outputs_from_vasprun, _as_calculation_outputs):
+            assert parse(vr, procars["v_Cu_0"]).projected_eigenvalues
+            with pytest.warns(UserWarning, match="do not match the vasprun"):
+                outputs = parse(vr, procars["bulk"])
+            assert outputs.projected_eigenvalues is None
+            assert outputs.raw["procar"] is None
 
     @custom_mpl_image_compare(filename="Cu2SiSe3_v_Cu_0_eigenvalue_plot.png")
     def test_eigenvalues_parsing_and_warnings(self):

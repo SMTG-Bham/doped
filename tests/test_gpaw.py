@@ -40,6 +40,7 @@ from doped.io.gpaw.outputs import (
     get_gpaw_planar_averaged_potential,
     get_gpaw_site_potentials,
     get_potentials_from_input,
+    load_eigenvalue_outputs,
 )
 from doped.io.inputs import _get_bulk_folder_name
 from doped.io.outputs import nelect_from_eigenvalues
@@ -234,12 +235,14 @@ class GPAWTest(unittest.TestCase):
             # the bulk & defect calculations here differ only in charge, which is excluded:
             assert entry.calculation_metadata["mismatching_gpaw_parameters"] is False
             assert entry.calculation_metadata["relaxed point symmetry"]
+            assert "eigenvalue_data" in entry.calculation_metadata  # parsed by default, for all entries
 
         # the single-defect parser (which parses the bulk itself) gives the same correction:
         entry = DefectParser.from_paths(
             os.path.join(mgo_dir, "Mg_O_unrelaxed"), bulk_dir, dielectric=8.8963, calculator="gpaw"
         ).defect_entry
         assert entry.corrections["kumagai_charge_correction"] == pytest.approx(0.39874949, abs=1e-3)
+        assert "eigenvalue_data" in entry.calculation_metadata  # also parsed by default here
 
         # FNV (eFNV is used by default when parsing), with the planar-averaged potentials loaded from the
         # calculation folders (only physically valid for ``v_Mg_-2`` here, as ``v_Mg_+1`` and ``Mg_O_+1``
@@ -253,6 +256,17 @@ class GPAWTest(unittest.TestCase):
                 bulk_planar_averaged_potentials=bulk_dir,
             )
             assert entry.corrections["freysoldt_charge_correction"] == pytest.approx(expected, abs=1e-3)
+
+        # the shallow state check for the charge-correction error warnings (here for all entries, with a
+        # large stability tolerance) only uses already-parsed eigenvalue data, rather than loading it from
+        # the calculation files (so that ``parse_projected_eigen=False`` is honoured throughout parsing):
+        entries = copy.deepcopy(dp.defect_dict)
+        for entry in entries.values():
+            entry.calculation_metadata.pop("eigenvalue_data")
+        _run_func_and_capture_stdout_warnings(  # (in a ``lambda``, as the ``repr`` of an entry loads it)
+            lambda: _handle_charge_correction_errors(entries, 0.05, shallow_charge_stability_tolerance=1e3)
+        )
+        assert all("eigenvalue_data" not in entry.calculation_metadata for entry in entries.values())
 
         # charge-correction errors (any, with ``error_tolerance=0``) and the mixed FNV/eFNV schemes are
         # still warned about without bulk band edges (with no charge-state stability filtering then):
@@ -282,7 +296,7 @@ class GPAWTest(unittest.TestCase):
         bulk_dir = os.path.join(gpaw_data_dir, "MgO", "bulk")
         bulk_outputs = get_calculation_outputs(bulk_dir, calculator="gpaw", label="bulk")
         assert bulk_outputs.calculator == "gpaw"
-        assert bulk_outputs.projected_eigenvalues is None
+        assert bulk_outputs.projected_eigenvalues is not None  # parsed by default, if available
         assert bulk_outputs.charge == 0
         assert len(bulk_outputs.structure) == len(bulk_outputs.site_potentials)
         assert set(bulk_outputs.planar_averaged_potentials) == {0, 1, 2}
@@ -693,33 +707,97 @@ def gpaw_competing_phases(tmp_path_factory):
     return root, names, structures, settings, energies
 
 
-@pytest.mark.parametrize("phase", ["MgO", "O2"])
-def test_gpaw_projected_eigenvalues_match_pdos(gpaw_competing_phases, phase):
+@pytest.fixture(scope="module")
+def gpaw_molecules(tmp_path_factory):
     """
-    Match GPAW's own PDOS weights across atoms, orbitals, k-points and spins.
+    Compute small spin-polarised molecules, with different numbers of PAW
+    projectors for their elements: sextet CrF, and triplet CH2 with two
+    k-points (and so complex projections).
+    """
+    pytest.importorskip("gpaw")
+    root = tmp_path_factory.mktemp("gpaw_molecules")
+    settings = {"mode": {"name": "pw", "ecut": 250}, "xc": "PBE"}
+    _run_phase_calculation(
+        Structure(Lattice.cubic(6), ["F", "Cr"], [[0.5] * 3, [0.5, 0.5, 0.5 + 1.78 / 6]]),  # 1.78 Å bond
+        root / "CrF",
+        {**settings, "initial_magnetic_moments": {"Cr": 5.0}},
+    )
+    methylene = molecule("CH2_s3B1d")
+    methylene.center(vacuum=2.5)
+    methylene.pbc = True
+    _run_phase_calculation(
+        AseAtomsAdaptor.get_structure(methylene),
+        root / "CH2",
+        {**settings, "kpts": {"size": (2, 1, 1), "gamma": True}, "initial_magnetic_moments": {"C": 2.0}},
+    )
+    return root
+
+
+@pytest.mark.parametrize("name", ["CrF", "CH2"])
+def test_gpaw_projected_eigenvalues_magnetic_moments(gpaw_molecules, name):
+    """
+    Test that the projected eigenvalues are the orbital weights within the PAW
+    augmentation spheres, as used by GPAW for its local magnetic moments.
+
+    For each atom, the difference between the spin channels of their sum over
+    orbitals and (occupied) states must then be the local magnetic moment given
+    by GPAW.
     """
     gpaw = pytest.importorskip("gpaw")
-    from gpaw.dos import DOSCalculator, get_projector_numbers
+    outputs = load_eigenvalue_outputs(gpaw_molecules / name)
+    spin_up, spin_down = (  # summed weights of each atom
+        np.einsum(
+            "k,kn,kna->a",
+            outputs.kpoint_weights,
+            outputs.eigenvalues[spin][..., 1],
+            outputs.projected_eigenvalues[spin].sum(axis=-1),
+        )
+        for spin in (Spin.up, Spin.down)
+    )
+    calc = gpaw.GPAW(gpaw_molecules / name / "singlepoint.gpw", txt=None)
+    magnetic_moments = calc.get_magnetic_moments()
+    calc.atoms.calc = None
+    np.testing.assert_allclose(spin_up - spin_down, magnetic_moments, atol=1e-4)
+    assert np.ptp(magnetic_moments) > 0.3  # (non-zero, and differing between the atoms)
 
-    root, names, _, _, _ = gpaw_competing_phases
-    path = root / names[phase] / "singlepoint.gpw"
-    outputs = get_calculation_outputs(path, calculator="gpaw", parse_projected_eigen=True)
-    calc = gpaw.GPAW(path, txt=None)
-    try:
-        dos = DOSCalculator.from_calculator(calc)
-        expected_spins = [Spin.up, Spin.down] if phase == "O2" else [Spin.up]
-        assert list(outputs.projected_eigenvalues) == expected_spins
-        for atom in range(len(outputs.structure)):
-            for ell in range(4):
-                indices = get_projector_numbers(calc.setups[atom], ell)
-                for m in range(2 * ell + 1):
-                    expected = dos.wfs.pdos_weights(atom, indices[m :: 2 * ell + 1])
-                    for spin_index, projections in enumerate(outputs.projected_eigenvalues.values()):
-                        np.testing.assert_allclose(
-                            projections[:, :, atom, ell**2 + m], expected[:, :, spin_index], atol=1e-12
-                        )
-    finally:
-        calc.atoms.calc = None
+
+def test_gpaw_projected_eigenvalues_non_paw_setups(tmp_path):
+    """
+    Test the orbital weights of atoms with non-PAW setups (here a ``HGH``
+    pseudopotential for Mg, with PAW O), which have no partial waves to give
+    the charge within an augmentation sphere, so are instead the squared
+    projections onto their projector functions (as in GPAW's projected DOS),
+    with a warning.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    from gpaw.dos import DOSCalculator
+
+    atoms = bulk("MgO", "rocksalt", a=4.21)
+    atoms.calc = gpaw.GPAW(mode=gpaw.PW(250), xc="LDA", kpts=(2, 2, 2), setups={"Mg": "hgh"}, txt=None)
+    atoms.get_potential_energy()
+    atoms.calc.write(tmp_path / "singlepoint.gpw")
+    atoms.calc = None
+    outputs, _, warnings = _run_func_and_capture_stdout_warnings(load_eigenvalue_outputs, tmp_path)
+    assert len(warnings) == 1
+    assert "non-PAW setups" in str(warnings[0].message)
+
+    calc = gpaw.GPAW(tmp_path / "singlepoint.gpw", txt=None)
+    pdos_weights = DOSCalculator.from_calculator(calc).wfs.pdos_weights  # sums of squared projections
+    for atom, is_paw in enumerate([False, True]):  # Mg (HGH) and O (PAW; in-sphere weights instead)
+        projector_ells = [ell for ell in calc.setups[atom].l_j for _ in range(2 * ell + 1)]
+        for ell in range(2):  # s and p
+            indices = [i for i, projector_ell in enumerate(projector_ells) if projector_ell == ell]
+            for m in range(2 * ell + 1):  # (over all radial channels, for each real spherical harmonic)
+                weights = outputs.projected_eigenvalues[Spin.up][:, :, atom, ell**2 + m]
+                expected = pdos_weights(atom, indices[m :: 2 * ell + 1])[:, :, 0]
+                assert np.allclose(weights, expected, atol=1e-12) is not is_paw
+    calc.atoms.calc = None
+
+    # the site potentials match those of the legacy ``GPAW`` calculator:
+    outputs = get_calculation_outputs(tmp_path, calculator="gpaw", parse_projected_eigen=False)
+    calc = gpaw.GPAW(tmp_path / "singlepoint.gpw", txt=None, legacy_gpaw=True)
+    assert np.allclose(outputs.site_potentials, -calc.get_atomic_electrostatic_potentials())
+    calc.atoms.calc = None
 
 
 def test_gpaw_eigenvalue_analysis_requires_stored_projections(gpaw_competing_phases, tmp_path):
@@ -735,26 +813,73 @@ def test_gpaw_eigenvalue_analysis_requires_stored_projections(gpaw_competing_pha
     finally:
         calc.atoms.calc = None
 
-    with pytest.raises(ValueError, match="no stored PAW projections"):
-        get_calculation_outputs(path, calculator="gpaw", parse_projected_eigen=True)
+    for parse_projected_eigen in (None, True, False):
+        outputs, _, warnings = _run_func_and_capture_stdout_warnings(
+            get_calculation_outputs, path, calculator="gpaw", parse_projected_eigen=parse_projected_eigen
+        )
+        assert outputs.projected_eigenvalues is None
+        assert len(warnings) == (parse_projected_eigen is True)  # only warns if ``True`` (not ``None``)
+        assert all("no stored PAW projections" in str(warning.message) for warning in warnings)
+    with pytest.raises(ValueError, match="no stored PAW projections"):  # explicit loading fails instead
+        load_eigenvalue_outputs(path)
+
+
+def test_gpaw_load_eigenvalue_outputs_inputs(gpaw_competing_phases):
+    """
+    Test the handling of the ``load_eigenvalue_outputs()`` arguments.
+    """
+    root, names, _, _, _ = gpaw_competing_phases
+    mgo, oxygen = (root / names[phase] / "singlepoint.gpw" for phase in ("MgO", "O2"))
+    # an explicit ``outputs`` file takes precedence over the calculation ``path``:
+    assert load_eigenvalue_outputs(path=oxygen.parent, outputs=mgo).structure.reduced_formula == "MgO"
+    with pytest.raises(FileNotFoundError, match=r"No bulk '\.gpw' file path supplied"):  # neither given
+        load_eigenvalue_outputs(label="bulk")
+    with pytest.raises(ValueError, match="not a separate projections file"):
+        load_eigenvalue_outputs(mgo.parent, projections=mgo)
 
 
 def test_gpaw_eigenvalue_analysis_from_restart():
     """
-    Load PAW projections on demand for the shipped Mg vacancy analysis.
+    Load PAW projections on demand for the shipped Mg vacancy analysis, giving
+    the band-edge states and in-sphere orbital characters of a fully-ionised
+    vacancy with no states in the band gap.
     """
     pytest.importorskip("gpaw")
     root = Path(gpaw_data_dir) / "MgO"
     parser = DefectParser.from_paths(
-        root / "v_Mg_-2", bulk_path=root / "bulk", calculator="gpaw", skip_corrections=True
+        root / "v_Mg_-2",
+        bulk_path=root / "bulk",
+        calculator="gpaw",
+        skip_corrections=True,
+        parse_projected_eigen=False,
     )
     entry = parser.defect_entry
     assert "eigenvalue_data" not in entry.calculation_metadata
-    entry.get_eigenvalue_analysis(plot=False)
+    bes = entry.get_eigenvalue_analysis(plot=False)
+    assert not bes.is_shallow  # (no perturbed host states; localised states are checked per spin below)
+
+    def check_edge(edge_info, band_index, energy, orbitals):
+        assert edge_info.band_idx == band_index
+        assert edge_info.orbital_info.energy == pytest.approx(energy, abs=1e-3)
+        for element, expected in orbitals.items():  # [s, p, d, f] weights within the PAW spheres
+            assert edge_info.orbital_info.orbitals[element] == pytest.approx(expected, abs=2e-3)
+
+    # the stored bulk band edges (O p valence band maximum, and Mg & O s conduction band minimum):
     data = entry.calculation_metadata["eigenvalue_data"]
-    assert data["vbm_info"].orbital_info.energy == pytest.approx(5.4150, abs=1e-3)
-    assert data["cbm_info"].orbital_info.energy == pytest.approx(8.7798, abs=1e-3)
-    assert data["vbm_info"].orbital_info.orbitals["O"][1] > 0  # O p character
+    check_edge(data["vbm_info"], 383, 5.4150, {"Mg": [0, 0.002, 0.020, 0], "O": [0, 0.433, 0, 0]})
+    check_edge(data["cbm_info"], 384, 8.7798, {"Mg": [0.257, 0, 0, 0], "O": [0.209, 0, 0, 0]})
+    # which match the defect supercell band edges (with four fewer occupied bands), where the valence band
+    # edge is partly localised on the neighbours of the vacancy, with no in-gap states (in either spin):
+    assert len(bes.states) == 2
+    for state in bes.states:
+        check_edge(state.vbm_info, 379, 5.3899, {"Mg": [0.002, 0.010, 0.016, 0], "O": [0, 0.439, 0, 0]})
+        check_edge(state.cbm_info, 380, 8.6692, {"Mg": [0.253, 0.001, 0, 0], "O": [0.208, 0.001, 0, 0]})
+        participation_ratios = [
+            edge_info.orbital_info.participation_ratio for edge_info in (state.vbm_info, state.cbm_info)
+        ]
+        assert participation_ratios == pytest.approx([0.427, 0.045], abs=2e-3)
+        assert (state.vbm_orbital_diff, state.cbm_orbital_diff) == pytest.approx((0.044, 0.015), abs=2e-3)
+        assert state.localized_orbitals == []
 
 
 def test_competing_phase_entry_real_gpaw():
@@ -837,6 +962,135 @@ def test_restart_without_results_raises(tmp_path):
     ):  # without the check, GPAW re-runs the SCF here (failing again, with ``maxiter=2``)
         with pytest.raises(ValueError, match="holds no stored results"):
             parse()
+
+
+def test_external_potential_restart(tmp_path):
+    """
+    Check that restarts of calculations with ``external`` potentials (which
+    ``GPAW`` re-reads with its legacy calculator, whose
+    ``calculation_required()`` is then always ``True``) are parsed without re-
+    running the SCF.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    from unittest import mock
+
+    from gpaw.external import ConstantPotential
+
+    atoms = bulk("MgO", "rocksalt", a=4.21)
+    atoms.calc = gpaw.GPAW(mode=gpaw.PW(250), kpts=(2, 2, 2), external=ConstantPotential(-1.0), txt=None)
+    energy = atoms.get_potential_energy()
+    site_potentials = -atoms.calc.get_atomic_electrostatic_potentials()
+    atoms.calc.write(tmp_path / "singlepoint.gpw")
+    with mock.patch("gpaw.scf.SCFLoop.irun", side_effect=AssertionError("SCF re-run during parsing")):
+        outputs = get_calculation_outputs(tmp_path, calculator="gpaw", parse_projected_eigen=True)
+        assert np.allclose(get_gpaw_site_potentials(tmp_path), site_potentials)
+        assert set(get_gpaw_planar_averaged_potential(tmp_path)) == {"0", "1", "2"}
+    assert outputs.energy == energy
+    assert np.allclose(outputs.site_potentials, site_potentials)
+    assert outputs.run_metadata["gpaw_parameters"]["external"]["name"] == "ConstantPotential"
+    assert outputs.projected_eigenvalues[Spin.up].shape == (*outputs.eigenvalues[Spin.up].shape[:2], 2, 16)
+
+
+def test_gpaw_real_space_grid_potentials(tmp_path):
+    """
+    Check the planar-averaged and atomic site potentials parsed for a
+    calculation with the electrostatic potential on a real-space grid (LCAO
+    mode here, as for FD mode; with plane-wave mode used in the other tests),
+    from one evaluation of the electrostatic potential, against those from the
+    corresponding ``GPAW`` getters (which each evaluate it), and from the lazy
+    loaders.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    atoms = bulk("MgO", "rocksalt", a=4.21)
+    atoms.calc = gpaw.GPAW(mode="lcao", basis="dzp", kpts=(2, 2, 2), txt=None)
+    atoms.get_potential_energy()
+    atoms.calc.write(tmp_path / "singlepoint.gpw")
+    atoms.calc = None
+    outputs = get_calculation_outputs(tmp_path, calculator="gpaw")
+    calc = gpaw.GPAW(tmp_path / "singlepoint.gpw", txt=None)
+    np.testing.assert_array_equal(outputs.site_potentials, -calc.get_atomic_electrostatic_potentials())
+    calc.atoms.calc = None
+    np.testing.assert_array_equal(outputs.site_potentials, get_gpaw_site_potentials(tmp_path))
+    for axis, potentials in get_gpaw_planar_averaged_potential(tmp_path).items():
+        np.testing.assert_array_equal(outputs.planar_averaged_potentials[int(axis)], potentials)
+
+
+def test_background_charge_restart(tmp_path):
+    """
+    Check that restarts of calculations with an explicit jellium
+    ``background_charge`` (whose compensated electrons are in neither the
+    ``charge`` parameter nor the electron count of ``GPAW``'s legacy
+    calculator, and which ``GPAW`` cannot currently re-read) are rejected with
+    an informative error, rather than parsed as neutral.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    from gpaw.jellium import Jellium
+
+    atoms = bulk("MgO", "rocksalt", a=4.21)
+    atoms.calc = gpaw.GPAW(mode=gpaw.PW(250), kpts=(2, 2, 2), background_charge=Jellium(1.0), txt=None)
+    atoms.get_potential_energy()
+    atoms.calc.write(tmp_path / "singlepoint.gpw")
+
+    for parse in (
+        lambda: get_calculation_outputs(tmp_path, calculator="gpaw"),
+        lambda: get_gpaw_site_potentials(tmp_path),
+        lambda: get_gpaw_planar_averaged_potential(tmp_path),
+    ):
+        with pytest.raises(NotImplementedError, match="explicit jellium `background_charge`"):
+            parse()
+
+
+def test_non_collinear_restart(tmp_path):
+    """
+    Check that the total and atomic magnetic moments parsed for a non-collinear
+    calculation (here a triplet O atom, with its moment along x) are the full
+    vectors, rather than just their z components (as given by ``GPAW``'s
+    ``get_magnetic_moment(s)()``; here zero, which would give a singlet).
+
+    Non-collinear PAW projections are not yet supported, so are skipped.
+    """
+    gpaw = pytest.importorskip("gpaw")
+    atoms = molecule("O")  # with an initial magnetic moment of 2 (triplet)
+    atoms.center(vacuum=2.5)
+    atoms.pbc = True
+    outputs, entries = [], []
+    for magmoms in (None, [[2.0, 0.0, 0.0]]):  # collinear (moment along z), then non-collinear (along x)
+        atoms.calc = gpaw.GPAW(mode=gpaw.PW(200), magmoms=magmoms, symmetry="off", txt=None)
+        atoms.get_potential_energy()
+        atoms.calc.write(tmp_path / "singlepoint.gpw")
+        atoms.calc = None
+        outputs.append(get_calculation_outputs(tmp_path, calculator="gpaw"))
+        entries.append(get_competing_phase_entry(tmp_path))  # (as a competing phase)
+
+    collinear, non_collinear = outputs
+    assert isinstance(collinear.magnetization, float)
+    assert collinear.magnetization == pytest.approx(2, abs=1e-3)
+    np.testing.assert_allclose(non_collinear.magnetization, [2, 0, 0], atol=1e-3)
+    assert collinear.spin_degeneracy() == non_collinear.spin_degeneracy() == 3
+    (magmom,) = collinear.structure.site_properties["final_magmom"]  # (in-sphere, so less than 2)
+    assert magmom > 0.5
+    np.testing.assert_allclose(
+        non_collinear.structure.site_properties["final_magmom"], [[magmom, 0, 0]], atol=1e-3
+    )
+    assert non_collinear.energy == pytest.approx(collinear.energy, abs=1e-3)
+    # likewise as competing phases (read with ``ase``, which misreads the band energies of non-collinear
+    # calculations, as they are stored without a spin axis; TODO: update when doped's workaround for this,
+    # in ``get_competing_phase_entry``, is removed):
+    for entry, calc_outputs in zip(entries, outputs, strict=True):
+        summary = entry.data["summary"]
+        assert summary["band_gap"] == pytest.approx(calc_outputs.band_gap, abs=1e-6)
+        np.testing.assert_allclose(summary["total_magnetization"], calc_outputs.magnetization, atol=1e-6)
+        np.testing.assert_allclose(
+            entry.structure.site_properties["final_magmom"],
+            calc_outputs.structure.site_properties["final_magmom"],
+            atol=1e-6,
+        )
+
+    # with projections for both spinor components of each band, which are not (yet) mapped to weights:
+    assert collinear.projected_eigenvalues is not None
+    assert non_collinear.projected_eigenvalues is None
+    with pytest.raises(ValueError, match="non-collinear calculations are not yet supported"):
+        load_eigenvalue_outputs(tmp_path)
 
 
 def test_gpaw_competing_phase_example_inputs(tmp_path):
