@@ -1193,12 +1193,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         with pytest.raises(ValueError) as e:
             chemical_potentials.CompetingPhases(
                 "ZrO2",
-                api_key="c2LiJRMiBeaN5iXsH",  # legacy API key (16 chars, not 32)
+                api_key="legacy_key_16_ch",  # legacy API key (16 chars, not 32)
             )
         assert expected_error_substr in str(e.value)
-
-        # test all works fine with key from new MP API:
-        assert chemical_potentials.CompetingPhases("ZrO2", api_key="UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv")
 
     def test_structure_input(self):
         for struct, name in [

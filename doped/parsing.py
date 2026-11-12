@@ -133,6 +133,7 @@ def defect_site_from_structures(
     defect_supercell: Structure,
     bulk_supercell: Structure,
     return_all_info: bool = False,
+    site_tol: float | None = None,
     _parameter_order_warn: bool = True,
 ) -> PeriodicSite | tuple[PeriodicSite, str, PeriodicSite, int | None, int | None, Structure, Structure]:
     """
@@ -151,6 +152,15 @@ def defect_site_from_structures(
         return_all_info (bool):
             If ``True``, returns additional info related to the site-matching;
             see return signature. (Default: ``False``)
+        site_tol (float | None):
+            The (fractional) tolerance for matching sites between the defect
+            and bulk structures, as a fraction of the shortest bond length of
+            each bulk site (see ``get_defect_type_and_site_indices``). If
+            ``None`` (default), a single point defect is assumed, with the
+            defect site as the site of largest mismatch. Defect complexes are
+            not yet supported here, so if multiple defect sites are identified
+            with ``site_tol``, the defect is instead parsed as a single point
+            defect (``site_tol=None``), with a warning.
 
     Returns:
         defect_site (|PeriodicSite|):
@@ -188,10 +198,29 @@ def defect_site_from_structures(
         _warn_parameter_order("defect_site_from_structures")  # TODO: Remove in doped v4.1
     # automatic defect site detection -- this gives us the "unrelaxed" defect structure:
     defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
-        get_defect_type_and_site_indices(defect_supercell, bulk_supercell)
+        get_defect_type_and_site_indices(defect_supercell, bulk_supercell, site_tol=site_tol)
     )
     # TODO: Update to use missing_bulk_site_indices and additional_defect_site_indices to handle
-    #  defect complexes; for now just taking first of each and assuming single point defect:
+    #  defect complexes; for now falling back to the single point defect case (``site_tol=None``) if
+    #  multiple defect sites are identified (as only the first of each is used below):
+    if max(len(missing_bulk_site_indices), len(additional_defect_site_indices)) > 1:
+        if defect_type == "complex":  # from the composition difference; only reached with ``site_tol``
+            raise ValueError(
+                f"Based on the composition difference between defect and bulk structures, the defect is a "
+                f"complex defect (with multiple defect sites identified with ``site_tol`` = {site_tol}), "
+                f"but parsing of complex defects is not yet supported here."
+            )
+        warnings.warn(
+            f"Multiple defect sites ({len(missing_bulk_site_indices)} missing bulk site(s) and "
+            f"{len(additional_defect_site_indices)} additional defect site(s)) were identified with "
+            f"``site_tol`` = {site_tol}, but parsing of complex defects is not yet supported here, "
+            f"so the defect is instead parsed as a single {defect_type} (``site_tol=None``)."
+        )
+        with warnings.catch_warnings():  # already warned above
+            warnings.simplefilter("ignore")
+            defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+                get_defect_type_and_site_indices(defect_supercell, bulk_supercell)
+            )
     bulk_site_index = missing_bulk_site_indices[0] if missing_bulk_site_indices else None
     defect_site_index = additional_defect_site_indices[0] if additional_defect_site_indices else None
     unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
@@ -243,6 +272,7 @@ def defect_from_structures(
     defect_supercell: Structure,
     bulk_supercell: Structure,
     return_all_info: bool = False,
+    site_tol: float | None = None,
     _parameter_order_warn: bool = True,
     **kwargs,
 ) -> Defect | tuple[Defect, PeriodicSite, PeriodicSite, int | None, int | None, Structure, Structure]:
@@ -280,6 +310,10 @@ def defect_from_structures(
         return_all_info (bool):
             If ``True``, returns additional info related to the site-matching;
             see return signature. (Default: ``False``)
+        site_tol (float | None):
+            The (fractional) site-matching tolerance used to determine the
+            defect site; see :func:`defect_site_from_structures`. Default is
+            ``None`` (single point defect, with the site of largest mismatch).
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
@@ -335,7 +369,11 @@ def defect_from_structures(
         guessed_initial_defect_structure,
         unrelaxed_defect_structure,
     ) = defect_site_from_structures(
-        defect_supercell, bulk_supercell, return_all_info=True, _parameter_order_warn=False
+        defect_supercell,
+        bulk_supercell,
+        return_all_info=True,
+        site_tol=site_tol,
+        _parameter_order_warn=False,
     )
 
     # get defect site in primitive structure, for Defect generation:
@@ -402,6 +440,7 @@ def defect_from_structures(
 def defect_and_info_from_structures(
     defect_supercell: Structure,
     bulk_supercell: Structure,
+    site_tol: float | None = None,
     _parameter_order_warn: bool = True,
     **kwargs,
 ) -> tuple[Defect, PeriodicSite, dict]:
@@ -427,6 +466,10 @@ def defect_and_info_from_structures(
             Defect structure to use for identifying the defect site and type.
         bulk_supercell (|Structure|):
             Bulk supercell structure.
+        site_tol (float | None):
+            The (fractional) site-matching tolerance used to determine the
+            defect site; see :func:`defect_site_from_structures`. Default is
+            ``None`` (single point defect, with the site of largest mismatch).
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
@@ -494,6 +537,7 @@ def defect_and_info_from_structures(
         defect_supercell,
         bulk_supercell,
         return_all_info=True,
+        site_tol=site_tol,
         _parameter_order_warn=False,
         **kwargs,
     )
@@ -887,7 +931,7 @@ class DefectsParser:
                 |point_symmetry_from_defect_entry|,
                 ``parse_symmetry_and_degeneracy_metadata`` or
                 ``defect_and_info_from_structures`` or ``get_dimer_bonds()``,
-                including ``bulk_planar_averaged_potentials``,
+                including ``bulk_planar_averaged_potentials``, ``site_tol``,
                 ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
                 ``oxi_state``, ``multiplicity``, ``angle_tolerance``,
                 ``user_charges``, ``rtol`` etc. (see their docstrings); or for
@@ -1826,8 +1870,10 @@ def _handle_charge_correction_errors(
             Additional keyword arguments, such as
             ``shallow_charge_stability_tolerance``.
     """
-    defect_thermo = None
-    if all(  # (no charge-state stability filtering if the bulk band edges are undetermined)
+    # no charge correction warnings for unstable / shallow charge states (avoid prune_to_stable_entries()
+    # here, as this would require two |DefectThermodynamics| inits):
+    entries_to_check = defect_dict
+    if all(  # no stability filtering if the bulk band edges are undetermined
         e.calculation_metadata.get(k) is not None
         for e in defect_dict.values()
         for k in ("vbm", "band_gap")
@@ -1835,20 +1881,27 @@ def _handle_charge_correction_errors(
         defect_thermo = DefectThermodynamics(
             list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
         )
-        shallow_tol = kwargs.get(
-            "shallow_charge_stability_tolerance",
-            min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
-        )
+        shallow_tol = kwargs.get("shallow_charge_stability_tolerance")
+        if shallow_tol is None:  # default
+            shallow_tol = min(
+                error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05
+            )
+
+        entries_to_check = {
+            name: entry
+            for name, entry in defect_dict.items()
+            if (window := defect_thermo._get_in_gap_fermi_level_stability_window(entry)) >= 0
+            and not (  # shallow check here (in ``DefectsParser``) only uses already-parsed eigenvalues
+                window < shallow_tol
+                and entry.calculation_metadata.get("eigenvalue_data")
+                and entry.is_shallow
+            )
+        }
+
     fmt = ".3f" if error_tolerance >= 0.01 else ".2e"  # meV rounding if tol >= 10 meV, else sci notation
     correction_errors: dict[tuple, list[str]] = {("Freysoldt", "FNV"): [], ("Kumagai", "eFNV"): []}
 
-    for name, defect_entry in defect_dict.items():
-        # no charge correction warnings for unstable charge states (we avoid prune_to_stable_entries()
-        # here, as this would require two |DefectThermodynamics| inits):
-        if defect_thermo is not None:
-            window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
-            if window < 0 or (defect_entry.is_shallow and window < shallow_tol):
-                continue
+    for name, defect_entry in entries_to_check.items():
         for (long_name, _), errors in correction_errors.items():
             err = defect_entry.corrections_metadata.get(f"{long_name.lower()}_charge_correction_error", 0)
             if err > error_tolerance:
@@ -2390,6 +2443,7 @@ class DefectParser:
                     "angle_tolerance",
                     "user_charges",
                     "verbose",
+                    "site_tol",
                 ]
             },
         )

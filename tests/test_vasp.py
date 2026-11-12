@@ -6,6 +6,7 @@ import contextlib
 import filecmp
 import locale
 import os
+import pickle
 import random
 import tempfile
 import unittest
@@ -2329,6 +2330,17 @@ class DefectsSetTest(unittest.TestCase):
                 defect_dict_set.write_input(f"{defect_species}/{subfolder}", poscar=True, rattle=True)
 
         _check_rattled_and_bulk()
+
+    def test_copy_and_pickle(self):
+        """
+        Test that |DefectsSet| objects can be copied and pickled (previously
+        infinite recursion in ``__getattr__``, with ``defect_sets`` not yet set
+        on the partially-initialised object).
+        """
+        ds = DefectsSet(self.CdTe_defect_gen["v_Cd_0"])
+        for ds_copy in [deepcopy(ds), pickle.loads(pickle.dumps(ds))]:
+            assert list(ds_copy.keys()) == list(ds.keys()) == ["v_Cd_0"]  # dict redirection still works
+            assert ds_copy.soc == ds.soc
 
     def test_input_errors_and_warnings(self):
         v_Cd_entry = deepcopy(self.CdTe_defect_gen["v_Cd_0"])
