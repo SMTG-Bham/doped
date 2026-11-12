@@ -1424,17 +1424,18 @@ def _parse_vr_and_poss_procar(
         vr = get_vasprun(vr_path, parse_projected_eigen=False, parse_eigen=label != "defect", **kwargs)
         failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
 
+    if vr.projected_eigenvalues is None and parse_projected_eigen is not False:  # then try the ``PROCAR``:
         procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
         if multiple:
             _multiple_files_warning("PROCAR", output_path, procar_path, dir_type=label)
-        if "PROCAR" in procar_path and parse_projected_eigen is not False:
+        if os.path.isfile(procar_path):
             try:
                 procar = get_procar(procar_path)
 
             except Exception as procar_exc:
                 failed_eig_parsing_warning_message += (
                     f"\nThen got the following error when attempting to parse projected eigenvalues "
-                    f"from the defect PROCAR(.gz):\n{procar_exc}"
+                    f"from the {label} PROCAR(.gz):\n{procar_exc}"
                 )
 
     if vr.projected_eigenvalues is None and procar is None and parse_projected_eigen is True:
@@ -1577,6 +1578,19 @@ def calculation_outputs_from_vasprun(
         charge = total_charge_from_vasprun(vasprun)
 
     procar = _parse_procar(procar) if procar is not None else None
+    if procar is not None:  # only used if consistent with the vasprun
+        shape = next(iter(procar.data.values())).shape[:3]  # (k-points, bands, ions)
+        expected = (
+            len(vasprun.actual_kpoints),
+            vasprun.parameters.get("NBANDS"),
+            len(vasprun.final_structure),
+        )
+        if shape != expected:
+            warnings.warn(
+                f"The PROCAR projections (for {shape} k-points, bands and ions) do not match the "
+                f"vasprun.xml(.gz) calculation ({expected}), so are not used!"
+            )
+            procar = None
     projected_eigenvalues = vasprun.projected_eigenvalues
     if projected_eigenvalues is None and procar is not None:
         projected_eigenvalues = procar.data  # fall back to PROCAR orbital projections
@@ -1649,9 +1663,7 @@ def load_eigenvalue_outputs(
             ``"defect"``), for informative warnings/errors. Default is
             ``"bulk"``.
         run_metadata (dict):
-            The ``DefectEntry.calculation_metadata["run_metadata"]`` dict, to
-            re-hydrate the |Vasprun| from its serialised
-            ``{label}_vasprun_dict`` as a last resort. Default is ``None``.
+            Accepted for backend-protocol compatibility but unused.
 
     Returns:
         CalculationOutputs:
@@ -1670,10 +1682,6 @@ def load_eigenvalue_outputs(
             _multiple_files_warning("vasprun.xml", path, vr_path, dir_type=label)
         with contextlib.suppress(Exception):
             vr = get_vasprun(vr_path, parse_projected_eigen=True)
-
-    if vr is None and procar is not None:  # then try take from serialised vasprun dict:
-        with contextlib.suppress(Exception):
-            vr = Vasprun.from_dict((run_metadata or {})[f"{label}_vasprun_dict"])
 
     if not isinstance(vr, Vasprun):
         raise FileNotFoundError(

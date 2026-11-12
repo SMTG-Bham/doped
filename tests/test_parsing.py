@@ -34,6 +34,7 @@ from test_utils import (
 from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.io.outputs import CalculationOutputs
 from doped.io.vasp.outputs import (
+    calculation_outputs_from_vasprun,
     compare_incar_tags,
     compare_kpoints,
     compare_potcar_symbols,
@@ -53,7 +54,7 @@ from doped.parsing import (
     parse_symmetry_and_degeneracy_metadata,
 )
 from doped.utils.efficiency import Structure
-from doped.utils.eigenvalues import get_eigenvalue_analysis
+from doped.utils.eigenvalues import _as_calculation_outputs, get_eigenvalue_analysis
 from doped.utils.mappings import (
     _create_unrelaxed_defect_structure,
     get_defect_type_and_composition_diff,
@@ -3714,6 +3715,27 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         assert any("Detected atoms far from the defect site" in str(warning.message) for warning in w)
 
+    def test_procar_vasprun_consistency(self):
+        """
+        Test that ``PROCAR`` orbital projections are only used (when the
+        ``vasprun.xml`` has none) if they match the ``vasprun.xml``
+        calculation; here not the case for the bulk supercell ``PROCAR`` (with
+        one more atom) and the ``v_Cu_0`` ``vasprun.xml``.
+        """
+        vr = get_vasprun(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/no_eig_vr.xml.gz")
+        procars = {
+            name: get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/{name}/vasp_std/PROCAR.gz")
+            for name in ("v_Cu_0", "bulk")
+        }
+        # whether as a fallback (if the vasprun has no projections) or when explicitly supplied (as e.g.
+        # with ``get_band_edge_info()``, then taking precedence):
+        for parse in (calculation_outputs_from_vasprun, _as_calculation_outputs):
+            assert parse(vr, procars["v_Cu_0"]).projected_eigenvalues
+            with pytest.warns(UserWarning, match="do not match the vasprun"):
+                outputs = parse(vr, procars["bulk"])
+            assert outputs.projected_eigenvalues is None
+            assert outputs.raw["procar"] is None
+
     @custom_mpl_image_compare(filename="Cu2SiSe3_v_Cu_0_eigenvalue_plot.png")
     def test_eigenvalues_parsing_and_warnings(self):
         """
@@ -3973,6 +3995,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         dp = DefectsParser(
             f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True, parse_projected_eigen=False
         )
+        # honoured throughout parsing (i.e. also not loaded by the shallow check for correction warnings):
+        assert all("eigenvalue_data" not in e.calculation_metadata for e in dp.defect_dict.values())
 
         # now should still all work fine:
         print("Testing v_Cu_0 with plot = True")

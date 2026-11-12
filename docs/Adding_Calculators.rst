@@ -61,8 +61,10 @@ filename pattern(s) identifying calculation output files (used for
 calculation folder discovery). ``get_calculation_outputs()`` should accept
 (and may ignore) the generic keyword arguments used by ``doped``'s parsing
 machinery: ``label`` (``"bulk"``/``"defect"``, for informative warnings) and
-``parse_projected_eigen``. Only ``structure`` (the final relaxed structure)
-and ``energy`` (final total energy in eV) are required in
+``parse_projected_eigen`` (if orbital projections are parsed: ``None``, the
+default, parses them if available, with no warning otherwise; ``True`` warns if
+they cannot be parsed; ``False`` skips them). Only ``structure`` (the final
+relaxed structure) and ``energy`` (final total energy in eV) are required in
 ``CalculationOutputs``; the optional attributes unlock specific analyses:
 
 .. list-table::

@@ -687,12 +687,9 @@ class DefectEntry(thermo.DefectEntry):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file,
                 a ``pymatgen`` |Vasprun| object, or a (calculator-agnostic)
                 :class:`~doped.io.outputs.CalculationOutputs` object (with
-                orbital projections), for the defect supercell
-                calculation. If ``None`` (default), tries to load the
-                |Vasprun| object from
-                ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
-                or, failing that, from a ``vasprun.xml(.gz)`` file at
-                ``self.calculation_metadata["defect_path"]``.
+                orbital projections), for the defect supercell calculation. If
+                ``None`` (default), tries to load from a ``vasprun.xml(.gz)``
+                file at ``self.calculation_metadata["defect_path"]``.
             defect_projections (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
                 ``defect_outputs`` (i.e. ``vasprun.xml(.gz)`` file from
@@ -706,11 +703,9 @@ class DefectEntry(thermo.DefectEntry):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file,
                 a ``pymatgen`` |Vasprun| object, or a (calculator-agnostic)
                 :class:`~doped.io.outputs.CalculationOutputs` object (with
-                orbital projections), for the reference bulk
-                supercell calculation. If ``None`` (default), tries to load
-                the |Vasprun| object from
-                ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
-                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                orbital projections), for the reference bulk supercell
+                calculation. If ``None`` (default), tries to load from a
+                ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
             bulk_projections (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
@@ -850,9 +845,7 @@ class DefectEntry(thermo.DefectEntry):
                 a ``pymatgen`` |Vasprun| object or a
                 :class:`~doped.io.outputs.CalculationOutputs` object, for the
                 defect supercell calculation. If ``None`` (default), tries to
-                load the |Vasprun| object from
-                ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
-                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                load from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             defect_projections (PathLike, |Procar|):
                 Not required if eigenvalue data has already been parsed for
@@ -868,9 +861,7 @@ class DefectEntry(thermo.DefectEntry):
                 a ``pymatgen`` |Vasprun| object or a
                 :class:`~doped.io.outputs.CalculationOutputs` object, for the
                 reference bulk supercell calculation. If ``None`` (default),
-                tries to load the |Vasprun| object from
-                ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
-                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                tries to load from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
             bulk_projections (PathLike, |Procar|):
                 Not required if eigenvalue data has already been parsed for

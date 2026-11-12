@@ -24,6 +24,8 @@ from doped.parsing import defect_site_from_structures
 from doped.utils import vise_handling
 from doped.utils.plotting import doped_plot_style
 
+# TODO: Move VASP-specific code/docstrings out of this module! (And similarly check other modules)
+
 with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
     import pydefect.analyzer.make_band_edge_states
     import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
@@ -48,17 +50,16 @@ def _as_calculation_outputs(
     to a (calculator-agnostic) ``CalculationOutputs`` object.
 
     Explicitly-supplied ``projections`` take precedence for the orbital
-    projections (``projected_eigenvalues``), matching previous ``doped``
-    behaviour with VASP objects.
+    projections (``projected_eigenvalues``).
     """
     if isinstance(outputs_or_native, CalculationOutputs):
         return outputs_or_native
 
-    from doped.io.vasp.outputs import _parse_procar, calculation_outputs_from_vasprun
+    from doped.io.vasp.outputs import calculation_outputs_from_vasprun
 
     outputs = calculation_outputs_from_vasprun(outputs_or_native, procar=projections)
-    if projections is not None:  # explicitly-supplied projections take precedence
-        outputs.projected_eigenvalues = _parse_procar(projections).data
+    if outputs.raw["procar"] is not None:  # explicitly-supplied (consistent) projections take precedence
+        outputs.projected_eigenvalues = outputs.raw["procar"].data
     return outputs
 
 
@@ -495,9 +496,7 @@ def get_eigenvalue_analysis(
             ``pymatgen`` |Vasprun| object or a
             :class:`~doped.io.outputs.CalculationOutputs` object, for the
             reference bulk supercell calculation. If ``None`` (default), tries
-            to load the |Vasprun| object from
-            ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``
-            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            to load from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
         bulk_projections (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
@@ -517,9 +516,7 @@ def get_eigenvalue_analysis(
             ``pymatgen`` |Vasprun| object or a
             :class:`~doped.io.outputs.CalculationOutputs` object, for the
             defect supercell calculation. If ``None`` (default), tries to load
-            the |Vasprun| object from
-            ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``
-            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
         defect_projections (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
@@ -582,7 +579,9 @@ def get_eigenvalue_analysis(
             if isinstance(outputs_or_path, CalculationOutputs):
                 return outputs_or_path.structure
             if isinstance(outputs_or_path, PathLike):  # path; parse with the calculator backend:
-                return get_calculation_outputs(outputs_or_path, calculator=calculator).structure
+                return get_calculation_outputs(
+                    outputs_or_path, calculator=calculator, parse_projected_eigen=False
+                ).structure
             return outputs_or_path.final_structure  # calculator-native object (e.g. VASP ``Vasprun``)
 
         defect_entry = template_defect_entry_from_structures(
@@ -621,7 +620,8 @@ def get_eigenvalue_analysis(
         result = 0
         for e in element_set:
             result += sum(abs(i - j) for i, j in zip_longest(orb_1[e], orb_2[e], fillvalue=0))
-        return round(result, 3) / sum(sum(orb_list) for orb_list in orb_2.values())
+        # normalised by the total (bulk) edge-state orbital weight, if non-zero (i.e. not a vacuum state):
+        return round(result, 3) / (sum(sum(orb_list) for orb_list in orb_2.values()) or 1)
 
     pydefect.analyzer.make_band_edge_states.orbital_diff = _orbital_diff
 
