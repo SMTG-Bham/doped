@@ -13,8 +13,8 @@ import numpy as np
 from pymatgen.util.coord import pbc_diff, pbc_shortest_vectors
 from tqdm import tqdm
 
-from doped.analysis import defect_site_from_structures
-from doped.core import DefectEntry
+from doped.core import DefectEntry, _get_bulk_supercell, _get_defect_supercell
+from doped.parsing import defect_site_from_structures
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import (
     Composition,
@@ -25,10 +25,8 @@ from doped.utils.efficiency import (
     _cached_Composition_init,
     _Composition__eq__,
 )
-from doped.utils.parsing import (
-    _get_bulk_supercell,
+from doped.utils.mappings import (
     _get_closest_coords,
-    _get_defect_supercell,
     check_atom_mapping_far_from_defect,
     get_coords_and_idx_of_species,
     get_defect_type_and_composition_diff,

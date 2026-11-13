@@ -1,7 +1,6 @@
 """
-Tests for the ``doped.analysis`` module, which also implicitly tests most of
-the ``doped.utils.parsing`` module, and some ``doped.thermodynamics``
-functions.
+Tests for the ``doped.parsing`` module, which also implicitly tests most of the
+``doped.utils.mappings`` module, and some ``doped.thermodynamics`` functions.
 """
 
 import gzip
@@ -29,9 +28,23 @@ from test_utils import (
     data_dir,
     if_present_rm,
     requires_api_key,
+    vasp_data_dir,
 )
 
-from doped.analysis import (
+from doped.generation import DefectsGenerator, get_defect_name_from_entry
+from doped.io.outputs import CalculationOutputs
+from doped.io.vasp.outputs import (
+    calculation_outputs_from_vasprun,
+    compare_incar_tags,
+    compare_kpoints,
+    compare_potcar_symbols,
+    get_magnetization_from_vasprun,
+    get_outcar,
+    get_procar,
+    get_vasprun,
+    spin_degeneracy_from_vasprun,
+)
+from doped.parsing import (
     DefectParser,
     DefectsParser,
     _handle_charge_correction_errors,
@@ -39,28 +52,17 @@ from doped.analysis import (
     defect_site_from_structures,
     guess_defect_position,
     parse_symmetry_and_degeneracy_metadata,
-    shallow_dopant_binding_energy,
 )
-from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.utils.efficiency import Structure
-from doped.utils.eigenvalues import get_eigenvalue_analysis
-from doped.utils.parsing import (
-    Vasprun,
+from doped.utils.eigenvalues import _as_calculation_outputs, get_eigenvalue_analysis
+from doped.utils.mappings import (
     _create_unrelaxed_defect_structure,
-    _num_electrons_from_charge_state,
-    _simple_spin_degeneracy_from_num_electrons,
-    compare_incar_tags,
-    compare_kpoints,
-    compare_potcar_symbols,
     get_defect_type_and_composition_diff,
     get_defect_type_and_site_indices,
-    get_magnetization_from_vasprun,
-    get_outcar,
-    get_procar,
-    get_vasprun,
-    spin_degeneracy_from_vasprun,
 )
 from doped.utils.symmetry import (
+    _num_electrons_from_charge_state,
+    _simple_spin_degeneracy_from_num_electrons,
     get_orientational_degeneracy,
     get_primitive_structure,
     get_sga,
@@ -221,19 +223,19 @@ class DefectsParsingTestCase(unittest.TestCase):
             [0, 0, 25.24],
         ]
 
-        self.Sb2Se3_DATA_DIR = os.path.join(data_dir, "Sb2Se3")
+        self.Sb2Se3_DATA_DIR = os.path.join(vasp_data_dir, "Sb2Se3")
         self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
         self.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
         self.Sb2Si2Te6_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "Sb2Si2Te6")
 
-        self.V2O5_DATA_DIR = os.path.join(data_dir, "V2O5")
-        self.SrTiO3_DATA_DIR = os.path.join(data_dir, "SrTiO3")
-        self.ZnS_DATA_DIR = os.path.join(data_dir, "ZnS")
-        self.SOLID_SOLUTION_DATA_DIR = os.path.join(data_dir, "Solid_Solution")
-        self.CaO_DATA_DIR = os.path.join(data_dir, "CaO")
-        self.BiOI_DATA_DIR = os.path.join(data_dir, "BiOI")
-        self.shallow_O_Se_DATA_DIR = os.path.join(data_dir, "Shallow_O_Se_+1")
+        self.V2O5_DATA_DIR = os.path.join(vasp_data_dir, "V2O5")
+        self.SrTiO3_DATA_DIR = os.path.join(vasp_data_dir, "SrTiO3")
+        self.ZnS_DATA_DIR = os.path.join(vasp_data_dir, "ZnS")
+        self.SOLID_SOLUTION_DATA_DIR = os.path.join(vasp_data_dir, "Solid_Solution")
+        self.CaO_DATA_DIR = os.path.join(vasp_data_dir, "CaO")
+        self.BiOI_DATA_DIR = os.path.join(vasp_data_dir, "BiOI")
+        self.shallow_O_Se_DATA_DIR = os.path.join(vasp_data_dir, "Shallow_O_Se_+1")
         self.Se_dielectric = np.array([0.627551, 0.627551, 0.943432]) + np.array(
             [6.714217, 6.714317, 10.276149]
         )
@@ -261,7 +263,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
-        if_present_rm(os.path.join(data_dir, "Magnetization_Tests/CdTe/CdTe_defect_dict.json.gz"))
+        if_present_rm(os.path.join(vasp_data_dir, "Magnetization_Tests/CdTe/CdTe_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_test_defect_dict.json"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json.gz"))
@@ -434,7 +436,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert CdTe_dp.error_tolerance == 0.05
             assert CdTe_dp.bulk_path == self.CdTe_BULK_DATA_DIR  # automatically determined
             assert CdTe_dp.subfolder == "vasp_ncl"  # automatically determined
-            assert CdTe_dp.bulk_band_gap_vr is None
+            assert CdTe_dp.bulk_band_gap_outputs is None
 
         check_DefectsParser(CdTe_dp)
         assert (
@@ -641,7 +643,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             dielectric=[9.13, 9.13, 9.13],
             error_tolerance=0.01,
             skip_corrections=False,
-            bulk_band_gap_vr=f"{self.CdTe_BULK_DATA_DIR}/vasprun.xml",
+            bulk_band_gap_outputs=f"{self.CdTe_BULK_DATA_DIR}/vasprun.xml",
             processes=4,
             json_filename="test_pop.json",
         )
@@ -665,7 +667,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.output_path == self.CdTe_EXAMPLE_DIR
         assert dp.dielectric == [9.13, 9.13, 9.13]
         assert dp.error_tolerance == 0.01
-        assert isinstance(dp.bulk_band_gap_vr, Vasprun)
+        assert isinstance(dp.bulk_band_gap_outputs, CalculationOutputs)
         assert dp.processes == 4
         assert dp.json_filename == "test_pop.json"
 
@@ -757,7 +759,7 @@ class DefectsParsingTestCase(unittest.TestCase):
     def test_DefectsParser_CdTe_kpoints_mismatch(self):
         dp, w = _create_dp_and_capture_warnings(
             output_path=self.CdTe_EXAMPLE_DIR,
-            bulk_path=f"{data_dir}/CdTe",  # vasp_gam bulk vr here
+            bulk_path=f"{data_dir}/vasp/CdTe",  # vasp_gam bulk vr here
             dielectric=9.13,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
@@ -3633,15 +3635,17 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             _print_warning_info(w)
             assert any(
-                "The defect and bulk supercells are not the same size, having volumes of 513790.5 and "
-                "2241.3 Å^3 respectively." in str(warning.message)
+                "The defect and bulk supercells have different lattices, with lattice parameters (a, b, "
+                "c; angles) of (3000.000, 13.087, 13.087 Å; 90.0, 90.0, 90.0°) and (13.087, 13.087, "
+                "13.087 Å; 90.0, 90.0, 90.0°), and volumes of 513790.5 and 2241.3 Å^3 respectively."
+                in str(warning.message)
                 for warning in w
             )
 
     def test_calculation_comparison_functions(self):
         """
         Test the public ``compare_incar_tags``, ``compare_kpoints`` and
-        ``compare_potcar_symbols`` functions in ``doped.utils.parsing``.
+        ``compare_potcar_symbols`` functions in ``doped.io.vasp.outputs``.
         """
         # ``compare_incar_tags`` compares in both directions, taking the VASP default for missing tags:
         assert compare_incar_tags({"ENCUT": 500, "LHFCALC": True}, {"ENCUT": 500}, warn=False) == [
@@ -3701,12 +3705,33 @@ class DefectsParsingTestCase(unittest.TestCase):
     def test_checking_defect_bulk_cell_definitions(self):
         with warnings.catch_warnings(record=True) as w:
             DefectParser.from_paths(
-                defect_path=f"{data_dir}/Doped_CdTe",
+                defect_path=f"{data_dir}/vasp/Doped_CdTe",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 skip_corrections=True,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
         assert any("Detected atoms far from the defect site" in str(warning.message) for warning in w)
+
+    def test_procar_vasprun_consistency(self):
+        """
+        Test that ``PROCAR`` orbital projections are only used (when the
+        ``vasprun.xml`` has none) if they match the ``vasprun.xml``
+        calculation; here not the case for the bulk supercell ``PROCAR`` (with
+        one more atom) and the ``v_Cu_0`` ``vasprun.xml``.
+        """
+        vr = get_vasprun(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/no_eig_vr.xml.gz")
+        procars = {
+            name: get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/{name}/vasp_std/PROCAR.gz")
+            for name in ("v_Cu_0", "bulk")
+        }
+        # whether as a fallback (if the vasprun has no projections) or when explicitly supplied (as e.g.
+        # with ``get_band_edge_info()``, then taking precedence):
+        for parse in (calculation_outputs_from_vasprun, _as_calculation_outputs):
+            assert parse(vr, procars["v_Cu_0"]).projected_eigenvalues
+            with pytest.warns(UserWarning, match="do not match the vasprun"):
+                outputs = parse(vr, procars["bulk"])
+            assert outputs.projected_eigenvalues is None
+            assert outputs.raw["procar"] is None
 
     @custom_mpl_image_compare(filename="Cu2SiSe3_v_Cu_0_eigenvalue_plot.png")
     def test_eigenvalues_parsing_and_warnings(self):
@@ -3967,6 +3992,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         dp = DefectsParser(
             f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True, parse_projected_eigen=False
         )
+        # honoured throughout parsing (i.e. also not loaded by the shallow check for correction warnings):
+        assert all("eigenvalue_data" not in e.calculation_metadata for e in dp.defect_dict.values())
 
         # now should still all work fine:
         print("Testing v_Cu_0 with plot = True")
@@ -3981,10 +4008,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         # now should still all work fine:
         print("Testing v_Cu_0 with plot = True, direct VASP outputs; vaspruns")
         bes, fig = get_eigenvalue_analysis(
-            bulk_vr=get_vasprun(
+            bulk_outputs=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
-            defect_vr=get_vasprun(
+            defect_outputs=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
         )
@@ -3993,23 +4020,23 @@ class DefectsParsingTestCase(unittest.TestCase):
         print("Testing v_Cu_0 with plot = True, direct VASP outputs; vaspruns and procars")
         self.tearDown()  # ensure PROCARs returned to original state
         bes, fig = get_eigenvalue_analysis(
-            bulk_vr=get_vasprun(
+            bulk_outputs=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
-            defect_vr=get_vasprun(
+            defect_outputs=get_vasprun(
                 f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
             ),
-            bulk_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR.gz"),
-            defect_procar=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/PROCAR.gz"),
+            bulk_projections=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/PROCAR.gz"),
+            defect_projections=get_procar(f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/PROCAR.gz"),
         )
         _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.1)
 
-        # test error when not providing defect_entry or bulk_vr:
+        # test error when not providing defect_entry or bulk_outputs:
         with pytest.raises(ValueError) as exc:
             get_eigenvalue_analysis()
         assert (
-            "If `defect_entry` is not provided, then both `bulk_vr` and `defect_vr` at a minimum must be "
-            "provided!" in str(exc.value)
+            "If `defect_entry` is not provided, then both `bulk_outputs` and `defect_outputs` at a "
+            "minimum must be provided!" in str(exc.value)
         )
 
         # test all fine when saving and reloading from JSON (previously didn't, but fixed)
@@ -4158,6 +4185,44 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         return fig
 
+    @custom_mpl_image_compare("MgO_Mg_O_+2_eigenvalue_plot.png")
+    def test_Mg_O_2_eigenvalue_analysis(self):
+        """
+        Test the eigenvalue analysis and plot of the off-centre (C3v) Mg_O^+2
+        antisite in MgO, with one fully-occupied localised state per spin,
+        1.7 eV above the VBM, as in the GPAW calculation compared in
+        ``test_gpaw_eigenvalue_analysis_plot`` (``test_gpaw.py``).
+        """
+        defect_entry = DefectParser.from_paths(
+            f"{self.MgO_EXAMPLE_DIR}/Defects/Pre_Calculated_Results/Mg_O_+2/vasp_std",
+            f"{self.MgO_EXAMPLE_DIR}/Defects/Pre_Calculated_Results/MgO_bulk/vasp_std",
+            skip_corrections=True,
+            parse_projected_eigen=True,
+        ).defect_entry
+        bes, fig = defect_entry.get_eigenvalue_analysis(  # custom legend position, as for GPAW
+            legend_kwargs={"loc": "center left", "bbox_to_anchor": (1.02, 0.5)}
+        )
+        assert bes.has_occupied_localized_state
+        assert not any(
+            [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_unoccupied_localized_state, bes.is_shallow]
+        )
+        data = defect_entry.calculation_metadata["eigenvalue_data"]
+        band_edges = [data[f"{edge}_info"].orbital_info.energy for edge in ("vbm", "cbm")]
+        assert band_edges == pytest.approx([3.1293, 7.8511], abs=1e-3)  # 4.72 eV band gap
+        assert len(bes.states) == 2
+        for state in bes.states:
+            (orbital,) = state.localized_orbitals
+            assert orbital.band_idx == 428
+            assert orbital.occupation == pytest.approx(1)
+            assert orbital.ave_energy == pytest.approx(4.8012, abs=1e-3)  # VBM + 1.672 eV
+            assert orbital.participation_ratio == pytest.approx(0.389, abs=2e-3)
+            assert orbital.orbitals == {
+                "Mg": pytest.approx([0.065, 0.071, 0.019, 0], abs=2e-3),
+                "O": pytest.approx([0.013, 0.261, 0, 0], abs=2e-3),
+            }
+
+        return fig
+
     # no longer warned because actually can have orientational degeneracy < 1 for non-trivial defects
     # like split-vacancies, antisite swaps, split-interstitials etc
     # def test_orientational_degeneracy_error(self):
@@ -4198,7 +4263,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # S = 0 bipolaron ncl:
         vr = get_vasprun(
-            f"{data_dir}/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S0_0/vasp_ncl/vasprun.xml.gz",
+            f"{data_dir}/vasp/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S0_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 0.903, atol=0.05)
@@ -4206,7 +4271,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # S = 1 bipolaron ncl:
         vr = get_vasprun(
-            f"{data_dir}/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S1_0/vasp_ncl/vasprun.xml.gz",
+            f"{data_dir}/vasp/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S1_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 1.6, atol=0.05)
@@ -4214,7 +4279,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # O2 triplet calculation, vasp_std, ISPIN = 2
         vr = get_vasprun(
-            f"{data_dir}/Magnetization_Tests/O2_mmm_EaH_0/vasp_std/vasprun.xml.gz",
+            f"{data_dir}/vasp/Magnetization_Tests/O2_mmm_EaH_0/vasp_std/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         print(get_magnetization_from_vasprun(vr))
@@ -4223,7 +4288,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # O2 triplet calculation, vasp_ncl (near-perfect triplet)
         vr = get_vasprun(
-            f"{data_dir}/Magnetization_Tests/O2_mmm_EaH_0/vasp_ncl/vasprun.xml.gz",
+            f"{data_dir}/vasp/Magnetization_Tests/O2_mmm_EaH_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 2, atol=0.001)
@@ -4241,7 +4306,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # test |DefectsParser| handling:
         dp, _w = _create_dp_and_capture_warnings(
-            output_path=f"{data_dir}/Magnetization_Tests/CdTe",
+            output_path=f"{data_dir}/vasp/Magnetization_Tests/CdTe",
             bulk_path=f"{self.CdTe_BULK_DATA_DIR}",
             dielectric=9.13,
         )
@@ -4251,7 +4316,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # previously caused an error, with magnetization being parsed as negative value due to
         # N_spin_down > N_spin_up, now spin degeneracy correctly determined from absolute magnetization
-        vr = get_vasprun(f"{data_dir}/Magnetization_Tests/Co_Zn_0/vasprun.xml.gz")
+        vr = get_vasprun(f"{data_dir}/vasp/Magnetization_Tests/Co_Zn_0/vasprun.xml.gz")
         assert np.isclose(get_magnetization_from_vasprun(vr), -3, atol=0.02)
         assert spin_degeneracy_from_vasprun(vr) == 4
 
@@ -4372,7 +4437,7 @@ class ReorderedParsingTestCase(unittest.TestCase):
     """
 
     def setUp(self):
-        self.CdTe_corrections_dir = os.path.join(data_dir, "CdTe_charge_correction_tests")
+        self.CdTe_corrections_dir = os.path.join(vasp_data_dir, "CdTe_charge_correction_tests")
         self.v_Cd_m2_path = f"{self.CdTe_corrections_dir}/v_Cd_-2_vasp_gam"
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
@@ -4492,43 +4557,6 @@ class ReorderedParsingTestCase(unittest.TestCase):
         assert np.isclose(
             sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt2.corrections.values())
         )
-
-
-def test_shallow_dopant_binding_energy():
-    """
-    Test the shallow dopant binding energy convenience function in
-    ``doped.analysis``.
-
-    Using examples from the advanced analysis tutorial.
-    """
-    cu2sise3_conductivity_eff_mass = 1 / np.mean([1 / 0.92, 1 / 1.87, 1 / 0.18])
-    # (If we knew the degeneracy of these different crystal directions we should account for that here)
-
-    cu2sise3_shallow_acceptor_binding_energy = shallow_dopant_binding_energy(
-        eff_mass=cu2sise3_conductivity_eff_mass,
-        dielectric=[[8.73, 0, -0.48], [0.0, 7.78, 0], [-0.48, 0, 10.11]],
-    )
-    assert np.isclose(cu2sise3_shallow_acceptor_binding_energy, 0.0730, atol=1e-4)
-
-    # another quick example; Cs₂TiBr₆ using values from https://doi.org/10.1021/acs.jpclett.2c02436
-    assert np.isclose(shallow_dopant_binding_energy((2.7 * 0.9) / (2.7 + 0.9), 3.84), 0.62, atol=0.01)
-
-    cdte_m_h_eff = 1 / np.mean(
-        [1 / 0.88, 1 / 0.11]
-    )  # harmonic mean of light and heavy hole masses in CdTe
-    cdte_m_e_eff = 0.095
-    # taken from https://scholar.google.com/citations?view_op=view_citation&citation_for_view=P-7ICrQAAAAJ:O3NaXMp0MMsC
-
-    cdte_shallow_acceptor_binding_energy = shallow_dopant_binding_energy(
-        eff_mass=cdte_m_h_eff, dielectric=9.13
-    )
-    cdte_exciton_binding_energy = shallow_dopant_binding_energy(
-        eff_mass=(cdte_m_h_eff * cdte_m_e_eff)
-        / (cdte_m_h_eff + cdte_m_e_eff),  # reduced e-h mass for exciton binding
-        dielectric=9.13,
-    )
-    assert np.isclose(cdte_shallow_acceptor_binding_energy, 0.0319, atol=0.001)
-    assert np.isclose(cdte_exciton_binding_energy, 0.0104, atol=0.001)
 
 
 def test_guess_defect_position_with_bulk_supercell():

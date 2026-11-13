@@ -44,10 +44,10 @@ doped.utils.legacy_corrections module
    :undoc-members:
    :show-inheritance:
 
-doped.utils.parsing module
---------------------------
+doped.utils.mappings module
+---------------------------
 
-.. automodule:: doped.utils.parsing
+.. automodule:: doped.utils.mappings
    :members:
    :undoc-members:
    :show-inheritance:
