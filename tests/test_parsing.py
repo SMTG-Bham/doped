@@ -4188,6 +4188,44 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         return fig
 
+    @custom_mpl_image_compare("MgO_Mg_O_+2_eigenvalue_plot.png")
+    def test_Mg_O_2_eigenvalue_analysis(self):
+        """
+        Test the eigenvalue analysis and plot of the off-centre (C3v) Mg_O^+2
+        antisite in MgO, with one fully-occupied localised state per spin,
+        1.7 eV above the VBM, as in the GPAW calculation compared in
+        ``test_gpaw_eigenvalue_analysis_plot`` (``test_gpaw.py``).
+        """
+        defect_entry = DefectParser.from_paths(
+            f"{self.MgO_EXAMPLE_DIR}/Defects/Pre_Calculated_Results/Mg_O_+2/vasp_std",
+            f"{self.MgO_EXAMPLE_DIR}/Defects/Pre_Calculated_Results/MgO_bulk/vasp_std",
+            skip_corrections=True,
+            parse_projected_eigen=True,
+        ).defect_entry
+        bes, fig = defect_entry.get_eigenvalue_analysis(  # legend outside the axes, as for GPAW
+            legend_kwargs={"loc": "center left", "bbox_to_anchor": (1.02, 0.5)}
+        )
+        assert bes.has_occupied_localized_state
+        assert not any(
+            [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_unoccupied_localized_state, bes.is_shallow]
+        )
+        data = defect_entry.calculation_metadata["eigenvalue_data"]
+        band_edges = [data[f"{edge}_info"].orbital_info.energy for edge in ("vbm", "cbm")]
+        assert band_edges == pytest.approx([3.1293, 7.8511], abs=1e-3)  # 4.72 eV band gap
+        assert len(bes.states) == 2
+        for state in bes.states:
+            (orbital,) = state.localized_orbitals
+            assert orbital.band_idx == 428
+            assert orbital.occupation == pytest.approx(1)
+            assert orbital.ave_energy == pytest.approx(4.8012, abs=1e-3)  # VBM + 1.672 eV
+            assert orbital.participation_ratio == pytest.approx(0.389, abs=2e-3)
+            assert orbital.orbitals == {
+                "Mg": pytest.approx([0.065, 0.071, 0.019, 0], abs=2e-3),
+                "O": pytest.approx([0.013, 0.261, 0, 0], abs=2e-3),
+            }
+
+        return fig
+
     # no longer warned because actually can have orientational degeneracy < 1 for non-trivial defects
     # like split-vacancies, antisite swaps, split-interstitials etc
     # def test_orientational_degeneracy_error(self):

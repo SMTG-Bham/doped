@@ -23,6 +23,7 @@ from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.ase import AseAtomsAdaptor
 from test_utils import (
+    EXAMPLE_DIR,
     _run_func_and_capture_stdout_warnings,
     custom_mpl_image_compare,
     data_dir,
@@ -880,6 +881,74 @@ def test_gpaw_eigenvalue_analysis_from_restart():
         assert participation_ratios == pytest.approx([0.427, 0.045], abs=2e-3)
         assert (state.vbm_orbital_diff, state.cbm_orbital_diff) == pytest.approx((0.044, 0.015), abs=2e-3)
         assert state.localized_orbitals == []
+
+
+@custom_mpl_image_compare("GPAW_MgO_Mg_O_+2_eigenvalue_plot.png")
+def test_gpaw_eigenvalue_analysis_plot():
+    """
+    Test the eigenvalue analysis plot for the off-centred Mg_O^+2 antisite in
+    MgO, for which we also have a VASP test (``examples/MgO``), which gives the
+    same C3v geometry and classification: one fully-occupied localised state
+    per spin, 1.7 eV above the VBM, with no perturbed host states.
+
+    The GPAW restarts (``MgO_450``) are 96-atom PBE Γ-point calculations, with
+    the 450 eV plane-wave cutoff of the 216-atom 2x2x2 k-points PBEsol VASP
+    calculations and 0.05 eV Gaussian smearing. A 250 eV cutoff with GPAW here
+    underestimates the MgO band gap by 1.3 eV. The defect is spin-polarised
+    with a fixed zero magnetic moment (as ``ISPIN = 2``, ``NUPDOWN = 0`` in
+    VASP), relaxed with the default ``PreconLBFGS`` settings from a relaxed
+    off-centre Mg_O^+1 geometry (with the antisite displaced 1.2 Å along <111>,
+    as in VASP), giving a structure 1.1 eV lower in energy than the on-site
+    antisite.
+    """
+    pytest.importorskip("gpaw")
+    root = Path(gpaw_data_dir) / "MgO_450"
+    gpaw_entry = DefectParser.from_paths(
+        root / "Mg_O_+2", bulk_path=root / "bulk", calculator="gpaw", skip_corrections=True
+    ).defect_entry
+    vasp_root = Path(EXAMPLE_DIR) / "MgO/Defects/Pre_Calculated_Results"
+    vasp_entry = DefectParser.from_paths(
+        vasp_root / "Mg_O_+2/vasp_std",
+        vasp_root / "MgO_bulk/vasp_std",
+        skip_corrections=True,
+        parse_projected_eigen=True,
+    ).defect_entry
+    # legend outside the axes, as by default it covers the in-gap levels here:
+    gpaw_bes, fig = gpaw_entry.get_eigenvalue_analysis(
+        legend_kwargs={"loc": "center left", "bbox_to_anchor": (1.02, 0.5)}
+    )
+    vasp_bes = vasp_entry.get_eigenvalue_analysis(plot=False)
+
+    flags = [
+        "is_shallow",
+        "has_donor_phs",
+        "has_acceptor_phs",
+        "has_occupied_localized_state",
+        "has_unoccupied_localized_state",
+    ]
+    for entry, bes in [(gpaw_entry, gpaw_bes), (vasp_entry, vasp_bes)]:
+        assert entry.calculation_metadata["relaxed point symmetry"] == "C3v"
+        assert [flag for flag in flags if getattr(bes, flag)] == ["has_occupied_localized_state"]
+        assert len(bes.states) == 2  # spin up and down, each with one fully-occupied localised state:
+        for state in bes.states:
+            assert [orbital.occupation for orbital in state.localized_orbitals] == pytest.approx([1])
+
+    # GPAW values, with in-sphere PAW orbital weights (VASP values from ``test_parsing.py`` in comments):
+    data = gpaw_entry.calculation_metadata["eigenvalue_data"]
+    band_edges = [data[f"{edge}_info"].orbital_info.energy for edge in ("vbm", "cbm")]
+    assert band_edges == pytest.approx([4.9405, 9.6448], abs=1e-3)  # 4.70 eV gap; VASP: 3.129, 7.851 eV
+    for state in gpaw_bes.states:
+        (orbital,) = state.localized_orbitals
+        assert orbital.band_idx == 384  # VASP: 428 (216 atoms, with no Mg 2s/2p semicore states)
+        # VBM + 1.685 eV (VASP: 4.801 eV, VBM + 1.672 eV):
+        assert orbital.ave_energy == pytest.approx(6.6259, abs=1e-3)
+        assert orbital.participation_ratio == pytest.approx(0.431, abs=2e-3)  # VASP: 0.389
+        assert orbital.orbitals == {
+            "Mg": pytest.approx([0.086, 0.072, 0.017, 0], abs=2e-3),  # VASP: [0.065, 0.071, 0.019, 0]
+            "O": pytest.approx([0.028, 0.149, 0, 0], abs=2e-3),  # VASP: [0.013, 0.261, 0, 0]
+        }
+
+    return fig
 
 
 def test_competing_phase_entry_real_gpaw():
