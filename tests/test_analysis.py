@@ -1872,10 +1872,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             -7.105,
             atol=3e-3,
         )  # uncorrected energy
-        assert np.isclose(
-            parsed_int_Te_2_fake_aniso.get_ediff(), -5.4409, atol=2e-2
-        )  # -4.734 with old voronoi frac coords, expanded atol now to account for LOCPOT sub-sampling
-        # compression
+        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -5.4409, atol=2e-2)
 
         if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
 
