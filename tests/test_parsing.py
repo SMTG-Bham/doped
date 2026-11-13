@@ -4199,7 +4199,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             skip_corrections=True,
             parse_projected_eigen=True,
         ).defect_entry
-        bes, fig = defect_entry.get_eigenvalue_analysis(  # legend outside the axes, as for GPAW
+        bes, fig = defect_entry.get_eigenvalue_analysis(  # custom legend position, as for GPAW
             legend_kwargs={"loc": "center left", "bbox_to_anchor": (1.02, 0.5)}
         )
         assert bes.has_occupied_localized_state

@@ -913,7 +913,7 @@ def test_gpaw_eigenvalue_analysis_plot():
         skip_corrections=True,
         parse_projected_eigen=True,
     ).defect_entry
-    # legend outside the axes, as by default it covers the in-gap levels here:
+    # legend outside the axes, to test custom ``legend_kwargs`` positions:
     gpaw_bes, fig = gpaw_entry.get_eigenvalue_analysis(
         legend_kwargs={"loc": "center left", "bbox_to_anchor": (1.02, 0.5)}
     )
