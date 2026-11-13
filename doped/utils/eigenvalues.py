@@ -334,10 +334,8 @@ def get_eigenvalue_analysis(
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
             Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
             ``pymatgen`` |Vasprun| object, for the reference bulk supercell
-            calculation. If ``None`` (default), tries to load the |Vasprun|
-            object from
-            ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``
-            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            calculation. If ``None`` (default), tries to load from a
+            ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
         bulk_procar (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
@@ -355,10 +353,8 @@ def get_eigenvalue_analysis(
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
             Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
             ``pymatgen`` |Vasprun| object, for the defect supercell
-            calculation. If ``None`` (default), tries to load the |Vasprun|
-            object from
-            ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``
-            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            calculation. If ``None`` (default), tries to load from a
+            ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
         defect_procar (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data

@@ -693,10 +693,8 @@ class DefectEntry(thermo.DefectEntry):
             defect_vr (PathLike, |Vasprun|):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` |Vasprun| object, for the defect supercell
-                calculation. If ``None`` (default), tries to load the
-                |Vasprun| object from
-                ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
-                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                calculation. If ``None`` (default), tries to load from a
+                ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             defect_procar (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
@@ -711,9 +709,7 @@ class DefectEntry(thermo.DefectEntry):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` |Vasprun| object, for the reference bulk
                 supercell calculation. If ``None`` (default), tries to load
-                the |Vasprun| object from
-                ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
-                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
             bulk_procar (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
@@ -760,12 +756,6 @@ class DefectEntry(thermo.DefectEntry):
                     )
                 with contextlib.suppress(Exception):
                     vr = get_vasprun(vr_path, parse_projected_eigen=True)  # noqa: PLW2901
-
-            if vr is None and procar is not None:  # then try take from vasprun dict:
-                with contextlib.suppress(Exception):
-                    vr = Vasprun.from_dict(  # noqa: PLW2901
-                        self.calculation_metadata["run_metadata"][f"{label}_vasprun_dict"]
-                    )
 
             if not isinstance(vr, Vasprun):
                 raise FileNotFoundError(
@@ -889,10 +879,8 @@ class DefectEntry(thermo.DefectEntry):
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``).
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` |Vasprun| object, for the defect supercell
-                calculation. If ``None`` (default), tries to load the
-                |Vasprun| object from
-                ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
-                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                calculation. If ``None`` (default), tries to load from a
+                ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             defect_procar (PathLike, |Procar|):
                 Not required if eigenvalue data has already been parsed for
@@ -907,9 +895,7 @@ class DefectEntry(thermo.DefectEntry):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` |Vasprun| object, for the reference bulk
                 supercell calculation. If ``None`` (default), tries to load
-                the |Vasprun| object from
-                ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
-                or, failing that, from a ``vasprun.xml(.gz)`` file at
+                from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
             bulk_procar (PathLike, |Procar|):
                 Not required if eigenvalue data has already been parsed for

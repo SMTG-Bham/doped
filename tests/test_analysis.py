@@ -197,6 +197,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         cls.CdTe_EXAMPLE_DIR = os.path.abspath(os.path.join(EXAMPLE_DIR, "CdTe"))
         cls.v_Cd_example_dir = os.path.join(cls.CdTe_EXAMPLE_DIR, "v_Cd_example_data")
         cls.moved_v_Cd_example_dirs = []
+        # remove parsing cache left by other tests (e.g. ``test_corrections.py``)
+        if_present_rm(os.path.join(cls.v_Cd_example_dir, "CdTe_defect_dict.json.gz"))
 
         try:
             for i in os.listdir(cls.v_Cd_example_dir):

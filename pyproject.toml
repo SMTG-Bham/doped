@@ -19,7 +19,7 @@ classifiers = [
 requires-python = ">=3.12"  # dictated by mp-api>=0.47 (& its emmet-core>=0.88 requirement)
 dependencies = [
     "tabulate",
-    "matplotlib>=3.5.2",
+    "matplotlib>=3.7.3",  # Python >= 3.12
     "numpy>=1.21.0",
     "pymatgen-core>=2026.10.31",  # serialisable ``FermiDos.as_dict()``, proper-rotation Niggli bases, SGA caching
     # requires spglib >= 2.5
