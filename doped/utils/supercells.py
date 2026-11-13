@@ -183,24 +183,26 @@ def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 1
 _MAX_COMPLEX_ARRANGEMENTS = 200000  # TODO necessary or not?
 
 
-def _get_unwrapped_complex_fc(
+def _get_unwrapped_complex_frac_coords(
     bulk_supercell: Structure | Lattice,
     sites: Sequence[PeriodicSite] | Sequence[np.ndarray] | np.ndarray,
     boundary_tol: float = 1.0,
 ) -> list[np.ndarray]:
     """
     Unwrap a set of (defect complex) sites or fractional coordinates as defined
-    under periodic boundary conditions to their set of fractional coordinates
-    as single Euclidean space configuration.
+    under periodic boundary conditions to their representative set of
+    fractional coordinates in a single most compact Euclidean space
+    configuration.
 
-    The unwrapping is unambiguous and well-defined if there exists an unwrapping in
-    which every constituent sits in the Wigner-Seitz cell of every other constituent in
-    the complex, i.e. every constituent in the complex is the closest image of every other
-    constituent.
+    The unwrapping is unambiguous and well-defined if there exists an
+    unwrapping in which every constituent sits in the Wigner-Seitz cell of
+    every other constituent in the complex, i.e. every constituent in the
+    complex has the same closest periodic images for every other constituent.
 
-    If this is not possible, a warning is emitted, and the unwrapping is chosen which
-    maximises the complex minimum image distance (distance between any constituent and
-    a periodic image of any other constituent in the same complex), followed by the variance.
+    If this is not possible, a warning is emitted, and the unwrapping is chosen
+    which maximises the complex minimum image distance (distance between any
+    constituent and a periodic image of any other constituent in the same
+    complex), followed by the variance of the constituent positions.
 
     Args:
         bulk_supercell (|Structure| | |Lattice|):
@@ -212,15 +214,14 @@ def _get_unwrapped_complex_fc(
             fractional coordinates.
         boundary_tol (float):
             Distance (in Å) from a Wigner-Seitz cell boundary within which to
-            warn about unwrapping, e.g. likely relaxation of defect sites.
-            (Default: 1.0)
+            warn about unwrapping potentially becoming ambiguous after
+            relaxation. Default is 1.0 Å.
 
     Returns:
         list[np.ndarray]:
             The unwrapped fractional coordinates of ``sites`` (ordering
             unchanged), in the ``bulk_supercell`` frame.
     """
-    # argument processing
     lattice = bulk_supercell if isinstance(bulk_supercell, Lattice) else bulk_supercell.lattice
     if len(sites) and isinstance(sites[0], PeriodicSite):
         sites = [site.frac_coords for site in cast("Sequence[PeriodicSite]", sites)]
@@ -230,16 +231,15 @@ def _get_unwrapped_complex_fc(
         return list(frac_coords)
 
     # definitions:
-    # define g(r) as the solution to the (punctured) CVP problem for lattice
-    # L' = L\{0}, such that the CMID is min over i,j of g(r_ij) for intracomplex vectors
-    # r_ij. then decompose r=l+u, where u is in the WS cell and l is in L. then
-    # g(r) = g(u+l) = |u| if l==0 else g(u). so for any pair of constituents i,j with intervector
-    # r_ij, the separation is either |u_ij| (r_ij in WS, 'reduced') or g(u_ij) (r_ij outside WS,
-    # not reduced). note g(u_ij) > |u_ij|
+    # Define g(r) as the solution to the (punctured) closest vector problem (CVP) for lattice L' = L\{0},
+    # such that the closest min image distance (CMID) is min over i,j of g(r_ij) for intracomplex vectors
+    # r_ij. Then decompose r=l+u, where u is in the WS cell and l is in L. Then g(r) = g(u+l) = |u| if l==0
+    # else g(u). So for any pair of constituents i,j with intervector r_ij, the separation is either |u_ij|
+    # (r_ij in WS, 'reduced') or g(u_ij) (r_ij outside WS, not reduced). Note g(u_ij) >= |u_ij|
 
     # u_ij is the pbc shortest vector from contituent i to j
     u = np.asarray(pbc_shortest_vectors(lattice, frac_coords, frac_coords))  # (n, n, 3)
-    g_outWS = np.linalg.norm(u, axis=-1)  # |u_ij|, ie g(r) if r outside WS cell
+    g_outWS = np.linalg.norm(u, axis=-1)  # |u_ij|, i.e. g(r) if r inside WS cell
 
     # require antisymmetry for u_ij on WS cell boundary
     lower = np.tril_indices(n_sites, -1)
@@ -250,9 +250,9 @@ def _get_unwrapped_complex_fc(
 
     # get perpendicular distances to WS boundary and g(u_ij) bounds:
     # (perpendicular distance d to WS boundary is min{|l|/2 * (1 - 2l.r/l^2) | l in L'}
-    # which is >= l/2*(1-2r/l) = l/2 - r. so with an initial guess d <= d_min/2 + r with
-    # d_min point min image distance then we only need to check l <= d_min + 4r,
-    # and for g(u_ij) minimising |l| <= r + |r - l| <= 2r + d_min also within bound)
+    # which is >= l/2*(1-2r/l) = l/2 - r. so with an initial guess d <= d_min/2 + r with d_min being the
+    # point min image distance then we only need to check l <= d_min + 4r, and for g(u_ij) minimising
+    # |l| <= r + |r - l| <= 2r + d_min also within bound):
     d_min = _get_min_image_distance_from_matrix(lattice.matrix)
     *_, lattice_ints = lattice.get_points_in_sphere(  # 1.01 factor for rounding issue
         np.array([[0, 0, 0]]), [0, 0, 0], r=(d_min + 4 * g_outWS.max()) * 1.01, zip_results=False
@@ -261,7 +261,7 @@ def _get_unwrapped_complex_fc(
     lattice_vecs = lattice_ints[np.any(lattice_ints != 0, axis=1)] @ lattice.matrix
     l_norms = np.linalg.norm(lattice_vecs, axis=1)
 
-    # get g(u_ij), ie g(r) if r inside WS cell
+    # get g(u_ij), i.e. g(r) if r inside WS cell
     g_inWS = np.linalg.norm(u[:, :, None, :] - lattice_vecs, axis=-1).min(axis=2)
 
     # perpendicular distances to WS boundary of u_ij for proximity warning
@@ -343,9 +343,9 @@ def _get_unwrapped_complex_fc(
                 # TODO determinism for ties in variance - plus maybe symmetry analysis for these ties?
 
             else:
-                raise NotImplementedError(
-                    "There was a problem unwrapping this complex - it is likely too large or "
-                    "not well-defined in this supercell?"
+                raise RuntimeError(
+                    "There was a problem unwrapping this complex - it is likely too large or not "
+                    "well-defined in this supercell?"
                 )  # TODO
 
             reduced = np.all(translations - translations[:, None] == w, axis=-1) & intersite
@@ -361,9 +361,8 @@ def _get_unwrapped_complex_fc(
             f"A defect complex separation is not a minimum image of the supercell (complex span: "
             f"{span:.2f} Å, complex minimum image distance: {cmid:.2f} Å), so the unwrapping of this "
             f"complex may be ambiguous - the supercell is likely too small for this complex. "
-            f"The unwrapping which maximises the complex minimum image distance, and then the "
-            f"variance of the constituent positions, has been chosen - although this may not "
-            f"be unique."
+            f"The unwrapping which maximises the complex minimum image distance, and then the variance of "
+            f"the constituent positions, has been chosen - although this may not be unique."
         )
     elif margin < boundary_tol:  # a reduced separation could take a different image eg if relaxed?
         warnings.warn(
