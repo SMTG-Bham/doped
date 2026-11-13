@@ -22,7 +22,7 @@ from doped.io import get_calculation_outputs
 from doped.io.outputs import CalculationOutputs
 from doped.parsing import defect_site_from_structures
 from doped.utils import vise_handling
-from doped.utils.plotting import doped_plot_style
+from doped.utils.plotting import _add_legend, doped_plot_style
 
 # TODO: Move VASP-specific code/docstrings out of this module! (And similarly check other modules)
 
@@ -812,10 +812,7 @@ def get_eigenvalue_analysis(
         ax.axhline(-25, 0, 1, color="black", linewidth=0.5, linestyle="-.", label="Band Edges")
 
         if legend_kwargs is not False:  # otherwise no legend
-            legend_kwargs = legend_kwargs or {}
-            legend_kwargs["fontsize"] = legend_kwargs.get("fontsize", 7)
-            legend_kwargs["framealpha"] = legend_kwargs.get("framealpha", 0.5)
-            ax.legend(**legend_kwargs)
+            _add_legend(ax, **{"fontsize": 7, "framealpha": 0.5, **(legend_kwargs or {})})
 
         for text_obj in emp.fig.texts:  # fix x-label alignment
             if text_obj.get_text() == "K-point coords":

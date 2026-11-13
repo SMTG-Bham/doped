@@ -182,10 +182,7 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
         assert np.isclose(split_corr.correction_energy, single_corr.correction_energy, atol=5e-4)
         assert split_corr.metadata["point_charges"] == [(qi, list(fc)) for qi, fc in split_charges]
 
-        # split-vacancy-like [V-V_i-V]^-3 model, with an anisotropic dielectric tensor; the point charge
-        # energy matches an independent pymatgen ``EwaldSummation`` calculation (in the eps^-1/2-scaled
-        # frame) of 1.0993703688 eV, and is independent of the ordering and periodic images of the input
-        # point charges (which are unwrapped to a single configuration):
+        # split-vacancy-like [V-V_i-V]^-3 model, with an anisotropic dielectric tensor
         aniso_dielectric = np.array([[12.0, 1.5, 0.0], [1.5, 9.0, -2.0], [0.0, -2.0, 20.0]])
         nn_v_coords = np.array([0.0, 0.09978070333333333, 0.09978070333333333])
         for point_charges in [
@@ -195,11 +192,12 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
                 (-3, coords),
                 (3, (coords + nn_v_coords) / 2 + np.array([0, 1, 0])),
             ],
-        ]:
+        ]:  # independent of the ordering and periodic images of the input point charges
             three_site_corr = get_kumagai_correction(
                 self.defect_entry, aniso_dielectric, verbose=False, point_charges=point_charges
             )
             efnv_corr_obj = three_site_corr.metadata["pydefect_ExtendedFnvCorrection"]
+            # matches an independent pymatgen ``EwaldSummation`` calculation:
             assert np.isclose(efnv_corr_obj.point_charge_correction, 1.0993703688, atol=1e-8)
             assert np.isclose(three_site_corr.correction_energy, 1.2856151718, atol=1e-8)
 

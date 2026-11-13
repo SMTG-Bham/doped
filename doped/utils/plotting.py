@@ -1,9 +1,11 @@
 """
-Code for plotting defect formation energies and transition levels.
+Code for plotting defect formation energies and transition levels, and shared
+plotting utilities (styles, colour maps, and label & legend placement).
 """
 
 import contextlib
 import functools
+import itertools
 import math
 import os
 import re
@@ -15,11 +17,14 @@ import cmcrameri.cm as cmc
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from labellines import labelLines
 from matplotlib import colormaps, ticker
+from matplotlib.collections import PathCollection
 from matplotlib.colors import Colormap, ListedColormap, to_rgba, to_rgba_array
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.table import Table
+from numpy.typing import NDArray
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 from pymatgen.util.typing import PathLike
@@ -3287,3 +3292,271 @@ def transition_level_diagram(
     _set_title_and_save_figure(ax, filename=filename)
 
     return fig
+
+
+def _get_line_intersections(
+    f: Callable, xlim: tuple[float, float], ylim: tuple[float, float]
+) -> np.ndarray:
+    """
+    Get intersections of a line with the plot bounding box.
+    """
+    xmin, xmax = xlim
+    ymin, ymax = ylim
+    x_intersections = []
+    y_intersections = []
+
+    # Check intersections with vertical bounds (xmin and xmax)
+    y_at_xmin = f(xmin)
+    y_at_xmax = f(xmax)
+    if ymin <= y_at_xmin <= ymax:
+        x_intersections.append((xmin, float(y_at_xmin)))
+    if ymin <= y_at_xmax <= ymax:
+        x_intersections.append((xmax, float(y_at_xmax)))
+
+    # Check intersections with horizontal bounds (ymin and ymax)
+    if not np.isclose(float(y_at_xmin), float(y_at_xmax), atol=1e-4):  # not a horizontal line
+
+        def inv_f(yy):  # inverse of the line function
+            return (yy - f(0)) / (f(1) - f(0)) if f(1) != f(0) else xmin
+
+        x_at_ymin = inv_f(ymin)
+        x_at_ymax = inv_f(ymax)
+        if xmin <= x_at_ymin <= xmax:
+            y_intersections.append((float(x_at_ymin), ymin))
+        if xmin <= x_at_ymax <= xmax:
+            y_intersections.append((float(x_at_ymax), ymax))
+
+    # take unique points in case intersects at x/y corner (which would give a duplicate):
+    return np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
+
+
+def _possible_label_positions_from_bbox_intersections(
+    intersections: Sequence[NDArray[np.floating[Any]]] | NDArray[np.floating[Any]],
+    positions_per_line: int = 3,
+) -> NDArray[np.floating[Any]]:
+    """
+    From a list or array of ``intersections``, which contains the intersections
+    of lines with a plot bounding box (limits) and thus has shape ``(N_lines,
+    2, 2)`` (because 2 intersections with 2 (x,y) coordinates per line),
+    returns ``positions_per_line`` uniformly-spaced possible x,y coordinates
+    for labels of those lines.
+
+    e.g. if ``positions_per_line = 3`` (default), then returns the x,y
+    coordinates for the positions which are 1/4, 2/4 and 3/4 along the line
+    between the two bbox intersections.
+
+    Args:
+        intersections (list or np.ndarray):
+            A list or array of intersections of lines with the plot bounding
+            box. Should have shape ``(N_lines, 2, 2)``.
+        positions_per_line (int):
+            The number of possible label positions per line to return. Default
+            is 3, which returns positions at 1/4, 2/4 and 3/4 along the line
+            between the two bbox intersections.
+
+    Returns:
+        np.ndarray:
+            The possible label positions, with shape
+            ``(N_lines, positions_per_line, 2)``.
+    """
+    points = np.array([pts[:2] for pts in intersections], dtype=float).reshape(-1, 2, 2)  # first 2 points
+    first_pt_factor = np.arange(positions_per_line, 0, -1) / (positions_per_line + 1)  # (positions,)
+    second_pt_factor = 1 - first_pt_factor
+    return (  # (N_lines, positions_per_line, 2)
+        points[:, 0, None, :] * first_pt_factor[None, :, None]
+        + points[:, 1, None, :] * second_pt_factor[None, :, None]
+    )
+
+
+def _find_best_label_positions(
+    poss_label_positions: NDArray[np.floating[Any]],
+    x_range: float = 1,
+    y_range: float = 1,
+    return_best_norm_dist: bool = False,
+) -> NDArray[np.floating[Any]] | tuple[NDArray[np.floating[Any]], float]:
+    """
+    From an array of possible label positions, find the best possible
+    combination of label positions which maximises the distance between labels
+    (i.e. minimises overlap).
+
+    Args:
+        poss_label_positions (np.ndarray):
+            The possible label positions, with shape
+            ``(N_lines, positions_per_line, 2)``.
+        x_range (float):
+            The range of the x-axis to use for normalisation. Default is 1.
+        y_range (float):
+            The range of the y-axis to use for normalisation. Default is 1.
+        return_best_norm_dist (bool):
+            Whether to return the best normalised minimum distance between
+            labels. Default is ``False``.
+
+    Returns:
+        np.ndarray:
+            The best possible label positions, with shape ``(N_lines, 2)``,
+            where the second dimension is (x,y-offset) coordinates.
+        float:
+            The best normalised minimum distance between labels,
+            if ``return_best_norm_dist`` is True.
+    """
+    # Get all possible combinations of indices, for the first two dimensions (N_labels,
+    # N_possibilities_per_label):
+    N_labels, N_possibilities_per_label = poss_label_positions.shape[:2]  # (..., N_xy = 2)
+    combinations = np.array(  # (N_possibilities_per_label**N_labels, N_labels)
+        list(itertools.product(range(N_possibilities_per_label), repeat=N_labels)), dtype=int
+    ).reshape(-1, N_labels)
+    all_combos = poss_label_positions[np.arange(N_labels), combinations]  # (N_combos, N_labels, N_xy = 2)
+    all_combos[:, :, 0] /= x_range
+    all_combos[:, :, 1] /= y_range
+    dists = np.linalg.norm(all_combos[:, :, np.newaxis] - all_combos[:, np.newaxis, :], axis=-1)
+    # get upper diagonal of distances (removes self-distances = 0 and duplicates ((i,j) = (j,i))
+    mask = np.triu(np.ones((N_labels, N_labels)), k=1).astype(bool)
+    unique_dists = dists[:, mask]
+    dists_list = [sorted(sublist) for sublist in unique_dists.tolist()]
+    max_idx = dists_list.index(max(dists_list))
+    best_combo = all_combos[max_idx]
+    best_combo[:, 0] *= x_range
+    best_combo[:, 1] *= y_range  # reverse normalisation
+
+    # set y-offset to 0 except for vertical lines:
+    for i in range(N_labels):
+        if poss_label_positions[i, 0, 0] == poss_label_positions[i, -1, 0]:  # vertical line
+            best_combo[i, 1] -= np.mean(
+                poss_label_positions[i, :, 1]
+            )  # y_offset relative to midpoint (default for vertical lines)
+        else:
+            best_combo[i, 1] = 0  # zero y-offset
+
+    if return_best_norm_dist:
+        return best_combo, (dists_list[max_idx] or [np.inf])[0]  # inf if < 2 labels (no pairwise dists)
+
+    return best_combo
+
+
+def _add_line_labels(
+    intersections: Sequence[np.ndarray],
+    lines: dict[str, plt.Line2D],
+    x_range: float,
+    y_range: float,
+    label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
+) -> None:
+    """
+    Add labels to the competing phase lines.
+    """
+    if label_positions is True:  # use custom doped algorithm
+        poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
+        plot_label_positions, best_norm_min_dist = _find_best_label_positions(
+            poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+        )
+        if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
+            poss_label_positions = _possible_label_positions_from_bbox_intersections(
+                intersections, positions_per_line=5
+            )
+            plot_label_positions, best_norm_min_dist = _find_best_label_positions(
+                poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+            )
+
+    elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
+        orig_line_keys = list(lines)
+        lines = {k: lines[k] for k in lines if k in label_positions}  # drop any without positions
+        if not lines:
+            raise ValueError(
+                f"None of the supplied ``label_positions`` keys ({sorted(label_positions)}) match the "
+                f"plotted competing phase line formulae ({orig_line_keys})!"
+            )
+        plot_label_positions = np.array(  # reorder to match lines
+            [label_positions[k] for k in lines], dtype=float
+        )
+
+    else:  # list/tuple of label positions
+        plot_label_positions = np.array(label_positions, dtype=float)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "The value at position")
+        labelLines(
+            list(lines.values()),  # must be in same order as plotting order...
+            xvals=plot_label_positions[:, 0],
+            yoffsets=plot_label_positions[:, 1],
+            align=False,
+            color="black",
+        )
+
+
+def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None, exclude: set | None = None) -> None:
+    """
+    Adjust label positions to ensure they stay within plot bounds (ignoring any
+    ``Text`` artists in ``exclude``, e.g. pre-existing user labels).
+    """
+    xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    x_padding = padding or (xlim[1] - xlim[0]) * 0.1
+    y_padding = padding or (ylim[1] - ylim[0]) * 0.1
+
+    latexified_labels = {
+        artist.get_text(): artist
+        for artist in ax.get_children()
+        if isinstance(artist, plt.Text) and artist not in (exclude or ())
+    }
+    for text in latexified_labels.values():
+        bbox = text.get_window_extent().transformed(ax.transData.inverted())
+        new_position = text.get_position()
+        delta_x = delta_y = 0.0
+
+        if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
+            if bbox.xmin < xlim[0]:  # shift right if label starts before xmin
+                delta_x = (xlim[0] - bbox.xmin) + x_padding * 0.25
+            elif bbox.xmax > xlim[1]:  # shift left if label ends after xmax
+                delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
+
+            if bbox.ymin < ylim[0]:  # shift up if label starts before ymin
+                delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
+            if bbox.ymax > ylim[1]:  # shift down if label ends after ymax
+                delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
+
+            # Apply adjustments while keeping within bounds
+            if delta_x != 0 and new_position[0] + delta_x < xlim[1]:
+                new_position = (new_position[0] + delta_x, new_position[1])
+            if delta_y != 0 and new_position[1] + delta_y < ylim[1]:
+                new_position = (new_position[0], new_position[1] + delta_y)
+
+        text.set_position(new_position)
+
+
+def _add_legend(ax: plt.Axes, **legend_kwargs) -> None:
+    """
+    Add a legend to ``ax``, clear of the plotted markers, lines and texts.
+
+    The legend is placed at the height along the right edge of ``ax`` that is
+    furthest from them, or outside ``ax`` (on the right) if no position is
+    clear of them by at least ``borderaxespad`` (the legend to axes spacing).
+    User-specified positions (``loc``, ``bbox_to_anchor``, ``bbox_transform``
+    or ``mode``) are used as given.
+    """
+    legend = ax.legend(**legend_kwargs)
+    if {"loc", "bbox_to_anchor", "bbox_transform", "mode"} & legend_kwargs.keys():
+        return  # user-specified position
+
+    # obstacle boxes in display coordinates: lines, texts and scatter markers (as squares, with sizes as
+    # areas in pt^2, plus edge linewidths); ticks are ignored (as for matplotlib "best" positioning)
+    px_per_pt = ax.figure.dpi / 72
+    boxes = [artist.get_window_extent().extents for artist in [*ax.lines, *ax.texts]]
+    for markers in ax.collections:
+        if isinstance(markers, PathCollection):
+            xy = markers.get_offset_transform().transform(markers.get_offsets())
+            half_width = (np.sqrt(markers.get_sizes()) + markers.get_linewidth()).max(initial=0) / 2
+            boxes.extend(np.hstack([xy - half_width * px_per_pt, xy + half_width * px_per_pt]))
+    left, bottom, right, top = np.reshape(boxes, (-1, 4)).T
+
+    width, height = legend.get_window_extent().size
+    pad = legend.borderaxespad * legend.prop.get_size_in_points() * px_per_pt  # (as in matplotlib)
+    # candidate legend positions (lower-left corners): along the right edge, top-down in 1 pt steps:
+    x0 = ax.bbox.x1 - pad - width
+    y0s = np.arange(ax.bbox.y1 - pad - height, ax.bbox.y0 + pad, -px_per_pt)[:, None]
+    clearances = np.hypot(  # (n_heights, n_obstacles) arrays
+        np.maximum(np.maximum(left - x0 - width, x0 - right), 0),
+        np.maximum(np.maximum(bottom - y0s - height, y0s - top), 0),
+    ).min(axis=1, initial=np.inf)
+    if x0 >= ax.bbox.x0 + pad and clearances.max(initial=-np.inf) >= pad:  # fits, and clear
+        y_centre = ax.transAxes.inverted().transform((0, y0s[clearances.argmax(), 0] + height / 2))[1]
+        ax.legend(**legend_kwargs, loc="center right", bbox_to_anchor=(1, y_centre))  # (top-most if tied)
+    else:  # outside, on the right
+        ax.legend(**legend_kwargs, loc="center left", bbox_to_anchor=(1, 0.5))
