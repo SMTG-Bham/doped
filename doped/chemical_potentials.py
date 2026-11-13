@@ -12,7 +12,7 @@ import os
 import warnings
 from bisect import bisect_right
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from functools import cache
 from pathlib import Path
 from re import sub
@@ -21,14 +21,12 @@ from typing import TYPE_CHECKING, Any, overload
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from labellines import labelLines
 from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
 from monty.serialization import dumpfn, loadfn
 from mp_api.client.mprester import DEFAULT_THERMOTYPE_CRITERIA, MPRester, MPRestError
-from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import Composition, Element, Lattice, Structure
@@ -59,7 +57,13 @@ from doped.utils.parsing import (
     get_magnetization_from_vasprun,
     get_vasprun,
 )
-from doped.utils.plotting import doped_plot_style, get_colormap
+from doped.utils.plotting import (
+    _add_line_labels,
+    _get_line_intersections,
+    _nudge_labels_inside_axes,
+    doped_plot_style,
+    get_colormap,
+)
 from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
 from doped.vasp import (
     _MODULE_DIR,
@@ -5333,130 +5337,6 @@ def _plot_competing_phase_lines(
         )
 
 
-def _get_line_intersections(
-    f: Callable, xlim: tuple[float, float], ylim: tuple[float, float]
-) -> np.ndarray:
-    """
-    Get intersections of a line with the plot bounding box.
-    """
-    xmin, xmax = xlim
-    ymin, ymax = ylim
-    x_intersections = []
-    y_intersections = []
-
-    # Check intersections with vertical bounds (xmin and xmax)
-    y_at_xmin = f(xmin)
-    y_at_xmax = f(xmax)
-    if ymin <= y_at_xmin <= ymax:
-        x_intersections.append((xmin, float(y_at_xmin)))
-    if ymin <= y_at_xmax <= ymax:
-        x_intersections.append((xmax, float(y_at_xmax)))
-
-    # Check intersections with horizontal bounds (ymin and ymax)
-    if not np.isclose(float(y_at_xmin), float(y_at_xmax), atol=1e-4):  # not a horizontal line
-
-        def inv_f(yy):  # inverse of the line function
-            return (yy - f(0)) / (f(1) - f(0)) if f(1) != f(0) else xmin
-
-        x_at_ymin = inv_f(ymin)
-        x_at_ymax = inv_f(ymax)
-        if xmin <= x_at_ymin <= xmax:
-            y_intersections.append((float(x_at_ymin), ymin))
-        if xmin <= x_at_ymax <= xmax:
-            y_intersections.append((float(x_at_ymax), ymax))
-
-    # take unique points in case intersects at x/y corner (which would give a duplicate):
-    return np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
-
-
-def _add_line_labels(
-    intersections: Sequence[np.ndarray],
-    lines: dict[str, plt.Line2D],
-    x_range: float,
-    y_range: float,
-    label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
-) -> None:
-    """
-    Add labels to the competing phase lines.
-    """
-    if label_positions is True:  # use custom doped algorithm
-        poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
-        plot_label_positions, best_norm_min_dist = _find_best_label_positions(
-            poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
-        )
-        if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
-            poss_label_positions = _possible_label_positions_from_bbox_intersections(
-                intersections, positions_per_line=5
-            )
-            plot_label_positions, best_norm_min_dist = _find_best_label_positions(
-                poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
-            )
-
-    elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
-        orig_line_keys = list(lines)
-        lines = {k: lines[k] for k in lines if k in label_positions}  # drop any without positions
-        if not lines:
-            raise ValueError(
-                f"None of the supplied ``label_positions`` keys ({sorted(label_positions)}) match the "
-                f"plotted competing phase line formulae ({orig_line_keys})!"
-            )
-        plot_label_positions = np.array(  # reorder to match lines
-            [label_positions[k] for k in lines], dtype=float
-        )
-
-    else:  # list/tuple of label positions
-        plot_label_positions = np.array(label_positions, dtype=float)
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", "The value at position")
-        labelLines(
-            list(lines.values()),  # must be in same order as plotting order...
-            xvals=plot_label_positions[:, 0],
-            yoffsets=plot_label_positions[:, 1],
-            align=False,
-            color="black",
-        )
-
-
-def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None, exclude: set | None = None) -> None:
-    """
-    Adjust label positions to ensure they stay within plot bounds (ignoring any
-    ``Text`` artists in ``exclude``, e.g. pre-existing user labels).
-    """
-    xlim, ylim = ax.get_xlim(), ax.get_ylim()
-    x_padding = padding or (xlim[1] - xlim[0]) * 0.1
-    y_padding = padding or (ylim[1] - ylim[0]) * 0.1
-
-    latexified_labels = {
-        artist.get_text(): artist
-        for artist in ax.get_children()
-        if isinstance(artist, plt.Text) and artist not in (exclude or ())
-    }
-    for text in latexified_labels.values():
-        bbox = text.get_window_extent().transformed(ax.transData.inverted())
-        new_position = text.get_position()
-        delta_x = delta_y = 0.0
-
-        if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
-            if bbox.xmin < xlim[0]:  # shift right if label starts before xmin
-                delta_x = (xlim[0] - bbox.xmin) + x_padding * 0.25
-            elif bbox.xmax > xlim[1]:  # shift left if label ends after xmax
-                delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
-
-            if bbox.ymin < ylim[0]:  # shift up if label starts before ymin
-                delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
-            if bbox.ymax > ylim[1]:  # shift down if label ends after ymax
-                delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
-
-            # Apply adjustments while keeping within bounds
-            if delta_x != 0 and new_position[0] + delta_x < xlim[1]:
-                new_position = (new_position[0] + delta_x, new_position[1])
-            if delta_y != 0 and new_position[1] + delta_y < ylim[1]:
-                new_position = (new_position[0], new_position[1] + delta_y)
-
-        text.set_position(new_position)
-
-
 def _parse_entry_from_vasprun_and_catch_exception(
     vasprun_path: PathLike,
 ) -> tuple[str | ComputedStructureEntry, PathLike, bool, bool]:
@@ -5525,109 +5405,6 @@ def _warn_skipped_folders(
             f"{output_file} files could not be found in the following directories{parent_folder_string}, "
             f"and so they will be skipped for parsing:\n" + "\n".join(folders)
         )
-
-
-def _possible_label_positions_from_bbox_intersections(
-    intersections: Sequence[NDArray[np.floating[Any]]] | NDArray[np.floating[Any]],
-    positions_per_line: int = 3,
-) -> NDArray[np.floating[Any]]:
-    """
-    From a list or array of ``intersections``, which contains the intersections
-    of lines with a plot bounding box (limits) and thus has shape ``(N_lines,
-    2, 2)`` (because 2 intersections with 2 (x,y) coordinates per line),
-    returns ``positions_per_line`` uniformly-spaced possible x,y coordinates
-    for labels of those lines.
-
-    e.g. if ``positions_per_line = 3`` (default), then returns the x,y
-    coordinates for the positions which are 1/4, 2/4 and 3/4 along the line
-    between the two bbox intersections.
-
-    Args:
-        intersections (list or np.ndarray):
-            A list or array of intersections of lines with the plot bounding
-            box. Should have shape ``(N_lines, 2, 2)``.
-        positions_per_line (int):
-            The number of possible label positions per line to return. Default
-            is 3, which returns positions at 1/4, 2/4 and 3/4 along the line
-            between the two bbox intersections.
-
-    Returns:
-        np.ndarray:
-            The possible label positions, with shape
-            ``(N_lines, positions_per_line, 2)``.
-    """
-    points = np.array([pts[:2] for pts in intersections], dtype=float).reshape(-1, 2, 2)  # first 2 points
-    first_pt_factor = np.arange(positions_per_line, 0, -1) / (positions_per_line + 1)  # (positions,)
-    second_pt_factor = 1 - first_pt_factor
-    return (  # (N_lines, positions_per_line, 2)
-        points[:, 0, None, :] * first_pt_factor[None, :, None]
-        + points[:, 1, None, :] * second_pt_factor[None, :, None]
-    )
-
-
-def _find_best_label_positions(
-    poss_label_positions: NDArray[np.floating[Any]],
-    x_range: float = 1,
-    y_range: float = 1,
-    return_best_norm_dist: bool = False,
-) -> NDArray[np.floating[Any]] | tuple[NDArray[np.floating[Any]], float]:
-    """
-    From an array of possible label positions, find the best possible
-    combination of label positions which maximises the distance between labels
-    (i.e. minimises overlap).
-
-    Args:
-        poss_label_positions (np.ndarray):
-            The possible label positions, with shape
-            ``(N_lines, positions_per_line, 2)``.
-        x_range (float):
-            The range of the x-axis to use for normalisation. Default is 1.
-        y_range (float):
-            The range of the y-axis to use for normalisation. Default is 1.
-        return_best_norm_dist (bool):
-            Whether to return the best normalised minimum distance between
-            labels. Default is ``False``.
-
-    Returns:
-        np.ndarray:
-            The best possible label positions, with shape ``(N_lines, 2)``,
-            where the second dimension is (x,y-offset) coordinates.
-        float:
-            The best normalised minimum distance between labels,
-            if ``return_best_norm_dist`` is True.
-    """
-    # Get all possible combinations of indices, for the first two dimensions (N_labels,
-    # N_possibilities_per_label):
-    N_labels, N_possibilities_per_label = poss_label_positions.shape[:2]  # (..., N_xy = 2)
-    combinations = np.array(  # (N_possibilities_per_label**N_labels, N_labels)
-        list(itertools.product(range(N_possibilities_per_label), repeat=N_labels)), dtype=int
-    ).reshape(-1, N_labels)
-    all_combos = poss_label_positions[np.arange(N_labels), combinations]  # (N_combos, N_labels, N_xy = 2)
-    all_combos[:, :, 0] /= x_range
-    all_combos[:, :, 1] /= y_range
-    dists = np.linalg.norm(all_combos[:, :, np.newaxis] - all_combos[:, np.newaxis, :], axis=-1)
-    # get upper diagonal of distances (removes self-distances = 0 and duplicates ((i,j) = (j,i))
-    mask = np.triu(np.ones((N_labels, N_labels)), k=1).astype(bool)
-    unique_dists = dists[:, mask]
-    dists_list = [sorted(sublist) for sublist in unique_dists.tolist()]
-    max_idx = dists_list.index(max(dists_list))
-    best_combo = all_combos[max_idx]
-    best_combo[:, 0] *= x_range
-    best_combo[:, 1] *= y_range  # reverse normalisation
-
-    # set y-offset to 0 except for vertical lines:
-    for i in range(N_labels):
-        if poss_label_positions[i, 0, 0] == poss_label_positions[i, -1, 0]:  # vertical line
-            best_combo[i, 1] -= np.mean(
-                poss_label_positions[i, :, 1]
-            )  # y_offset relative to midpoint (default for vertical lines)
-        else:
-            best_combo[i, 1] = 0  # zero y-offset
-
-    if return_best_norm_dist:
-        return best_combo, (dists_list[max_idx] or [np.inf])[0]  # inf if < 2 labels (no pairwise dists)
-
-    return best_combo
 
 
 def _get_bulk_comp_from_chempots(chempots: dict) -> str | None:
