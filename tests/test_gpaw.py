@@ -47,6 +47,7 @@ from doped.io.inputs import _get_bulk_folder_name
 from doped.io.outputs import nelect_from_eigenvalues
 from doped.parsing import DefectParser, DefectsParser, _handle_charge_correction_errors
 from doped.thermodynamics import DefectThermodynamics
+from doped.utils.eigenvalues import _is_noncollinear
 
 
 class GPAWTest(unittest.TestCase):
@@ -1112,34 +1113,46 @@ def test_background_charge_restart(tmp_path):
 def test_non_collinear_restart(tmp_path):
     """
     Check that the total and atomic magnetic moments parsed for a non-collinear
-    calculation (here a triplet O atom, with its moment along x) are the full
+    calculation (here an OH radical, with its moment along x) are the full
     vectors, rather than just their z components (as given by ``GPAW``'s
     ``get_magnetic_moment(s)()``; here zero, which would give a singlet).
 
-    Non-collinear PAW projections are not yet supported, so are skipped.
+    Also checks the orbital weights from the PAW projections of non-collinear
+    calculations, with and without spin-orbit coupling (SOC), with two
+    different atoms and two k-points to check the layout of the projections.
     """
     gpaw = pytest.importorskip("gpaw")
-    atoms = molecule("O")  # with an initial magnetic moment of 2 (triplet)
+    atoms = molecule("OH")  # doublet, with its bond along z
     atoms.center(vacuum=2.5)
     atoms.pbc = True
     outputs, entries = [], []
-    for magmoms in (None, [[2.0, 0.0, 0.0]]):  # collinear (moment along z), then non-collinear (along x)
-        atoms.calc = gpaw.GPAW(mode=gpaw.PW(200), magmoms=magmoms, symmetry="off", txt=None)
+    for soc, magmoms in (
+        (False, None),  # collinear (moment along z)
+        (False, [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),  # non-collinear, with the (O) moment along x
+        (True, [[0.0, 0.0, 1.0], [0.0, 0.0, 0.0]]),  # with SOC, and the moment along the bond (z)
+    ):
+        atoms.calc = gpaw.GPAW(
+            mode={"name": "pw", "ecut": 200, "soc": soc},
+            kpts={"size": (2, 1, 1), "gamma": True},  # (Γ and X)
+            magmoms=magmoms,
+            symmetry="off",
+            txt=None,
+        )
         atoms.get_potential_energy()
         atoms.calc.write(tmp_path / "singlepoint.gpw")
         atoms.calc = None
         outputs.append(get_calculation_outputs(tmp_path, calculator="gpaw"))
         entries.append(get_competing_phase_entry(tmp_path))  # (as a competing phase)
 
-    collinear, non_collinear = outputs
+    collinear, non_collinear, with_soc = outputs
     assert isinstance(collinear.magnetization, float)
-    assert collinear.magnetization == pytest.approx(2, abs=1e-3)
-    np.testing.assert_allclose(non_collinear.magnetization, [2, 0, 0], atol=1e-3)
-    assert collinear.spin_degeneracy() == non_collinear.spin_degeneracy() == 3
-    (magmom,) = collinear.structure.site_properties["final_magmom"]  # (in-sphere, so less than 2)
-    assert magmom > 0.5
+    assert collinear.magnetization == pytest.approx(1, abs=1e-3)
+    np.testing.assert_allclose(non_collinear.magnetization, [1, 0, 0], atol=1e-3)
+    assert collinear.spin_degeneracy() == non_collinear.spin_degeneracy() == 2
+    magmoms = collinear.structure.site_properties["final_magmom"]  # (in-sphere, so less than 1)
+    assert magmoms[0] > 0.3  # (mostly on O)
     np.testing.assert_allclose(
-        non_collinear.structure.site_properties["final_magmom"], [[magmom, 0, 0]], atol=1e-3
+        non_collinear.structure.site_properties["final_magmom"], [[m, 0, 0] for m in magmoms], atol=1e-3
     )
     assert non_collinear.energy == pytest.approx(collinear.energy, abs=1e-3)
     # likewise as competing phases (read with ``ase``, which misreads the band energies of non-collinear
@@ -1155,11 +1168,35 @@ def test_non_collinear_restart(tmp_path):
             atol=1e-6,
         )
 
-    # with projections for both spinor components of each band, which are not (yet) mapped to weights:
-    assert collinear.projected_eigenvalues is not None
-    assert non_collinear.projected_eigenvalues is None
-    with pytest.raises(ValueError, match="non-collinear calculations are not yet supported"):
-        load_eigenvalue_outputs(tmp_path)
+    # orbital weights, with one (k-point, band, atom, orbital) array per spin channel; for non-collinear
+    # calculations these are summed over the two spinor components of each band, so without SOC the spinor
+    # bands are the collinear spin-up and spin-down bands (moment rotated):
+    for calc_outputs in outputs:
+        assert {s: w.shape for s, w in calc_outputs.projected_eigenvalues.items()} == {
+            s: (*e.shape[:2], 2, 16) for s, e in calc_outputs.eigenvalues.items()
+        }
+
+    def lowest_bands(calc_outputs, k):  # energies & per-atom (s, p, d, f) weights of 8 lowest bands at k
+        energies = np.concatenate([e[k, :, 0] for e in calc_outputs.eigenvalues.values()])
+        weights = np.concatenate([w[k] for w in calc_outputs.projected_eigenvalues.values()])
+        order = np.argsort(energies, kind="stable")[:8]  # (O 2s, sigma and pi bands, both spins)
+        return energies[order], np.add.reduceat(weights[order], [0, 1, 4, 9], axis=-1)
+
+    for k in range(2):
+        energies, weights = lowest_bands(collinear, k)
+        assert np.all(weights[:2, 0, 0] > 0.6)  # O 2s (~0.69)
+        assert np.all(weights[2:4, 1, 0] > 0.1)  # H 1s in the sigma bands (~0.16)
+        np.testing.assert_allclose(lowest_bands(non_collinear, k)[0], energies, atol=1e-4)
+        np.testing.assert_allclose(lowest_bands(non_collinear, k)[1], weights, atol=1e-4)
+        np.testing.assert_allclose(lowest_bands(with_soc, k)[0], energies, atol=1e-2)  # (small SOC shifts)
+        np.testing.assert_allclose(lowest_bands(with_soc, k)[1], weights, atol=1e-3)
+    assert with_soc.run_metadata["gpaw_parameters"]["mode"]["soc"]
+    assert [_is_noncollinear(calc_outputs) for calc_outputs in outputs] == [False, True, True]
+
+    eigenvalue_outputs = load_eigenvalue_outputs(tmp_path)  # (last-written, SOC calculation)
+    np.testing.assert_array_equal(
+        eigenvalue_outputs.projected_eigenvalues[Spin.up], with_soc.projected_eigenvalues[Spin.up]
+    )
 
 
 def test_gpaw_competing_phase_example_inputs(tmp_path):

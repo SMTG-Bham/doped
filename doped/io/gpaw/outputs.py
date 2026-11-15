@@ -326,15 +326,16 @@ def _get_projected_eigenvalues(
     gpw_file: PathLike, calc, eigenvalues: dict[Spin, np.ndarray]
 ) -> dict[Spin, np.ndarray]:
     """
-    Map stored (collinear) PAW projections to orbital weights per spin,
-    k-point, band and atom.
+    Map stored PAW projections to orbital weights per spin, k-point, band and
+    atom.
 
     The weight of projector ``i`` is ``Re[conj(P_i) * sum_j N0_ij P_j]``, with
     ``N0`` (``setup.N0_p``) the overlaps of the all-electron partial waves
     within the PAW augmentation sphere, as used by ``GPAW`` for local magnetic
     moments. These are summed over the radial channels of each harmonic, which
     for each angular momentum are in the same order as ``pymatgen`` (e.g. py,
-    pz, px).
+    pz, px). For non-collinear calculations (e.g. with spin-orbit coupling),
+    the weights of the two spinor components of each band are summed.
 
     Atoms with non-PAW setups (e.g. ``HGH`` pseudopotentials) have no partial
     waves, so their weights are instead the squared projections onto their
@@ -355,20 +356,26 @@ def _get_projected_eigenvalues(
 
     setups = [calc.setups[a] for a in range(len(calc.atoms))]
     nkpoints, nbands = next(iter(eigenvalues.values())).shape[:2]
-    expected_shape = (len(eigenvalues), nkpoints, nbands, sum(setup.ni for setup in setups))
-    if coefficients.shape != expected_shape:
+    collinear_shape = (len(eigenvalues), nkpoints, nbands, sum(setup.ni for setup in setups))
+    non_collinear_shape = (nkpoints, nbands, 2, collinear_shape[-1])  # (2 spinor components, no spin axis)
+    if coefficients.shape == collinear_shape:  # -> (spin, k-point, band, spinor component, projector):
+        coefficients = coefficients[:, :, :, None]
+    elif coefficients.shape == non_collinear_shape:
+        coefficients = coefficients[None]
+    else:
         raise ValueError(
             f"Unexpected PAW projection shape in {gpw_file}: {coefficients.shape}, expected "
-            f"{expected_shape} (note that non-collinear calculations are not yet supported here)."
+            f"{collinear_shape} (or {non_collinear_shape} for non-collinear calculations)."
         )
 
-    weights = np.zeros((*expected_shape[:3], len(setups), 16))  # s, p, d and f harmonics
+    weights = np.zeros((*coefficients.shape[:3], len(setups), 16))  # s, p, d and f harmonics
     offset = 0
     for atom_index, setup in enumerate(setups):
         projections = coefficients[..., offset : offset + setup.ni]
         # plain squared projections for non-PAW setups (all-zero ``N0_p``), as in GPAW's PDOS:
         metric = unpack_hermitian(setup.N0_p) if np.any(setup.N0_p) else np.eye(setup.ni)
-        charges = (projections.conj() * (projections @ metric)).real  # (in-sphere) charge per projector
+        # (in-sphere) charge per projector, summed over spinor components for non-collinear calculations:
+        charges = (projections.conj() * (projections @ metric)).real.sum(axis=-2)
         ells = [pt.get_angular_momentum_number() for pt in setup.pt_j]  # of each radial projector function
         harmonics = np.array([ell**2 + m for ell in ells for m in range(2 * ell + 1)], dtype=int)
         weights[..., atom_index, :] = charges @ (harmonics[:, None] == np.arange(16))  # sum over channels
@@ -567,10 +574,10 @@ def get_calculation_outputs(
             ``"defect"``), for informative warnings. Default is
             ``"calculation"``.
         parse_projected_eigen (bool):
-            Whether to parse the (collinear) PAW projections stored in the
-            ``.gpw`` file, for eigenvalue analysis. If ``None`` (default),
-            tries to parse projections but with no warning if this fails; if
-            ``True``, warns on failure; if ``False``, skips projection parsing.
+            Whether to parse the PAW projections stored in the ``.gpw`` file,
+            for eigenvalue analysis. If ``None`` (default), tries to parse
+            projections but with no warning if this fails; if ``True``, warns
+            on failure; if ``False``, skips projection parsing.
         subfolder (PathLike):
             Optional subfolder within ``path`` containing the ``.gpw`` file.
             Default is ``None``.

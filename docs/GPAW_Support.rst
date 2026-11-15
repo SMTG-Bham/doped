@@ -179,8 +179,8 @@ Use :meth:`~doped.core.DefectEntry.get_eigenvalue_analysis` (e.g.
 ``defect_dict["v_Mg_-2"].get_eigenvalue_analysis()``) to analyse the band edge
 and in-gap states of a GPAW defect calculation, as described in the
 :ref:`eigenvalue analysis tips <Tips:Eigenvalue / Electronic Structure Analysis>`,
-using the (collinear) PAW projections stored in the bulk and defect ``.gpw``
-files.
+using the PAW projections stored in the bulk and defect ``.gpw`` files (summed
+over the two spinor components of each band for non-collinear calculations).
 
 Chemical potentials and formation energies
 ------------------------------------------
