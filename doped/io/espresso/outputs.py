@@ -660,6 +660,31 @@ def _archived_exists(path: PathLike) -> bool:
     return False
 
 
+def find_calc_output(directory: PathLike) -> str:
+    """
+    Find the ``pw.x`` XML output file in a calculation ``directory``, searching
+    the ``CALC_OUTPUT_MASK`` patterns in order (so that ``pw.x``'s default
+    ``<prefix>.xml`` naming is found, not just ``espresso.xml``).
+
+    Used by :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` for
+    calculation output file selection.
+
+    Args:
+        directory (PathLike):
+            Path to the calculation directory.
+
+    Returns:
+        str: Path to the espresso XML output file.
+
+    Raises:
+        FileNotFoundError: If no espresso XML output file is found.
+    """
+    calc_output_path = _resolve_calc_output_path(directory)
+    if not os.path.isfile(calc_output_path):
+        raise FileNotFoundError(f"No Quantum ESPRESSO XML output file found in: {directory}")
+    return str(calc_output_path)
+
+
 def get_calculation_outputs(
     path: PathLike,
     load_planar_averaged_potentials: bool = False,
@@ -1559,38 +1584,42 @@ def check_run_compatibility(
 MISMATCH_WARNING_SPECS = {
     "mismatching_QE_input_params": {
         "object_name": "espresso input parameters",
+        "data_key": "qe_input",
         "per_defect_warning_prefix": "There are mismatching espresso input parameters",
         "transform": set,
-        "message": lambda lst: (
-            "'Defects: (espresso parameter, value in defect calculation, value in bulk "
-            "calculation)'; cutoffs & smearing widths in Ry):\n"
-            f"{_format_mismatching_qe_input_warning(lst)}\n"
+        "format": (
+            "'{names}: (espresso parameter, value in {name_1} calculation, value in {name_2} "
+            "calculation)'; cutoffs & smearing widths in Ry):"
+        ),
+        "body": _format_mismatching_qe_input_warning,
+        "closing": (
             "In general, the same espresso input settings should be used in all final calculations "
             "for parameters which can affect energies!"
         ),
     },
     "mismatching_pseudo_filenames": {
         "object_name": "pseudopotentials",
+        "data_key": "pseudo_filenames",
         "per_defect_warning_prefix": "The pseudopotentials",
-        "transform": lambda pseudo_mismatches: pseudo_mismatches,
-        "message": lambda lst: (
-            "(pseudopotential in defect calculation, pseudopotential in bulk calculation)):\n"
-            + "\n".join(f"{name}: {mismatching}" for name, mismatching in lst)
-            + "\nThe same pseudopotentials should be used for all calculations for accurate results!"
-        ),
+        "format": "(pseudopotential in {name_1} calculation, pseudopotential in {name_2} calculation)):",
+        "closing": "The same pseudopotentials should be used for all calculations for accurate results!",
     },
     "mismatching_kpoints": {
         "object_name": "k-point settings",
+        "data_key": "kpoints",
         "per_defect_warning_prefix": "The k-point sampling",
-        "transform": lambda kpoint_mismatches: kpoint_mismatches,
-        "message": lambda lst: (
-            "(defect k-points, bulk k-points)):\n"
-            + "\n".join(f"{name}: {mismatching}" for name, mismatching in lst)
-            + "\nThe same k-point settings should be used for all final calculations for "
-            "accurate results!"
+        "format": "({name_1} k-points, {name_2} k-points)):",
+        "closing": (
+            "The same k-point settings should be used for all final calculations for accurate results!"
         ),
     },
 }
+"""
+Specifications for collectively warning about mismatching (espresso)
+calculation settings, as stored in ``DefectEntry.calculation_metadata``; see
+``doped.io.vasp.outputs.MISMATCH_WARNING_SPECS`` and
+:func:`doped.io.utils._warn_calculation_mismatches` for the format.
+"""
 
 # =====================================================================================================
 # Quantum ESPRESSO utilities for thermodynamics.py

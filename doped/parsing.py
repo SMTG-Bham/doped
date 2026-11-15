@@ -2776,8 +2776,9 @@ class DefectParser:
         if bulk_site_potentials is None and self.bulk_outputs is not None:
             bulk_site_potentials = self.bulk_outputs.site_potentials  # already parsed
 
-        backend_kwargs = _backend_potential_kwargs(  # e.g. espresso's ``beta``, if given
-            self._backend.get_site_potentials, self.kwargs
+        backend_kwargs = _backend_potential_kwargs(  # e.g. espresso's ``beta``, if given; getattr as
+            getattr(self._backend, "get_site_potentials", None),  # optional backend hook (e.g. serialized)
+            self.kwargs,
         )
 
         if bulk_site_potentials is None:
