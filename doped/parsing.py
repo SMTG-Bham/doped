@@ -956,9 +956,10 @@ class DefectsParser:
                 Calculator-specific potential-parsing options are also
                 forwarded to the ``doped.io`` backend where it accepts them,
                 and ignored otherwise -- currently ``beta``, the Gaussian
-                broadening width used when sampling atomic-site potentials
-                from a volumetric file (in bohr, for ``pp.x`` ``.cube`` files
-                with espresso; unused with VASP).
+                broadening width in Å used when sampling atomic-site potentials
+                from a volumetric file, either as a single value or a
+                ``{element symbol: width}`` dict. Defaults to per-element
+                widths from the PAW compensation-charge radii.
                 Note that ``bulk_symprec`` can be supplied as the ``symprec``
                 value to use for determining equivalent sites (and thus defect
                 multiplicities / bulk site symmetries), while an input
@@ -1376,7 +1377,7 @@ class DefectsParser:
                 "`DefectsParser.defect_dict`."
             )
 
-        kwargs.setdefault("calculator", self.calculator)  
+        kwargs.setdefault("calculator", self.calculator)
         return DefectThermodynamics(
             list(self.defect_dict.values()),
             chempots=chempots,
@@ -1775,7 +1776,7 @@ potential-parsing functions (``get_site_potentials()`` /
 ``get_planar_averaged_potentials()``).
 
 Currently just ``beta``, the Gaussian broadening width used when sampling
-atomic-site potentials from a volumetric file (``pp.x`` ``.cube`` with
+atomic site potentials from a volumetric file (``pp.x`` ``.cube`` with
 espresso). Only those a given backend actually accepts are passed on (see
 :func:`_backend_potential_kwargs`), so these remain optional for any backend
 and no backend needs to know about options it does not use.
@@ -2021,9 +2022,7 @@ def _handle_charge_correction_errors(
     eFNV_correction_errors: list[tuple[str, float]] = []
 
     defect_thermo = (
-        DefectThermodynamics(
-            list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
-        )
+        DefectThermodynamics(list(defect_dict.values()), check_compatibility=False, skip_dos_check=True)
         if _band_edges_available(defect_dict.values())
         else None
     )
@@ -2036,9 +2035,7 @@ def _handle_charge_correction_errors(
     for name, defect_entry in defect_dict.items():
         if defect_thermo is not None:
             # first check if it's a stable defect:
-            fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(
-                defect_entry
-            )
+            fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
 
             if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method
                 defect_entry.is_shallow  # here as this would require two |DefectThermodynamics| inits
@@ -2417,9 +2414,10 @@ class DefectParser:
                 Calculator-specific potential-parsing options are also
                 forwarded to the ``doped.io`` backend where it accepts them,
                 and ignored otherwise -- currently ``beta``, the Gaussian
-                broadening width used when sampling atomic-site potentials
-                from a volumetric file (in bohr, for ``pp.x`` ``.cube`` files
-                with espresso; unused with VASP).
+                broadening width in Å used when sampling atomic-site potentials
+                from a volumetric file, either as a single value or a
+                ``{element symbol: width}`` dict. Defaults to per-element
+                widths from the PAW compensation-charge radii.
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
@@ -2564,9 +2562,10 @@ class DefectParser:
                 Calculator-specific potential-parsing options are also
                 forwarded to the ``doped.io`` backend where it accepts them,
                 and ignored otherwise -- currently ``beta``, the Gaussian
-                broadening width used when sampling atomic-site potentials
-                from a volumetric file (in bohr, for ``pp.x`` ``.cube`` files
-                with espresso; unused with VASP).
+                broadening width in Å used when sampling atomic-site potentials
+                from a volumetric file, either as a single value or a
+                ``{element symbol: width}`` dict. Defaults to per-element
+                widths from the PAW compensation-charge radii.
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
