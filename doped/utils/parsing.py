@@ -410,9 +410,10 @@ def _determine_subfolder(
         if candidate_folders is not None
         else files_df
     )
+    folder_names = sorted({p.name for p in candidate_folder_df["folder_path"]})  # sorted for determinism
     for subfolder in subfolder_priority:
-        if any(subfolder in p.name.lower() for p in candidate_folder_df["folder_path"].unique()):
-            return subfolder
+        if match := next((name for name in folder_names if name.lower() == subfolder), None):
+            return match  # return matched name (not ``subfolder`` key which may differ)
     return "."
 
 
@@ -439,8 +440,9 @@ def _find_calc_outputs(
     Returns:
         tuple[pd.DataFrame, list[str], str]:
             ``(calc_files_df, candidate_folders, resolved_subfolder)``
-            where *resolved_subfolder* is ``"."`` when no priority
-            subfolder is found.
+            where ``resolved_subfolder`` is the auto-detected subfolder name
+            (or ``"."`` when no priority subfolder is found), or ``subfolder``
+            if set.
     """
     calc_files_df = _get_calc_files_df(Path(output_path))
     if calc_files_df.empty:
