@@ -831,9 +831,10 @@ def calculation_outputs_from_pwxml(
     band_gap, cbm, vbm, _direct = pwxml.eigenvalue_band_properties if pwxml.eigenvalues else (None,) * 4
     band_gap, cbm = _handle_infinite_band_gap(band_gap, cbm, path)
 
-    charge = None
-    with contextlib.suppress(AttributeError):
-        charge = pwxml.total_charge
+    charge = getattr(pwxml, "total_charge", None)  # only set by some pymatgen-io-espresso versions
+    if charge is None:  # otherwise read ``tot_charge`` from the raw parsed XML input section:
+        with contextlib.suppress(AttributeError, KeyError, TypeError, ValueError):
+            charge = float(parse_pwvals(pwxml._raw_dict["input"]["bands"]["tot_charge"]))
 
     projected_eigenvalues = pwxml.projected_eigenvalues
     if projected_eigenvalues is None and projections is not None:
@@ -1541,6 +1542,8 @@ def check_run_compatibility(
     qe_input_mismatches = _compare_qe_input_parameters(
         run_metadata["bulk_qe_input"],
         run_metadata["defect_qe_input"],
+        # smearing can legitimately differ between defect & bulk (as with VASP ``ISMEAR``/``SIGMA``):
+        ignore_params={"occupations", "smearing", "degauss"},
         ref_name="bulk",
         entry_name="defect",
         warn=warn,

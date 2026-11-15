@@ -37,12 +37,33 @@ corrections, using the MgO example data in ``examples/MgO_qe``.
 #    for espresso is separate work (see the tracking issue).
 
 import os
+import shutil
+import tempfile
 import unittest
 import warnings
 
 import numpy as np
+import pytest
+from pymatgen.core import Lattice, Structure
+from pymatgen.core.units import Ry_to_eV, bohr_to_angstrom
+from pymatgen.io.vasp import VolumetricData
 
-from doped.io.espresso.outputs import BOHR_TO_ANGSTROM, PAW_COMPENSATION_RADII
+# the espresso backend needs the optional ``pymatgen-io-espresso`` dependency; skip (rather than fail
+# collection of) this module without it:
+pytest.importorskip("pymatgen.io.espresso")
+
+from pymatgen.io.espresso.outputs import PWxml
+
+from doped.io import get_calculation_outputs
+from doped.io.espresso.outputs import (
+    _FALLBACK_SMEARING_WIDTH,
+    BOHR_TO_ANGSTROM,
+    MISMATCH_WARNING_SPECS,
+    PAW_COMPENSATION_RADII,
+    check_run_compatibility,
+    get_atomic_site_potentials,
+)
+from doped.io.utils import _warn_calculation_mismatches
 from doped.parsing import DefectsParser
 
 MGO_DIELECTRIC = 8.8963
@@ -128,3 +149,220 @@ class EspressoBetaTestCase(unittest.TestCase):
 
         diffs = [abs(corrections[name] - ref) for name, ref in VASP_CORRECTIONS.items()]
         assert np.mean(diffs) > 0.05, diffs  # cf. <0.006 eV for the per-element default
+
+
+class EspressoCalculationOutputsTestCase(unittest.TestCase):
+    """
+    ``get_calculation_outputs(..., calculator="espresso")`` fields.
+    """
+
+    def test_charge_from_xml(self):
+        """
+        The supercell charge is read from the ``pw.x`` XML (``tot_charge``),
+        including with ``pymatgen-io-espresso`` versions whose ``PWxml`` has no
+        ``total_charge`` attribute, rather than being left to the folder-name
+        guess -- so it is tested here in folders without a ``_±q`` suffix.
+        """
+        defects_dir = os.path.join(os.path.dirname(__file__), "../examples/MgO_qe/Defects")
+        for name, charge in [("Mg_O_+1", 1), ("Mg_O_+4", 4), ("MgO_bulk", 0)]:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                shutil.copy(os.path.join(defects_dir, name, "espresso_std", "espresso.xml"), tmpdir)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")  # pymatgen-io-espresso ``NotImplementedForQE`` etc.
+                    outputs = get_calculation_outputs(tmpdir, calculator="espresso")
+            assert outputs.charge == charge, f"{name}: {outputs.charge}"
+
+    def test_smearing_not_compared_between_defect_and_bulk(self):
+        """
+        Smearing settings (``occupations``/``smearing``/``degauss``) can
+        legitimately differ between defect and bulk supercell calculations (as
+        with VASP ``ISMEAR``/``SIGMA``), so are not flagged as mismatches --
+        e.g. the smeared ``Mg_O_+1`` vs fixed-occupation bulk MgO calculations.
+        """
+        defects_dir = os.path.join(os.path.dirname(__file__), "../examples/MgO_qe/Defects")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # pymatgen-io-espresso ``NotImplementedForQE`` etc.
+            defect_pwxml, bulk_pwxml = (
+                PWxml(os.path.join(defects_dir, name, "espresso_std", "espresso.xml"))
+                for name in ("Mg_O_+1", "MgO_bulk")
+            )
+        defect_occupations, bulk_occupations = (
+            pwxml.parameters["bands"]["occupations"] for pwxml in (defect_pwxml, bulk_pwxml)
+        )
+        assert defect_occupations != bulk_occupations  # smeared vs fixed occupations
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            compatibility = check_run_compatibility(defect_pwxml, bulk_pwxml)
+        assert compatibility["mismatching_QE_input_params"] is False
+        assert not [x for x in w if "mismatch" in str(x.message).lower()]
+
+    def test_mismatch_warning_specs(self):
+        """
+        The espresso ``MISMATCH_WARNING_SPECS`` render with the calculator-
+        agnostic mismatch-warning machinery (they previously used an older
+        schema, raising ``KeyError`` on any defect/bulk mismatch).
+        """
+        metadata = {
+            "mismatching_QE_input_params": [("ecutwfc", 60.0, 50.0)],
+            "mismatching_pseudo_filenames": [("O.pbe-n-kjpaw_psl.0.1.UPF", "O.pbe-rrkjus.UPF")],
+            "mismatching_kpoints": [((2, 2, 2), (3, 3, 3))],
+        }
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _warn_calculation_mismatches([("Mg_O_+1", metadata)], MISMATCH_WARNING_SPECS)
+        messages = [str(x.message) for x in w]
+        assert len(messages) == 3
+        assert "('ecutwfc', 60.0, 50.0)" in messages[0]
+        assert "value in defect calculation, value in bulk calculation" in messages[0]
+        assert (
+            "(pseudopotential in defect calculation, pseudopotential in bulk calculation)" in messages[1]
+        )
+        assert "Mg_O_+1: " in messages[1]
+        assert "O.pbe-rrkjus.UPF" in messages[1]
+        assert "(defect k-points, bulk k-points)" in messages[2]
+
+
+class SitePotentialSmearingTestCase(unittest.TestCase):
+    """
+    Tests for the Gaussian-smeared atomic-site potentials sampled from
+    volumetric potential outputs (``pp.x`` ``.cube``, VASP ``LOCPOT``), used
+    for the eFNV finite-size charge correction.
+    """
+
+    def test_smearing_matches_analytic_plane_wave_on_odd_grid(self):
+        """
+        Smearing a single plane wave must scale it by exactly ``exp(-beta^2
+        |G|^2 / 2)``, on odd FFT grids as well as even ones.
+
+        ``n = 35`` with ``h = 17`` places the wave in the Nyquist-most
+        frequency bin, which is the one (and only) bin where an
+        ``arange(-n//2, n//2)`` frequency ladder assigns the wrong Miller
+        index for odd ``n`` (``-18`` rather than ``+17``, i.e. ``|G|^2`` 12%
+        too large), giving a site potential ~23% too small here.
+        """
+        n, h, a, beta = 35, 17, 10.0, 0.3  # odd grid; Nyquist-most bin; cubic cell (Å); beta (Å)
+        structure = Structure(Lattice.cubic(a), ["H"], [[0.0, 0.0, 0.0]])
+        wave = np.cos(2 * np.pi * h * np.arange(n) / n)  # varies along the first lattice vector only
+        data = np.broadcast_to(wave[:, None, None], (n, n, n)).copy()
+
+        volumetric_data = VolumetricData(structure, {"total": data})
+        # the sampled potentials are negated, for the ``doped``/``pydefect`` eFNV sign convention:
+        site_potential = get_atomic_site_potentials(volumetric_data, beta=beta)["site_potentials"][0]
+
+        # exact to machine precision, as this site lies on a grid point; the wrong Miller index
+        # would shift the result by ~23%:
+        assert np.isclose(site_potential, -np.exp(-0.5 * beta**2 * (2 * np.pi * h / a) ** 2), rtol=1e-12)
+
+    def test_even_grid_frequencies_unchanged(self):
+        """
+        The previous ``arange``-based frequency ladder was only wrong for odd
+        grid dimensions, so no even-grid (e.g. VASP ``LOCPOT``) potentials or
+        reference values move with the switch to ``np.fft.fftfreq``.
+        """
+        for n in (2, 8, 40, 96):
+            assert np.array_equal(
+                np.fft.fftfreq(n, 1 / n), np.roll(np.arange(-n // 2, n // 2, 1, dtype=int), n // 2)
+            )
+
+    def test_per_element_smearing_widths(self):
+        """
+        With ``beta=None`` (the default), each site must be sampled from the
+        grid smeared with *its own* element's width (``rc``, from
+        ``PAW_COMPENSATION_RADII``), with elements missing from that table
+        falling back to the median tabulated radius with a warning.
+        """
+        assert np.isclose(_FALLBACK_SMEARING_WIDTH, np.median(list(PAW_COMPENSATION_RADII.values())))
+        assert 0.6 < _FALLBACK_SMEARING_WIDTH < 0.7  # bohr; within 25% of the heavy elements it serves
+        a, n = 8.0, 20
+        structure = Structure(
+            Lattice.cubic(a),
+            ["Cd", "Te", "Cd", "Tc"],  # Tc is not in ``PAW_COMPENSATION_RADII``
+            [[0, 0, 0], [0.5, 0.5, 0.5], [0.25, 0.5, 0.75], [0.75, 0.25, 0.5]],
+        )
+        axis = np.arange(n) / n
+        data = (  # deterministic, non-separable, with enough structure to resolve the widths apart
+            np.sin(2 * np.pi * axis)[:, None, None]
+            * np.cos(6 * np.pi * axis)[None, :, None]
+            * np.sin(8 * np.pi * axis)[None, None, :]
+            + np.cos(4 * np.pi * (axis[:, None, None] + axis[None, :, None] + axis[None, None, :]))
+        )
+        volumetric_data = VolumetricData(structure, {"total": data})
+
+        with pytest.warns(
+            UserWarning, match=r"No PAW compensation-charge radius is tabulated for \['Tc'\]"
+        ):
+            per_element = get_atomic_site_potentials(volumetric_data)["site_potentials"]
+
+        # widths are tabulated in bohr, and so converted here for this (eV, Å) ``VolumetricData`` input:
+        for width_bohr, sites in [
+            (PAW_COMPENSATION_RADII["Cd"], [0, 2]),
+            (PAW_COMPENSATION_RADII["Te"], [1]),
+            (_FALLBACK_SMEARING_WIDTH, [3]),  # the fallback width (table median), for Tc
+        ]:
+            single = get_atomic_site_potentials(volumetric_data, beta=width_bohr * BOHR_TO_ANGSTROM)[
+                "site_potentials"
+            ]
+            assert np.allclose(per_element[sites], single[sites], rtol=0, atol=1e-12)
+            others = [i for i in range(len(structure)) if i not in sites]
+            assert not np.any(np.isclose(per_element[others], single[others], rtol=0, atol=1e-12))
+
+    @staticmethod
+    def _cube_file(path, structure, data):
+        """
+        Write ``structure``/``data`` as a Gaussian ``.cube`` file (which uses
+        bohr throughout), for testing the ``.cube`` parsing branch.
+        """
+        matrix = structure.lattice.matrix / bohr_to_angstrom
+        lines = ["test cube", "written by doped's test suite", f"{len(structure)} 0.0 0.0 0.0"]
+        lines += [
+            f"{n} " + " ".join(f"{x:.12f}" for x in vector / n)
+            for n, vector in zip(data.shape, matrix, strict=True)
+        ]
+        lines += [
+            f"{site.specie.Z} 0.0 " + " ".join(f"{x:.12f}" for x in site.coords / bohr_to_angstrom)
+            for site in structure
+        ]
+        flat = data.ravel()  # z fastest, as ``.cube`` requires; 6 values per line by convention
+        lines += [" ".join(f"{v:.12e}" for v in flat[i : i + 6]) for i in range(0, flat.size, 6)]
+        with open(path, "w", encoding="utf-8") as file:
+            file.write("\n".join(lines) + "\n")
+
+    def test_beta_units_and_dict_input(self):
+        """
+        ``beta`` is in Å for every input type (``.cube`` potentials are in Ry
+        and their geometry in bohr, but ``beta`` is not), and can be given as a
+        ``{element symbol: width}`` dict, with unlisted elements taking their
+        tabulated default.
+        """
+        import tempfile
+
+        a, n = 8.0, 8
+        structure = Structure(
+            Lattice.cubic(a), ["Cd", "Te", "Cd"], [[0, 0, 0], [0.5, 0.5, 0.5], [0.25, 0.5, 0.75]]
+        )
+        axis = np.arange(n) / n
+        data = np.cos(2 * np.pi * (axis[:, None, None] + 2 * axis[None, :, None] - axis[None, None, :]))
+        volumetric_data = VolumetricData(structure, {"total": data})
+
+        with tempfile.TemporaryDirectory() as tmpdir:  # same beta must mean the same width for both
+            cube_path = os.path.join(tmpdir, "potential.cube")
+            self._cube_file(cube_path, structure, data)
+            cube = get_atomic_site_potentials(cube_path, beta=0.3)["site_potentials"]
+        locpot_like = get_atomic_site_potentials(volumetric_data, beta=0.3)["site_potentials"]
+        assert np.allclose(cube, Ry_to_eV * locpot_like, rtol=1e-8)  # only the potential units differ
+
+        # a dict sets the width per element, with any not given taking the tabulated default:
+        default = PAW_COMPENSATION_RADII["Te"] * BOHR_TO_ANGSTROM
+        mixed = get_atomic_site_potentials(volumetric_data, beta={"Cd": 0.4})["site_potentials"]
+        for width, sites in [(0.4, [0, 2]), (default, [1])]:
+            single = get_atomic_site_potentials(volumetric_data, beta=width)["site_potentials"]
+            assert np.allclose(mixed[sites], single[sites], rtol=0, atol=1e-12)
+            others = [i for i in range(len(structure)) if i not in sites]
+            assert not np.any(np.isclose(mixed[others], single[others], rtol=0, atol=1e-12))
+
+        # keys for elements absent from the structure are ignored without warning, as the same dict
+        # is used for the bulk and every defect supercell:
+        assert np.array_equal(
+            mixed,
+            get_atomic_site_potentials(volumetric_data, beta={"Cd": 0.4, "Mg": 0.3})["site_potentials"],
+        )

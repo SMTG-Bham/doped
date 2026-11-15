@@ -4,18 +4,19 @@ Quantum ESPRESSO (``pw.x``) calculation input file generation for ``doped``.
 Note that all structures are written with ``ibrav = 0`` and the subsequent ``CELL_PARAMETERS``
 card is used to write the lattice vectors.
 """
-#TODO: Input files for multi-oxidation states
+
+# TODO: Input files for multi-oxidation states
 import copy
 import os
 import warnings
-from functools import lru_cache
-from typing import TYPE_CHECKING
+from functools import cache
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from monty.json import MSONable
 from monty.serialization import loadfn
 from pymatgen.core import Composition
-from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
+from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.espresso.inputs.pwin import (
     AtomicPositionsCard,
     AtomicSpeciesCard,
@@ -61,9 +62,7 @@ _qe_hse_relax_defaults = default_qe_HSE_set
 # in ``pseudo_dir``, and ``pseudo_map`` overrides them for any element.
 QE_PSEUDO_LIBRARY: dict = {
     element: metadata["filename"]
-    for element, metadata in loadfn(
-        os.path.join(QE_SETS_DIR, "QE_PSEUDO_LIBRARY.json")
-    ).items()
+    for element, metadata in loadfn(os.path.join(QE_SETS_DIR, "QE_PSEUDO_LIBRARY.json")).items()
 }
 
 
@@ -116,8 +115,10 @@ def _set_starting_magnetization(system_settings: dict, ntyp: int) -> dict:
 def _set_ecutrho(system_settings: dict) -> dict:
     """
     Set ``ecutrho`` to ``4 * ecutwfc`` if not already set, and warn if a
-    supplied value is below that. These defaults are placeholders --
-    the user must set the cutoffs according to the pseudopotentials used.
+    supplied value is below that.
+
+    These defaults are placeholders -- the user must set the cutoffs according
+    to the pseudopotentials used.
     """
     ecutwfc = system_settings.get("ecutwfc")
     if ecutwfc is None:
@@ -128,17 +129,16 @@ def _set_ecutrho(system_settings: dict) -> dict:
         system_settings["ecutrho"] = 4 * ecutwfc
 
     elif ecutrho < 4 * ecutwfc:
-        warnings.warn(
-            f"`ecutrho` ({ecutrho} Ry) is less than 4x `ecutwfc` ({ecutwfc} Ry) "
-        )
+        warnings.warn(f"`ecutrho` ({ecutrho} Ry) is less than 4x `ecutwfc` ({ecutwfc} Ry) ")
 
     return system_settings
 
 
-def _kpoints_grid_from_reciprocal_density(
-    structure: Structure, reciprocal_density: float
-) -> list[int]:
-    """``[kx, ky, kz]`` Monkhorst-Pack grid at the given k-points-per-Å^-3 density."""
+def _kpoints_grid_from_reciprocal_density(structure: Structure, reciprocal_density: float) -> list[int]:
+    """
+    ``[kx, ky, kz]`` Monkhorst-Pack grid at the given k-points-per-Å^-3
+    density.
+    """
     kpoints_obj = Kpoints.automatic_density_by_vol(structure, kppvol=reciprocal_density)
     return [int(k) for k in kpoints_obj.kpts[0]]
 
@@ -158,8 +158,8 @@ def _build_qe_base_settings(
     """
     Build the per-structure base namelist dict from the default convergence
     YAML defaults (or the HSE06 hybrid-DFT defaults if ``use_hse``): sets
-    ``ibrav=0``, ``nat``, ``ntyp``, ``pseudo_dir``, optional metallic
-    smearing / spin-orbit coupling (``soc``), and merges any user overrides.
+    ``ibrav=0``, ``nat``, ``ntyp``, ``pseudo_dir``, optional metallic smearing
+    / spin-orbit coupling (``soc``), and merges any user overrides.
 
     Note that ``&IONS``/``&CELL`` overrides (``user_ions_settings`` /
     ``user_cell_settings``) only affect relaxation inputs: for the SCF
@@ -355,8 +355,8 @@ class DopedDictSetQE(MSONable):
         """
         The ``{element: UPF filename}`` mapping written to the
         ``ATOMIC_SPECIES`` card: the :data:`QE_PSEUDO_LIBRARY` defaults, with
-        ``pseudo_map`` overrides applied and a ``"{element}.upf"`` fallback
-        for elements absent from it.
+        ``pseudo_map`` overrides applied and a ``"{element}.upf"`` fallback for
+        elements absent from it.
 
         Warns if these files are not present in ``pseudo_dir`` -- no
         pseudopotential library is bundled with ``doped``, so any library of
@@ -371,12 +371,12 @@ class DopedDictSetQE(MSONable):
         return pseudos
 
     @staticmethod
-    @lru_cache(maxsize=None)  # only warn once per (``pseudo_dir``, pseudopotential set); the
+    @cache  # only warn once per (``pseudo_dir``, pseudopotential set); the
     # ``pseudopotentials`` property is re-evaluated for every defect in a ``DefectsSet``
     def _warn_if_pseudos_missing(pseudo_dir: str, pseudo_filenames: tuple[str, ...]) -> None:
         """
-        Warn if the UPF pseudopotential files to be written to ``ATOMIC_SPECIES``
-        are not actually present in ``pseudo_dir``.
+        Warn if the UPF pseudopotential files to be written to
+        ``ATOMIC_SPECIES`` are not actually present in ``pseudo_dir``.
 
         :data:`QE_PSEUDO_LIBRARY` only supplies the *filenames* espresso should
         look for; no pseudopotential library is shipped with ``doped``, so this
@@ -406,7 +406,7 @@ class DopedDictSetQE(MSONable):
                 f"{resolved_dir!r}) does not exist, so the pseudopotentials required by these espresso "
                 f"inputs could not be found. No pseudopotential library is bundled with `doped` -- "
                 f"point `pseudo_dir` at a directory of pseudopotentials you already have, or download "
-                f"a pseudopotential library."
+                f"a pseudopotential library.{default_note}"
             )
             return
 
@@ -424,7 +424,8 @@ class DopedDictSetQE(MSONable):
                 f"these espresso inputs were not found in `pseudo_dir` ({resolved_dir!r}): {shown}. "
                 f"These are the default filenames from `QE_PSEUDO_LIBRARY`, so they will not match if "
                 f"you are using a different pseudopotential library -- use `pseudo_map` to point the "
-                f"affected element(s) at the files you have, or download a pseudopotential library "
+                f"affected element(s) at the files you have, or download a pseudopotential library."
+                f"{default_note}"
             )
 
     @staticmethod
@@ -473,12 +474,8 @@ class DopedDictSetQE(MSONable):
             )
             structure = structure.copy()
             structure.remove_oxidation_states()
-        unique_species = sorted(
-            {str(el) for el in structure.species}, key=lambda s: Element(s).Z
-        )
-        resolved_pseudos = {
-            sp: QE_PSEUDO_LIBRARY.get(sp, f"{sp}.upf") for sp in unique_species
-        }
+        unique_species = sorted({str(el) for el in structure.species}, key=lambda s: Element(s).Z)
+        resolved_pseudos = {sp: QE_PSEUDO_LIBRARY.get(sp, f"{sp}.upf") for sp in unique_species}
         resolved_pseudos.update(pseudo_map or {})
         # this is a ``staticmethod`` so it re-resolves the pseudopotentials rather than using the
         # ``pseudopotentials`` property; check here too, as this is the path that actually writes files:
@@ -510,8 +507,8 @@ class DopedDictSetQE(MSONable):
         invalid_namelists = [nl_name for nl_name in namelist_settings if nl_name not in namelist_classes]
         if invalid_namelists:
             warnings.warn(
-                f"Ignoring unrecognised espresso namelist(s) {invalid_namelists} in `namelist_settings` when "
-                f"writing {filepath}; valid namelists are {list(namelist_classes)}. Check for typos "
+                f"Ignoring unrecognised espresso namelist(s) {invalid_namelists} in `namelist_settings` "
+                f"when writing {filepath}; valid namelists are {list(namelist_classes)}. Check for typos "
                 f"(e.g. 'electron' vs 'electrons')."
             )
         namelists: dict = {}
@@ -590,7 +587,6 @@ class DopedDictSetQE(MSONable):
             f"{self.structure.composition.reduced_formula} ({len(self.structure)} atoms), k-points: "
             f"{self.kpoints or 'gamma'}"
         )
-
 
 
 class DefectDictSetQE(DopedDictSetQE):
@@ -721,8 +717,10 @@ class DefectRelaxSetQE(MSONable):
                     f"Could not determine the defect supercell for {defect_entry!r}, so cannot "
                     f"generate its espresso input files."
                 )
-            self.bulk_supercell = bulk_supercell if bulk_supercell is not None else getattr(
-                defect_entry, "bulk_supercell", None
+            self.bulk_supercell = (
+                bulk_supercell
+                if bulk_supercell is not None
+                else getattr(defect_entry, "bulk_supercell", None)
             )
             self.charge_state = charge_state if charge_state is not None else defect_entry.charge_state
 
@@ -743,7 +741,7 @@ class DefectRelaxSetQE(MSONable):
         """
         kwargs: dict = {**self.dict_set_kwargs}
         kwargs.setdefault("soc", self.soc)
-        if bulk: 
+        if bulk:
             kwargs["calculation"] = "scf"  # single-point, on the already-relaxed bulk supercell
         kwargs.update(overrides)
 
@@ -805,7 +803,8 @@ class DefectRelaxSetQE(MSONable):
         """
         :class:`DefectDictSetQE` for the fixed-cell (``relax``) calculation of
         the defect supercell with spin-orbit coupling included (``noncolin =
-        .true.``, ``lspinorb = .true.``); the espresso analogue of ``vasp_ncl``.
+        .true.``, ``lspinorb = .true.``); the espresso analogue of
+        ``vasp_ncl``.
 
         Note that this is a relaxation, rather than the single-point (static)
         calculation, and that it is written from the *unrelaxed* defect
@@ -875,7 +874,9 @@ class DefectRelaxSetQE(MSONable):
     def bulk_espresso_ncl(self) -> DefectDictSetQE | None:
         """
         :class:`DefectDictSetQE` for the single-point (``scf``) spin-orbit-
-        coupled reference bulk supercell calculation. ``None`` (with a warning)
+        coupled reference bulk supercell calculation.
+
+        ``None`` (with a warning)
         if ``soc`` is ``False`` or no bulk supercell is available.
         """
         if not self.soc or self._check_bulk_supercell_and_warn() is None:
@@ -892,7 +893,9 @@ class DefectRelaxSetQE(MSONable):
     def bulk_espresso_hybrid(self) -> DefectDictSetQE | None:
         """
         :class:`DefectDictSetQE` for the single-point (``scf``) hybrid-DFT
-        reference bulk supercell calculation. ``None`` (with a warning) if no
+        reference bulk supercell calculation.
+
+        ``None`` (with a warning) if no
         bulk supercell is available.
         """
         if self._check_bulk_supercell_and_warn() is None:
@@ -937,7 +940,7 @@ class DefectRelaxSetQE(MSONable):
         self,
         defect_dir: PathLike | None,
         subfolder: PathLike | None,
-        espresso_xxx_attribute: DefectDictSetQE,
+        espresso_xxx_attribute: DefectDictSetQE | None,
     ) -> str:
         """
         Write the ``pw.in`` for one calculation stage
@@ -954,6 +957,8 @@ class DefectRelaxSetQE(MSONable):
         calculation provenance -- but not for bulk supercell folders, which have
         no corresponding ``DefectEntry``.
         """
+        if espresso_xxx_attribute is None:  # bulk sets are None without a bulk supercell (callers check)
+            raise ValueError(f"No input set available to write to {defect_dir} ({subfolder}).")
         defect_dir = self._get_output_path(defect_dir)  # resolved folder, without subfolder
         output_path = self._get_output_path(defect_dir, subfolder)
         filepath = os.path.join(output_path, "pw.in")
@@ -977,12 +982,12 @@ class DefectRelaxSetQE(MSONable):
         ``None`` (with a warning) if no bulk supercell is available, i.e. this
         set was initialised with a ``Structure`` and no ``bulk_supercell``.
         """
-        if self._check_bulk_supercell_and_warn() is None:
+        if (bulk_supercell := self._check_bulk_supercell_and_warn()) is None:
             return None
         if bulk_dir is not None:
             return str(bulk_dir)
 
-        formula = self.bulk_supercell.composition.reduced_formula
+        formula = bulk_supercell.composition.reduced_formula
         defect_dir = self._get_output_path(defect_dir)
         return os.path.join(os.path.dirname(defect_dir.rstrip("/")), f"{formula}_bulk")
 
@@ -1063,7 +1068,8 @@ class DefectRelaxSetQE(MSONable):
     ) -> dict[str, str]:
         r"""
         Write the :attr:`espresso_ncl` (spin-orbit-coupled fixed-cell
-        relaxation) ``pw.in`` input file, to ``<defect_dir>/<subfolder>/pw.in``.
+        relaxation) ``pw.in`` input file, to
+        ``<defect_dir>/<subfolder>/pw.in``.
         """
         espresso_ncl = self.espresso_ncl  # warns if `soc` is False
         if espresso_ncl is None:
@@ -1110,7 +1116,9 @@ class DefectRelaxSetQE(MSONable):
     ) -> dict[str, dict[str, str]]:
         r"""
         Write the ``pw.in`` input files for every applicable calculation stage,
-        each to its own subfolder of ``defect_dir``:
+        each to its own subfolder of ``defect_dir``.
+
+        The calculation stages are:
 
         - ``espresso_std``: the fixed-cell defect supercell relaxation. Always
           written.
@@ -1284,7 +1292,7 @@ class DefectsSet(DefectsSetBase):
             defect_dir=os.path.join(str(output_path), defect_species), bulk=bulk, **kwargs
         )
 
-    def write_files(
+    def write_files(  # type: ignore[override]  # deliberately extends the base signature
         self,
         output_path: PathLike = ".",
         gamma: bool = False,
@@ -1379,8 +1387,7 @@ def qe_convergence_setup_from_structure(
 ) -> dict[str, list[str]]:
     """
     Generate espresso ``pw.in`` files for k-point and plane-wave cutoff
-    (``ecutwfc``) convergence testing from a single ``pymatgen``
-    ``Structure``.
+    (``ecutwfc``) convergence testing from a single ``pymatgen`` ``Structure``.
 
     Elements are read from ``structure.species`` and matched against the
     bundled :data:`QE_PSEUDO_LIBRARY` defaults (``doped/io/espresso/QE_sets``); the
@@ -1434,8 +1441,12 @@ def qe_convergence_setup_from_structure(
         kpoints_shift: ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
             ``K_POINTS automatic`` card, e.g. ``(1, 1, 1)`` for a half-grid
             (Γ-shifted) Monkhorst-Pack mesh. Default ``(0, 0, 0)`` (no shift).
-        user_control_settings, user_system_settings, user_electron_settings:
-            Per-namelist overrides merged on top of the YAML defaults.
+        user_control_settings: ``&CONTROL`` namelist overrides, merged on top
+            of the YAML defaults.
+        user_system_settings: ``&SYSTEM`` namelist overrides, merged on top of
+            the YAML defaults.
+        user_electron_settings: ``&ELECTRONS`` namelist overrides, merged on
+            top of the YAML defaults.
 
     Returns:
         ``{"kpoint_converge": [...], "ecut_convergence": [...]}`` listing
@@ -1489,7 +1500,7 @@ def qe_convergence_setup_from_structure(
         ecut_scf["control"]["calculation"] = "scf"
         ecut_scf["system"]["ecutwfc"] = ecut
         if "ecutrho" not in (user_system_settings or {}):
-            ecut_scf["system"].pop("ecutrho", None)  
+            ecut_scf["system"].pop("ecutrho", None)
         _set_ecutrho(ecut_scf["system"])
         filepath = os.path.join(str(output_dir), "ecut_convergence", f"ecutwfc_{ecut}", "pw.in")
         DopedDictSetQE.write_qe_pw_input(
@@ -1574,8 +1585,8 @@ def get_kpoint_convergence_sets(
 ) -> dict[str, DopedDictSetQE]:
     r"""
     Generates a dictionary of :class:`DopedDictSetQE`\s for `k`-point `and`
-    plane-wave cutoff (``ecutwfc``) convergence testing of competing phases,
-    as single-point (``scf``) ``pw.x`` calculations using the
+    plane-wave cutoff (``ecutwfc``) convergence testing of competing phases, as
+    single-point (``scf``) ``pw.x`` calculations using the
     :data:`QE_PSEUDO_LIBRARY` pseudopotential filenames by default; the
     espresso analogue of
     :func:`doped.io.vasp.inputs.get_kpoint_convergence_sets`.
@@ -1685,7 +1696,7 @@ def get_kpoint_convergence_sets(
 
     for entry, category, structure, folder_name in competing_phases._iter_entries_with_categories():
         phase_folder = os.path.join(str(output_path), folder_name)
-        dict_set_kwargs = {  # settings shared by all convergence calculations of this phase
+        dict_set_kwargs: dict[str, Any] = {  # settings shared by all this phase's convergence calculations
             "calculation": "scf",  # convergence testing uses single-point SCF
             "kpoints_shift": kpoints_shift,
             "pseudo_dir": pseudo_dir,
@@ -1719,8 +1730,8 @@ def get_kpoint_convergence_sets(
             else _kpoints_grid_from_reciprocal_density(structure, ecut_kppvol_by_metallicity[category])
         )
         for ecut in range(ecut_min, ecut_max + 1, ecut_step):
-            dict_sets[os.path.join(phase_folder, "ecut_convergence", f"ecutwfc_{ecut}")] = (
-                DopedDictSetQE(structure, ecutwfc=ecut, kpoints=ecut_kgrid, **dict_set_kwargs)
+            dict_sets[os.path.join(phase_folder, "ecut_convergence", f"ecutwfc_{ecut}")] = DopedDictSetQE(
+                structure, ecutwfc=ecut, kpoints=ecut_kgrid, **dict_set_kwargs
             )
 
     if competing_phases.molecular_entries:
@@ -1739,8 +1750,8 @@ def write_input_sets(input_sets: dict[str, DopedDictSetQE], **kwargs) -> dict[st
     Write a dictionary of :class:`DopedDictSetQE`\s (``{output folder: input
     set}``, as generated by :func:`get_kpoint_convergence_sets` /
     :func:`get_relaxation_sets` / :func:`get_singlepoint_sets`) to their
-    corresponding output folders (as ``<output folder>/pw.in``), warning if
-    any already exist; the espresso analogue of
+    corresponding output folders (as ``<output folder>/pw.in``), warning if any
+    already exist; the espresso analogue of
     :func:`doped.io.vasp.inputs.write_input_sets`.
 
     Args:
@@ -1782,14 +1793,14 @@ def write_kpoint_convergence_files(
 ) -> dict[str, DopedDictSetQE]:
     r"""
     Generates and writes ``pw.x`` input files for `k`-point `and` plane-wave
-    cutoff (``ecutwfc``) convergence testing of competing phases (as
-    single-point ``scf`` calculations), to
+    cutoff (``ecutwfc``) convergence testing of competing phases (as single-
+    point ``scf`` calculations), to
     ``<output_path>/<phase>/kpoint_converge/k<kx>_<ky>_<kz>/pw.in`` and
-    ``<output_path>/<phase>/ecut_convergence/ecutwfc_<N>/pw.in``; the
-    espresso analogue of
-    :func:`doped.io.vasp.inputs.write_kpoint_convergence_files` (formerly
-    ``CompetingPhasesQE.qe_convergence_setup``), which additionally sweeps
-    ``ecutwfc`` as the required cutoff depends on the pseudopotentials used.
+    ``<output_path>/<phase>/ecut_convergence/ecutwfc_<N>/pw.in``; the espresso
+    analogue of :func:`doped.io.vasp.inputs.write_kpoint_convergence_files`
+    (formerly ``CompetingPhasesQE.qe_convergence_setup``), which additionally
+    sweeps ``ecutwfc`` as the required cutoff depends on the pseudopotentials
+    used.
 
     The input sets are generated with :func:`get_kpoint_convergence_sets`
     (see there for details) and written with :func:`write_input_sets`,
@@ -1912,13 +1923,13 @@ def get_relaxation_sets(
     subfolder: PathLike = "espresso_std",
 ) -> dict[str, DopedDictSetQE]:
     r"""
-    Generates a dictionary of :class:`DopedDictSetQE`\s for standard
-    (variable-cell) ``pw.x`` relaxations of competing phases, using the
-    default settings by default (i.e. the functional implied by your chosen
-    pseudopotentials), or HSE06 hybrid DFT if ``use_hse=True``; the espresso
-    analogue of :func:`doped.io.vasp.inputs.get_relaxation_sets` -- note
-    that the VASP function uses HSE06 by default, while here the semi-local
-    (GGA) defaults are used.
+    Generates a dictionary of :class:`DopedDictSetQE`\s for standard (variable-
+    cell) ``pw.x`` relaxations of competing phases, using the default settings
+    by default (i.e. the functional implied by your chosen pseudopotentials),
+    or HSE06 hybrid DFT if ``use_hse=True``; the espresso analogue of
+    :func:`doped.io.vasp.inputs.get_relaxation_sets` -- note that the VASP
+    function uses HSE06 by default, while here the semi-local (GGA) defaults
+    are used.
 
     Solid phases are set up as variable-cell (``vc-relax``) relaxations,
     while diatomic molecules (molecules-in-a-box) are relaxed at fixed cell
@@ -2079,13 +2090,13 @@ def write_relaxation_files(
     **kwargs,
 ) -> dict[str, DopedDictSetQE]:
     r"""
-    Generates and writes espresso ``pw.in`` input files for standard
-    (variable-cell) relaxations of competing phases, to
-    ``<output_path>/<phase>/<subfolder>/pw.in`` (``espresso_std`` subfolder
-    by default), using the default settings
-    by default (i.e. the functional implied by your chosen pseudopotentials),
-    or HSE06 hybrid DFT if ``use_hse=True``. Note that the VASP function uses
-    HSE06 by default, while here the semi-local (GGA) defaults are used.
+    Generates and writes espresso ``pw.in`` input files for standard (variable-
+    cell) relaxations of competing phases, to
+    ``<output_path>/<phase>/<subfolder>/pw.in`` (``espresso_std`` subfolder by
+    default), using the default settings by default (i.e. the functional
+    implied by your chosen pseudopotentials), or HSE06 hybrid DFT if
+    ``use_hse=True``. Note that the VASP function uses HSE06 by default, while
+    here the semi-local (GGA) defaults are used.
 
     The input sets are generated with :func:`get_relaxation_sets` (see there
     for details) and written with :func:`write_input_sets`, returning the
@@ -2206,9 +2217,9 @@ def get_singlepoint_sets(
     (``scf``) energy calculations of the competing phases, using the default
     settings by default (i.e. the functional implied by your chosen
     pseudopotentials), or HSE06 hybrid DFT if ``use_hse=True``; the espresso
-    analogue of :func:`doped.io.vasp.inputs.get_singlepoint_sets` -- note
-    that the VASP function uses HSE06 by default, while here the semi-local
-    (GGA) defaults are used.
+    analogue of :func:`doped.io.vasp.inputs.get_singlepoint_sets` -- note that
+    the VASP function uses HSE06 by default, while here the semi-local (GGA)
+    defaults are used.
 
     These are expected to be used as the final energy calculation after
     geometry relaxation (from :func:`write_relaxation_files`), to obtain
@@ -2487,6 +2498,7 @@ def _set_spin_polarisation(
     Set ``nspin = 2`` and ``tot_magnetization`` in the espresso ``&SYSTEM``
     namelist if the entry has a total magnetization greater than the default
     tolerance of 0.1.
+
     Analogous to ``doped.io.vasp.inputs._set_spin_polarisation`` for VASP
     (``ISPIN`` / ``NUPDOWN``).
     """
@@ -2508,8 +2520,8 @@ def _set_default_metal_smearing(system_settings: dict) -> None:
     Set ``occupations = 'smearing'`` (if ``occupations`` is not already set),
     with ``smearing = 'gaussian'`` and ``degauss = 0.005`` Ry, in the espresso
     ``&SYSTEM`` namelist for metallic phases.  Analogous to
-    ``doped.io.vasp.inputs._set_default_metal_smearing`` for VASP (``ISMEAR``
-    / ``SIGMA``).
+    ``doped.io.vasp.inputs._set_default_metal_smearing`` for VASP (``ISMEAR`` /
+    ``SIGMA``).
 
     If ``occupations`` is already set to anything other than ``'smearing'``
     (e.g. ``'tetrahedra'``, as used for metals by :func:`get_relaxation_sets`
