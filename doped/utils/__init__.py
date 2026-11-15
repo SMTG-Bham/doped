@@ -101,12 +101,6 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", message="No POTCAR file with matching TITEL fields")
     warnings.filterwarnings("ignore", message="Ignoring unknown variable type")
 
-    # Ignore because comment after 'ALGO = Normal' causes this unnecessary warning:
-    warnings.filterwarnings("ignore", message="Hybrid functionals only support")
-
-    warnings.filterwarnings("ignore", message="Use get_magnetic_symmetry()")
-    warnings.filterwarnings("ignore", message="Use of properties is now deprecated")
-
     # avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
     # otherwise) for the bulk):
     warnings.filterwarnings("ignore", message="Not all sites have property")
@@ -114,9 +108,15 @@ def _ignore_pmg_warnings():
     # ignore warning about structure charge that appears when getting Vasprun.as_dict():
     warnings.filterwarnings("ignore", message="Structure charge")
 
-    # ignore UFloat warning about std_dev==0 (from MP energy corrections), can potentially be removed in
-    # future if/when this issue resolved upstream
-    warnings.filterwarnings("ignore", message="Using UFloat objects with std_dev==0")
+    # ignore noisy per-entry ``pymatgen`` warnings from the GGA(+U)/r2SCAN mixing scheme, applied by
+    # ``mp-api`` for (default) mixed thermo type Materials Project queries without a pre-built MP phase
+    # diagram; ``mp-api`` logs a summary of this behaviour instead (not filtered here):
+    warnings.filterwarnings("ignore", message="WARNING! Discarding")  # entry not in mixing state data
+    warnings.filterwarnings("ignore", message="Failed to guess oxidation states")  # MP2020 corrections
+
+    # ignore deprecation warning due to old mixing scheme import in served Materials Project entries:
+    # (to be removed in v2027.1)
+    warnings.filterwarnings("ignore", message="MaterialsProjectDFTMixingScheme has been moved")
 
 
 _ignore_pmg_warnings()
@@ -128,10 +128,10 @@ def warn_once(message: str, category: type[Warning] = UserWarning, key: Any = No
     Emit ``message`` as a warning at most once per unique ``(message, category,
     key)``, unless ``warn_once.cache_clear()`` is called.
 
-    Unlike Python's default "show once per location" behaviour, this is
-    immune to the ``__warningregistry__`` being reset whenever the warning
-    filters are mutated (which dependencies such as ``pandas`` do internally,
-    defeating the default dedup when warning repeatedly in a loop -- e.g. over
+    Unlike Python's default "show once per location" behaviour, this is immune
+    to the ``__warningregistry__`` being reset whenever the warning filters are
+    mutated (which dependencies such as ``pandas`` do internally, defeating the
+    default dedup when warning repeatedly in a loop -- e.g. over
     temperatures/conditions).
 
     ``key`` is an optional `cheap` hashable used to check if the warning has
@@ -183,6 +183,15 @@ def _warn_parameter_order(func_name: str, stacklevel: int = 3):
     )
 
 
+def _signed_charge(charge: int) -> str:
+    """
+    Format a charge state with an explicit ``+`` for positive values (and no
+    sign for zero or negative values), e.g. ``+1``, ``0``, ``-2``; as used in
+    ``doped`` defect names (e.g. ``v_Cd_+1``, ``v_Cd_0``, ``v_Cd_-2``).
+    """
+    return f"{charge:+}" if charge > 0 else str(charge)
+
+
 def _doped_obj_properties_methods(obj):
     """
     Return a tuple of the attributes & properties and methods of a given
@@ -194,7 +203,7 @@ def _doped_obj_properties_methods(obj):
     methods = set()
     for k in dir(obj):
         with contextlib.suppress(Exception):
-            if callable(getattr(obj, k)) and not k.startswith("_"):
+            if callable(getattr(type(obj), k, None)) and not k.startswith("_"):
                 methods.add(k)
     properties = {name for name, value in inspect.getmembers(type(obj)) if isinstance(value, property)}
     return attrs | properties, methods

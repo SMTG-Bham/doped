@@ -61,8 +61,10 @@ filename pattern(s) identifying calculation output files (used for
 calculation folder discovery). ``get_calculation_outputs()`` should accept
 (and may ignore) the generic keyword arguments used by ``doped``'s parsing
 machinery: ``label`` (``"bulk"``/``"defect"``, for informative warnings) and
-``parse_projected_eigen``. Only ``structure`` (the final relaxed structure)
-and ``energy`` (final total energy in eV) are required in
+``parse_projected_eigen`` (if orbital projections are parsed: ``None``, the
+default, parses them if available, with no warning otherwise; ``True`` warns if
+they cannot be parsed; ``False`` skips them). Only ``structure`` (the final
+relaxed structure) and ``energy`` (final total energy in eV) are required in
 ``CalculationOutputs``; the optional attributes unlock specific analyses:
 
 .. list-table::
@@ -110,16 +112,25 @@ reference backend):
   the corresponding ``PLANAR_POTENTIALS_FILE`` / ``SITE_POTENTIALS_FILE``
   file-name constants): lazy loading of charge-correction data, when not
   parsed up-front into ``CalculationOutputs``.
-- ``check_run_compatibility(defect_outputs, bulk_outputs, warn)`` (and
-  ``MISMATCH_WARNING_SPECS``): defect/bulk calculation settings
-  compatibility checks, populating ``"run_metadata"`` (and any
-  ``"mismatching_..."`` entries) in ``DefectEntry.calculation_metadata``.
-- ``check_entry_compatibility(entries, template_candidates)``: the same
-  check for competing phase entries, comparing each against a reference
-  (template) entry and warning about mismatched calculation settings, for
-  :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` (with
-  ``check_compatibility=True``, the default). Entries lacking the relevant
-  settings data are skipped.
+- ``compare_calculation_settings(settings, reference_settings, competing_phases, warn)``
+  (and ``MISMATCH_WARNING_SPECS``): calculation settings compatibility checks,
+  comparing the energy-affecting settings of a calculation to a reference and returning
+  ``{"mismatching_...": mismatches or False}``. ``settings`` are
+  ``CalculationOutputs.run_metadata`` for defect/bulk supercells and ``entry.data``
+  for competing phases (with ``competing_phases=True``, for settings which can
+  legitimately differ between phases, such as k-point meshes).
+  ``MISMATCH_WARNING_SPECS`` gives, for each ``"mismatching_..."`` key, the settings
+  name (``"object_name"``), the settings ``"data_key"`` (used to choose the reference
+  competing phase and skip entries lacking the settings data), the ``"format"`` and
+  ``"closing"`` warning lines, the prefix of any per-defect warnings
+  (``"per_defect_warning_prefix"``) and optional ``"transform"``/``"body"``
+  functions, from which ``doped`` generates grouped mismatch warnings for
+  defects and competing phases (the latter with |CompetingPhasesAnalyzer| with
+  ``check_compatibility=True``, the default).
+- ``check_run_compatibility(defect_outputs, bulk_outputs, warn)``: defect/bulk
+  calculation settings compatibility checks (using ``compare_calculation_settings``),
+  populating ``"run_metadata"`` (and the ``"mismatching_..."`` entries) in
+  ``DefectEntry.calculation_metadata``.
 - ``load_eigenvalue_outputs(path, outputs, projections, label, run_metadata)``:
   loading of outputs `with orbital projections` for eigenvalue / band-edge
   analysis (``DefectEntry.get_eigenvalue_analysis()``), when not parsed
@@ -133,16 +144,22 @@ reference backend):
   :class:`~doped.thermodynamics.DefectThermodynamics`. Without this,
   ``FermiDos`` objects can still be constructed directly by the user and
   passed as ``bulk_dos``.
-- ``get_competing_phase_entry(path) -> ComputedStructureEntry``: parsing of
-  a competing phase (bulk crystal) calculation to a ``pymatgen``
+- ``get_competing_phase_entry(path) -> ComputedStructureEntry``: parsing of a
+  competing phase (bulk crystal) calculation to a ``pymatgen``
   ``ComputedStructureEntry``, for chemical potential analysis with
   :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
   (``CompetingPhasesAnalyzer(..., calculator="<calculator>")``). Calculation
   summary info & settings should be added to ``entry.data``, including
   ``"converged_electronic"``/``"converged_ionic"`` (convergence warnings) and
-  ``"folder"`` (the parsed calculation folder). Without this,
-  ``CompetingPhasesAnalyzer`` can still be initialised directly from a list
-  of ``ComputedEntry``/``ComputedStructureEntry`` objects.
+  ``"folder"`` (the parsed calculation folder), and optionally ``"pressure"``
+  (the final pressure in GPa, positive for compressive stress). Without this,
+  ``CompetingPhasesAnalyzer`` can still be initialised directly from a list of
+  ``ComputedEntry``/``ComputedStructureEntry`` objects.
+- ``find_calc_output(directory) -> str``: selection of the calculation output
+  file to parse in a competing phase directory (e.g. with the filename
+  priorities used for defect parsing), for ``CompetingPhasesAnalyzer``. If not
+  implemented, or raising ``FileNotFoundError``/``ValueError`` (no or ambiguous
+  files), the generic ``CALC_OUTPUT_MASK[0]`` filename matching is used.
 
 The generic calculation-file discovery helpers in ``doped.io.utils``
 (e.g. ``_find_calc_outputs``, ``_determine_subfolder``) are parameterised by
@@ -161,19 +178,23 @@ Step 2 (optional): Input File Generation
 --------------------------------------------
 
 Create ``doped/io/<calculator>/inputs.py`` with input-set classes mirroring
-``doped.io.vasp.inputs`` (e.g. ``DefectsSet``, with ``write_files()``
-methods), using the defect supercells from
-:class:`~doped.generation.DefectsGenerator`. The calculator-agnostic
-orchestration (input formatting/naming, per-defect input-set dictionaries,
-folder-structure writing & provenance serialisation) is provided by
-:class:`~doped.io.inputs.DefectsSetBase` -- subclass it and implement the
-``_defect_input_set()`` & ``_write_defect()`` hooks (see the VASP
-``DefectsSet`` for reference). Per-calculation input sets should be built on
-the ``pymatgen.io.core`` ``InputSet``/``InputGenerator`` framework where
-available for the calculator (e.g. ``VaspInputSet``, on which
-``doped.io.vasp.inputs.DopedDictSet`` is based). Default calculation
-parameters should live in data files alongside the module (as with
-``doped/io/vasp/VASP_sets``), so users can inspect and override them.
+``doped.io.vasp.inputs`` (e.g. ``DefectsSet``, with ``write_files()`` methods),
+using the defect supercells from :class:`~doped.generation.DefectsGenerator`.
+The calculator-agnostic orchestration (input formatting/naming, per-defect
+input-set dictionaries, folder-structure writing & provenance serialisation) is
+provided by :class:`~doped.io.inputs.DefectsSetBase` -- subclass it and
+implement the ``_defect_input_set()`` & ``_write_defect()`` hooks (see the VASP
+``DefectsSet`` for reference), plus optionally ``_defect_sets_to_write()`` to
+filter which defects are written. As ``write_files()`` serialises the whole
+object (via ``MSONable``) to ``{formula}_DefectsSet.json.gz`` for provenance,
+each ``__init__`` argument should be stored as a same-named, JSON-serialisable
+attribute (``**kwargs`` are stored as ``self.kwargs`` by ``DefectsSetBase``).
+Per-calculation input sets should be built on the ``pymatgen.io.core``
+``InputSet``/``InputGenerator`` framework where available for the calculator
+(e.g. ``VaspInputSet``, on which ``doped.io.vasp.inputs.DopedDictSet`` is
+based). Default calculation parameters should live in data files alongside the
+module (as with ``doped/io/vasp/VASP_sets``), so users can inspect and override
+them.
 
 Competing phase calculation inputs (for chemical potential limits) are
 generated by the same module, via these functions:

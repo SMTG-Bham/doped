@@ -1,31 +1,38 @@
 """
-Code for plotting defect formation energies and transition levels.
+Code for plotting defect formation energies and transition levels, and shared
+plotting utilities (styles, colour maps, and label & legend placement).
 """
 
 import contextlib
 import functools
+import itertools
 import math
 import os
 import re
 import warnings
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import cmcrameri.cm as cmc
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from labellines import labelLines
 from matplotlib import colormaps, ticker
+from matplotlib.collections import PathCollection
 from matplotlib.colors import Colormap, ListedColormap, to_rgba, to_rgba_array
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.table import Table
+from numpy.typing import NDArray
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 from pymatgen.util.typing import PathLike
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
+from doped.core import _get_abs_chempots
+from doped.utils import _signed_charge
 from doped.utils.symmetry import sch_symbols  # point group symbols
 
 if TYPE_CHECKING:
@@ -41,21 +48,39 @@ recognised_pre_vacancy_strings = sorted(
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which precede the element symbol in vacancy defect names.
+"""
+
 recognised_post_vacancy_strings = sorted(
     ["_v", "v", "_vac", "_Vac", "vac", "Vac", "va", "Va", "_va", "_Va"],
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which follow the element symbol in vacancy defect names.
+"""
+
 recognised_pre_interstitial_strings = sorted(
     ["i", "i_", "Int", "int", "Int_", "int_", "Inter", "inter", "Inter_", "inter_"],
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which precede the element symbol in interstitial defect
+names.
+"""
+
 recognised_post_interstitial_strings = sorted(
     ["_i", "_int", "_Int", "int", "Int", "inter", "Inter", "_inter", "_Inter"],
     key=len,
     reverse=True,
 )
+"""
+Recognised substrings which follow the element symbol in interstitial defect
+names.
+"""
+
 # _trimmable_defect_type_strings is the subset of the above strings which are trimmed from defect names
 # when identifying the constituent elements, removing marker letters which could otherwise be misread as
 # element symbols (e.g. "V" / "I" / "In" in "Vac" / "Int"). Strings starting/ending with a lowercase "i"
@@ -305,6 +330,15 @@ PETROFF10_EXTENDED_40 = [
     "#187582", "#beceb2", "#be968a", "#5dbadb", "#c28639",
     "#597d35", "#006939", "#c6d26d", "#7d96b2", "#59796d",
 ]  # fmt: skip
+"""
+Qualitative colour palette; the 10-colour Petroff scheme extended to 40
+maximally-distinct colours (within muted lightness/chroma bounds, for visual
+harmony with the base palette and to avoid pale colours that are hard to see as
+thin lines on white backgrounds) via the Glasbey et al (2007) method, as
+implemented in https://github.com/lmcinnes/glasbey, registered as the
+``petroff10_extended_40`` ``matplotlib`` colormap with ``doped``.
+"""
+
 with contextlib.suppress(ValueError):  # already registered (e.g. re-import)
     colormaps.register(ListedColormap(PETROFF10_EXTENDED_40, name="petroff10_extended_40"))
 
@@ -344,7 +378,10 @@ def get_colors(colormap: str | Colormap | None, num_colors: int) -> np.ndarray:
     return cmap(np.linspace(0, 1, num_colors))
 
 
-VARIANT_LINESTYLES = ("-", "--", ":", "-.")  # linestyle cycle for variants of the same plot group
+VARIANT_LINESTYLES = ("-", "--", ":", "-.")
+"""
+Linestyle cycle for variants of the same plot group.
+"""
 
 
 def _fade_variant_color(color, index: int, num_variants: int) -> tuple[float, ...]:
@@ -400,7 +437,8 @@ def _resolve_color_grouping(
     is escalated (``"element"`` (skipped by default) -> ``"type"`` (default
     initialisation) -> ``"site"``) while the palette would contain only a
     single colour group (e.g. a system with only one defect type), so that a
-    range of colours is used by default, rather than variants of a single colour.
+    range of colours is used by default, rather than variants of a single
+    colour.
     """
     _check_color_grouping(color_grouping)
     granularities = ("element", "type", "site")
@@ -409,19 +447,19 @@ def _resolve_color_grouping(
             return grouping
 
     # finest granularity; if still a single colour group (and not explicitly set by user), the per-line
-    # colour fallback in ``_get_group_keyed_colors_and_linestyles`` handles it, enforcing variants
+    # colour fallback in ``get_defect_colors_and_linestyles`` handles it, enforcing variants
     return "site"
 
 
 def _color_group_key(defect, color_grouping: str = "type") -> str:
     """
-    The palette colour key for a defect: its defect type (``Defect.name``),
-    or its extrinsic element if extrinsic and ``color_grouping="element"`` --
-    so e.g. ``F_O`` and ``F_i`` share a base colour.
+    The palette colour key for a defect: its defect type (``Defect.name``), or
+    its extrinsic element if extrinsic and ``color_grouping="element"`` -- so
+    e.g. ``F_O`` and ``F_i`` share a base colour.
 
-    ``color_grouping="site"`` keys on the defect `group` name, which is
-    handled by the callers as it is not a property of the defect itself (i.e.
-    defect clustering).
+    ``color_grouping="site"`` keys on the defect `group` name, which is handled
+    by the callers as it is not a property of the defect itself (i.e. defect
+    clustering).
     """
     if color_grouping == "element" and (extrinsic_element := _extrinsic_element(defect)):
         return extrinsic_element
@@ -435,7 +473,7 @@ def get_defect_type_palette(
 ) -> dict[str, tuple[float, ...]]:
     """
     Get a ``{defect type, extrinsic element or defect group: colour}`` dict
-    palette for the defects in a ``DefectThermodynamics`` object.
+    palette for the defects in a |DefectThermodynamics| object.
 
     Colours are keyed on defect identity rather than position in the plot
     legend, so that plots of the same system share base colours for the same
@@ -450,11 +488,13 @@ def get_defect_type_palette(
       e.g. ``v_Cd``, ``Te_i``, ``F_O``).
     - ``"element"``: mostly the same as ``"type"``, except `extrinsic` defects
       of the same element are grouped under a single colour (e.g. ``F_O`` and
-      ``F_i`` -> ``"F"``). Note that the thermodynamic-dominance ordering of
-      variants within such element groups (i.e. most opaque/solid line used for
-      dominant lowest-energy defect in the group) can depend on the chemical
-      potential conditions (unlike ``"type"`` / ``"site"`` groups, where all
-      group members share the same stoichiometry).
+      ``F_i`` -> ``"F"``); intrinsic defects are unaffected, so this is
+      equivalent to ``"type"`` for systems with no extrinsic defects. Note that
+      the thermodynamic-dominance ordering of variants within such element
+      groups (i.e. most opaque/solid line used for dominant lowest-energy
+      defect in the group) can depend on the chemical potential conditions
+      (unlike ``"type"`` / ``"site"`` groups, where all group members share the
+      same stoichiometry).
     - ``"site"``: one colour per defect `group` (i.e. per cluster of
       inequivalent defect sites, keyed on the group names in
       ``DefectThermodynamics.all_entries``; e.g. ``Te_i_Td_Te2.83_a`` and
@@ -471,7 +511,7 @@ def get_defect_type_palette(
 
     Args:
         defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing the defect entries.
+            |DefectThermodynamics| object containing the defect entries.
         color_grouping (str):
             Colour grouping granularity: ``"element"``, ``"type"`` (default) or
             ``"site"`` -- see above. Default is ``"type"``. Note that this
@@ -507,7 +547,7 @@ def get_defect_type_palette(
     return palette
 
 
-def _variant_dominance_order(line_keys: list[str], line_xy: dict, band_gap: float) -> list[str]:
+def _variant_dominance_order(line_keys: list[str], line_xy: "Mapping", band_gap: float) -> list[str]:
     """
     Order lines within a colour group by thermodynamic dominance: by the
     fraction of the in-gap Fermi level range for which each line is the lowest
@@ -534,20 +574,72 @@ def _variant_dominance_order(line_keys: list[str], line_xy: dict, band_gap: floa
     ]
 
 
-def _get_group_keyed_colors_and_linestyles(
+def _dominance_line_xy(
     defect_thermodynamics: "DefectThermodynamics",
-    line_groups: dict[str, str],
+    dominance: "Mapping[str, Any] | str | None",
+    chempots: dict | None = None,
+    limit: str | None = None,
+    el_refs: dict | None = None,
+) -> "Mapping[str, Any] | None":
+    """
+    Resolve the ``dominance`` option of ``get_defect_colors_and_linestyles`` to
+    ``{line key: [[x_vals], [y_vals]]}`` line data for
+    ``_variant_dominance_order`` (or ``None``, for plot ordering).
+
+    Formation energy lines are computed from ``defect_thermodynamics`` (as in
+    ``DefectThermodynamics.plot()``, using ``chempots``/``limit``/``el_refs``)
+    if ``dominance = "formation_energy"``, and otherwise ``dominance`` is
+    already the line data (or ``None``) and is returned as-is.
+    """
+    if dominance is None or isinstance(dominance, Mapping):
+        return dominance
+    if dominance != "formation_energy":
+        raise ValueError(
+            f"`dominance` must be either `None`, 'formation_energy' or a `{{line key: [[x_vals], "
+            f"[y_vals]]}}` dict -- not {dominance}. See docs/docstrings for more info."
+        )
+    if defect_thermodynamics.band_gap is None:
+        raise ValueError(
+            "`band_gap` is not set for `DefectThermodynamics`, cannot compute formation energies for "
+            "`dominance='formation_energy'`."
+        )
+    chempots, el_refs = defect_thermodynamics._get_chempots(chempots, el_refs)  # thermo values if None
+    abs_chempots = _get_abs_chempots(chempots, el_refs, limit)
+    _chempot_warning(abs_chempots)
+    (xy, _), (all_lines_xy, _, _), _ = _get_formation_energy_lines(
+        defect_thermodynamics, abs_chempots, (0, defect_thermodynamics.band_gap)
+    )
+    return all_lines_xy | xy  # per-charge-state lines (i.e. ``all_entries=True``), then group lines
+
+
+def get_defect_colors_and_linestyles(
+    defect_thermodynamics: "DefectThermodynamics",
+    lines: "Sequence[str] | Mapping[str, str] | None" = None,
     variant_style: str = "fade",
     color_grouping: str | None = None,
     colormap: "str | dict | None" = None,
     linestyles: str = "-",
     group_palette: dict | None = None,
-    line_xy: dict | None = None,
-) -> tuple[list[tuple[float, ...]], list[str]]:
+    dominance: "Mapping[str, Any] | str | None" = None,
+    chempots: dict | None = None,
+    limit: str | None = None,
+    el_refs: dict | None = None,
+) -> tuple[dict[str, tuple[float, ...]], dict[str, str]]:
     """
-    Get colours and linestyles for defect formation energy lines, keyed on
-    defect identity (type (default) / extrinsic element / site group; see
-    ``color_grouping``) -- see ``get_defect_type_palette``.
+    Get colours and linestyles for plotting defects, keyed on defect identity.
+
+    (type (default) / extrinsic element / site group; see ``color_grouping``)
+    -- see :func:`get_defect_type_palette`.
+
+    Can be used to match the ``doped`` formation energy diagram colour scheme
+    in custom plots (e.g. defect/carrier concentrations from ``FermiSolver``
+    scans), e.g.:
+
+    .. code-block:: python
+
+        colors, linestyles = get_defect_colors_and_linestyles(thermo, defects)
+        for defect in defects:
+            ax.plot(x, y[defect], color=colors[defect], linestyle=linestyles[defect])
 
     Multiple plotted lines of the same colour group (e.g. inequivalent ``Te_i``
     sites with ``color_grouping=type``, extrinsic ``F_O`` & ``F_i`` defects
@@ -555,21 +647,28 @@ def _get_group_keyed_colors_and_linestyles(
     ``all_entries=True`` and any ``color_grouping`` choice) get ordered
     lightness variants of the group's base colour and/or cycled linestyles
     (according to ``variant_style``), with the base (full) colour/style
-    assigned to the group's most thermodynamically-dominant line (that which is
-    the lowest energy of the group over the largest fraction of the in-gap
-    Fermi level range, then 2nd-lowest etc -- or the lowest energy at the Fermi
-    level ('vbm') for metals; see ``_variant_dominance_order``) when
-    ``line_xy`` is provided (otherwise in plot order).
+    assigned to the group's most dominant line -- as set by ``dominance``
+    (by default, just the input (plot) order of ``lines``).
 
     Args:
         defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing the defect entries.
-        line_groups (dict[str, str]):
-            ``{line key: defect group name}`` for each line to plot, in plot
-            order (group names matching ``DefectThermodynamics.all_entries``
-            keys). For standard plots this is an identity mapping of the
-            group names; for ``all_entries=True`` plots the line keys are the
-            per-charge-state entry names.
+            |DefectThermodynamics| object containing the defect entries.
+        lines (Sequence[str] | Mapping[str, str]):
+            The lines to get colours/linestyles for, in plot order; either a
+            sequence of defect group names (matching
+            ``DefectThermodynamics.all_entries`` keys; the usual case -- e.g.
+            the defect names in a ``FermiSolver`` scan ``DataFrame`` index), or
+            a ``{line key: defect group name}`` mapping when the line keys are
+            not the group names themselves (e.g. the per-charge-state entry
+            names for ``all_entries=True`` formation energy plots).
+
+            If ``None`` (default), all defects in ``defect_thermodynamics`` are
+            used, in the same order as plotted by
+            ``DefectThermodynamics.plot()``. Note that variants are shaded /
+            cycled within the given set of lines, so indexing the default
+            (all-defect) dicts for a subset of defects keeps the shades of the
+            full plot, while passing just that subset as ``lines`` re-spreads
+            them (as in ``plot(defect_subset=...)``).
         variant_style (str):
             How to differentiate same-colour-group variants: ``"fade"``
             (lightness fading; default), ``"linestyle"`` (cycled
@@ -591,21 +690,55 @@ def _get_group_keyed_colors_and_linestyles(
             Base linestyle for the lines. Default is ``"-"``.
         group_palette (dict):
             Pre-computed ``{colour group key: colour}`` palette (e.g. from
-            the parent ``DefectThermodynamics`` before any pruning/subsetting,
+            the parent |DefectThermodynamics| before any pruning/subsetting,
             for base-colour stability). If ``None`` (default), computed from
             ``defect_thermodynamics``.
-        line_xy (dict):
-            ``{line key: [[x_vals], [y_vals]]}`` formation energy line data
-            (matching ``line_groups`` keys), used to order variants within each
-            colour group by thermodynamic dominance (see
-            ``_variant_dominance_order``). If ``None`` (default), variants are
-            ordered by plot order.
+        dominance (Mapping[str, Any] | str):
+            How to order the lines within each colour group, determining which
+            gets the base (full) colour/linestyle and which get the faded /
+            cycled variants. Either:
+
+            - ``None`` (default): just uses the input (plot) order of
+              ``lines``. To instead match the ordering of a concentration plot,
+              just sort ``lines`` by concentration first, e.g.
+              ``concs = conc_df.groupby(level=0)["Concentration (cm^-3)"].max()``,
+              then ``lines = concs.sort_values(ascending=False).index`` (which
+              also gives a dominance-ordered plot legend).
+            - ``"formation_energy"``: thermodynamic dominance, matching
+              ``DefectThermodynamics.plot()``; i.e. ordered by which line is
+              the lowest energy of its colour group over the largest fraction
+              of the in-gap Fermi level range, then 2nd-lowest etc (or the
+              lowest energy at the VBM for metals). Uses ``chempots`` /
+              ``limit`` / ``el_refs`` (which affect this ordering), as in
+              ``DefectThermodynamics.plot()``.
+            - a ``{line key: [[x_vals], [y_vals]]}`` mapping: as
+              ``"formation_energy"``, but using the provided line data
+              (lowest ``y`` = most dominant) rather than computing it.
+
+        chempots (dict):
+            Chemical potentials to use when computing formation energies for
+            ``dominance="formation_energy"``, in any format accepted by
+            ``DefectThermodynamics.get_formation_energy`` -- see its docstring.
+            If ``None`` (default), uses ``DefectThermodynamics.chempots``.
+        limit (str):
+            The chemical potential limit to use, if ``chempots`` is in the
+            ``doped`` format with multiple limits. Default is the first limit.
+        el_refs (dict):
+            ``{element symbol: reference energy}`` elemental reference
+            energies, if ``chempots`` is given in the format of formal
+            (relative) chemical potentials. If ``None`` (default), uses
+            ``DefectThermodynamics.el_refs``.
 
     Returns:
-        colors (list), linestyles (list[str]):
-            Colours and linestyles for the lines, in ``line_groups`` order.
+        colors (dict), linestyles (dict):
+            ``{line key: RGBA colour}`` and ``{line key: linestyle}`` dicts,
+            in ``lines`` order.
     """
     _check_variant_style(variant_style)
+    lines = list(defect_thermodynamics.all_entries) if lines is None else lines  # default: all defects
+    lines = [lines] if isinstance(lines, str) else lines  # don't iterate over a single name's chars
+    line_groups = lines if isinstance(lines, Mapping) else {name: name for name in lines}
+    line_xy = _dominance_line_xy(defect_thermodynamics, dominance, chempots, limit, el_refs)
     fade_variants = variant_style in ("fade", "both")
     linestyle_variants = variant_style in ("linestyle", "both")
     auto_color_grouping = color_grouping is None
@@ -634,9 +767,12 @@ def _get_group_keyed_colors_and_linestyles(
         and len(line_groups) > 1  # with multiple lines
         and not isinstance(colormap, dict)  # and no user colour overrides
     ):  # (e.g. the charge states of a single defect group with ``all_entries=True``)
-        return [tuple(color) for color in get_colors(colormap, len(line_groups))], [
-            _variant_linestyle(i) for i in range(len(line_groups))
-        ]  # use a range of colours (one per line) rather than variants of a single colour
+        # use a range of colours (one per line) rather than variants of a single colour:
+        line_colors = get_colors(colormap, len(line_groups))
+        return (
+            {key: tuple(color) for key, color in zip(line_groups, line_colors, strict=True)},
+            {key: _variant_linestyle(i) for i, key in enumerate(line_groups)},
+        )
 
     group_types: dict[str, str] = {}  # {defect group name: defect type}
     group_palette_keys: dict[str, str] = {}  # {defect group name: palette colour key}
@@ -678,7 +814,7 @@ def _get_group_keyed_colors_and_linestyles(
             keys = _variant_dominance_order(keys, line_xy, band_gap)  # noqa: PLW2901
         variant_indices.update({key: i for i, key in enumerate(keys)})
 
-    colors, linestyle_list = [], []
+    colors, linestyle_dict = {}, {}
     for line_key, color_group in zip(line_groups, line_color_groups, strict=True):
         index = variant_indices[line_key]
         base = (
@@ -687,10 +823,10 @@ def _get_group_keyed_colors_and_linestyles(
             else group_palette.get(color_group, (0.5, 0.5, 0.5, 1.0))  # grey fallback if not in palette
         )
         n_variants = len(color_group_line_keys[color_group])
-        colors.append(_fade_variant_color(base, index, n_variants) if fade_variants else base)
-        linestyle_list.append(_variant_linestyle(index))
+        colors[line_key] = _fade_variant_color(base, index, n_variants) if fade_variants else base
+        linestyle_dict[line_key] = _variant_linestyle(index)
 
-    return colors, linestyle_list
+    return colors, linestyle_dict
 
 
 def _plot_formation_energy_lines(
@@ -768,7 +904,7 @@ def _plot_transition_level_markers(
         ax (plt.Axes):
             ``Axes`` object to plot the transition level markers on.
         defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing the transition level
+            |DefectThermodynamics| object containing the transition level
             data (in the ``transition_level_map`` attribute).
         defect_names (Iterable[str]):
             List of defect names to plot transition level markers for, matching
@@ -962,17 +1098,9 @@ def _set_title_and_save_figure(
             ax.set_title(latexify(title), size=styled_font_size, fontdict={"fontweight": "bold"})
 
     if filename is not None:
-        fig = ax.get_figure()
+        fig = ax.figure.figure  # root ``Figure`` (``ax.figure`` is a ``SubFigure`` for subfigure axes)
         assert isinstance(fig, Figure)
         fig.savefig(filename, dpi=600, bbox_inches="tight", transparent=True)
-
-
-def _signed_charge(charge: int) -> str:
-    """
-    Format a charge state with an explicit ``+`` for positive values (and no
-    sign for zero or negative values), e.g. ``+1``, ``0``, ``-2``.
-    """
-    return f"{charge:+}" if charge > 0 else str(charge)
 
 
 def format_defect_name(
@@ -1074,12 +1202,14 @@ def format_defect_name(
                 doped_site_info += "-" + "-".join(name_parts[3:-1])
             trimmed_pre_charge_name = pre_charge_name.replace(f"_{'_'.join(name_parts[2:-1])}", "")
 
+    name_for_matching = trimmed_pre_charge_name  # without doped site info, but with defect-type strings
     for substring in _trimmable_defect_type_strings:  # trim recognised defect-type strings from name
         trimmed_pre_charge_name = trimmed_pre_charge_name.replace(substring, "")
 
     # Note throughout the element-matching below: ``trimmed_pre_charge_name`` (pre/post vacancy and
-    # interstitial substrings removed) is used to `find` the constituent elements, while the untrimmed
-    # ``pre_charge_name`` is passed on to `match` the defect format (so the defect type strings remain):
+    # interstitial substrings removed) is used to `find` the constituent elements, while
+    # ``name_for_matching`` is passed on to `match` the defect format (so the defect type strings remain,
+    # but not any doped site info, which can otherwise be mistaken for elements:
     possible_two_character_elements = _valid_symbols(
         trimmed_pre_charge_name[i : i + 2] for i in range(len(trimmed_pre_charge_name) - 1)
     )
@@ -1087,7 +1217,7 @@ def format_defect_name(
     matching_kwargs: dict[str, Any] = {
         "charge_string": charge_string,
         "doped_site_info": doped_site_info,
-        "name": pre_charge_name,
+        "name": name_for_matching,
         "include_site_info": include_site_info,
     }
     if possible_two_character_elements:
@@ -1418,7 +1548,7 @@ def format_defect_names(
         defect_names (list[str]):
             List of defect names to format (e.g. ``["Cd_i_C3v_0", "Cd_Te",
             "v_Cd_-1", ...]``), as taken from ``DefectEntry.name`` or the keys
-            of a ``DefectThermodynamics`` transition-level dictionary.
+            of a |DefectThermodynamics| transition-level dictionary.
         include_charge (bool):
             Whether to include the charge states in the formatted defect names.
             Defaults to ``False``.
@@ -1721,14 +1851,15 @@ def formation_energy_plot(
     fermi_level: float | None = None,
     title: str | None = None,
     filename: PathLike | None = None,
+    ax: plt.Axes | None = None,
 ) -> "mpl.figure.Figure":
     """
     Produce defect formation energy vs Fermi level plot (i.e. defect formation
     energy / transition level diagram).
 
     This function is not intended to be directly called. The recommended usage
-    is :meth:`~doped.thermodynamics.DefectThermodynamics.plot()` -- see
-    docstring for details.
+    is :meth:`doped.thermodynamics.DefectThermodynamics.plot` -- see docstring
+    for details.
 
     Args:
         defect_thermodynamics (|DefectThermodynamics|):
@@ -1854,7 +1985,7 @@ def formation_energy_plot(
             includes linestyle variation).
         group_palette (dict):
             Pre-computed ``{colour group key: colour}`` palette to use (e.g.
-            from the parent ``DefectThermodynamics`` object before any pruning
+            from the parent |DefectThermodynamics| object before any pruning
             / subsetting, for base-colour stability -- as in
             ``DefectThermodynamics.plot()``). If ``None`` (default), computed
             from ``defect_thermodynamics``.
@@ -1874,6 +2005,11 @@ def formation_energy_plot(
             Title for the plot. (Default: None)
         filename (PathLike):
             Filename to save the plot to. (Default: None (not saved)).
+        ax (plt.Axes):
+            ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+            figures), rather than creating a new figure, in which case the
+            parent figure of ``ax`` is returned (and saved, if ``filename`` is
+            set). (Default: None)
 
     Returns:
         ``matplotlib`` ``Figure`` object.
@@ -1898,7 +2034,7 @@ def formation_energy_plot(
         linestyles = get_linestyles(linestyles, len(plotting_xy))
     else:  # default; colours keyed on defect type, with fade/linestyle variants within each type
         line_groups = all_line_groups if all_entries is True else {name: name for name in xy}
-        colors, group_linestyles = _get_group_keyed_colors_and_linestyles(
+        line_colors, group_linestyles = get_defect_colors_and_linestyles(
             defect_thermodynamics,
             line_groups,
             variant_style=variant_style,
@@ -1906,18 +2042,23 @@ def formation_energy_plot(
             colormap=colormap,
             linestyles=linestyles if isinstance(linestyles, str) else "-",
             group_palette=group_palette,
-            line_xy=plotting_xy,
+            dominance=plotting_xy,
         )
+        colors = list(line_colors.values())  # in ``line_groups`` (plot) order
         linestyles = (  # explicit linestyles list overrides variant cycling, by legend position
             get_linestyles(linestyles, len(plotting_xy))
             if isinstance(linestyles, list)
-            else group_linestyles
+            else list(group_linestyles.values())
         )
 
     # generate plot:
-    styled_fig_size = plt.rcParams["figure.figsize"]
-    fig, ax = plt.subplots(figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1]))
-    # Gives a final figure width matching styled_fig_size, with dimensions matching the doped default
+    if ax is None:
+        styled_fig_size = plt.rcParams["figure.figsize"]
+        fig, ax = plt.subplots(
+            figsize=((2.6 / 3.5) * styled_fig_size[0], (1.95 / 3.5) * styled_fig_size[1])
+        )  # Gives final figure width matching styled_fig_size, with dimensions matching the doped default
+    else:  # plot onto user-provided axes
+        fig = ax.figure.figure  # root ``Figure`` (``ax.figure`` is a ``SubFigure`` for subfigure axes)
     styled_font_size = plt.rcParams["font.size"]
     styled_linewidth = plt.rcParams["lines.linewidth"]
     styled_markersize = plt.rcParams["lines.markersize"]
@@ -2078,8 +2219,8 @@ class TransitionLevelLabel(NamedTuple):
     A plot position for a charge transition level (TL) label.
 
     ``(x, y)`` is the label anchor position with alignments ``ha``/``va``;
-    ``label`` and ``label_w`` are the label text and width; ``TL_eV`` is the
-    TL position in eV from the VBM (same as for :class`TransitionLevel`);
+    ``label`` and ``label_w`` are the label text and width; ``TL_eV`` is the TL
+    position in eV from the VBM (same as for :class:`TransitionLevel`);
     ``conn_y`` and ``conn_x`` are the source TL line ``y``/column-edge ``x``
     for an off-column label that needs a connector (both ``None`` for an inline
     label with no connector).
@@ -2275,10 +2416,10 @@ def _box_overlap_fraction(b1: tuple, b2: tuple, x_buf: float = 0.0, y_buf: float
     """
     Quantify how much two label boxes ``(x_min, x_max, y_min, y_max)`` overlap.
 
-    Returns the overlapping area as a fraction (``0.0``--``1.0``) of the smaller
-    box's area, padding each box by ``x_buf``/``y_buf`` (consistent with
-    :func:`_boxes_overlap`). ``0.0`` means no overlap, a small value means a
-    slight clip, and ``1.0`` means one box fully covers the other. This lets
+    Returns the overlapping area as a fraction (``0.0``--``1.0``) of the
+    smaller box's area, padding each box by ``x_buf``/``y_buf`` (consistent
+    with :func:`_boxes_overlap`). ``0.0`` means no overlap, a small value means
+    a slight clip, and ``1.0`` means one box fully covers the other. This lets
     the label placement optimiser prefer slight overlaps over full overlaps
     when some overlap is unavoidable.
     """
@@ -2819,6 +2960,7 @@ def transition_level_diagram(
     column_width: float = 0.4,
     figsize: tuple[float, float] | None = None,
     filename: PathLike | None = None,
+    ax: plt.Axes | None = None,
 ):
     r"""
     Produce a vertical transition level diagram for a |DefectThermodynamics|
@@ -2887,15 +3029,24 @@ def transition_level_diagram(
             to ``0.4``. Can be a useful parameter to tune for busy plots.
         figsize (tuple):
             ``(width, height)`` of the figure in inches. Defaults to a width
-            that scales with the number of defects.
+            that scales with the number of defects. Cannot be set with ``ax``
+            (in which case the size of ``ax`` is used).
         filename (PathLike):
             If set, save the figure to this path. (Default: None)
+        ax (plt.Axes):
+            ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+            figures), rather than creating a new figure, in which case the
+            parent figure of ``ax`` is returned (and saved, if ``filename`` is
+            set). (Default: None)
 
     Returns:
         ``matplotlib`` ``Figure`` object.
     """
     if defect_thermodynamics.band_gap is None:
         raise ValueError("`DefectThermodynamics.band_gap` is not set, cannot plot transition levels.")
+
+    if ax is not None and figsize is not None:
+        raise ValueError("`figsize` cannot be set with `ax` (the size of `ax` is used instead).")
 
     if all not in (False, True, "faded", "faded_labels"):
         raise ValueError(f"`all` must be False, True, 'faded' or 'faded_labels', not {all!r}")
@@ -2920,6 +3071,14 @@ def transition_level_diagram(
     # estimate label horizontal extent (in data units = column spacing) so we can extend xlim to leave
     # room for labels at the sides of the outer columns. The data width is approximated by ``n_defects``
     # (columns are spaced 1 data-unit apart) as ``xlim`` is not yet known, assuming ~7-character labels:
+    if ax is not None:
+        # label sizing heuristics below use the figure size as a proxy for the axes size, so use the size
+        # of a ``doped``-created figure (with default subplot margins) whose axes would match ``ax``:
+        rc = plt.rcParams
+        figsize = (
+            ax.bbox.width / ax.figure.dpi / (rc["figure.subplot.right"] - rc["figure.subplot.left"]),
+            ax.bbox.height / ax.figure.dpi / (rc["figure.subplot.top"] - rc["figure.subplot.bottom"]),
+        )
     if figsize is None:
         styled_figsize = plt.rcParams["figure.figsize"]
         figsize_w = max(styled_figsize[0], n_defects + 1.0)
@@ -2936,7 +3095,10 @@ def transition_level_diagram(
         # widen the figure to accommodate the side padding without squishing column spacing:
         figsize = (figsize_w + 0.8 * (2 * side_pad + left_extra_pad), figsize_h)
 
-    fig, ax = plt.subplots(figsize=figsize)
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:  # plot onto user-provided axes
+        fig = ax.figure.figure  # root ``Figure`` (``ax.figure`` is a ``SubFigure`` for subfigure axes)
     xlim = (-side_pad - left_extra_pad, n_defects - 1 + side_pad)
 
     shade_band_edges(ax, defect_thermodynamics.band_gap, xlim, ylim, orientation="vertical")
@@ -3130,3 +3292,271 @@ def transition_level_diagram(
     _set_title_and_save_figure(ax, filename=filename)
 
     return fig
+
+
+def _get_line_intersections(
+    f: Callable, xlim: tuple[float, float], ylim: tuple[float, float]
+) -> np.ndarray:
+    """
+    Get intersections of a line with the plot bounding box.
+    """
+    xmin, xmax = xlim
+    ymin, ymax = ylim
+    x_intersections = []
+    y_intersections = []
+
+    # Check intersections with vertical bounds (xmin and xmax)
+    y_at_xmin = f(xmin)
+    y_at_xmax = f(xmax)
+    if ymin <= y_at_xmin <= ymax:
+        x_intersections.append((xmin, float(y_at_xmin)))
+    if ymin <= y_at_xmax <= ymax:
+        x_intersections.append((xmax, float(y_at_xmax)))
+
+    # Check intersections with horizontal bounds (ymin and ymax)
+    if not np.isclose(float(y_at_xmin), float(y_at_xmax), atol=1e-4):  # not a horizontal line
+
+        def inv_f(yy):  # inverse of the line function
+            return (yy - f(0)) / (f(1) - f(0)) if f(1) != f(0) else xmin
+
+        x_at_ymin = inv_f(ymin)
+        x_at_ymax = inv_f(ymax)
+        if xmin <= x_at_ymin <= xmax:
+            y_intersections.append((float(x_at_ymin), ymin))
+        if xmin <= x_at_ymax <= xmax:
+            y_intersections.append((float(x_at_ymax), ymax))
+
+    # take unique points in case intersects at x/y corner (which would give a duplicate):
+    return np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
+
+
+def _possible_label_positions_from_bbox_intersections(
+    intersections: Sequence[NDArray[np.floating[Any]]] | NDArray[np.floating[Any]],
+    positions_per_line: int = 3,
+) -> NDArray[np.floating[Any]]:
+    """
+    From a list or array of ``intersections``, which contains the intersections
+    of lines with a plot bounding box (limits) and thus has shape ``(N_lines,
+    2, 2)`` (because 2 intersections with 2 (x,y) coordinates per line),
+    returns ``positions_per_line`` uniformly-spaced possible x,y coordinates
+    for labels of those lines.
+
+    e.g. if ``positions_per_line = 3`` (default), then returns the x,y
+    coordinates for the positions which are 1/4, 2/4 and 3/4 along the line
+    between the two bbox intersections.
+
+    Args:
+        intersections (list or np.ndarray):
+            A list or array of intersections of lines with the plot bounding
+            box. Should have shape ``(N_lines, 2, 2)``.
+        positions_per_line (int):
+            The number of possible label positions per line to return. Default
+            is 3, which returns positions at 1/4, 2/4 and 3/4 along the line
+            between the two bbox intersections.
+
+    Returns:
+        np.ndarray:
+            The possible label positions, with shape
+            ``(N_lines, positions_per_line, 2)``.
+    """
+    points = np.array([pts[:2] for pts in intersections], dtype=float).reshape(-1, 2, 2)  # first 2 points
+    first_pt_factor = np.arange(positions_per_line, 0, -1) / (positions_per_line + 1)  # (positions,)
+    second_pt_factor = 1 - first_pt_factor
+    return (  # (N_lines, positions_per_line, 2)
+        points[:, 0, None, :] * first_pt_factor[None, :, None]
+        + points[:, 1, None, :] * second_pt_factor[None, :, None]
+    )
+
+
+def _find_best_label_positions(
+    poss_label_positions: NDArray[np.floating[Any]],
+    x_range: float = 1,
+    y_range: float = 1,
+    return_best_norm_dist: bool = False,
+) -> NDArray[np.floating[Any]] | tuple[NDArray[np.floating[Any]], float]:
+    """
+    From an array of possible label positions, find the best possible
+    combination of label positions which maximises the distance between labels
+    (i.e. minimises overlap).
+
+    Args:
+        poss_label_positions (np.ndarray):
+            The possible label positions, with shape
+            ``(N_lines, positions_per_line, 2)``.
+        x_range (float):
+            The range of the x-axis to use for normalisation. Default is 1.
+        y_range (float):
+            The range of the y-axis to use for normalisation. Default is 1.
+        return_best_norm_dist (bool):
+            Whether to return the best normalised minimum distance between
+            labels. Default is ``False``.
+
+    Returns:
+        np.ndarray:
+            The best possible label positions, with shape ``(N_lines, 2)``,
+            where the second dimension is (x,y-offset) coordinates.
+        float:
+            The best normalised minimum distance between labels,
+            if ``return_best_norm_dist`` is True.
+    """
+    # Get all possible combinations of indices, for the first two dimensions (N_labels,
+    # N_possibilities_per_label):
+    N_labels, N_possibilities_per_label = poss_label_positions.shape[:2]  # (..., N_xy = 2)
+    combinations = np.array(  # (N_possibilities_per_label**N_labels, N_labels)
+        list(itertools.product(range(N_possibilities_per_label), repeat=N_labels)), dtype=int
+    ).reshape(-1, N_labels)
+    all_combos = poss_label_positions[np.arange(N_labels), combinations]  # (N_combos, N_labels, N_xy = 2)
+    all_combos[:, :, 0] /= x_range
+    all_combos[:, :, 1] /= y_range
+    dists = np.linalg.norm(all_combos[:, :, np.newaxis] - all_combos[:, np.newaxis, :], axis=-1)
+    # get upper diagonal of distances (removes self-distances = 0 and duplicates ((i,j) = (j,i))
+    mask = np.triu(np.ones((N_labels, N_labels)), k=1).astype(bool)
+    unique_dists = dists[:, mask]
+    dists_list = [sorted(sublist) for sublist in unique_dists.tolist()]
+    max_idx = dists_list.index(max(dists_list))
+    best_combo = all_combos[max_idx]
+    best_combo[:, 0] *= x_range
+    best_combo[:, 1] *= y_range  # reverse normalisation
+
+    # set y-offset to 0 except for vertical lines:
+    for i in range(N_labels):
+        if poss_label_positions[i, 0, 0] == poss_label_positions[i, -1, 0]:  # vertical line
+            best_combo[i, 1] -= np.mean(
+                poss_label_positions[i, :, 1]
+            )  # y_offset relative to midpoint (default for vertical lines)
+        else:
+            best_combo[i, 1] = 0  # zero y-offset
+
+    if return_best_norm_dist:
+        return best_combo, (dists_list[max_idx] or [np.inf])[0]  # inf if < 2 labels (no pairwise dists)
+
+    return best_combo
+
+
+def _add_line_labels(
+    intersections: Sequence[np.ndarray],
+    lines: dict[str, plt.Line2D],
+    x_range: float,
+    y_range: float,
+    label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
+) -> None:
+    """
+    Add labels to the competing phase lines.
+    """
+    if label_positions is True:  # use custom doped algorithm
+        poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
+        plot_label_positions, best_norm_min_dist = _find_best_label_positions(
+            poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+        )
+        if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
+            poss_label_positions = _possible_label_positions_from_bbox_intersections(
+                intersections, positions_per_line=5
+            )
+            plot_label_positions, best_norm_min_dist = _find_best_label_positions(
+                poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+            )
+
+    elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
+        orig_line_keys = list(lines)
+        lines = {k: lines[k] for k in lines if k in label_positions}  # drop any without positions
+        if not lines:
+            raise ValueError(
+                f"None of the supplied ``label_positions`` keys ({sorted(label_positions)}) match the "
+                f"plotted competing phase line formulae ({orig_line_keys})!"
+            )
+        plot_label_positions = np.array(  # reorder to match lines
+            [label_positions[k] for k in lines], dtype=float
+        )
+
+    else:  # list/tuple of label positions
+        plot_label_positions = np.array(label_positions, dtype=float)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "The value at position")
+        labelLines(
+            list(lines.values()),  # must be in same order as plotting order...
+            xvals=plot_label_positions[:, 0],
+            yoffsets=plot_label_positions[:, 1],
+            align=False,
+            color="black",
+        )
+
+
+def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None, exclude: set | None = None) -> None:
+    """
+    Adjust label positions to ensure they stay within plot bounds (ignoring any
+    ``Text`` artists in ``exclude``, e.g. pre-existing user labels).
+    """
+    xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    x_padding = padding or (xlim[1] - xlim[0]) * 0.1
+    y_padding = padding or (ylim[1] - ylim[0]) * 0.1
+
+    latexified_labels = {
+        artist.get_text(): artist
+        for artist in ax.get_children()
+        if isinstance(artist, plt.Text) and artist not in (exclude or ())
+    }
+    for text in latexified_labels.values():
+        bbox = text.get_window_extent().transformed(ax.transData.inverted())
+        new_position = text.get_position()
+        delta_x = delta_y = 0.0
+
+        if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
+            if bbox.xmin < xlim[0]:  # shift right if label starts before xmin
+                delta_x = (xlim[0] - bbox.xmin) + x_padding * 0.25
+            elif bbox.xmax > xlim[1]:  # shift left if label ends after xmax
+                delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
+
+            if bbox.ymin < ylim[0]:  # shift up if label starts before ymin
+                delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
+            if bbox.ymax > ylim[1]:  # shift down if label ends after ymax
+                delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
+
+            # Apply adjustments while keeping within bounds
+            if delta_x != 0 and new_position[0] + delta_x < xlim[1]:
+                new_position = (new_position[0] + delta_x, new_position[1])
+            if delta_y != 0 and new_position[1] + delta_y < ylim[1]:
+                new_position = (new_position[0], new_position[1] + delta_y)
+
+        text.set_position(new_position)
+
+
+def _add_legend(ax: plt.Axes, **legend_kwargs) -> None:
+    """
+    Add a legend to ``ax``, clear of the plotted markers, lines and texts.
+
+    The legend is placed at the height along the right edge of ``ax`` that is
+    furthest from them, or outside ``ax`` (on the right) if no position is
+    clear of them by at least ``borderaxespad`` (the legend to axes spacing).
+    User-specified positions (``loc``, ``bbox_to_anchor``, ``bbox_transform``
+    or ``mode``) are used as given.
+    """
+    legend = ax.legend(**legend_kwargs)
+    if {"loc", "bbox_to_anchor", "bbox_transform", "mode"} & legend_kwargs.keys():
+        return  # user-specified position
+
+    # obstacle boxes in display coordinates: lines, texts and scatter markers (as squares, with sizes as
+    # areas in pt^2, plus edge linewidths); ticks are ignored (as for matplotlib "best" positioning)
+    px_per_pt = ax.figure.dpi / 72
+    boxes = [artist.get_window_extent().extents for artist in [*ax.lines, *ax.texts]]
+    for markers in ax.collections:
+        if isinstance(markers, PathCollection):
+            xy = markers.get_offset_transform().transform(markers.get_offsets())
+            half_width = (np.sqrt(markers.get_sizes()) + markers.get_linewidth()).max(initial=0) / 2
+            boxes.extend(np.hstack([xy - half_width * px_per_pt, xy + half_width * px_per_pt]))
+    left, bottom, right, top = np.reshape(boxes, (-1, 4)).T
+
+    width, height = legend.get_window_extent().size
+    pad = legend.borderaxespad * legend.prop.get_size_in_points() * px_per_pt  # (as in matplotlib)
+    # candidate legend positions (lower-left corners): along the right edge, top-down in 1 pt steps:
+    x0 = ax.bbox.x1 - pad - width
+    y0s = np.arange(ax.bbox.y1 - pad - height, ax.bbox.y0 + pad, -px_per_pt)[:, None]
+    clearances = np.hypot(  # (n_heights, n_obstacles) arrays
+        np.maximum(np.maximum(left - x0 - width, x0 - right), 0),
+        np.maximum(np.maximum(bottom - y0s - height, y0s - top), 0),
+    ).min(axis=1, initial=np.inf)
+    if x0 >= ax.bbox.x0 + pad and clearances.max(initial=-np.inf) >= pad:  # fits, and clear
+        y_centre = ax.transAxes.inverted().transform((0, y0s[clearances.argmax(), 0] + height / 2))[1]
+        ax.legend(**legend_kwargs, loc="center right", bbox_to_anchor=(1, y_centre))  # (top-most if tied)
+    else:  # outside, on the right
+        ax.legend(**legend_kwargs, loc="center left", bbox_to_anchor=(1, 0.5))

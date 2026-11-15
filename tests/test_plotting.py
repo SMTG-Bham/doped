@@ -16,10 +16,12 @@ extra objects (in ``setUpClass``) where the mixin does not already provide them.
 
 import colorsys
 import os
+import tempfile
 import warnings
 from copy import deepcopy
 
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from matplotlib.colors import ListedColormap, to_rgba
@@ -401,6 +403,48 @@ class DefectTransitionLevelPlotsTestCase(DefectThermodynamicsSetupMixin):
         text_strings = [t.get_text() for t in ax.texts]
         assert not any("/" in s and s.startswith("(") for s in text_strings)
 
+    @custom_mpl_image_compare(filename="CdTe_Se_transition_levels_plot_onto_axes.png")
+    def test_plot_transition_levels_onto_axes(self):
+        """
+        Test plotting TL diagrams onto user-provided ``Axes`` with ``ax`` (e.g.
+        for multi-panel figures).
+        """
+        with plotting.doped_plot_style():  # wider second panel for the 11 Se extrinsic substitutions:
+            fig, axes = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={"width_ratios": [1, 3]})
+        num_open_figs = len(plt.get_fignums())
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            for thermo, ax in zip(
+                [self.CdTe_defect_thermo, self.Se_extrinsic_substitutions_thermo], axes, strict=True
+            ):
+                returned_fig, _output, w = _run_func_and_capture_stdout_warnings(
+                    thermo.plot_transition_levels, ax=ax, filename=f"{tmp_dir}/TLs.png"
+                )
+                assert not w
+                assert returned_fig is fig
+            assert os.listdir(tmp_dir) == ["TLs.png"]
+        assert len(plt.get_fignums()) == num_open_figs  # no new figures created
+        assert len(fig.axes) == 2
+        for ax in axes:
+            assert ax.lines  # TL lines
+            assert any(t.get_text().startswith("(") for t in ax.texts)  # TL labels
+            assert ax.get_ylabel() == "Fermi Level (eV)"
+
+        with pytest.raises(ValueError, match="`figsize` cannot be set with `ax`"):
+            self.CdTe_defect_thermo.plot_transition_levels(ax=axes[0], figsize=(4, 4))
+
+        root_fig = (
+            plt.figure()
+        )  # ``Axes`` within a ``SubFigure``; root ``Figure`` should be returned & saved
+        sub_ax = root_fig.subfigures(1, 2)[0].subplots()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            returned_fig = self.CdTe_defect_thermo.plot_transition_levels(
+                ax=sub_ax, filename=f"{tmp_dir}/TL.png"
+            )
+            assert os.listdir(tmp_dir) == ["TL.png"]
+        assert returned_fig is root_fig
+        plt.close(root_fig)
+        return fig
+
     def test_plot_transition_levels_custom_ylim(self):
         # ``ylim`` touching the band edges (VBM at 0, CBM at band_gap) should not emit any warnings
         # (e.g. the singular-transform warning from a zero-height band-edge shaded region):
@@ -555,6 +599,50 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         # first should be Cd-rich here)
         fig = self.CdTe_defect_thermo.plot(self.CdTe_chempots)[0]
         fig.gca().set_title("")  # remove the title by setting it to an empty string
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot_onto_axes.png")
+    def test_plot_CdTe_onto_axes(self):
+        """
+        Test plotting onto user-provided ``Axes`` with ``ax`` (e.g. for multi-
+        panel figures), for single and multiple chemical potential limits.
+        """
+        fig, axes = plt.subplots(1, 2, figsize=(7, 2.1))  # one ``Axes`` per (Cd-rich, Te-rich) limit
+        fig.subplots_adjust(wspace=1.0)  # extra space between the plots for the legends
+        num_open_figs = len(plt.get_fignums())
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            figs = self.CdTe_defect_thermo.plot(
+                self.CdTe_chempots, ax=axes, filename=f"{tmp_dir}/TLDs.png"
+            )
+            assert os.listdir(tmp_dir) == ["TLDs.png"]  # full figure saved once, rather than per limit
+        assert len(plt.get_fignums()) == num_open_figs  # no new figures created
+        assert len(figs) == 2
+        assert all(returned_fig is fig for returned_fig in figs)
+        assert [ax.get_title() for ax in axes] == ["Cd-CdTe", "CdTe-Te"]
+        assert all(ax.lines and ax.get_legend() is not None for ax in axes)
+        axes[1].get_legend().remove()  # same defects in both panels, so only one legend needed
+
+        single_fig, single_ax = plt.subplots()
+        assert (
+            self.CdTe_defect_thermo.plot(self.CdTe_chempots, limit="CdTe-Te", ax=single_ax) is single_fig
+        )
+        assert single_ax.lines
+
+        with pytest.raises(ValueError, match="Provide one `Axes` per limit"):
+            self.CdTe_defect_thermo.plot(self.CdTe_chempots, ax=single_ax)  # 2 limits, 1 ``Axes``
+
+        root_fig = (
+            plt.figure()
+        )  # ``Axes`` within a ``SubFigure``; root ``Figure`` should be returned & saved
+        sub_ax = root_fig.subfigures(1, 2)[0].subplots()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            returned_fig = self.CdTe_defect_thermo.plot(
+                self.CdTe_chempots, limit="CdTe-Te", ax=sub_ax, filename=f"{tmp_dir}/TLD.png"
+            )
+            assert os.listdir(tmp_dir) == ["TLD.png"]
+        assert returned_fig is root_fig
+        plt.close(single_fig)
+        plt.close(root_fig)
         return fig
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
@@ -871,8 +959,8 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         In this case, the defect folder/entry names match the old ``doped``
         format, with e.g. ``sub_1_Br_on_Se_-1`` and ``inter_2_O_0`` etc.
 
-        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which
-        are removed by including site info, but some (``inter_11_H_X``) which
+        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which are
+        removed by including site info, but some (``inter_11_H_X``) which
         aren't, so ``_a`` & ``_b`` are appended to those names.
         """
         fig = self.Se_ext_no_pnict_thermo.plot(include_site_info=True)
@@ -1079,6 +1167,41 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         assert 0 < len(subset) < len(full)
         for label, color in subset.items():
             assert color == full[label], label
+
+    def test_get_defect_colors_and_linestyles_dominance(self):
+        """
+        Test that ``get_defect_colors_and_linestyles`` with
+        ``dominance="formation_energy"`` reproduces the colours of the
+        corresponding formation energy diagram, independent of the input (plot)
+        ordering of ``lines`` (unlike the default plot ordering).
+        """
+        from doped.utils.plotting import get_defect_colors_and_linestyles
+
+        thermo = self.CdTe_LZ_thermo_wout_meta  # two Te_i (and two Cd_i) groups at default dist_tol
+        legend_colors = list(_legend_color_dict(thermo.plot(limit="Te-rich")).values())
+        lines = list(thermo.transition_level_map)  # plotted lines, in plot order
+        colors, linestyles = get_defect_colors_and_linestyles(
+            thermo, lines, dominance="formation_energy", limit="Te-rich"
+        )
+        assert list(colors.values()) == legend_colors
+        default_colors, _linestyles = get_defect_colors_and_linestyles(  # ``lines`` defaults to all
+            thermo, dominance="formation_energy", limit="Te-rich"
+        )  # defects in ``thermo``, in plot order:
+        assert default_colors == colors
+        assert set(linestyles.values()) == {"-"}  # default ``variant_style="fade"``; no linestyle cycling
+
+        # the default (plot) ordering gives different variant shades here, and is order-dependent, while
+        # the thermodynamic dominance ordering is not:
+        plot_ordered_colors, _linestyles = get_defect_colors_and_linestyles(thermo, lines)
+        assert list(plot_ordered_colors.values()) != legend_colors
+        reversed_colors, _linestyles = get_defect_colors_and_linestyles(
+            thermo, lines[::-1], dominance="formation_energy", limit="Te-rich"
+        )
+        assert reversed_colors == colors  # same colour per line, despite the reversed input order
+
+        with pytest.raises(ValueError) as exc:
+            get_defect_colors_and_linestyles(thermo, lines, dominance="concentration")
+        assert "`dominance` must be either `None`, 'formation_energy' or a" in str(exc.value)
 
     def test_type_keyed_colors_variant_shading_and_linestyles(self):
         """
@@ -1672,6 +1795,11 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             "As_i_C2_-3": "As$_i^{-3}$",
             "Ag_i_C3v_Ag2.40_0": "Ag$_i^{0}$",
             "Ga_O_C1_Ga1.93Ga2.08O2.62aas_0": "Ga$_{O}^{0}$",
+            # point group symbols starting with the defect element (previously mistaken for the element):
+            "D_Co_D3d_0": "D$_{Co}^{0}$",
+            "T_Co_Td_0": "T$_{Co}^{0}$",
+            "T_Si_Td_0": "T$_{Si}^{0}$",
+            "C_Si_C3v_0": "C$_{Si}^{0}$",
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():
@@ -1759,6 +1887,14 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             "As_i_C2_-3": "As$_{i_{C_{2}}}^{-3}$",
             "Ag_i_C3v_Ag2.40_0": "Ag$_{i_{C_{3v}-Ag2.40}}^{0}$",
             "Ga_O_C1_Ga1.93Ga2.08O2.62aas_0": "Ga$_{O_{C_{1}-Ga1.93Ga2.08O2.62aas}}^{0}$",
+            # point group symbols starting with the defect element (previously mistaken for the element):
+            "D_i_D3d_Si1.18_+1": "D$_{i_{D_{3d}-Si1.18}}^{+1}$",
+            "D_i_D2d_0": "D$_{i_{D_{2d}}}^{0}$",
+            "D_Co_D3d_0": "D$_{Co_{D_{3d}}}^{0}$",
+            "T_Co_Td_0": "T$_{Co_{T_{d}}}^{0}$",
+            "C_i_C3v_0": "C$_{i_{C_{3v}}}^{0}$",
+            "C_Si_C3v_0": "C$_{Si_{C_{3v}}}^{0}$",
+            "S_i_S4_0": "S$_{i_{S_{4}}}^{0}$",
         }
         for (
             defect_species,

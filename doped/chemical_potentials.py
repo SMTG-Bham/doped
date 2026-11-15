@@ -11,26 +11,23 @@ import math
 import os
 import warnings
 from bisect import bisect_right
-from collections import defaultdict
-from collections.abc import Callable, Iterable, Iterator, Sequence
-from copy import deepcopy
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Iterator, Sequence
 from functools import cache, partial
 from pathlib import Path
 from re import sub
 from types import ModuleType
-from typing import Any, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from labellines import labelLines
 from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
-from monty.serialization import loadfn
+from monty.serialization import dumpfn, loadfn
 from mp_api.client.mprester import DEFAULT_THERMOTYPE_CRITERIA, MPRester, MPRestError
-from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import Composition, Element, Lattice, Structure
@@ -50,14 +47,25 @@ from doped.generation import _element_sort_func
 from doped.io import get_backend
 from doped.io import utils as _io_utils
 from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
+from doped.utils._optimise import _independent_columns
 from doped.utils.efficiency import StructureMatcher_scan_stol
-from doped.utils.plotting import doped_plot_style, get_colormap
+from doped.utils.plotting import (
+    _add_line_labels,
+    _get_line_intersections,
+    _nudge_labels_inside_axes,
+    doped_plot_style,
+    get_colormap,
+)
 from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
 
 # globally ignore:
 _ignore_pmg_warnings()
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
+"""
+Equilibrium bond lengths (in Å) of the diatomic gaseous elements, used when
+generating molecule-in-a-box structures.
+"""
 
 # TODO: Update chemical potentials tutorial notebook for new code/function names. Show example of
 #  combining entries from a previously parsed CPA with a new one (i.e. similar functionality to previous
@@ -66,19 +74,24 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 #  as a reasonable approach to boosting efficiency without major accuracy loss.
 # Check tutorial links working!
 # Show example of generating `NKRED` folders for competing phases, and mention in docstrings.
-# TODO: Use Codex to review the new module (and ask Claude to review all as well)
+# TODO: Use Codex and Claude to review the full new module
 
-MPRESTER_PROPERTY_DATA = (  # properties to pull for Materials Project entries
+MPRESTER_PROPERTY_DATA = (
     "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
     "formula_pretty",
     "energy_above_hull",
     "nsites",
     "volume",
-    "formation_energy_per_atom",  # note that this is the corrected formation energy
-    "energy_per_atom",  # note that this is the corrected energy per atom
+    "formation_energy_per_atom",  # note: these hull-referenced fields are re-derived locally in...
+    "energy_per_atom",  # ...``get_entries_in_chemsys()``, for self-consistency with the returned PDs
     "nelements",
     "elements",
 )
+"""
+Entry properties to request from the Materials Project API, populated in
+``entry.data``.
+"""
+
 MPRESTER_SUMMARY_DATA = (
     "material_id",  # required so we can map docs back to entries via MPID
     "band_gap",
@@ -86,8 +99,17 @@ MPRESTER_SUMMARY_DATA = (
     "theoretical",
     "database_IDs",  # dict, possibly with an "icsd" key with list of ICSD entry codes
 )
+"""
+Fields to request from the Materials Project summary documents, attached to
+``entry.data["summary"]``.
+"""
+
 
 default_get_entries_kwargs: dict[str, Any] = {"property_data": list(MPRESTER_PROPERTY_DATA)}
+"""
+Default keyword arguments for Materials Project entry queries; any user-
+supplied ``kwargs`` take precedence over these.
+"""
 
 
 def _attach_summary_data_to_entries(
@@ -104,7 +126,7 @@ def _attach_summary_data_to_entries(
     ``SummaryDoc.model_dump(mode="json")``) so entries round-trip cleanly
     through ``MontyEncoder`` (and ``ComputedEntry.to_json()``).
     """
-    material_ids = [mpid for mpid in (entry.data.get("material_id") for entry in entries) if mpid]
+    material_ids = [mpid for entry in entries if (mpid := entry.data.get("material_id"))]
     if material_ids:  # otherwise mp-api treats material_ids=[] as "no filter" and returns the entire DB...
         docs_by_mpid = {
             doc.material_id: doc.model_dump(mode="json")
@@ -114,6 +136,35 @@ def _attach_summary_data_to_entries(
             if doc := docs_by_mpid.get(entry.data.get("material_id")):
                 # drop ``material_id`` (already in the entry data):
                 entry.data["summary"] = {k: v for k, v in doc.items() if k != "material_id"}
+
+
+def _sanitise_entry_data_keys(entries: list[ComputedEntry]) -> None:
+    """
+    Convert any non-JSON-serialisable ``dict`` keys in ``entry.data`` to
+    strings, in-place.
+
+    Entries from the (default) mixed GGA/GGA+U/r2SCAN Materials Project thermo
+    docs carry ``entry.data["oxidation_states"]`` dicts keyed by ``Element``
+    objects, which ``json``/``MontyEncoder`` cannot encode (non-string ``dict``
+    keys are not JSON-serialisable), breaking JSON serialisation here.
+
+    See https://github.com/materialsproject/emmet/issues/1511. This may no
+    longer be needed if/when ``emmet`` PR #1431 (proper ``pydantic`` models for
+    ``ComputedEntry`` objects and their data;
+    https://github.com/materialsproject/emmet/pull/1431) is merged.
+    """
+
+    def _str_keys(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {
+                k if isinstance(k, str | int | float | None) else str(k): _str_keys(v)
+                for k, v in obj.items()
+            }
+        # tuple -> list; serialised as a JSON array either way:
+        return [_str_keys(v) for v in obj] if isinstance(obj, list | tuple) else obj
+
+    for entry in entries:
+        entry.data = _str_keys(entry.data)
 
 
 def make_molecule_in_a_box(element: str) -> Structure:
@@ -175,33 +226,29 @@ def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntr
             |ComputedStructureEntry| for the diatomic (X2) 'molecule-in-a-box'.
     """
     assert len(computed_entry.composition.elements) == 1  # Elemental!
-    formula = computed_entry.data.get("formula_pretty", "N/A")
     element = computed_entry.composition.elements[0].symbol
-    struct = make_molecule_in_a_box(element)
-    molecular_entry = ComputedStructureEntry(
-        structure=struct,
+    return ComputedStructureEntry(
+        structure=make_molecule_in_a_box(element),
         energy=computed_entry.energy_per_atom * 2,  # set entry energy to be hull energy
-        composition=Composition(formula),
-        parameters=None,
+        data={
+            "formula_pretty": computed_entry.data.get("formula_pretty", "N/A"),
+            "energy_above_hull": 0.0,
+            "nsites": 2,
+            "volume": 27000,
+            "formation_energy_per_atom": 0.0,
+            "energy_per_atom": computed_entry.data["energy_per_atom"],
+            "nelements": 1,
+            "elements": [element],
+            "molecule": True,
+            "material_id": "mp-0",
+            "summary": {
+                "band_gap": None,
+                "total_magnetization": 0 if element != "O" else 2,  # O2 has a triplet ground state (S = 1)
+                "theoretical": False,
+                "database_IDs": {},
+            },
+        },
     )
-    molecular_entry.data["formula_pretty"] = formula
-    molecular_entry.data["energy_above_hull"] = 0.0
-    molecular_entry.data["nsites"] = 2
-    molecular_entry.data["volume"] = 27000
-    molecular_entry.data["formation_energy_per_atom"] = 0.0
-    molecular_entry.data["energy_per_atom"] = computed_entry.data["energy_per_atom"]
-    molecular_entry.data["nelements"] = 1
-    molecular_entry.data["elements"] = [formula]
-    molecular_entry.data["molecule"] = True
-    molecular_entry.data["material_id"] = "mp-0"
-    molecular_entry.data["summary"] = {
-        "band_gap": None,
-        "total_magnetization": 0 if element != "O" else 2,  # O2 has a triplet ground state (S = 1)
-        "theoretical": False,
-        "database_IDs": {},
-    }
-
-    return molecular_entry
 
 
 def _renormalise_entry(
@@ -237,7 +284,7 @@ def _renormalise_entry(
         )
     else:
         energy_adjustment = ManualEnergyAdjustment(renormalisation_energy)
-    renormalised_entry = deepcopy(entry)
+    renormalised_entry = copy.deepcopy(entry)
     renormalised_entry.energy_adjustments += [energy_adjustment]  # includes MP corrections as desired
 
     return renormalised_entry
@@ -255,7 +302,7 @@ def get_chempots_from_phase_diagram(
             |ComputedEntry|/|ComputedStructureEntry| object for the host
             composition.
         phase_diagram (PhaseDiagram):
-            ``PhaseDiagram`` object for the system of interest.
+            |PhaseDiagram| object for the system of interest.
 
     Returns:
         dict:
@@ -292,11 +339,11 @@ def _get_all_chemsyses(chemsys: str | list[str]) -> list[str]:
     if isinstance(chemsys, str):
         chemsys = chemsys.split("-")
     elements_set = set(chemsys)  # remove duplicate elements
-    all_chemsyses: list[str] = []
-    for i in range(len(elements_set)):
-        all_chemsyses.extend("-".join(sorted(els)) for els in itertools.combinations(elements_set, i + 1))
-
-    return all_chemsyses
+    return [
+        "-".join(sorted(els))
+        for i in range(1, len(elements_set) + 1)
+        for els in itertools.combinations(elements_set, i)
+    ]
 
 
 def get_entries_in_chemsys(
@@ -320,6 +367,12 @@ def get_entries_in_chemsys(
     hull (according to the MP-computed phase diagram) less than this value (in
     eV/atom) will be returned.
 
+    By default, entries are taken from the Materials Project mixed
+    GGA/GGA+U/r2SCAN thermodynamic data (``thermo_type = "GGA_GGA+U_R2SCAN"``;
+    the MP default since ``mp-api`` 0.46.5), where the MP mixing scheme gives
+    one corrected energy per material on a single mixed phase diagram (hull).
+    See ``**kwargs`` below for querying other thermo types.
+
     The output entries list is sorted by energy above hull, then by the number
     of elements in the formula, then by the position of elements in the
     periodic table (main group elements, then transition metals, sorted by
@@ -330,12 +383,12 @@ def get_entries_in_chemsys(
             Chemical system to get entries for, in the format "A-B-C" or
             ["A", "B", "C"]. E.g. "Li-Fe-O" or ["Li", "Fe", "O"].
         api_key (str):
-            Materials Project (MP) API key, needed to access the MP database
-            to obtain the corresponding |ComputedStructureEntry|\s. If not
+            Materials Project (MP) API key, needed to access the MP database to
+            obtain the corresponding |ComputedStructureEntry|\s. If not
             supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            :ref:`Installation docs <setup_potcars_mp_api>`.
+            |Installation docs|.
         energy_above_hull (float):
             If supplied, only entries with energies above hull (according to
             the MP-computed phase diagram) less than this value (in eV/atom)
@@ -347,30 +400,45 @@ def get_entries_in_chemsys(
             composition first). Default is ``None``.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
-            ``get_entries_in_chemsys()`` query.
+            ``get_entries_in_chemsys()`` query -- e.g.
+            ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}`` to query
+            only GGA/GGA+U data, rather than the default mixed
+            GGA/GGA+U/r2SCAN phase diagrams (``"GGA_GGA+U_R2SCAN"``; the MP
+            default since ``mp-api`` 0.46.5, where the MP mixing scheme gives
+            one corrected energy per material on a single mixed hull). Under
+            the mixed default, any further ``additional_criteria`` (e.g.
+            ``{"is_stable": True}``) are applied by ``mp-api`` as a post-hoc
+            filter on the (common energy scale) chemical system entries, with
+            MP's own per-material semantics; i.e. ``is_stable`` /
+            ``energy_above_hull`` refer to each material's own chemical-system
+            mixing frame, so for multi-element systems they can differ slightly
+            from hull distances on the returned (full chemical system) phase
+            diagram -- use the ``energy_above_hull`` argument here to filter on
+            the latter.
 
     Returns:
         list[|ComputedStructureEntry|]:
             List of |ComputedStructureEntry| objects for the input chemical
             system.
     """
-    with MPRester(api_key) as mpr:
-        # get all entries in the chemical system
-        MP_full_pd_entries = mpr.get_entries_in_chemsys(
-            elements=chemsys,
-            **default_get_entries_kwargs,
-            **kwargs,
-        )
+    kwargs = {**default_get_entries_kwargs, **kwargs}  # User-supplied kwargs win over the defaults
+
+    with MPRester(api_key) as mpr:  # get all entries in the chemical system:
+        MP_full_pd_entries = mpr.get_entries_in_chemsys(elements=chemsys, **kwargs)
+        _sanitise_entry_data_keys(MP_full_pd_entries)  # Element keys in mixed thermo doc entry data
         _attach_summary_data_to_entries(MP_full_pd_entries, mpr)
 
     temp_phase_diagram = PhaseDiagram(MP_full_pd_entries)
     for entry in MP_full_pd_entries:
-        # reparse energy above hull, to avoid mislabelling issues noted in Materials Project database
-        # (mostly only the legacy database, so should be resolved with the new MP API database now);
-        # e.g. search "F", or ZnSe2 on Zn-Se convex hull from MP PD, but EaH = 0.147 eV/atom?
-        # or Immm phases for Br, I..., Na2FePO4F... # TODO: Check if needed, if not can cut this function?
-        # only other thing is sorting, can be done after
+        # (re)parse energy above hull, energy per atom, formation energy and formula data fields locally,
+        # so they are always present and self-consistent with the returned entry energies regardless of
+        # query path -- the ``property_data`` fields come from the per-material thermo docs, whose
+        # hull-referenced values (EaH, formation energy) refer to MP's per-chemical-system mixing frames
+        # and so may not match the returned (full chemical system) phase diagram:
         entry.data["energy_above_hull"] = temp_phase_diagram.get_e_above_hull(entry)
+        entry.data["energy_per_atom"] = entry.energy_per_atom
+        entry.data["formation_energy_per_atom"] = temp_phase_diagram.get_form_energy_per_atom(entry)
+        entry.data["formula_pretty"] = entry.composition.reduced_formula
 
     if energy_above_hull is not None:
         MP_full_pd_entries = [
@@ -396,41 +464,53 @@ def get_entries(
     input single composition/formula, chemical system, MPID or full criteria,
     using ``MPRester.get_entries()``.
 
-    The output entries list is sorted by energy per atom (equivalent sorting as
-    energy above hull), then by the number of elements in the formula, then by
-    the position of elements in the periodic table (main group elements, then
-    transition metals, sorted by row).
+    The output entries list is sorted by energy above hull, then by the number
+    of elements in the formula, then by the position of elements in the
+    periodic table (main group elements, then transition metals, sorted by
+    row).
 
     Args:
         chemsys_formula_id_criteria (str/dict):
             A formula (e.g., Fe2O3), chemical system (e.g., Li-Fe-O) or MPID
             (e.g., mp-1234) or full Mongo-style dict criteria.
         api_key (str):
-            Materials Project (MP) API key, needed to access the MP database
-            to obtain the corresponding |ComputedStructureEntry|\s. If not
+            Materials Project (MP) API key, needed to access the MP database to
+            obtain the corresponding |ComputedStructureEntry|\s. If not
             supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            :ref:`Installation docs <setup_potcars_mp_api>`.
+            |Installation docs|.
         bulk_composition (str/|Composition|):
             Optional input; formula of the bulk host material, to use for
             sorting the output entries (with all those matching the bulk
             composition first). Default is ``None``.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
-            ``get_entries()`` query.
+            ``get_entries()`` query -- e.g.
+            ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}`` to query
+            only GGA/GGA+U data, rather than the default mixed
+            GGA/GGA+U/r2SCAN phase diagrams (``"GGA_GGA+U_R2SCAN"``).
 
     Returns:
         list[|ComputedStructureEntry|]:
             List of |ComputedStructureEntry| objects for the input chemical
             system.
     """
+    # default the thermo type to match ``get_entries_in_chemsys()`` handling; unlike
+    # ``MPRester.get_entries_in_chemsys`` (currently); plain ``MPRester.get_entries`` applies no
+    # ``thermo_types`` default, and so would otherwise return multiple (inconsistent) thermo types:
+    additional_criteria = {
+        **DEFAULT_THERMOTYPE_CRITERIA,
+        **(kwargs.pop("additional_criteria", None) or {}),
+    }
+
     with MPRester(api_key) as mpr:
         entries = mpr.get_entries(
             chemsys_formula_id_criteria,
-            **default_get_entries_kwargs,
-            **kwargs,
+            additional_criteria=additional_criteria,
+            **{**default_get_entries_kwargs, **kwargs},  # user-supplied kwargs (property_data etc) win
         )
+        _sanitise_entry_data_keys(entries)  # Element keys in mixed thermo doc entry data
         _attach_summary_data_to_entries(entries, mpr)
 
     # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
@@ -451,7 +531,7 @@ def _check_MP_API_key(api_key: str | None = None) -> str | None:
             not supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            :ref:`Installation docs <setup_potcars_mp_api>`.
+            |Installation docs|.
 
     Returns:
         str | None:
@@ -487,28 +567,28 @@ def get_MP_summary_dicts(
     If ``entries`` is provided (which should be a list of |ComputedEntry|\s
     from the Materials Project), then only summary dictionaries in this
     chemical system which match one of these entries (based on the MPIDs given
-    in ``ComputedEntry.entry_id``/``ComputedEntry.data["material_id"]`` and
-    ``summary_dict["material_id"]``) are returned.
+    in ``ComputedEntry.data["material_id"]`` / ``summary_dict["material_id"]``)
+    are returned.
 
     Args:
         entries (list[|ComputedEntry|]):
             Optional input; list of |ComputedEntry| objects for the input
             chemical system. If provided, only summary dictionaries which match
             one of these entries (based on the MPIDs given in
-            ``ComputedEntry.entry_id``/``ComputedEntry.data["material_id"]``
-            and ``summary_dict["material_id"]``) are returned.
+            ``ComputedEntry.data["material_id"]`` and
+            ``summary_dict["material_id"]``) are returned.
         chemsys (str, list[str]):
             Optional input; chemical system to get entries for, in the format
             ``"A-B-C"`` or ``["A", "B", "C"]``. E.g. ``"Li-Fe-O"`` or
             ``["Li", "Fe", "O"]``. Either ``entries`` or ``chemsys`` must be
             provided!
         api_key (str):
-            Materials Project (MP) API key, needed to access the MP database
-            to obtain the corresponding summary dictionaries. If not
-            supplied, will attempt to read from ``~/.pmgrc.yaml`` or
+            Materials Project (MP) API key, needed to access the MP database to
+            obtain the corresponding summary dictionaries. If not supplied,
+            will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            :ref:`Installation docs <setup_potcars_mp_api>`.
+            |Installation docs|.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
             query, e.g. ``MPRester.materials.summary.search()``.
@@ -520,14 +600,14 @@ def get_MP_summary_dicts(
             corresponding summary dictionaries.
     """
     _check_MP_API_key(api_key)
-    if entries is None and chemsys is None:
+    if not entries and chemsys is None:
         raise ValueError("Either `entries` or `chemsys` must be provided!")
 
     summary_search_kwargs = {**kwargs}
     if entries:
         summary_search_kwargs["material_ids"] = [entry.data["material_id"] for entry in entries]
     elif chemsys is not None:  # convert to ``MPRester.summary.search`` chemsys format:
-        summary_search_kwargs["chemsys"] = _get_all_chemsyses("-".join(chemsys))
+        summary_search_kwargs["chemsys"] = _get_all_chemsyses(chemsys)
 
     with MPRester(api_key) as mpr:  # ``SummaryDoc`` -> JSON-safe dict via ``model_dump(mode="json")``
         MP_doc_dicts = {
@@ -551,9 +631,8 @@ def get_MP_summary_dicts(
 
 def _entries_sort_func(
     entry: ComputedEntry,
-    use_e_per_atom: bool = False,
     bulk_composition: str | Composition | dict | list | None = None,
-) -> tuple[float, bool, int, list[tuple[int, int]], str]:
+) -> tuple[float, bool, int, list[tuple[int, int, float]], str]:
     r"""
     Function to sort |ComputedEntry|\s by energy above hull, then if
     composition matches ``bulk_composition`` (if provided), then by the number
@@ -566,24 +645,20 @@ def _entries_sort_func(
     Args:
         entry (|ComputedEntry|):
             |ComputedEntry| object to sort.
-        use_e_per_atom (bool):
-            If ``True``, sort by energy per atom rather than energy above hull.
-            Default is ``False``.
         bulk_composition (str/|Composition|/dict/list):
             Bulk composition; to sort entries matching this composition first.
             Default is ``None`` (don't sort according to this).
 
     Returns:
-        tuple[float, bool, int, list[tuple[int, int]], str]:
-            Sort key: energy above hull (or energy per atom if
-            ``use_e_per_atom``), whether the composition differs from the bulk
-            composition (when ``bulk_composition`` is set), number of species
-            in ``entry.name``, periodic-table ordering tuples for each element,
-            then ``entry.name``.
+        tuple[float, bool, int, list[tuple[int, int, float]], str]:
+            Sort key: energy above hull, whether the composition differs from
+            the bulk composition (when ``bulk_composition`` is set), number of
+            species in ``entry.name``, periodic-table ordering tuples for each
+            element, then ``entry.name``.
     """
     bulk_reduced_comp = Composition(bulk_composition).reduced_composition if bulk_composition else None
     return (
-        entry.energy_per_atom if use_e_per_atom else entry.data.get("energy_above_hull", 0),
+        entry.data.get("energy_above_hull", 0),
         entry.composition.reduced_composition != bulk_reduced_comp,  # goes from False to True
         len(Composition(entry.name).as_dict()),
         sorted([_element_sort_func(i.symbol) for i in Composition(entry.name).elements]),
@@ -603,9 +678,9 @@ def prune_entries_to_border_candidates(
     (``bulk_computed_entry``), returns the subset of entries which `could`
     border the host on the phase diagram (and therefore be a competing phase
     which determines the host chemical potential limits), allowing for an error
-    tolerance (i.e. for semi-local DFT database energies
-    (``energy_above_hull``, set to ``self.energy_above_hull`` -- 0.05 eV/atom
-    by default)).
+    tolerance (i.e. for the semi-local (mixed GGA/GGA+U/r2SCAN) DFT database
+    energies (``energy_above_hull``, set to ``self.energy_above_hull`` -- 0.05
+    eV/atom by default)).
 
     If ``phase_diagram`` is provided then this is used as the reference phase
     diagram, otherwise it is generated from ``entries`` and
@@ -618,18 +693,19 @@ def prune_entries_to_border_candidates(
         bulk_computed_entry (|ComputedEntry|):
             |ComputedEntry| object for the host material.
         phase_diagram (PhaseDiagram):
-            Optional input; ``PhaseDiagram`` object for the system of interest.
+            Optional input; |PhaseDiagram| object for the system of interest.
             If provided, this is used as the reference phase diagram from which
             to determine the (potential) chemical potential limits, otherwise
             it is generated from ``entries`` and ``bulk_computed_entry``.
         energy_above_hull (float):
             Maximum energy above hull (in eV/atom) of Materials Project entries
             to be considered as competing phases. This is an uncertainty range
-            for the MP-calculated formation energies, which may not be accurate
-            due to functional choice (e.g. GGA vs hybrid DFT / GGA+U / RPA etc.),
-            lack of vdW corrections etc. All phases that would border the host
-            material on the phase diagram, if their relative energy was
-            downshifted by ``energy_above_hull``, are included.
+            for the MP-calculated formation energies (mixed GGA/GGA+U/r2SCAN
+            data by default), which may not be accurate due to functional
+            choice (semi-local DFT vs hybrid DFT / RPA etc.), lack of vdW
+            corrections etc. All phases that would border the host material on
+            the phase diagram, if their relative energy was downshifted by
+            ``energy_above_hull``, are included.
             (Default is 0.05 eV/atom).
 
     Returns:
@@ -651,10 +727,6 @@ def prune_entries_to_border_candidates(
     bordering_entries = [
         entry for entry in entries if entry.name in MP_bordering_phases or entry.is_element
     ]
-    bordering_entry_names = [
-        bordering_entry.name for bordering_entry in bordering_entries
-    ]  # compositions which border the host with EaH=0, according to MP, so we include all phases with
-    # these compositions up to EaH=energy_above_hull (which we've already pruned to)
     # for determining phases which alter the chemical potential limits when renormalised, only need to
     # retain the EaH=0 entries from above, so we use this reduced PD to save compute time when looping
     # below:
@@ -664,8 +736,10 @@ def prune_entries_to_border_candidates(
 
     # then add any other phases that would border the host material on the phase diagram, if their
     # relative energy was downshifted by ``energy_above_hull``:
-    # only check if not already bordering; can just use names for this:
-    entries_to_test = [entry for entry in entries if entry.name not in bordering_entry_names]
+    # only check if not already bordering (all phases with bordering compositions are included above):
+    entries_to_test = [
+        entry for entry in entries if entry.name not in MP_bordering_phases and not entry.is_element
+    ]
     entries_to_test.sort(key=_entries_sort_func)  # sort by energy above hull
     # to save unnecessary looping, whenever we encounter a phase that is not being added to the border
     # candidates list, skip all following phases with this composition (because they have higher
@@ -743,9 +817,7 @@ def _warn_if_many_polymorphs_per_composition(entries: list[ComputedEntry], thres
     polymorphs, suggesting that the user prune them using knowledge of the
     expected ground-state / room-temperature phase(s).
     """
-    comp_counts: dict[str, int] = defaultdict(int)
-    for entry in entries:
-        comp_counts[entry.composition.reduced_formula] += 1
+    comp_counts = Counter(entry.composition.reduced_formula for entry in entries)
     many_polymorphs = {comp: n for comp, n in comp_counts.items() if n > threshold}
     if not many_polymorphs:
         return
@@ -876,7 +948,9 @@ def _name_entries_and_handle_duplicates(
     Set ``entry.data["doped_name"]`` for each |ComputedEntry| in ``entries``,
     using ``get_and_set_competing_phase_name``, increasing ``ndigits``
     (rounding for energy above hull in name) dynamically from 3 -> 4 -> 5 on
-    any entries with duplicate names, to ensure unique naming.
+    any entries with duplicate names, then appending the MP material IDs of any
+    remaining duplicates (i.e. near-degenerate entries whose energies above
+    hull match to 5 decimal places), to ensure unique naming.
     """
     ndigits = 3
     entry_names = [get_and_set_competing_phase_name(entry, ndigits=ndigits) for entry in entries]
@@ -884,12 +958,17 @@ def _name_entries_and_handle_duplicates(
         entries[i] for i, name in enumerate(entry_names) if entry_names.count(name) > 1
     ]:
         ndigits += 1
-        if ndigits == 5:
-            warnings.warn(
-                f"Duplicate entry names found for generated competing phases: "
-                f"{get_and_set_competing_phase_name(duplicate_entries[0])}!"
-            )
+        if ndigits > 5:  # EaH rounding cannot separate near-degenerate entries; append MP IDs
+            for entry in duplicate_entries:
+                mpid = entry.data.get("material_id") or str(entry.entry_id)
+                entry.data["doped_name"] = f"{get_and_set_competing_phase_name(entry)}_{mpid}"
+            entry_names = [get_and_set_competing_phase_name(entry) for entry in entries]
+            for i, name in enumerate(entry_names):  # same ``material_id`` (e.g. one material via...
+                # ...multiple thermo types)? -- append the (run-type-suffixed, unique) entry id:
+                if entry_names.count(name) > 1 and entries[i].entry_id:
+                    entries[i].data["doped_name"] = f"{name}_{entries[i].entry_id}"
             break
+
         # regenerate names for duplicates only; ``entry_names`` then picks up the set values via
         # ``regenerate=False`` (which returns the already-updated ``entry.data["doped_name"]``):
         for entry in duplicate_entries:
@@ -897,7 +976,86 @@ def _name_entries_and_handle_duplicates(
         entry_names = [get_and_set_competing_phase_name(entry, regenerate=False) for entry in entries]
 
 
-class CompetingPhases(MSONable):
+class _EntriesMixin:
+    """
+    Dict-like access to competing phase ``entries`` by ``doped`` name
+    (``entry.data["doped_name"]``), plus list-style integer/slice indexing;
+    shared by |CompetingPhases| and |CompetingPhasesAnalyzer|.
+    """
+
+    if TYPE_CHECKING:  # type-only declaration (set by the subclass ``__init__``); hidden from autodoc...
+        entries: list[ComputedEntry]  # ... so documented once, in the class docstring ``Key Attributes``
+
+    @property
+    def entries_dict(self) -> dict[str, ComputedEntry]:
+        """
+        Mapping of ``doped`` competing phase names to entries.
+        """
+        entries_dict: dict[str, ComputedEntry] = {}
+        for entry in self.entries:
+            doped_name = get_and_set_competing_phase_name(entry, regenerate=False)
+            if doped_name in entries_dict:
+                raise KeyError(
+                    f"Duplicate competing phase key encountered in `self.entries`: {doped_name}. "
+                    "Please regenerate entries / entry names to ensure uniqueness."
+                )
+            entries_dict[doped_name] = entry
+        return entries_dict
+
+    def __getattr__(self, attr: str) -> Any:
+        """
+        Redirect unknown attribute/method lookups to the entries dictionary.
+        """
+        # ``__getattr__`` is only called when normal lookup has already failed (including when the
+        # ``entries_dict`` property itself raises ``AttributeError``, e.g. ``entries`` not yet set on a
+        # partially-initialised object), so guard against infinite recursion:
+        if attr in ("entries", "entries_dict"):
+            raise AttributeError(attr)
+        return getattr(self.entries_dict, attr)
+
+    @overload
+    def __getitem__(self, key: str | int) -> ComputedEntry: ...
+
+    @overload
+    def __getitem__(self, key: slice) -> list[ComputedEntry]: ...
+
+    def __getitem__(self, key: str | int | slice) -> ComputedEntry | list[ComputedEntry]:
+        """
+        Make the object subscriptable.
+
+        String keys index by ``entry.data["doped_name"]`` (dict-like), while
+        integer / slice keys use list-style indexing on ``self.entries``.
+        """
+        if isinstance(key, str):
+            return self.entries_dict[key]
+        return self.entries[key]  # integer / slice keys; apply to ``entries`` list
+
+    def __contains__(self, item: str | ComputedEntry) -> bool:
+        """
+        Return ``True`` if ``item`` is in the entries.
+
+        For string inputs this checks ``entry.data["doped_name"]`` keys, while
+        for non-strings this falls back to list-style membership in
+        ``self.entries``.
+        """
+        if isinstance(item, str):
+            return item in self.entries_dict
+        return item in self.entries
+
+    def __len__(self) -> int:
+        """
+        Return the number of competing phase entries.
+        """
+        return len(self.entries)
+
+    def __iter__(self) -> Iterator[str]:
+        """
+        Return an iterator over ``entry.data["doped_name"]`` keys.
+        """
+        return iter(self.entries_dict)
+
+
+class CompetingPhases(_EntriesMixin, MSONable):
     def __init__(
         self,
         composition: str | Composition | Structure,
@@ -920,11 +1078,20 @@ class CompetingPhases(MSONable):
 
         For this, the Materials Project (MP) database is queried using the
         ``MPRester`` API, and any calculated compounds which `could` border the
-        host material within an error tolerance for the semi-local DFT database
-        energies (``energy_above_hull``, 0.05 eV/atom by default) are
-        generated, along with the elemental reference phases. Diatomic gaseous
-        molecules are generated as molecules-in-a-box as appropriate (e.g. for
-        O2, F2, H2 etc).
+        host material within an error tolerance for the semi-local DFT (mixed
+        GGA/GGA+U/r2SCAN) database energies (``energy_above_hull``, 0.05
+        eV/atom by default) are generated, along with the elemental reference
+        phases. Diatomic gaseous molecules are generated as molecules-in-a-box
+        as appropriate (e.g. for O2, F2, H2 etc).
+
+        Materials Project energies are taken from the mixed GGA/GGA+U/r2SCAN
+        thermodynamic data by default (``thermo_type = "GGA_GGA+U_R2SCAN"``;
+        the MP default since ``mp-api`` 0.46.5), where the MP mixing scheme
+        gives one corrected energy per material on a single mixed phase diagram
+        (hull). Other thermo types (e.g. GGA/GGA+U-only or r2SCAN-only data)
+        can be queried by passing e.g.
+        ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}`` via
+        ``**kwargs``.
 
         Often ``energy_above_hull`` can be lowered (e.g. to ``0``) to reduce
         the number of calculations while retaining good accuracy relative to
@@ -942,7 +1109,10 @@ class CompetingPhases(MSONable):
         Particular attention should be paid for materials containing transition
         metals, (inter)metallic systems, mixed oxidation states, van der Waals
         (vdW) binding and/or large spin-orbit coupling (SOC) effects, for which
-        the Materials Project energetics are typically less reliable.
+        the Materials Project energetics are typically less reliable. The mixed
+        GGA/GGA+U/r2SCAN data (the current default) improves on the older
+        GGA/GGA+U-only energetics in many such cases, but can still be
+        inaccurate under various circumstances.
 
         Args:
             composition (str, |Composition|, |Structure|):
@@ -956,9 +1126,10 @@ class CompetingPhases(MSONable):
             energy_above_hull (float):
                 Maximum energy above hull (in eV/atom) of Materials Project
                 entries to be considered as competing phases. This is an
-                uncertainty range for the MP-calculated formation energies,
-                which may not be accurate due to functional choice (e.g. GGA
-                vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
+                uncertainty range for the MP-calculated formation energies
+                (mixed GGA/GGA+U/r2SCAN data by default), which may not be
+                accurate due to functional choice (semi-local vs hybrid DFT /
+                RPA / CCSD), lack of vdW corrections etc.
                 All phases that would border the host material on the phase
                 diagram, if their relative energy was downshifted by
                 ``energy_above_hull``, are included.
@@ -971,7 +1142,14 @@ class CompetingPhases(MSONable):
                 relevant competing phases to additionally determine their
                 chemical potential limits within the host. Can be a single
                 element as a string (e.g. "Mg") or an iterable of element
-                strings (list, set, tuple, dict) (e.g. ["Mg", "Na"]).
+                strings (list, set, tuple, dict) (e.g. ["Mg", "Na"]). All
+                entries are taken from a single MP query over the full
+                (host + extrinsic) chemical system, so intrinsic and extrinsic
+                entries share one common energy scale; as the MP mixing-scheme
+                energy frame is chemical-system-dependent, the intrinsic
+                entries (and their energies above hull, and so which low-energy
+                polymorphs fall within ``energy_above_hull``) can then differ
+                from those of an intrinsic-only query in some cases.
             full_phase_diagram (bool):
                 If ``True``, include all phases on the MP phase diagram (with
                 energy above hull < ``energy_above_hull`` eV/atom) for the
@@ -1020,19 +1198,26 @@ class CompetingPhases(MSONable):
                 ``CompetingPhases.MP_doc_dicts``. Default is ``False``.
             api_key (str):
                 Materials Project (MP) API key, needed to access the MP
-                database for competing phase generation. If not supplied,
-                will attempt to read from ``~/.pmgrc.yaml`` or
-                ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from
-                the ``MP_API_KEY`` environment variable -- see the ``doped``
-                :ref:`Installation docs <setup_potcars_mp_api>`.
+                database for competing phase generation. If not supplied, will
+                attempt to read from ``~/.pmgrc.yaml`` or
+                ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
+                ``MP_API_KEY`` environment variable -- see the ``doped``
+                |Installation docs|.
             calculator (str):
                 Name of the calculator to generate input files for (matching
                 a ``doped.io.<calculator>`` subpackage with an ``inputs``
                 module). Default: "vasp".
             **kwargs:
                 Additional keyword arguments to pass to the Materials Project
-                API ``get_entries_in_chemsys()`` / ``get_entries()`` queries
-                used to pull competing phase entries.
+                API ``get_entries_in_chemsys()`` query used to pull competing
+                phase entries -- e.g.
+                ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}`` to
+                query only GGA/GGA+U data, rather than the default mixed
+                GGA/GGA+U/r2SCAN phase diagrams (``"GGA_GGA+U_R2SCAN"``).
+                Under the mixed default, any further ``additional_criteria``
+                (e.g. ``{"is_stable": True}``) are applied by ``mp-api`` as a
+                post-hoc filter on the (common energy scale) chemical system
+                entries (see :func:`get_entries_in_chemsys`).
 
         Key Attributes:
             entries (list[|ComputedEntry|]):
@@ -1059,12 +1244,16 @@ class CompetingPhases(MSONable):
             intrinsic_elements (list[str]):
                 Element symbols of the host composition.
             extrinsic_elements (list[str]):
-                Element symbols of the extrinsic species (only set when
-                ``extrinsic`` is not ``None``).
+                Element symbols of the extrinsic species (empty when
+                ``extrinsic`` is ``None``).
             MP_full_pd_entries (list[|ComputedStructureEntry|]):
                 All Materials Project entries in the (intrinsic + extrinsic)
-                chemical system with energy above hull <
-                ``energy_above_hull``, used to build ``MP_full_pd``.
+                chemical system with energy above hull < ``energy_above_hull``
+                (including any multi-extrinsic "codoping" phases, which are
+                excluded from the calculation ``entries`` unless
+                ``codoping=True``), used to build ``MP_full_pd``. All entries
+                come from a single MP query over the full chemical system,
+                sharing one common, self-consistent energy scale.
             MP_full_pd (|PhaseDiagram|):
                 ``pymatgen`` |PhaseDiagram| built from ``MP_full_pd_entries``.
             MP_intrinsic_full_pd_entries (list[|ComputedStructureEntry|]):
@@ -1085,8 +1274,8 @@ class CompetingPhases(MSONable):
                 Stored constructor (initialisation) arguments, for reference.
                 e.g. ``CompetingPhases.energy_above_hull``. See ``Args``.
             _get_entries_kwargs (dict):
-                ``**kwargs`` passed to MP ``get_entries*`` queries; see
-                ``Args``.
+                ``**kwargs`` passed to the MP ``get_entries_in_chemsys()``
+                query; see ``Args``.
         """
         if "full_sub_approach" in kwargs:  # TODO: remove in v4.1
             raise ValueError(
@@ -1119,20 +1308,41 @@ class CompetingPhases(MSONable):
 
         self.intrinsic_elements = [s.symbol for s in self.composition.reduced_composition.elements]
 
-        # get all entries in the chemical system with EaH < ``energy_above_hull``:
-        self.MP_full_pd_entries = get_entries_in_chemsys(
-            self.intrinsic_elements,
+        # parse & validate any extrinsic species first, for the single chemsys query below:
+        extrinsic = [extrinsic] if isinstance(extrinsic, str) else extrinsic or []
+        self.extrinsic_elements = [Element(el).symbol for el in extrinsic]
+        if ext_int_overlap := [el for el in self.extrinsic_elements if el in self.intrinsic_elements]:
+            raise ValueError(
+                f"Extrinsic species {ext_int_overlap} are already present in the host composition "
+                f"({self.composition}), and so cannot be considered as extrinsic species!"
+            )
+        if self.codoping and self.extrinsic_elements:  # codoping implies no single-extrinsic-phase limits
+            self.single_extrinsic_phase_limits = False
+
+        # now we use a single MP query over the full (host + extrinsic) chemical system, so that all
+        # intrinsic and extrinsic entries share one common, self-consistent energy scale (the
+        # GGA(+U)/r2SCAN mixing scheme energy frame is chemical-system-dependent). Fetched unpruned (no
+        # ``energy_above_hull`` filter) so the host composition entries are always included (for the
+        # unstable-host fallback below) on the same energy scale, `then` pruned to EaH < energy_above_hull:
+        all_chemsys_entries = get_entries_in_chemsys(
+            self.intrinsic_elements + self.extrinsic_elements,
             api_key=self.api_key,
-            energy_above_hull=self.energy_above_hull,
             bulk_composition=self.composition.reduced_formula,  # for sorting
             **self._get_entries_kwargs,
         )
-        additional_criteria = self._get_entries_kwargs.setdefault("additional_criteria", {})
-        if not additional_criteria.get("thermo_types"):
-            # matching mp-api default thermo type criteria, to ensure ``get_entries()`` thermo_type matches
-            # ``get_entries_in_chemsys()`` default handling (placed after ``get_entries_in_chemsys`` to
-            # show mp-api warning about updated default thermo type criteria)
-            additional_criteria["thermo_types"] = DEFAULT_THERMOTYPE_CRITERIA["thermo_types"]
+        intrinsic_el_set = {Element(el) for el in self.intrinsic_elements}
+        self.MP_full_pd_entries = [  # intrinsic-system entries within the EaH window for now; updated...
+            entry  # ...to the full (host + extrinsic) chemical system below if extrinsic species present
+            for entry in all_chemsys_entries
+            if set(entry.composition.elements) <= intrinsic_el_set
+            and entry.data.get("energy_above_hull", 0) <= self.energy_above_hull
+        ]
+        # record the effective ``mp-api`` thermo-type criteria (for reference/serialisation). Copies avoid
+        # mutating the caller's dict or aliasing the ``mp-api`` module-level list:
+        self._get_entries_kwargs["additional_criteria"] = {
+            "thermo_types": list(DEFAULT_THERMOTYPE_CRITERIA["thermo_types"]),
+            **(self._get_entries_kwargs.get("additional_criteria") or {}),
+        }  # user thermo_types kwarg in additional_criteria will overwrite the default if relevant
 
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
 
@@ -1140,40 +1350,29 @@ class CompetingPhases(MSONable):
         formatted_entries = self._generate_elemental_diatomic_phases(self.MP_full_pd_entries)
 
         # get bulk entry, and warn if not stable or not present on MP database:
-        bulk_entries = [
-            entry
-            for entry in formatted_entries  # sorted by energy_above_hull above in get_entries_in_chemsys
-            if entry.composition.reduced_composition == self.composition.reduced_composition
-        ]
-        if zero_eah_bulk_entries := [
-            entry for entry in bulk_entries if entry.data.get("energy_above_hull", 0) == 0.0
-        ]:
-            self.MP_bulk_computed_entry = bulk_computed_entry = zero_eah_bulk_entries[
-                0
-            ]  # lowest energy entry for bulk (after sorting)
-        else:  # no EaH=0 bulk entries in pruned phase diagram, check first if present (but unstable)
-            if bulk_entries := get_entries(  # composition present in MP, but not stable
-                self.composition.reduced_formula,
-                api_key=self.api_key,
-                bulk_composition=self.composition.reduced_formula,  # for sorting
-                **self._get_entries_kwargs,
-            ):
-                self.MP_bulk_computed_entry = bulk_computed_entry = bulk_entries[
-                    0
-                ]  # already sorted by energy in get_entries()
-                eah = PhaseDiagram(formatted_entries).get_e_above_hull(bulk_computed_entry)
+        def _host_entries(entries: list[ComputedEntry]) -> list[ComputedEntry]:
+            return [  # sorted by energy above hull (in ``get_entries_in_chemsys``)
+                entry
+                for entry in entries
+                if entry.composition.reduced_composition == self.composition.reduced_composition
+            ]
+
+        # host entries in the pruned (EaH window) set, else in the full (same energy scale) query:
+        if bulk_entries := _host_entries(formatted_entries) or _host_entries(all_chemsys_entries):
+            self.MP_bulk_computed_entry = bulk_computed_entry = bulk_entries[0]  # lowest energy host entry
+            if eah := bulk_computed_entry.data.get("energy_above_hull", 0):  # present in MP, but unstable
                 warnings.warn(
                     f"Note that the Materials Project (MP) database entry for "
-                    f"{self.composition.reduced_formula} is not stable with respect to competing "
-                    f"phases, having an energy above hull of {eah:.4f} eV/atom.\n"
+                    f"{self.composition.reduced_formula} is not stable with respect to competing phases, "
+                    f"having an energy above hull of {eah:.4f} eV/atom.\n"
                     f"Formally, this means that the host material is unstable and so has no chemical "
-                    f"potential limits; though in reality there may be errors in the MP energies (GGA, "
-                    f"no vdW, SOC...), the host may be stabilised by temperature effects etc, or just a "
-                    f"metastable phase.\n"
-                    f"Here we downshift the host compound entry to the convex hull energy, "
-                    f"and then determine the possible competing phases with the same approach as usual."
+                    f"potential limits; though in reality there may be errors in the MP energies "
+                    f"(semi-local DFT, no vdW corrections, no SOC...), the host may be stabilised by "
+                    f"temperature effects etc, or just a metastable phase.\n"
+                    f"Here we downshift the host compound entry to the convex hull energy, and then "
+                    f"determine the possible competing phases with the same approach as usual."
                 )
-                # decrease bulk_computed_entry energy per atom by ``energy_above_hull`` + 0.1 meV/atom
+                # decrease bulk_computed_entry energy per atom by ``energy_above_hull`` + 0.1 meV/atom:
                 name = description = (
                     "Manual energy adjustment to move the host composition to the MP convex hull"
                 )
@@ -1182,59 +1381,49 @@ class CompetingPhases(MSONable):
                 )
                 bulk_computed_entry.data["energy_above_hull"] = 0.0
 
-            else:  # composition not on MP, warn and add shifted bulk entry to entries
-                warnings.warn(
-                    f"Note that no Materials Project (MP) database entry exists for "
-                    f"{self.composition.reduced_formula}. Here we assume the host material has an "
-                    f"energy equal to the MP convex hull energy at the corresponding point in chemical "
-                    f"space, and then determine the possible competing phases with the same approach as "
-                    f"usual."
-                )
-                self.MP_bulk_computed_entry = bulk_computed_entry = ComputedEntry(
-                    self.composition,
-                    self.MP_full_pd.get_hull_energy(self.composition) - 1e-4,
-                    data={
-                        "energy_above_hull": 0.0,
-                        "material_id": "mp-0",
-                        "molecule": False,
-                        "summary": {
-                            "band_gap": None,
-                            "total_magnetization": None,
-                            "database_IDs": {},
-                        },
+        else:  # composition not on MP, warn and add shifted bulk entry to entries
+            warnings.warn(
+                f"Note that no Materials Project (MP) database entry exists for "
+                f"{self.composition.reduced_formula}. Here we assume the host material has an energy "
+                f"equal to the MP convex hull energy at the corresponding point in chemical space, and "
+                f"then determine the possible competing phases with the same approach as usual."
+            )
+            self.MP_bulk_computed_entry = bulk_computed_entry = ComputedEntry(
+                self.composition,
+                self.MP_full_pd.get_hull_energy(self.composition) - 1e-4,
+                data={
+                    "energy_above_hull": 0.0,
+                    "material_id": "mp-0",
+                    "molecule": False,
+                    "summary": {
+                        "band_gap": None,
+                        "total_magnetization": None,
+                        "database_IDs": {},
                     },
-                )
+                },
+            )
 
-            if self.MP_bulk_computed_entry not in formatted_entries:
-                formatted_entries.append(self.MP_bulk_computed_entry)
+        if self.MP_bulk_computed_entry not in formatted_entries:
+            formatted_entries.append(self.MP_bulk_computed_entry)
 
         if self.bulk_structure:  # prune all bulk phases to this structure
             manual_bulk_entry = None
-
-            if bulk_entries := [
-                entry
-                for entry in formatted_entries  # sorted by energy_above_hull in ``get_entries_in_chemsys``
-                if entry.composition.reduced_composition == self.composition.reduced_composition
-            ]:
-                candidate_bulk_entries = [
-                    (
-                        entry,
-                        StructureMatcher_scan_stol(
-                            self.bulk_structure, entry.structure, func_name="get_rms_dist", max_stol=0.5
-                        )
-                        or float("inf"),
+            candidate_bulk_entries = [
+                (
+                    entry,
+                    StructureMatcher_scan_stol(
+                        self.bulk_structure, entry.structure, func_name="get_rms_dist", max_stol=0.5
                     )
-                    for entry in bulk_entries
-                    if hasattr(entry, "structure")
-                ]
-                matching_bulk_entries = sorted(  # those with non-inf RMS (i.e. matching), sorted:
-                    [entry for entry in candidate_bulk_entries if entry[1] != float("inf")],
-                    key=lambda x: x[1],
+                    or float("inf"),
                 )
-                if matching_bulk_entries:
-                    matching_bulk_entry = matching_bulk_entries[0][0]
-                    manual_bulk_entry = matching_bulk_entry
-                    manual_bulk_entry._structure = self.bulk_structure
+                for entry in _host_entries(formatted_entries)
+                if hasattr(entry, "structure")
+            ]
+            if matching_bulk_entries := [  # those with non-inf RMS (i.e. matching)
+                entry for entry in candidate_bulk_entries if entry[1] != float("inf")
+            ]:
+                manual_bulk_entry = min(matching_bulk_entries, key=lambda x: x[1])[0]  # lowest RMS
+                manual_bulk_entry._structure = self.bulk_structure
 
             if manual_bulk_entry is None:  # take the lowest energy bulk entry
                 manual_bulk_entry_dict = self.MP_bulk_computed_entry.as_dict()
@@ -1280,30 +1469,24 @@ class CompetingPhases(MSONable):
             self.MP_intrinsic_full_pd_entries = self.MP_full_pd_entries  # includes molecules-in-boxes
             return
 
-        # otherwise, we have extrinsic species present:
+        # otherwise, we have extrinsic species present (parsed & validated above):
         self.intrinsic_entries = copy.deepcopy(self.entries)
-        self.extrinsic_elements = (
-            [self.extrinsic] if isinstance(self.extrinsic, str) else list(self.extrinsic)
-        )
-        self.extrinsic_elements = [Element(el).symbol for el in self.extrinsic_elements]
-        if extrinsic_in_intrinsic := [
-            ext for ext in self.extrinsic_elements if ext in self.intrinsic_elements
-        ]:
-            raise ValueError(
-                f"Extrinsic species {extrinsic_in_intrinsic} are already present in the host composition "
-                f"({self.composition}), and so cannot be considered as extrinsic species!"
-            )
+
+        # update ``MP_full_pd_entries`` to all entries in the full (host + extrinsic) chemical system
+        # within the EaH window -- all on the one common energy scale from the single query above:
+        self.MP_full_pd_entries = [
+            entry
+            for entry in all_chemsys_entries
+            if entry.data.get("energy_above_hull", 0) <= self.energy_above_hull
+        ]
+        formatted_full_pd_entries = self._generate_elemental_diatomic_phases(self.MP_full_pd_entries)
+        if self.MP_bulk_computed_entry not in formatted_full_pd_entries:
+            # ensure the host entry is present, as in the intrinsic stage above (it is otherwise missing
+            # here for MP-missing or beyond-EaH-window unstable hosts):
+            formatted_full_pd_entries.append(self.MP_bulk_computed_entry)
 
         if self.codoping:
-            self.single_extrinsic_phase_limits = False  # codoping implies no single-ext-phase restriction
-            self.MP_full_pd_entries = get_entries_in_chemsys(  # can be time-consuming; high(er)-D chemsys
-                chemsys=self.intrinsic_elements + self.extrinsic_elements,
-                api_key=self.api_key,
-                energy_above_hull=self.energy_above_hull,
-                bulk_composition=self.composition.reduced_formula,  # for sorting
-                **self._get_entries_kwargs,
-            )
-            self.entries = self._generate_elemental_diatomic_phases(self.MP_full_pd_entries)
+            self.entries = formatted_full_pd_entries
 
             if not self.full_phase_diagram:
                 self.entries = prune_entries_to_border_candidates(
@@ -1312,20 +1495,15 @@ class CompetingPhases(MSONable):
                     energy_above_hull=self.energy_above_hull,
                 )  # prune using phase diagram with all extrinsic species
 
-        else:  # build full set of candidate entries first (for ``self.entries``); not co-doping
+        else:  # not co-doping, so consider each extrinsic species separately (via subsets of the single
+            # shared entry pool; multi-extrinsic (co-doping) phases are thus excluded):
             candidate_extrinsic_entries = []
             for ext_elt in self.extrinsic_elements:
-                ext_elt_MP_full_pd_entries = get_entries_in_chemsys(
-                    [*self.intrinsic_elements, ext_elt],
-                    api_key=self.api_key,
-                    energy_above_hull=self.energy_above_hull,
-                    bulk_composition=self.composition.reduced_formula,  # for sorting
-                    **self._get_entries_kwargs,
-                )
-                ext_elt_pd_entries = self._generate_elemental_diatomic_phases(ext_elt_MP_full_pd_entries)
-                self.MP_full_pd_entries.extend(
-                    [entry for entry in ext_elt_MP_full_pd_entries if entry not in self.MP_full_pd_entries]
-                )
+                ext_elt_pd_entries = [
+                    entry
+                    for entry in formatted_full_pd_entries
+                    if set(entry.composition.elements) <= intrinsic_el_set | {Element(ext_elt)}
+                ]
 
                 if not self.full_phase_diagram:  # default, prune to only phases that would border the host
                     # material on the phase diagram, if their relative energy was downshifted by
@@ -1402,7 +1580,7 @@ class CompetingPhases(MSONable):
         _warn_if_many_polymorphs_per_composition(self.entries)
 
         if MP_doc_dicts:
-            self.intrinsic_MP_doc_dicts = deepcopy(self.MP_doc_dicts)
+            self.intrinsic_MP_doc_dicts = copy.deepcopy(self.MP_doc_dicts)
             self.MP_doc_dicts = get_MP_summary_dicts(entries=self.entries, api_key=self.api_key)
 
     @property
@@ -1450,8 +1628,8 @@ class CompetingPhases(MSONable):
 
         When no structure exists in the entry (e.g. MP-missing bulk represented
         by a hull-energy |ComputedEntry|), emits a ``UserWarning`` and supplies
-        a nominal large-cell ``Structure`` so that ``INCAR`` and ``POTCAR``
-        files can still be written.
+        a nominal large-cell |Structure| so that ``INCAR`` and ``POTCAR`` files
+        can still be written.
         """
         categorised_entries = [
             (self.nonmetallic_entries, "non-metals"),
@@ -1486,7 +1664,7 @@ class CompetingPhases(MSONable):
     def get_kpoint_convergence_sets(self, **kwargs) -> dict[str, Any]:
         r"""
         Generate calculation input sets for `k`-point convergence testing of
-        the competing phases, using PBEsol (GGA) DFT by default.
+        the competing phases, using GGA DFT by default.
 
         Dispatches to the ``get_kpoint_convergence_sets()`` function of the
         ``doped.io`` input-generation backend for ``self.calculator`` -- see
@@ -1713,74 +1891,6 @@ class CompetingPhases(MSONable):
 
         return formatted_entries
 
-    @property
-    def entries_dict(self) -> dict[str, ComputedEntry]:
-        """
-        Mapping of ``doped`` competing phase names to entries.
-        """
-        entries_dict: dict[str, ComputedEntry] = {}
-        for entry in self.entries:
-            doped_name = get_and_set_competing_phase_name(entry, regenerate=False)
-            if doped_name in entries_dict:
-                raise KeyError(
-                    f"Duplicate competing phase key encountered in `self.entries`: {doped_name}. "
-                    "Please regenerate entries / entry names to ensure uniqueness."
-                )
-            entries_dict[doped_name] = entry
-        return entries_dict
-
-    def __getattr__(self, attr: str) -> Any:
-        """
-        Redirect unknown attribute/method lookups to the entries dictionary.
-        """
-        # ``__getattr__`` is only called when normal lookup has already failed; ``entries`` is
-        # accessed by ``entries_dict`` so guard against infinite recursion during partially-
-        # initialised states:
-        if attr == "entries":
-            raise AttributeError(attr)
-        return getattr(self.entries_dict, attr)
-
-    @overload
-    def __getitem__(self, key: str | int) -> ComputedEntry | ComputedStructureEntry: ...
-
-    @overload
-    def __getitem__(self, key: slice) -> list[ComputedEntry | ComputedStructureEntry]: ...
-
-    def __getitem__(self, key: str | int | slice) -> ComputedEntry | list[ComputedEntry]:
-        """
-        Make the object subscriptable.
-
-        String keys index by ``entry.data["doped_name"]`` (dict-like), while
-        integer / slice keys use list-style indexing on ``self.entries``.
-        """
-        if isinstance(key, str):
-            return self.entries_dict[key]
-        return self.entries[key]
-
-    def __contains__(self, item: str | ComputedEntry | ComputedStructureEntry) -> bool:
-        """
-        Return ``True`` if ``item`` is in the entries.
-
-        For string inputs this checks ``entry.data["doped_name"]`` keys, while
-        for non-strings this falls back to list-style membership in
-        ``self.entries``.
-        """
-        if isinstance(item, str):
-            return item in self.entries_dict
-        return item in self.entries
-
-    def __len__(self) -> int:
-        """
-        Return the number of competing phase entries.
-        """
-        return len(self.entries)
-
-    def __iter__(self) -> Iterator[str]:
-        """
-        Return an iterator over ``entry.data["doped_name"]`` keys.
-        """
-        return iter(self.entries_dict)
-
     def __repr__(self) -> str:
         """
         Returns a string representation of the |CompetingPhases| object.
@@ -1799,10 +1909,15 @@ class CompetingPhases(MSONable):
         Returns:
             JSON-serializable dict representation of |CompetingPhases|.
         """
-        cp_dict = self.__dict__
-        if isinstance(cp_dict.get("extrinsic"), set):
+        cp_dict = {  # ``api_key`` nulled to avoid saving private MP API keys to (shareable) JSONs:
+            "@module": type(self).__module__,
+            "@class": type(self).__name__,
+            **self.__dict__,
+            "api_key": None,
+        }
+        if isinstance(cp_dict.get("extrinsic"), set):  # JSON-serialisable, without mutating ``self``
             cp_dict["extrinsic"] = sorted(cp_dict["extrinsic"])
-        return {"@module": type(self).__module__, "@class": type(self).__name__, **cp_dict}
+        return cp_dict
 
     @classmethod
     def from_dict(cls, d: dict) -> "CompetingPhases":
@@ -1975,11 +2090,7 @@ class ChemicalPotentialGrid(MSONable):
         return {
             "@module": self.__class__.__module__,
             "@class": self.__class__.__name__,
-            "vertices": {
-                "index": self.vertices.index.tolist(),
-                "columns": self.vertices.columns.tolist(),
-                "data": self.vertices.to_numpy().tolist(),
-            },
+            "vertices": self.vertices.to_dict(orient="split"),
         }
 
     @classmethod
@@ -1994,12 +2105,7 @@ class ChemicalPotentialGrid(MSONable):
         Returns:
             |ChemicalPotentialGrid| object
         """
-        vertices = pd.DataFrame(
-            d["vertices"]["data"],
-            index=d["vertices"]["index"],
-            columns=d["vertices"]["columns"],
-        )
-        return cls.from_dataframe(vertices)
+        return cls.from_dataframe(pd.DataFrame(**d["vertices"]))
 
     def get_grid(
         self,
@@ -2011,6 +2117,7 @@ class ChemicalPotentialGrid(MSONable):
         decimal_places: int = 4,
         drop_duplicates: bool = True,
         include_vertices: bool = True,
+        sort: bool = True,
     ) -> pd.DataFrame:
         r"""
         Generates a grid of points that spans the chemical potential space
@@ -2074,18 +2181,28 @@ class ChemicalPotentialGrid(MSONable):
             drop_duplicates (bool):
                 Whether to drop duplicate points in the generated grid. With
                 barycentric coordinate generation, there can be duplicate
-                points in the generated grid from overlapping simplices. If
-                duplicates are acceptable (likely true for most downstream
+                points in the generated grid from overlapping simplices, and
+                with either generation scheme from ``decimal_places`` rounding
+                (when the grid spacing is finer than 10^[-decimal_places]).
+                If duplicates are acceptable (likely true for most downstream
                 usages; e.g. plotting etc) then this can be set to ``False`` to
-                speed up runtime. Default is ``True``.
+                speed up runtime and reduce peak memory. Default is ``True``.
             include_vertices (bool):
                 Whether to include the vertices themselves in the generated
                 grid. Default is ``True``.
+            sort (bool):
+                Whether to sort the output rows along the largest-span chemical
+                potential coordinate (e.g. so 1D chemical potential spaces are
+                path-ordered along the line). Only worth disabling for
+                extremely large grids, where this can speed up runtime and
+                reduce peak memory. Default is ``True``.
 
         Returns:
             pd.DataFrame:
                 A ``DataFrame`` containing the points within the convex hull.
-                Each row represents a point in the grid.
+                Each row represents a point in the grid, with rows sorted along
+                the largest-span chemical potential coordinate (if ``sort`` is
+                ``True``).
         """
         if fixed_elements:
             return self.get_constrained_grid(
@@ -2097,54 +2214,52 @@ class ChemicalPotentialGrid(MSONable):
                 decimal_places,
                 drop_duplicates,
                 include_vertices,
+                sort,
             )
 
-        dependent_variable = self.vertices.columns[-1]
-        dependent_var = self.vertices[dependent_variable].to_numpy()
-        independent_vars = self.vertices.drop(columns=dependent_variable)
-
-        n_dims = independent_vars.shape[1]  # number of independent variables (dimensions)
-        if n_dims < 1:
+        if self.vertices.shape[1] < 2:
             raise ValueError(
                 "Chemical potential grid generation requires at least one independent variable (chemical "
                 "potential), i.e. a binary or higher-dimensional system!"
             )
-
-        ind_vars = independent_vars.to_numpy()
-        spans = np.ptp(
-            ind_vars, axis=0
-        )  # affine rank of the vertex set; 1 for any collinear set of limits
-        rank = np.linalg.matrix_rank(
-            ind_vars - ind_vars.mean(axis=0), tol=1e-4 * float(spans.max() or 1.0)
-        )
-        if rank == 0:
+        independent_indices = _independent_columns(self.vertices.to_numpy())
+        if not len(independent_indices):
             raise ValueError(
                 "All supplied chemical potential limits (vertices) are identical, so no grid can be "
                 "generated between them!"
             )
+        independent_vars = self.vertices.iloc[:, independent_indices]
+        dependent_vars = self.vertices.drop(columns=list(independent_vars.columns))
+        n_dims = independent_vars.shape[1]  # affine dimensionality of the chemical-potential region
 
-        if rank == 1:  # 1D space (e.g. a binary system, or two limits of a multinary system); stable
+        ind_vars = independent_vars.to_numpy()
+        spans = np.ptp(ind_vars, axis=0)
+
+        if n_dims == 1:  # 1D space (e.g. a binary system, or two limits of a multinary system); stable
             # chemical potential range is just a line segment, for which barycentric and Cartesian grids
             cartesian = False  # are identical -> "hull" = the segment endpoints,
-            order = np.argsort(
-                ind_vars[:, int(np.argmax(spans))]
-            )  # sorted along the largest-span μ coordinate
-            hull_idx = np.array([order[0], order[-1]])
+            span_coords = ind_vars[:, int(np.argmax(spans))]  # largest-span μ coordinate
+            hull_idx = np.array([np.argmin(span_coords), np.argmax(span_coords)])
         else:
             hull = ConvexHull(ind_vars)  # convex hull of the vertices
             hull_idx = hull.vertices  # indices of the hull points
 
         # ensure vertices and dependent values are aligned:
         coords_hull = ind_vars[hull_idx]
-        values_hull = dependent_var[hull_idx]
+        values_hull = dependent_vars.to_numpy()[hull_idx]
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
             if resolution is not None and np.isfinite(resolution):
                 step = resolution  # direct grid spacing (eV) requested
-                implied_total = np.prod(np.maximum(spans / step, 1))  # product of steps per dim
-                if max_points is not None and implied_total > max_points:
-                    # coarsen `before` materialising the grid, to avoid memory blow-ups:
-                    step *= float(implied_total / max_points) ** (1 / n_dims)
+
+                def _num_cartesian_points(grid_step: float) -> int:
+                    # ``np.arange`` creates ``ceil(span / step)`` values per axis
+                    return math.prod(max(math.ceil(float(span) / grid_step), 1) for span in spans)
+
+                if max_points is not None and (n := _num_cartesian_points(step)) > max_points:
+                    while n > max_points:  # scale to implied density; loop covers ``ceil`` leftovers
+                        step = float(np.nextafter(step * (n / max_points) ** (1 / n_dims), np.inf))
+                        n = _num_cartesian_points(step)
                     _warn_resolution_clamped(resolution, max_points, step)
             else:  # hull volume (in N-D) times grid density = num points:
                 req_grid_density = n_points / hull.volume  # points per N-D volume
@@ -2174,15 +2289,31 @@ class ChemicalPotentialGrid(MSONable):
 
         grid_df = pd.DataFrame(
             grid_with_values,
-            columns=[*list(independent_vars.columns), dependent_variable],
+            columns=[*list(independent_vars.columns), *list(dependent_vars.columns)],
         ).round(decimal_places)
 
         if include_vertices:  # prepend the exact (unrounded) vertices, ensuring the chemical potential
-            # limits are in the grid `exactly` (with any rounded copies then dropped as duplicates below):
-            vertices_df = pd.DataFrame(self.vertices.to_numpy(), columns=grid_df.columns)
-            grid_df = pd.concat([vertices_df, grid_df], ignore_index=True)
+            # limits are in the grid `exactly` (``drop_duplicates`` only drops exactly-equal rows):
+            grid_df = pd.concat([self.vertices[grid_df.columns], grid_df], ignore_index=True)
 
-        return grid_df if not drop_duplicates else grid_df.drop_duplicates()
+        if drop_duplicates:  # dependent μ is a function of independent coordinates, so compare only those
+            grid_df = grid_df.drop_duplicates(subset=list(independent_vars.columns))
+
+        grid_df = (
+            grid_df.sort_values(  # sort along the largest-span μ coordinate; giving path-ordered...
+                independent_vars.columns[
+                    int(np.argmax(spans))
+                ],  # ...outputs for 1D spaces (e.g. line plots)
+                key=lambda col: col.round(
+                    decimal_places
+                ),  # rounding so each prepended exact vertex ties..
+                kind="stable",  # ...with (and so stably sorts ahead of) its rounded lattice copy
+                ignore_index=True,
+            )
+            if sort
+            else grid_df
+        )
+        return grid_df[list(self.vertices.columns)]  # retain column ordering
 
     def get_constrained_grid(
         self,
@@ -2194,6 +2325,7 @@ class ChemicalPotentialGrid(MSONable):
         decimal_places: int = 4,
         drop_duplicates: bool = True,
         include_vertices: bool = True,
+        sort: bool = True,
     ) -> pd.DataFrame:
         r"""
         Generates a grid of points that spans the chemical potential space
@@ -2211,7 +2343,10 @@ class ChemicalPotentialGrid(MSONable):
         Args:
             fixed_elements (dict):
                 A dictionary of chemical potentials to fix (in the format:
-                ``{column_name: value}``; e.g. ``{"Li": -2}``).
+                ``{column_name: value}``; e.g. ``{"Li": -2}``). At least two
+                chemical potentials must be left free (i.e. a ternary or higher
+                system, with at most ``n_elements - 2`` fixed), otherwise no
+                chemical potential range remains to grid over.
             n_points (int | None):
                 `Minimum` number of grid points to generate, within the
                 constrained subspace. The output grid will contain at least
@@ -2244,34 +2379,48 @@ class ChemicalPotentialGrid(MSONable):
             drop_duplicates (bool):
                 Whether to drop duplicate points in the generated grid. With
                 barycentric coordinate generation, there can be duplicate
-                points in the generated grid from overlapping simplices. If
-                duplicates are acceptable (likely true for most downstream
+                points in the generated grid from overlapping simplices, and
+                with either generation scheme from ``decimal_places`` rounding
+                (when the grid spacing is finer than 10^[-decimal_places]).
+                If duplicates are acceptable (likely true for most downstream
                 usages; e.g. plotting etc) then this can be set to ``False`` to
-                speed up runtime. Default is ``True``.
+                speed up runtime and reduce peak memory. Default is ``True``.
             include_vertices (bool):
                 Whether to include the vertices themselves in the generated
                 grid. Default is ``True``.
+            sort (bool):
+                Whether to sort the output rows along the largest-span chemical
+                potential coordinate (e.g. so 1D chemical potential spaces are
+                path-ordered along the line). Only worth disabling for
+                extremely large grids, where this can speed up runtime and
+                reduce peak memory. Default is ``True``.
 
         Returns:
             pd.DataFrame:
                 A ``DataFrame`` containing the points within the convex hull,
                 constrained by the fixed chemical potentials. Each row
-                represents a point in the grid.
+                represents a point in the grid, with rows sorted along the
+                largest-span chemical potential coordinate (if ``sort`` is
+                ``True``).
         """
         fixed_elements = {
             k if k in self.vertices.columns else f"μ_{k} (eV)": v for k, v in fixed_elements.items()
         }
         variables = [col for col in self.vertices.columns if col not in fixed_elements]
-        dependent_variable = variables[-1]
-        dependent_var = self.vertices[dependent_variable].to_numpy()
-        independent_vars = self.vertices.drop(columns=dependent_variable)
-        vertices = independent_vars.to_numpy()
+        if len(variables) < 2:  # need >= 2 free chemical potentials (1 independent + 1 dependent) left
+            raise ValueError(
+                f"Fixing {len(fixed_elements)} of the {len(self.vertices.columns)} chemical potentials "
+                f"({', '.join(fixed_elements)}) leaves no free chemical potential range to scan over! "
+                f"`fixed_elements` requires a ternary or higher-dimensional system, with at most "
+                f"`n_elements - 2` fixed chemical potentials."
+            )
+        vertices = self.vertices.to_numpy()
 
         for element, value in fixed_elements.items():
             try:
                 vertices = _intersect_hull_with_plane(
                     vertices,
-                    list(independent_vars.columns).index(element),
+                    list(self.vertices.columns).index(element),
                     value,
                     tol=10 ** (-decimal_places),
                 )
@@ -2283,17 +2432,9 @@ class ChemicalPotentialGrid(MSONable):
                         f"vertices:\n{self.vertices}\n"
                     ) from e
 
-                raise e
+                raise
 
-        # Interpolate the values to get the dependent chemical potential
-        grid_with_values = _griddata_linear_in_hull(
-            independent_vars.to_numpy(), dependent_var, vertices, tol=10 ** (-decimal_places)
-        )
-
-        constrained_vertices = pd.DataFrame(
-            grid_with_values,
-            columns=[*list(independent_vars.columns), dependent_variable],
-        )
+        constrained_vertices = pd.DataFrame(vertices, columns=self.vertices.columns).drop_duplicates()
         # these are our new constrained vertices, now we generate the grid (without the fixed element):
         input_constrained_vertices = constrained_vertices.drop(columns=list(fixed_elements.keys()))
         constrained_grid = ChemicalPotentialGrid.from_dataframe(input_constrained_vertices)
@@ -2305,12 +2446,13 @@ class ChemicalPotentialGrid(MSONable):
             decimal_places=decimal_places,
             drop_duplicates=drop_duplicates,
             include_vertices=include_vertices,
-        ).dropna()
+            sort=sort,
+        )
 
         for element_col_name, value in fixed_elements.items():  # add fixed-element values to the grid
-            grid_df[element_col_name] = [value] * len(grid_df)
+            grid_df[element_col_name] = value
 
-        return grid_df
+        return grid_df[list(self.vertices.columns)]  # retain column ordering
 
 
 def _warn_resolution_clamped(resolution: float, max_points: int, achieved_resolution: float) -> None:
@@ -2334,7 +2476,11 @@ def _intersect_hull_with_plane(
 ) -> np.ndarray:
     """
     Intersect the convex hull with a plane defined by a fixed value of a given
-    axis.
+    axis, returning the vertices of the (convex) intersection.
+
+    These lie on the hull edges crossing the plane (or are hull vertices on the
+    plane), so are found among the plane crossings of all vertex pairs, reduced
+    to the vertices of their convex hull (to within ``tol``).
 
     Args:
         vertices (np.ndarray):
@@ -2344,33 +2490,44 @@ def _intersect_hull_with_plane(
         value (float):
             The plane, such that ``x[axis] = value``.
         tol (float):
-            Numerical tolerance for deciding if points lie on the plane.
+            Numerical tolerance for deciding if points lie on the plane, and
+            for merging near-coincident/collinear intersection points.
 
     Returns:
         np.ndarray:
-            Coordinates of intersections between the convex hull and the plane.
+            Coordinates of the vertices of the intersection between the convex
+            hull and the plane.
     """
-    axis_min, axis_max = vertices[:, axis].min(), vertices[:, axis].max()
-    if value < axis_min - tol or value > axis_max + tol:
+    signed_dist = vertices[:, axis] - value  # signed distances from the plane along ``axis``
+    signed_dist[np.abs(signed_dist) <= tol] = 0.0  # snap vertices (within ``tol``) onto the plane
+    if signed_dist.min() > 0 or signed_dist.max() < 0:
         raise ValueError(f"The plane {axis} = {value} does not meet the hull.")
 
-    intersection_points = []
-    # for each edge, check if it crosses the plane:
-    for i, j in itertools.combinations(range(len(vertices)), 2):
-        vertex_i, vertex_j = vertices[i], vertices[j]
-        signed_dist_i = vertex_i[axis] - value  # signed distance from plane along ``axis``
-        signed_dist_j = vertex_j[axis] - value
+    i, j = np.triu_indices(len(vertices), k=1)  # all vertex pairs (a superset of the hull edges)
+    crossing = signed_dist[i] * signed_dist[j] < 0  # opposite signs -> pair crosses the plane
+    i, j = i[crossing], j[crossing]
+    frac = (signed_dist[i] / (signed_dist[i] - signed_dist[j]))[:, None]  # fraction along the pair (0, 1)
+    crossings = vertices[i] + frac * (vertices[j] - vertices[i])
+    return _hull_vertices(np.vstack([vertices[signed_dist == 0], crossings]), tol=tol)
 
-        if signed_dist_i * signed_dist_j < 0:  # opposite signs -> edge crosses the plane
-            # fraction along the edge at which the crossing occurs (0 < frac < 1):
-            frac = signed_dist_i / (signed_dist_i - signed_dist_j)
-            intersection_points.append(vertex_i + frac * (vertex_j - vertex_i))
-        else:  # edge does not cross; include any endpoint that lies on the plane:
-            for signed_dist, vertex in ((signed_dist_i, vertex_i), (signed_dist_j, vertex_j)):
-                if abs(signed_dist) <= tol:
-                    intersection_points.append(vertex)
 
-    return np.asarray(intersection_points)
+def _hull_vertices(points: np.ndarray, tol: float = 0.0) -> np.ndarray:
+    """
+    Reduce ``points`` to the vertices of their convex hull, within their affine
+    subspace (a single point, the endpoints of a line segment, or the
+    ``ConvexHull`` vertices over the independent coordinates), merging hull
+    facets within ``tol`` of each other (``qhull`` ``C-n``) so that near-
+    coincident/collinear boundary points are not returned as spurious vertices.
+    """
+    points = points[np.sort(np.unique(points, axis=0, return_index=True)[1])]  # dedupe, keep input order
+    independent = _independent_columns(points)
+    if not len(independent):  # all points identical
+        return points
+    if len(independent) == 1:  # collinear points -> the segment endpoints
+        return points[[points[:, independent[0]].argmin(), points[:, independent[0]].argmax()]]
+    qhull_options = f"C-{tol:g}" + (" Qx" if len(independent) > 4 else "")  # ``Qx``: ``scipy`` >4D default
+    hull = ConvexHull(points[:, independent], qhull_options=qhull_options)
+    return points[np.sort(hull.vertices)]  # hull vertices, in input order
 
 
 def _lattice_in_hull(
@@ -2397,11 +2554,10 @@ def _lattice_in_hull(
         vertices (np.ndarray):
             (n, k) float array of data points to interpolate between.
         Y (np.ndarray):
-            (n,) float array of values at ``vertices``. This should be the
-            values of the dependent variable (e.g. chemical potential) at the
-            given vertices. If provided, the function will also interpolate the
-            dependent variable values at the generated points inside the convex
-            hull. Default is ``None``.
+            ``(n,)`` or ``(n, m)`` float array of dependent values at
+            ``vertices``. If provided, the function also interpolates these
+            values at the generated points inside the convex hull. Default is
+            ``None``.
         n_points (int):
             `Minimum` number of grid points to generate. The output grid will
             contain at least this many points, regularly spaced in barycentric
@@ -2427,9 +2583,10 @@ def _lattice_in_hull(
 
     Returns:
         np.ndarray:
-            A grid of points inside the convex hull, in Cartesian coordinates.
-            The shape of the array is (M, k), where M is the number of points
-            in the grid.
+            A grid of points inside the convex hull, in Cartesian coordinates,
+            with shape ``(M, k)`` -- or ``(M, k+m)`` if ``Y`` is provided (the
+            ``m`` interpolated values appended as the last columns) -- where
+            ``M`` is the number of points in the grid.
     """
     if vertices.ndim != 2:
         raise ValueError("`vertices` must be a 2-D array (N_points, N_dimensions)")
@@ -2495,10 +2652,10 @@ def _lattice_in_hull(
     if Y is None:
         return points_inside
 
-    vals_per_simplex = Y[simplices]  # (S, k_s+1)
-    # values_inside: (S, L) -> reshape -> (S*L,)
-    Y_inside = np.einsum("LK,SK->SL", bary_coords, vals_per_simplex).ravel()
-    return np.hstack((points_inside, Y_inside.reshape(-1, 1)))
+    Y_2d = np.asarray(Y).reshape(len(Y), -1)  # (n, m); promotes (n,) -> (n, 1)
+    vals_per_simplex = Y_2d[simplices]  # (S, k_s+1, m)
+    Y_inside = np.einsum("LK,SKm->SLm", bary_coords, vals_per_simplex).reshape(-1, Y_2d.shape[1])
+    return np.hstack((points_inside, Y_inside))
 
 
 def _griddata_linear_in_hull(
@@ -2507,18 +2664,19 @@ def _griddata_linear_in_hull(
     """
     Linear ND interpolation of ``xi``, using input data ``X`` and ``Y``, which
     also returns values `on` the convex hull boundary (which ``griddata`` often
-    fails to do), and NaN for points truly outside the convex hull.
+    fails to do), dropping query points outside the convex hull.
 
     Args:
         X (np.ndarray):
             (n, k) float array of data points to interpolate between.
         Y (np.ndarray):
-            (n,) float array of values at ``X``.
+            ``(n,)`` or ``(n, m)`` float array of values at ``X``.
         xi (np.ndarray):
             (L, k) float array of query points to interpolate values for.
         tol (float):
-            Tolerance for including boundary points as inside. Default is
-            1e-6.
+            Tolerance for including boundary points as inside; query points
+            within ``tol`` (in the units of ``X``) of the convex hull are kept.
+            Default is 1e-6.
         qhull_options (str):
             Options to pass to ``QHull`` via ``~scipy.spatial.Delaunay``.
             Default is "QJ Qbb Qc", where "QJ" means joggled input to avoid
@@ -2526,10 +2684,11 @@ def _griddata_linear_in_hull(
             conditioning, and "Qc" keeps coplanar points.
 
     Returns:
-         np.ndarray:
-            (N, k+1) float array of interpolated values within the
-            convex hull, with NaN values outside the hull, and the input
-            query points (xi) concatenated to the end.
+        np.ndarray:
+            ``(N, k+m)`` float array of the ``N <= L`` query points inside the
+            convex hull (first ``k`` columns) with their interpolated values
+            (last ``m`` columns; ``m = 1`` if ``Y`` is 1D). Raises
+            ``ValueError`` if no query points lie inside the hull.
     """
     n, k = np.shape(X)
     # Delaunay triangulation breaks our k-D polyhedron (polytope) of the convex hull into k-D
@@ -2550,29 +2709,38 @@ def _griddata_linear_in_hull(
         simplices = delaunay_tri.simplices  # (S, k+1)
         transform = delaunay_tri.transform  # (S, k+1, k)
 
+    # ``find_simplex``'s ``tol`` is barycentric, so scales with simplex size; so also require query points
+    # to be within ``tol`` (absolute) of the hull:
+    candidates = np.flatnonzero(simplex_indices >= 0)  # (N,)
+    xi_candidates = xi[candidates]  # (N, k)
+    outside = np.zeros(len(candidates), dtype=bool)
+    for equation in ConvexHull(X).equations:  # (k+1,) outward facet normal & offset; facet-by-facet, to...
+        outside |= xi_candidates @ equation[:-1] + equation[-1] > tol  # ...avoid an (N, F) temporary array
+    simplex_indices[candidates[outside]] = -1
+
     inside_hull = simplex_indices >= 0  # outside = -1; tol treats near-edge as inside; (L,)
-    if not inside_hull.any():  # no inside points, return array of NaNs of shape (L,)
+    if not inside_hull.any():  # no query points inside the hull
         raise ValueError("No points found inside convex hull (of chemical potentials)")
 
     X_inside = xi[inside_hull]  # (N, k) where N is number of points inside hull; N <= L
-    # k is the xi dimension (k-D chemical potential space)
-    # inside_hull_simplex_indices = simplex_indices[inside_hull]  # (N,)
+    inside_simplex_indices = simplex_indices[inside_hull]  # (N,); k is the xi (chempot space) dimension
 
     # Linear interpolation via barycentric coordinates:
     # SciPy exposes an affine map from x to barycentric coords via tri.transform:
     #   For each simplex i:  T_i c = x - r_i, with c[:-1] first d barycentric coordinates,
     #   and c_last = 1 - sum(c[:-1])
     # (This mirrors what ``LinearNDInterpolator`` does under the hood)
-    Ti = transform[simplex_indices[inside_hull]]  # (N, k+1, k)
+    Ti = transform[inside_simplex_indices]  # (N, k+1, k)
     Xdif = X_inside - Ti[:, -1, :]  # x - r, shape (N, k)
     lam = np.einsum("Nij,Nj->Ni", Ti[:, :k, :], Xdif)  # first k barycentrics; (N, k)
     bary_coords = np.concatenate([lam, 1.0 - lam.sum(axis=1, keepdims=True)], axis=1)  # (N, k+1)
 
-    vertex_indices_of_simplices = simplices[simplex_indices[inside_hull]]  # (N, k+1)
-    vertex_values_of_simplices = Y[vertex_indices_of_simplices]  # (N, k+1)
-    values_inside = np.einsum("Ni,Ni->N", bary_coords, vertex_values_of_simplices)  # N
+    vertex_indices_of_simplices = simplices[inside_simplex_indices]  # (N, k+1)
+    Y_2d = np.asarray(Y).reshape(len(Y), -1)  # (n, m); promotes (n,) -> (n, 1)
+    vertex_values_of_simplices = Y_2d[vertex_indices_of_simplices]  # (N, k+1, m)
+    values_inside = np.einsum("Ni,Nim->Nm", bary_coords, vertex_values_of_simplices)
     # combine input xi points (which are inside hull) with interpolated values for returned output:
-    return np.hstack((X_inside, values_inside.reshape(-1, 1)))  # (N, k+1)
+    return np.hstack((X_inside, values_inside))
 
 
 def entries_from_chempot_limits(
@@ -2623,7 +2791,7 @@ def entries_from_chempot_limits(
     return entries
 
 
-class CompetingPhasesAnalyzer(MSONable):
+class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
     def __init__(
         self,
         composition: str | Composition,
@@ -2718,8 +2886,9 @@ class CompetingPhasesAnalyzer(MSONable):
                 multiprocessing.
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
-                by comparing their ``INCAR`` and ``POTCAR`` settings (if
-                available). Default is ``True``.
+                by comparing their calculation settings (e.g. ``INCAR`` tags
+                and ``POTCAR`` symbols with VASP) and checking their final
+                pressures, if available. Default is ``True``.
             calculator (str):
                 Name of the calculator used for the competing phase
                 calculations (matching a ``doped.io.<calculator>`` parsing
@@ -2794,7 +2963,7 @@ class CompetingPhasesAnalyzer(MSONable):
         self.single_extrinsic_phase_limits = single_extrinsic_phase_limits
 
         # _from_calc_outputs or _from_entries depending on input
-        if not isinstance(entries, str | PathLike | list):
+        if not isinstance(entries, PathLike | list):
             raise TypeError(
                 f"`entries` must be either a path to a directory containing calculation outputs, "
                 f"a list of paths, or a list of ComputedEntry/ComputedStructureEntry objects, "
@@ -2805,7 +2974,7 @@ class CompetingPhasesAnalyzer(MSONable):
         self.calc_output_paths: list[str] = []
         self.parsed_folders: list[str] = []
 
-        if isinstance(entries, str | PathLike) or isinstance(entries[0], str | PathLike):
+        if isinstance(entries, PathLike) or isinstance(entries[0], PathLike):
             self._from_calc_outputs(
                 path=entries,
                 subfolder=subfolder,
@@ -2830,8 +2999,9 @@ class CompetingPhasesAnalyzer(MSONable):
                 potential limits.
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
-                by comparing their ``INCAR`` and ``POTCAR`` settings.
-                Default is ``True``.
+                by comparing their calculation settings (e.g. ``INCAR`` tags
+                and ``POTCAR`` symbols with VASP) and checking their final
+                pressures, if available. Default is ``True``.
         """
         self.entries = entries
         intrinsic_entries: list[ComputedEntry | ComputedStructureEntry] = []
@@ -2908,19 +3078,19 @@ class CompetingPhasesAnalyzer(MSONable):
             )
 
         # lowest energy bulk phase
-        self.bulk_entry = sorted(bulk_comp_entries, key=lambda x: x.energy_per_atom)[0]
+        self.bulk_entry = min(bulk_comp_entries, key=lambda x: x.energy_per_atom)
         self.unstable_host = False
 
         # check entry compatibilities (calculation settings), with the calculator backend (if it
         # implements this check); taking the first of bulk entry, bulk comp entries, intrinsic, all
         # entries `with` the relevant settings data as the reference (template) entry:
-        if check_compatibility and (
-            check_entry_compatibility := getattr(self._backend, "check_entry_compatibility", None)
-        ):
-            check_entry_compatibility(
+        if check_compatibility:
+            _check_entry_compatibility(
+                self._backend,
                 entries,
                 template_candidates=[self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries],
             )
+            _check_entry_pressures(self.entries)  # are the phases at their equilibrium volumes?
 
         # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
         # and add to self.elements:
@@ -2970,7 +3140,7 @@ class CompetingPhasesAnalyzer(MSONable):
 
         for entry in self.phase_diagram.entries:
             formation_energy = self.phase_diagram.get_form_energy_per_atom(entry)
-            if np.isinf(formation_energy) or np.isnan(formation_energy):
+            if not np.isfinite(formation_energy):
                 warnings.warn(
                     f"Entry for {entry.reduced_formula} has an infinite/NaN calculated formation energy, "
                     f"indicating an issue with parsing. This may cause failures in chemical potential "
@@ -3030,8 +3200,8 @@ class CompetingPhasesAnalyzer(MSONable):
         discovered ``vasprun.xml(.gz)`` files are parsed.
 
         If ``path`` is a list, each element may be a direct path to a
-        ``vasprun.xml(.gz)`` file **or** to a directory containing one,
-        which will be located via a recursive search.
+        ``vasprun.xml(.gz)`` file **or** to the directory directly containing
+        one (i.e. not searched recursively).
 
         Args:
             path (PathLike or list):
@@ -3056,19 +3226,15 @@ class CompetingPhasesAnalyzer(MSONable):
                 multiprocessing.
             check_compatibility (bool):
                 Whether to check the compatibility of the parsed entries,
-                by comparing their ``INCAR`` and ``POTCAR`` settings.
-                Default is ``True``.
+                by comparing their calculation settings (e.g. ``INCAR`` tags
+                and ``POTCAR`` symbols with VASP) and checking their final
+                pressures, if available. Default is ``True``.
         """
         output_file = self._backend.CALC_OUTPUT_MASK[0]  # e.g. "vasprun.xml" with VASP
         if isinstance(path, list):
-            self._collect_calc_outputs_from_list(path)
-        elif isinstance(path, PathLike):
-            self._collect_calc_outputs_from_directory(path, subfolder, verbose)
+            self._collect_calc_outputs_from_list(path, verbose)
         else:
-            raise ValueError(
-                f"`path` should either be a path to a folder (with competing phase "
-                f"calculations), or a list of paths to {output_file}(.gz) files."
-            )
+            self._collect_calc_outputs_from_directory(path, subfolder, verbose)
 
         if not self.calc_output_paths:
             raise FileNotFoundError(
@@ -3098,7 +3264,7 @@ class CompetingPhasesAnalyzer(MSONable):
             calc_output_sizes_MB = [
                 _estimate_uncompressed_size(calc_output_path)
                 for calc_output_path in self.calc_output_paths
-            ] or [0]
+            ]
             mp_context = get_mp_context()
             if sum(calc_output_sizes_MB) - max(calc_output_sizes_MB) > 100:
                 # only multiprocess as much as makes sense:
@@ -3127,7 +3293,7 @@ class CompetingPhasesAnalyzer(MSONable):
         electronic_unconverged_paths = []
         ionic_unconverged_paths = []
         for result in parsing_results:
-            if isinstance(result[0], ComputedEntry | ComputedStructureEntry):
+            if isinstance(result[0], ComputedEntry):
                 # successful parse; result is entry, parsed folder, converged electronic and ionic
                 self.entries.append(result[0])
                 self.parsed_folders.append(result[1])
@@ -3136,10 +3302,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 if not result[3]:
                     ionic_unconverged_paths.append(result[1])
             else:  # failed parse; result is error message and path
-                if str(result[0]) in failed_parsing_dict:
-                    failed_parsing_dict[str(result[0])] += [result[1]]
-                else:
-                    failed_parsing_dict[str(result[0])] = [result[1]]
+                failed_parsing_dict.setdefault(str(result[0]), []).append(result[1])
 
         if failed_parsing_dict:
             warning_string = (
@@ -3175,20 +3338,25 @@ class CompetingPhasesAnalyzer(MSONable):
         """
         return get_backend(getattr(self, "calculator", "vasp"))
 
-    def _collect_calc_outputs_from_list(self, path_list: list[PathLike]) -> None:
+    def _collect_calc_outputs_from_list(self, path_list: list[PathLike], verbose: bool = True) -> None:
         """
         Populate ``self.calc_output_paths`` from a list of paths, where each
         entry can be a direct calculation output file path
-        (``vasprun.xml(.gz)`` with ``VASP``) or a directory containing one.
+        (``vasprun.xml(.gz)`` with ``VASP``) or the directory directly
+        containing one.
+
+        Directories without one are skipped, with a warning if ``verbose``.
         """
         calc_output_mask = self._backend.CALC_OUTPUT_MASK
+        output_file = calc_output_mask[0]
+        skipped_folders = []
         for entry_path in path_list:
             # ``os.path.isdir`` guard because mask entries can be loose (e.g. espresso's ``.xml``), and
             # so match the path of a *directory* which merely contains a calculation output:
             if (
                 not os.path.isdir(entry_path)
                 and any(pattern in str(entry_path) for pattern in calc_output_mask)
-                and not str(entry_path).startswith(".")
+                and not os.path.basename(entry_path).startswith(".")
             ):
                 self.calc_output_paths.append(str(entry_path))
                 continue
@@ -3196,6 +3364,11 @@ class CompetingPhasesAnalyzer(MSONable):
             calc_output_path = self._find_calc_output_in_directory(entry_path)
             if calc_output_path is not None:
                 self.calc_output_paths.append(str(calc_output_path))
+            else:
+                skipped_folders.append(str(entry_path))
+
+        if verbose:
+            _warn_skipped_folders(output_file, skipped_folders)
 
     def _collect_calc_outputs_from_directory(
         self,
@@ -3225,31 +3398,39 @@ class CompetingPhasesAnalyzer(MSONable):
         if calc_files_df.empty:
             return
 
+        subfolder_suffix = ""  # for the skipped folders warning
         if resolved_subfolder != ".":  # actual subfolder found
             filtered = calc_files_df[
                 calc_files_df["folder_path"].apply(lambda p: p.name == resolved_subfolder)
             ]
             if not filtered.empty:
                 calc_files_df = filtered
+                subfolder_suffix = f"/{resolved_subfolder}"
             elif verbose:
                 warnings.warn(
                     f"No {output_file} files found in '{resolved_subfolder}' subfolders under {path}. "
                     f"Using all {len(calc_files_df)} {output_file} files found."
                 )
 
+        parsed_folders = set()  # top-level folders in ``path`` with parsed outputs
         for directory in sorted(calc_files_df["folder_path"].unique()):
-            # search the full mask, not just its first entry; a calculator's mask entries need not be
-            # substrings of one another (e.g. espresso's ``.xml``, matching ``pw.x``'s default
-            # ``<prefix>.xml`` naming, which ``espresso.xml`` -- a ``doped`` convention -- does not):
-            for pattern in backend.CALC_OUTPUT_MASK:  # decreasing specificity, as mask-ordered
-                calc_output_path, multiple = _io_utils._get_output_files_and_check_if_multiple(
-                    pattern, str(directory)
-                )
-                if calc_output_path and os.path.exists(calc_output_path):
-                    if multiple:
-                        self._multiple_files_warning(pattern, directory, calc_output_path)
-                    self.calc_output_paths.append(calc_output_path)
-                    break
+            if (calc_output_path := self._find_calc_output_in_directory(directory)) is not None:
+                self.calc_output_paths.append(calc_output_path)
+                parsed_folders.add(os.path.relpath(directory, root).split(os.sep)[0])
+
+        if verbose:  # warn about calculation folders in ``path`` without parsed outputs
+            _warn_skipped_folders(
+                output_file,
+                [
+                    f"{folder.name}{subfolder_suffix}"
+                    for folder in sorted(root.iterdir())
+                    if folder.is_dir()
+                    and not folder.name.startswith(".")
+                    and folder.name not in parsed_folders
+                    and _is_calc_folder_name(folder.name)
+                ],
+                path,
+            )
 
     def _find_calc_output_in_directory(self, directory: PathLike) -> str | None:
         """
@@ -3258,29 +3439,28 @@ class CompetingPhasesAnalyzer(MSONable):
 
         Returns the path as a string, or ``None`` if not found.
         """
-        # search the full mask, not just its first entry; see note in
-        # ``_collect_calc_outputs_from_directory``:
-        for pattern in self._backend.CALC_OUTPUT_MASK:  # decreasing specificity, as mask-ordered
-            calc_output_path, multiple = None, False
-            with contextlib.suppress(FileNotFoundError):
-                calc_output_path, multiple = _io_utils._get_output_files_and_check_if_multiple(
-                    pattern, str(directory)
-                )
-            if calc_output_path and os.path.exists(calc_output_path):
-                if multiple:
-                    self._multiple_files_warning(pattern, directory, calc_output_path)
-                return str(calc_output_path)
+        output_file = self._backend.CALC_OUTPUT_MASK[0]
+        calc_output_path, multiple = None, False
+        with contextlib.suppress(FileNotFoundError):
+            calc_output_path, multiple = _io_utils._get_output_files_and_check_if_multiple(
+                output_file, str(directory)
+            )
+        # optional backend file selection (e.g. GPAW filename priority, matching defect parsing):
+        if (find_calc_output := getattr(self._backend, "find_calc_output", None)) is not None:
+            with contextlib.suppress(FileNotFoundError, ValueError):  # none/ambiguous: keep generic pick
+                calc_output_path = find_calc_output(directory)
+        if calc_output_path and os.path.exists(calc_output_path):
+            if multiple:
+                self._multiple_files_warning(output_file, directory, calc_output_path)
+            return str(calc_output_path)
         return None
 
     def _multiple_files_warning(self, output_file, directory, chosen_filepath) -> None:
         """
         Warn that multiple calculation output files were found in
-        ``directory``, using the backend's ``FILE_PARSING_ACTIONS`` for the
-        (informative) description of what the file is parsed for.
+        ``directory``, describing the competing-phase parsing task.
         """
-        action = getattr(self._backend, "FILE_PARSING_ACTIONS", {}).get(
-            output_file, "parse the calculation energy and metadata."
-        )
+        action = "parse the competing-phase energy and metadata."
         _io_utils._multiple_files_warning(
             output_file, directory, chosen_filepath, action, dir_type="competing phase"
         )
@@ -3443,9 +3623,7 @@ class CompetingPhasesAnalyzer(MSONable):
 
         def _get_chempots_df_from_chempots(chempots: dict) -> pd.DataFrame:
             return pd.DataFrame.from_dict(  # chemical potentials as pandas dataframe
-                {k: list(v.values()) for k, v in chempots["limits_wrt_el_refs"].items()},
-                orient="index",
-                columns=[str(k) for k in next(iter(chempots["limits_wrt_el_refs"].values()))],
+                chempots["limits_wrt_el_refs"], orient="index"
             ).rename_axis("Limit")
 
         chempots_df = self.intrinsic_chempots_df = _get_chempots_df_from_chempots(self.intrinsic_chempots)
@@ -3546,7 +3724,6 @@ class CompetingPhasesAnalyzer(MSONable):
         host_element_symbols = {elt.symbol for elt in self.composition.elements}
         for limit, chempot_series in list(chempots_df.iterrows()):
             assert isinstance(limit, str)  # typing
-            chempots_df.loc[limit, extrinsic_element.symbol] = np.nan
             potential_limiting_extrinsic_entries: list[tuple[ComputedEntry, float]] = []
             for entry in self.extrinsic_entries:
                 n_extrinsic_entry = entry.composition[extrinsic_element]  # n_X
@@ -3639,7 +3816,7 @@ class CompetingPhasesAnalyzer(MSONable):
         form_e_df["Formula"] = form_e_df.index
         formation_energy_data = form_e_df.to_dict(orient="records")
 
-        kpoints_col = any("k-points" in item for item in formation_energy_data)
+        kpoints_col = any(row["k-points"] != "N/A" for row in formation_energy_data)
 
         string = "\\begin{table}[h]\n\\centering\n"
         string += (
@@ -3661,15 +3838,14 @@ class CompetingPhasesAnalyzer(MSONable):
             Render one competing-phase entry as LaTeX table cells (no trailing
             ``\\\\``).
             """
-            formula_cell = "\\ce{" + row["Formula"] + "}"
-            space_group_cell = latexify_spacegroup(row.get("Space Group", "N/A"))
-            eah_cell = f"{row['Energy above Hull (eV/atom)']:.3f}"
-            formation_energy_cell = f"{row['Formation Energy (eV/fu)']:.3f}"
-            cells = [formula_cell, space_group_cell, eah_cell]
-            if kpoints_col:
-                k1, k2, k3 = row.get("k-points", "0x0x0").split("x")
-                cells.append(f"{k1}$\\times${k2}$\\times${k3}")
-            cells.append(formation_energy_cell)
+            cells = [
+                "\\ce{" + row["Formula"] + "}",
+                latexify_spacegroup(row["Space Group"]),
+                f"{row['Energy above Hull (eV/atom)']:.3f}",
+            ]
+            if kpoints_col:  # "N/A" for any entries without a single k-point mesh
+                cells.append("$\\times$".join(row["k-points"].split("x")))
+            cells.append(f"{row['Formation Energy (eV/fu)']:.3f}")
             return " & ".join(cells)
 
         if splits == 1:
@@ -3684,11 +3860,13 @@ class CompetingPhasesAnalyzer(MSONable):
             string += "\\hline\n"
             string += column_names_string + " & " + column_names_string + " \\\\ \\hline\n"
 
-            mid = len(formation_energy_data) // 2
-            first_half = formation_energy_data[:mid]
-            last_half = formation_energy_data[mid:]
-            for left_row, right_row in zip(first_half, last_half, strict=False):
-                string += _format_row_cells(left_row) + " & " + _format_row_cells(right_row) + " \\\\\n"
+            mid = (len(formation_energy_data) + 1) // 2  # extra row (odd count) goes in the left half
+            blank_cells = " & ".join([""] * (5 if kpoints_col else 4))
+            for left_row, right_row in itertools.zip_longest(
+                formation_energy_data[:mid], formation_energy_data[mid:]
+            ):
+                right_cells = _format_row_cells(right_row) if right_row else blank_cells
+                string += _format_row_cells(left_row) + " & " + right_cells + " \\\\\n"
 
         string += "\\hline\n"
         string += "\\end{tabular}\n"
@@ -3710,6 +3888,7 @@ class CompetingPhasesAnalyzer(MSONable):
         label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
         filename: PathLike | None = None,
         style_file: PathLike | None = None,
+        ax: plt.Axes | None = None,
         **kwargs,
     ) -> plt.Figure:
         """
@@ -3726,8 +3905,7 @@ class CompetingPhasesAnalyzer(MSONable):
         element), but for higher-dimensional systems a set of chemical
         potential constraints must be provided (as ``fixed_elements``) to
         project the chemical stability region to 3-D; see the competing phases
-        tutorial section on
-        :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`.
+        tutorial section on |chempot limits tutorial|.
 
         Extrinsic chemical potentials are also supported; added as additional
         dimensions to the chemical potential diagram and can be used as plot
@@ -3818,6 +3996,14 @@ class CompetingPhasesAnalyzer(MSONable):
                 Path to a mplstyle file to use for the plot. If ``None``
                 (default), uses the default ``doped`` style (from
                 ``doped/utils/doped.mplstyle``).
+            ax (plt.Axes):
+                ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+                figures), rather than creating a new figure, in which case the
+                parent ``Figure`` of the ``Axes`` is returned (and saved, if
+                ``filename`` is set). Creating the figure within the
+                ``doped_plot_style()`` context manager (from
+                ``doped.utils.plotting``) applies the ``doped`` plot style to
+                the whole figure. Default: None.
             **kwargs:
                 Additional keyword arguments to pass to
                 ``ChemicalPotentialGrid.get_grid()``, such as ``n_points``
@@ -3842,79 +4028,9 @@ class CompetingPhasesAnalyzer(MSONable):
             label_positions=label_positions,
             filename=filename,
             style_file=style_file,
+            ax=ax,
             **kwargs,
         )
-
-    @property
-    def entries_dict(self) -> dict[str, ComputedEntry]:
-        """
-        Mapping of ``doped`` competing phase names to entries.
-        """
-        entries_dict: dict[str, ComputedEntry] = {}
-        for entry in self.entries:
-            doped_name = get_and_set_competing_phase_name(entry, regenerate=False)
-            if doped_name in entries_dict:
-                raise KeyError(
-                    f"Duplicate competing phase key encountered in `self.entries`: {doped_name}. "
-                    "Please regenerate entries / entry names to ensure uniqueness."
-                )
-            entries_dict[doped_name] = entry
-        return entries_dict
-
-    def __getattr__(self, attr: str) -> Any:
-        """
-        Redirect unknown attribute/method lookups to the entries dictionary.
-        """
-        # ``__getattr__`` is only called when normal lookup has already failed; ``entries`` is
-        # accessed by ``entries_dict`` so guard against infinite recursion during partially-
-        # initialised states:
-        if attr == "entries":
-            raise AttributeError(attr)
-        return getattr(self.entries_dict, attr)
-
-    @overload
-    def __getitem__(self, key: str) -> ComputedEntry: ...
-
-    @overload
-    def __getitem__(self, key: int) -> ComputedEntry: ...
-
-    @overload
-    def __getitem__(self, key: slice) -> list[ComputedEntry]: ...
-
-    def __getitem__(self, key: str | int | slice) -> ComputedEntry | list[ComputedEntry]:
-        """
-        Make the object subscriptable.
-
-        String keys index by ``entry.data["doped_name"]`` (dict-like), while
-        integer / slice keys use list-style indexing on ``self.entries``.
-        """
-        if isinstance(key, str):
-            return self.entries_dict[key]
-        return self.entries[key]
-
-    def __contains__(self, item: str | ComputedEntry | ComputedStructureEntry) -> bool:
-        """
-        Return ``True`` if ``item`` is in the entries.
-
-        For string inputs this checks ``entry.data["doped_name"]`` keys, while
-        for non-strings this falls back to list-style membership in
-        ``self.entries``.
-        """
-        if isinstance(item, str):
-            return item in self.entries_dict
-        return item in self.entries
-
-    def __len__(self) -> int:
-        """
-        Return the number of competing phase entries.
-        """
-        return len(self.entries)
-
-    def __iter__(self) -> Iterator[str]:
-        """
-        Return an iterator over ``entry.data["doped_name"]`` keys.
-        """
-        return iter(self.entries_dict)
 
     def as_dict(self) -> dict:
         """
@@ -3967,6 +4083,44 @@ class CompetingPhasesAnalyzer(MSONable):
         cpa.calculator = d.get("calculator", cpa.calculator)
         return cpa
 
+    def to_json(self, filename: PathLike | None = None):
+        """
+        Save the |CompetingPhasesAnalyzer| object as a json file, which can be
+        reloaded with the ``CompetingPhasesAnalyzer.from_json()`` class method.
+
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
+        Args:
+            filename (PathLike):
+                Filename to save ``json`` file as. If ``None``, set to
+                ``{Chemical Formula}_competing_phases_analyzer.json.gz`` by
+                default, where ``{Chemical Formula}`` is the reduced chemical
+                formula of the host material.
+        """
+        if filename is None:
+            formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            filename = f"{formula}_competing_phases_analyzer.json.gz"
+
+        dumpfn(self, filename)
+
+    @classmethod
+    def from_json(cls, filename: PathLike):
+        """
+        Load a |CompetingPhasesAnalyzer| object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
+
+        Args:
+            filename (PathLike):
+                Filename of json file to load |CompetingPhasesAnalyzer| object
+                from.
+
+        Returns:
+            |CompetingPhasesAnalyzer| object
+        """
+        return loadfn(filename)
+
     @property
     def chempot_grid(self) -> ChemicalPotentialGrid:
         """
@@ -4009,6 +4163,7 @@ def plot_chempot_heatmap(
     label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
     filename: PathLike | None = None,
     style_file: PathLike | None = None,
+    ax: plt.Axes | None = None,
     **kwargs,
 ) -> plt.Figure:
     """
@@ -4025,7 +4180,7 @@ def plot_chempot_heatmap(
     element), but for higher-dimensional systems a set of chemical potential
     constraints must be provided (as ``fixed_elements``) to project the
     chemical stability region to 3-D; see the competing phases tutorial section
-    on :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`.
+    on |chempot limits tutorial|.
 
     Extrinsic chemical potentials are also supported; added as additional
     dimensions to the chemical potential diagram and can be used as plot axes
@@ -4045,7 +4200,7 @@ def plot_chempot_heatmap(
 
     If the heatmap interpolation looks odd (e.g. striation effects), generally
     this can be easily solved by setting ``n_points`` (via ``**kwargs``) to a
-    higher value (default = 1000).
+    higher value (default = 10,000 for heatmap plotting).
 
     If using the default colour map (``batlow``) in publications, please
     consider citing: https://zenodo.org/records/8409685
@@ -4129,11 +4284,20 @@ def plot_chempot_heatmap(
             Path to a mplstyle file to use for the plot. If ``None``
             (default), uses the default ``doped`` style (from
             ``doped/utils/doped.mplstyle``).
+        ax (plt.Axes):
+            ``matplotlib`` ``Axes`` to plot onto (e.g. for multi-panel
+            figures), rather than creating a new figure, in which case the
+            parent ``Figure`` of the ``Axes`` is returned (and saved, if
+            ``filename`` is set). Creating the figure within the
+            ``doped_plot_style()`` context manager (from
+            ``doped.utils.plotting``) applies the ``doped`` plot style to the
+            whole figure. Default: None.
         **kwargs:
             Additional keyword arguments to pass to
             ``ChemicalPotentialGrid.get_grid()``, such as ``n_points``
-            (default = 1000) and ``cartesian`` (default = ``True`` for
-            heatmap plotting, to ensure smooth interpolation).
+            (default = 10,000 for heatmap plotting, rather than the
+            ``get_grid()`` default of 1000) and ``cartesian`` (default =
+            ``True`` for heatmap plotting, to ensure smooth interpolation).
 
     Returns:
         plt.Figure: The ``matplotlib`` ``Figure`` object.
@@ -4143,7 +4307,7 @@ def plot_chempot_heatmap(
     # 10.1021/acs.jpcc.3c05204; Cs2SnTiI6 notebooks), but this isn't as nice/clear, and the same effect
     # can be achieved by the user by saving to PDF without labels, and manually colouring and adding
     # a legend in a vector graphics editor (e.g. Inkscape, Affinity Designer, Adobe Illustrator, etc.).
-    composition = Composition(composition)
+    composition = Composition(getattr(composition, "composition", composition))  # entries accepted too
     entries = entries_from_chempot_limits(chempots)  # intrinsic and extrinsic entries
     limits_wrt_el_refs = chempots.get("limits_wrt_el_refs", chempots.get("limits", {}))
     element_wise_min_limit = {
@@ -4158,7 +4322,7 @@ def plot_chempot_heatmap(
             min(cbar_range) if cbar_range else 0,
         )
         - 3
-    )  # floor to account for ``ChemicalPotentialDiagram`` bug; requires integer min limit
+    )  # floor to a round integer limit, safely below all plotted chemical potentials
     cpd = ChemicalPotentialDiagram(entries, default_min_limit=default_min_limit)
     host_domains = cpd.domains[composition.reduced_formula]
     cpg = ChemicalPotentialGrid.from_dataframe(
@@ -4173,8 +4337,8 @@ def plot_chempot_heatmap(
     ordered_variable_elements = [
         el for el in (*host_elements, *extrinsic_elements) if el.symbol not in fixed_elements
     ]
-    if dependent_element is None:  # set to last element in ``ordered_variable_elements``, either an
-        # extrinsic element (if present) or the most electronegative anion in the bulk composition:
+    if dependent_element is None:  # default to the last non-fixed host element (i.e. the most
+        # electronegative anion in the bulk composition):
         dependent_element = next(el for el in reversed(host_elements) if el.symbol not in fixed_elements)
     elif isinstance(dependent_element, str):
         dependent_element = Element(dependent_element)
@@ -4222,19 +4386,32 @@ def plot_chempot_heatmap(
 
     # Generate grid data. Use a Cartesian (uniform) grid by default: barycentric grid sampling places
     # points unevenly across narrow / elongated regions of the host stability polygon, which can cause
-    # streaking artifacts under triangle-based interpolation in ``tripcolor``:
-    grid_kwargs: dict[str, Any] = {"cartesian": True, "fixed_elements": fixed_elements}
+    # streaking artifacts under triangle-based interpolation in ``tripcolor``. Denser than the ``get_grid``
+    # default (cheap in the 2-D plotting subspace), as ``gouraud`` shading interpolates colours (not
+    # values) across each triangle, so coarse triangles give faint streaks across smooth gradients:
+    grid_kwargs: dict[str, Any] = {"cartesian": True, "fixed_elements": fixed_elements, "n_points": 10000}
     grid_kwargs.update(kwargs)
     grid_data = cpg.get_grid(**grid_kwargs)
     values_inside = grid_data[dependent_element.symbol].to_numpy()
     points_inside = grid_data.drop(  # only independent (X) points, no dependent or fixed elements
         columns=[*list(fixed_elements.keys()), dependent_element.symbol]
     ).to_numpy()
+    # densify the hull edges so that the boundary triangles stay as small as the interior grid triangles
+    # (to avoid odd colour interpolation effects at the hull edges):
+    hull = ConvexHull(points_inside)
+    edges = list(zip(hull.vertices, np.roll(hull.vertices, -1), strict=True))  # consecutive (CCW) vertices
+    points_inside = np.vstack(
+        [points_inside, *(np.linspace(points_inside[i], points_inside[j], 101)[1:-1] for i, j in edges)]
+    )
+    values_inside = np.concatenate(
+        [values_inside, *(np.linspace(values_inside[i], values_inside[j], 101)[1:-1] for i, j in edges)]
+    )
     tri = Triangulation(points_inside[:, 0], points_inside[:, 1])
 
     # Create plot
     with doped_plot_style(style_file):
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots() if ax is None else (ax.figure.figure, ax)  # user ``ax``; root ``Figure``
+        user_texts = set(ax.texts)  # pre-existing (e.g. panel labels on user ``ax``); not to be nudged
         vmin = cbar_range[0] if cbar_range else None
         vmax = cbar_range[1] if cbar_range else None
         if vmax is None and np.isclose(values_inside.max(), 0, atol=3e-2):  # extend to 0 if close
@@ -4250,7 +4427,7 @@ def plot_chempot_heatmap(
             vmin=vmin,
             vmax=vmax,
         )
-        cbar = fig.colorbar(dep_mu)
+        cbar = fig.colorbar(dep_mu, ax=ax)  # take colorbar space from ``ax`` only
 
         # Set plot limits and labels
         xmax, ymax = points_inside.max(axis=0)
@@ -4290,7 +4467,7 @@ def plot_chempot_heatmap(
             _plot_competing_phase_lines(  # plot competing phase lines and labels
                 composition, ax, cpd, fixed_elements, independent_elts, label_positions
             )
-            _nudge_labels_inside_axes(ax, padding)  # adjust label positions to stay within plot bounds
+            _nudge_labels_inside_axes(ax, padding, exclude=user_texts)  # keep labels within plot bounds
 
         if filename:
             fig.savefig(filename, bbox_inches="tight", dpi=600)
@@ -4314,16 +4491,15 @@ def _plot_competing_phase_lines(
     xmin, xmax = ax.get_xlim()
     ymin, ymax = ax.get_ylim()
 
-    for formula, pts in cpd.domains.items():
-        x = np.linspace(-50, 50, 1000)
-        if formula == composition.reduced_formula or set(Composition(formula).elements).issubset(
-            {Element(el) for el in fixed_elements}
-        ):  # skip host or fixed elemental phases
-            continue
+    host_domains = cpd.domains[composition.reduced_formula]
+    fixed_elts = {Element(el) for el in fixed_elements}
+    x_vals = np.linspace(-50, 50, 1000)
 
-        # Get domain points that match host domains
-        host_domains = cpd.domains[composition.reduced_formula]
-        domain_pts = np.array(
+    for formula, pts in cpd.domains.items():
+        if formula == composition.reduced_formula or set(Composition(formula).elements) <= fixed_elts:
+            continue  # skip host or fixed elemental phases
+
+        domain_pts = np.array(  # domain points that match host domains
             [
                 chempot_coords
                 for chempot_coords in pts
@@ -4357,7 +4533,7 @@ def _plot_competing_phase_lines(
             def f(xx, m=m, b=b):  # line function for the fitted line
                 return m * xx + b
 
-            (line,) = ax.plot(x, f(x), label=latexify(formula), color="k")
+            (line,) = ax.plot(x_vals, f(x_vals), label=latexify(formula), color="k")
             intersection = _get_line_intersections(f, (xmin, xmax), (ymin, ymax))
 
         if intersection is not None and np.size(intersection) >= 4:
@@ -4372,7 +4548,7 @@ def _plot_competing_phase_lines(
             intersections.append(intersection)
             lines[formula] = line
 
-    if label_positions:  # add labels to lines
+    if label_positions and lines:  # add labels to lines
         _add_line_labels(
             intersections=intersections,
             lines=lines,  # {formula: matplotlib line object}
@@ -4382,117 +4558,101 @@ def _plot_competing_phase_lines(
         )
 
 
-def _get_line_intersections(
-    f: Callable, xlim: tuple[float, float], ylim: tuple[float, float]
-) -> np.ndarray:
-    """
-    Get intersections of a line with the plot bounding box.
-    """
-    xmin, xmax = xlim
-    ymin, ymax = ylim
-    x_intersections = []
-    y_intersections = []
-
-    # Check intersections with vertical bounds (xmin and xmax)
-    y_at_xmin = f(xmin)
-    y_at_xmax = f(xmax)
-    if ymin <= y_at_xmin <= ymax:
-        x_intersections.append((xmin, float(y_at_xmin)))
-    if ymin <= y_at_xmax <= ymax:
-        x_intersections.append((xmax, float(y_at_xmax)))
-
-    # Check intersections with horizontal bounds (ymin and ymax)
-    if not np.isclose(float(y_at_xmin), float(y_at_xmax), atol=1e-4):  # not a horizontal line
-
-        def inv_f(yy):  # inverse of the line function
-            return (yy - f(0)) / (f(1) - f(0)) if f(1) != f(0) else xmin
-
-        x_at_ymin = inv_f(ymin)
-        x_at_ymax = inv_f(ymax)
-        if xmin <= x_at_ymin <= xmax:
-            y_intersections.append((float(x_at_ymin), ymin))
-        if xmin <= x_at_ymax <= xmax:
-            y_intersections.append((float(x_at_ymax), ymax))
-
-    # take unique points in case intersects at x/y corner (which would give a duplicate):
-    return np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
-
-
-def _add_line_labels(
-    intersections: Sequence[np.ndarray],
-    lines: dict[str, plt.Line2D],
-    x_range: float,
-    y_range: float,
-    label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
+def _check_entry_compatibility(
+    backend: ModuleType, entries: list[ComputedEntry], template_candidates: list[ComputedEntry]
 ) -> None:
+    r"""
+    Check the calculation settings of the competing phase ``entries`` against
+    those of a reference (template) entry, using the
+    ``compare_calculation_settings()`` function and ``MISMATCH_WARNING_SPECS``
+    of the ``doped.io`` calculator ``backend`` (if implemented); recording any
+    mismatches in ``entry.data`` (under the ``MISMATCH_WARNING_SPECS`` keys)
+    and warning about these collectively.
+
+    For each type of setting, the first entry in ``template_candidates`` with
+    the relevant settings data (``"data_key"`` in ``MISMATCH_WARNING_SPECS``)
+    is used as the reference, and entries without this data (e.g.
+    ``ComputedEntry``\s supplied directly by the user, rather than parsed
+    from calculation outputs) are skipped.
+
+    Args:
+        backend (ModuleType):
+            The ``doped.io`` calculator parsing backend module.
+        entries (list[|ComputedEntry|]):
+            The competing phase entries to check.
+        template_candidates (list[|ComputedEntry|]):
+            Priority-ordered candidate entries from which to take the reference
+            (template) calculation settings.
     """
-    Add labels to the competing phase lines.
-    """
-    if label_positions is True:  # use custom doped algorithm
-        poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
-        plot_label_positions, best_norm_min_dist = _find_best_label_positions(
-            poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+    if (compare := getattr(backend, "compare_calculation_settings", None)) is None:
+        return
+    for mismatch_key, spec in getattr(backend, "MISMATCH_WARNING_SPECS", {}).items():
+        template = next((e for e in template_candidates if e.data.get(spec["data_key"])), None)
+        if template is None:
+            continue
+        for entry in entries:
+            if entry.data.get(spec["data_key"]) and mismatch_key in (
+                mismatches := compare(entry.data, template.data, competing_phases=True)
+            ):
+                entry.data[mismatch_key] = mismatches[mismatch_key]
+        _io_utils._warn_calculation_mismatches(
+            [(entry.name, entry.data) for entry in entries],
+            {mismatch_key: spec},
+            competing_phases=True,
+            reference_name=template.name,
         )
-        if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
-            poss_label_positions = _possible_label_positions_from_bbox_intersections(
-                intersections, positions_per_line=5
-            )
-            plot_label_positions, best_norm_min_dist = _find_best_label_positions(
-                poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
-            )
 
-    elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
-        lines = {k: lines[k] for k in lines if k in label_positions}  # drop any without positions
-        plot_label_positions = [label_positions[k] for k in lines]  # reorder to match lines
 
-    if isinstance(label_positions, list):
-        plot_label_positions = np.array(label_positions, dtype=float)
+_PRESSURE_RANGE_GPA = (-3, 1)
+"""
+Range (in GPa) of final (residual) pressures for competing phase calculations,
+outside of which |CompetingPhasesAnalyzer| warns that they may not be at their
+equilibrium volumes (see :func:`_check_entry_pressures`).
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", "The value at position")
-        labelLines(
-            list(lines.values()),  # must be in same order as plotting order...
-            xvals=plot_label_positions[:, 0],
-            yoffsets=plot_label_positions[:, 1],
-            align=False,
-            color="black",
+The lower bound is looser, as large negative pressures can be Pulay stress (in
+fixed-cell calculations with low plane-wave cutoffs) rather than volume errors.
+"""
+
+
+def _check_entry_pressures(entries: list[ComputedEntry]) -> None:
+    """
+    Warn about competing phase ``entries`` with large final (residual)
+    pressures (outside :data:`_PRESSURE_RANGE_GPA`), which indicate that their
+    cells are not at their equilibrium volumes for the calculation settings
+    used (e.g. fixed-cell or single-point calculations at lattices from other
+    functionals, codes or cutoffs, or unconverged relaxations), and so can
+    cause errors in their energies and thus the chemical potential limits.
+
+    Large negative pressures in fixed-cell calculations with low plane-wave
+    cutoffs are usually Pulay stress, so the lower bound is looser.
+
+    The pressures are taken from ``entry.data["pressure"]`` (in GPa, positive
+    for compressive stress). Entries without a numerical pressure are skipped.
+
+    Args:
+        entries (list[|ComputedEntry|]):
+            The competing phase entries to check.
+    """
+    min_pressure, max_pressure = _PRESSURE_RANGE_GPA
+    high_pressures = []
+    for entry in entries:
+        pressure = entry.data.get("pressure")  # (``None`` and NaN pressures are skipped below)
+        if isinstance(pressure, int | float) and (pressure < min_pressure or pressure > max_pressure):
+            folder = entry.data.get("folder")
+            high_pressures.append((f"{entry.name} ({folder})" if folder else entry.name, pressure))
+
+    if high_pressures:
+        high_pressures.sort(key=lambda x: -abs(x[1]))
+        warnings.warn(
+            f"There are large final pressures (P < {min_pressure} GPa or P > {max_pressure} GPa) for "
+            f"(some of) your competing phase calculations, suggesting that their cells are not at their "
+            f"equilibrium volumes for the calculation settings used (e.g. fixed-cell or single-point "
+            f"calculations at lattices from other functionals, codes or cutoffs, or unconverged "
+            f"relaxations), which can cause errors in their energies. Negative pressures in fixed-cell "
+            f"calculations with low plane-wave cutoffs can be Pulay stress, which may have a negligible "
+            f"effect on energies. Final pressures (positive = compressive stress):\n"
+            + "\n".join(f"{label}: {pressure:+.2f} GPa" for label, pressure in high_pressures)
         )
-
-
-def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None) -> None:
-    """
-    Adjust label positions to ensure they stay within plot bounds.
-    """
-    xlim, ylim = ax.get_xlim(), ax.get_ylim()
-    x_padding = padding or (xlim[1] - xlim[0]) * 0.1
-    y_padding = padding or (ylim[1] - ylim[0]) * 0.1
-
-    latexified_labels = {
-        artist.get_text(): artist for artist in ax.get_children() if isinstance(artist, plt.Text)
-    }
-    for text in latexified_labels.values():
-        bbox = text.get_window_extent().transformed(ax.transData.inverted())
-        new_position = text.get_position()
-        delta_x = delta_y = 0.0
-
-        if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
-            if bbox.xmin < xlim[0]:  # shift right if label starts before xmin
-                delta_x = (xlim[0] - bbox.xmin) + x_padding * 0.25
-            elif bbox.xmax > xlim[1]:  # shift left if label ends after xmax
-                delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
-
-            if bbox.ymin < ylim[0]:  # shift up if label starts before ymin
-                delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
-            if bbox.ymax > ylim[1]:  # shift down if label ends after ymax
-                delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
-
-            # Apply adjustments while keeping within bounds
-            if delta_x != 0 and new_position[0] + delta_x < xlim[1]:
-                new_position = (new_position[0] + delta_x, new_position[1])
-            if delta_y != 0 and new_position[1] + delta_y < ylim[1]:
-                new_position = (new_position[0], new_position[1] + delta_y)
-
-        text.set_position(new_position)
 
 
 def _parse_entry_and_catch_exception(
@@ -4520,119 +4680,35 @@ def _parse_entry_and_catch_exception(
         return str(e), calc_output_path, False, False
 
 
-def _possible_label_positions_from_bbox_intersections(
-    intersections: Sequence[NDArray[np.floating[Any]]] | NDArray[np.floating[Any]],
-    positions_per_line: int = 3,
-) -> NDArray[np.floating[Any]]:
+def _is_calc_folder_name(folder_name: str) -> bool:
     """
-    From a list or array of ``intersections``, which contains the intersections
-    of lines with a plot bounding box (limits) and thus has shape ``(N_lines,
-    2, 2)`` (because 2 intersections with 2 (x,y) coordinates per line),
-    returns ``positions_per_line`` uniformly-spaced possible x,y coordinates
-    for labels of those lines.
-
-    e.g. if ``positions_per_line = 3`` (default), then returns the x,y
-    coordinates for the positions which are 1/4, 2/4 and 3/4 along the line
-    between the two bbox intersections.
-
-    Args:
-        intersections (list or np.ndarray):
-            A list or array of intersections of lines with the plot bounding
-            box. Should have shape ``(N_lines, 2, 2)``.
-        positions_per_line (int):
-            The number of possible label positions per line to return. Default
-            is 3, which returns positions at 1/4, 2/4 and 3/4 along the line
-            between the two bbox intersections.
-
-    Returns:
-        np.ndarray:
-            The possible label positions, with shape
-            ``(N_lines, positions_per_line, 2)``.
+    Whether ``folder_name`` looks like the name of a (competing phase)
+    calculation folder, i.e. contains ``"EaH"`` (as in the default
+    ``{Formula}_{spg}_EaH_{EaH}`` folder names) or a composition (e.g.
+    ``"ZrO2"``) in its ``"_"``-separated parts.
     """
-    poss_label_positions = np.zeros((len(intersections), positions_per_line, 2))
-    for label_idx, points in enumerate(intersections):  # get possible label positions
-        for line_pos_idx in range(positions_per_line):
-            first_pt_factor = ((positions_per_line + 1) - (line_pos_idx + 1)) / (positions_per_line + 1)
-            second_pt_factor = 1 - first_pt_factor
-            poss_label_positions[label_idx, line_pos_idx, 0] = (points[0][0] * first_pt_factor) + (
-                points[1][0] * second_pt_factor
-            )
-            poss_label_positions[label_idx, line_pos_idx, 1] = (points[0][1] * first_pt_factor) + (
-                points[1][1] * second_pt_factor
-            )
-
-    return poss_label_positions
+    if "EaH" in folder_name:
+        return True
+    for name_part in folder_name.split("_"):
+        with contextlib.suppress(ValueError):  # not a composition
+            if name_part and Composition(name_part):
+                return True
+    return False
 
 
-def _find_best_label_positions(
-    poss_label_positions: NDArray[np.floating[Any]],
-    x_range: float = 1,
-    y_range: float = 1,
-    return_best_norm_dist: bool = False,
-) -> NDArray[np.floating[Any]] | tuple[NDArray[np.floating[Any]], float]:
+def _warn_skipped_folders(
+    output_file: str, folders: list[str], parent_folder: PathLike | None = None
+) -> None:
     """
-    From an array of possible label positions, find the best possible
-    combination of label positions which maximises the distance between labels
-    (i.e. minimises overlap).
-
-    Args:
-        poss_label_positions (np.ndarray):
-            The possible label positions, with shape
-            ``(N_lines, positions_per_line, 2)``.
-        x_range (float):
-            The range of the x-axis to use for normalisation. Default is 1.
-        y_range (float):
-            The range of the y-axis to use for normalisation. Default is 1.
-        return_best_norm_dist (bool):
-            Whether to return the best normalised minimum distance between
-            labels. Default is ``False``.
-
-    Returns:
-        np.ndarray:
-            The best possible label positions, with shape ``(N_lines, 2)``,
-            where the second dimension is (x,y-offset) coordinates.
-        float:
-            The best normalised minimum distance between labels,
-            if ``return_best_norm_dist`` is True.
+    Warn that calculation output files (``output_file``) could not be found in
+    ``folders`` (in ``parent_folder``, if given), and so they are skipped.
     """
-    # Get all possible combinations of indices, for the first two dimensions (N_labels,
-    # N_possibilities_per_label):
-    N_labels, N_possibilities_per_label, N_xy = poss_label_positions.shape
-    combinations = list(itertools.product(range(N_possibilities_per_label), repeat=N_labels))
-
-    # Prepare an empty array to store the results
-    all_combos = np.zeros((len(combinations), N_labels, N_xy))  # N_xy should be 2
-
-    # Fill the result array with the corresponding coordinates
-    for i, combo in enumerate(combinations):
-        all_combos[i] = poss_label_positions[np.arange(N_labels), combo]
-
-    #  all_combos.shape should be (N_possibilities_per_label**N_labels, N_labels, N_xy = 2)
-    all_combos[:, :, 0] /= x_range
-    all_combos[:, :, 1] /= y_range
-    dists = np.linalg.norm(all_combos[:, :, np.newaxis] - all_combos[:, np.newaxis, :], axis=-1)
-    # get upper diagonal of distances (removes self-distances = 0 and duplicates ((i,j) = (j,i))
-    mask = np.triu(np.ones((N_labels, N_labels)), k=1).astype(bool)
-    unique_dists = dists[:, mask]
-    dists_list = [sorted(sublist) for sublist in unique_dists.tolist()]
-    max_idx = dists_list.index(sorted(dists_list, reverse=True)[0])
-    best_combo = all_combos[max_idx]
-    best_combo[:, 0] *= x_range
-    best_combo[:, 1] *= y_range  # reverse normalisation
-
-    # set y-offset to 0 except for vertical lines:
-    for i in range(N_labels):
-        if poss_label_positions[i, 0, 0] == poss_label_positions[i, -1, 0]:  # vertical line
-            best_combo[i, 1] -= np.mean(
-                poss_label_positions[i, :, 1]
-            )  # y_offset relative to midpoint (default for vertical lines)
-        else:
-            best_combo[i, 1] = 0  # zero y-offset
-
-    if return_best_norm_dist:
-        return best_combo, dists_list[max_idx][0]
-
-    return best_combo
+    if folders:
+        parent_folder_string = f" (in {parent_folder})" if parent_folder is not None else ""
+        warnings.warn(
+            f"{output_file} files could not be found in the following directories{parent_folder_string}, "
+            f"and so they will be skipped for parsing:\n" + "\n".join(folders)
+        )
 
 
 def _get_bulk_comp_from_chempots(chempots: dict) -> str | None:
@@ -4770,12 +4846,9 @@ def get_X_rich_poor_limit(
 
     ref_EN = Element(X).X
 
-    def EN_diff(sym: str) -> float:
-        EN = Element(sym).X
-        try:
-            return abs(float(EN) - float(ref_EN))
-        except (TypeError, ValueError):
-            return np.inf  # no electronegativity data available
+    def EN_diff(sym: str) -> float:  # ``Element.X`` is NaN when no electronegativity data available
+        diff = abs(Element(sym).X - ref_EN)
+        return np.inf if np.isnan(diff) else diff  # deprioritise such elements
 
     bulk = {e.symbol for e in Composition(bulk_composition).elements} if bulk_composition else set()
     symbols = set().union(*(limits[limit] for limit in tied))

@@ -19,12 +19,11 @@ from doped.core import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
-    _get_defect_supercell_site,
 )
 from doped.generation import _get_element_list
 from doped.utils.mappings import get_matching_site, get_site_mappings
 from doped.utils.plotting import doped_plot_style
-from doped.utils.symmetry import _round_floats
+from doped.utils.symmetry import _round_floats, remove_translation_drift
 
 try:
     import plotly.colors as pc
@@ -591,6 +590,77 @@ def plot_site_displacements(
     return fig
 
 
+def _get_minimum_volume_ellipsoid(P, tolerance=5e-4):
+    """
+    Find the minimum volume ellipsoid which holds all the points.
+
+    Based on work by Nima Moshtagh:
+    https://www.mathworks.com/matlabcentral/fileexchange/9542
+    and following work:
+    https://cctbx.sourceforge.net/current/python/scitbx.math.minimum_covering_ellipsoid.html
+
+    Here, P is a numpy array of N dimensional points like:
+    P = [[x,y,z], <-- one point per line
+        [x,y,z],
+        ...
+        [x,y,z]]
+
+    Returns:
+    (center, radii, rotation)
+    """
+    P = np.array(P)
+    N, d = np.shape(P)
+
+    Q = np.vstack([np.copy(P.T), np.ones(N)])  # working array
+    QT = Q.T
+
+    err = 1.0 + tolerance
+    u = (1.0 / N) * np.ones(N)
+
+    while err > tolerance:  # Khachiyan Algorithm
+        V = np.dot(Q, np.dot(np.diag(u), QT))
+        M = np.diag(np.dot(QT, np.dot(np.linalg.inv(V), Q)))  # M the diagonal vector of an NxN matrix
+        j = np.argmax(M)
+        maximum = M[j]
+        step_size = (maximum - d - 1.0) / ((d + 1.0) * (maximum - 1.0))
+        new_u = (1.0 - step_size) * u
+        new_u[j] += step_size
+        err = np.linalg.norm(new_u - u)
+        u = new_u
+
+    center = np.dot(P.T, u)  # center of the ellipse
+
+    A = (  # the A matrix for the ellipse
+        np.linalg.inv(
+            np.dot(P.T, np.dot(np.diag(u), P)) - np.array([[a * b for b in center] for a in center])
+        )
+        / d
+    )
+
+    _U, s, rotation = np.linalg.svd(A)
+    # there can be some small numerical noise and ambiguity in this approach and ``numpy``\s SVD,
+    # so here we ensure consistent & reproducible output regardless of OS etc., favouring alignment
+    # with the positive octant (i.e. along [1, 1, 1]):
+    rotation *= np.where(np.dot(rotation, [1, 1, 1])[:, None] < -tolerance * 2, -1, 1)
+    radii = 1.0 / np.sqrt(s)
+
+    # similarly, the axes of (near-)degenerate radii (e.g. by symmetry) are arbitrary within the subspace
+    # they span, and so can flip with numerical noise (e.g. to a mirror-related solution with a different
+    # BLAS library), so we set them deterministically here:
+    degenerate_pairs = np.flatnonzero(np.isclose(radii[1:], radii[:-1], rtol=tolerance * 4, atol=0))
+    if len(degenerate_pairs) == 2:  # all radii (near-)equal, use Cartesian axes
+        rotation = np.eye(3)
+    elif len(degenerate_pairs) == 1:  # use x (or y if n ~ x) projected onto the plane normal to n
+        i = degenerate_pairs[0]
+        n = rotation[2 - 2 * i]  # non-degenerate axis
+        # skip x if within ~6° of n (norm < 0.1), safely away from low-index directions (>= 14° from x):
+        in_plane_axis = next(v for v in np.eye(3) - np.outer(n, n) if np.linalg.norm(v) > 0.1)
+        rotation[i] = in_plane_axis / np.linalg.norm(in_plane_axis)
+        rotation[i + 1] = np.cross(n, rotation[i])  # right-handed (det = +1), for consistent plot shading
+
+    return center, radii, rotation
+
+
 def calc_displacements_ellipsoid(
     defect_entry: DefectEntry,
     quantile: float = 0.8,
@@ -638,63 +708,6 @@ def calc_displacements_ellipsoid(
               If ``return_extras=True``, also returns ``disp_df`` and the
               points used to fit the ellipsoid, appended to the return tuple.
     """
-
-    def _get_minimum_volume_ellipsoid(P, tolerance=5e-4):
-        """
-        Find the minimum volume ellipsoid which holds all the points.
-
-        Based on work by Nima Moshtagh:
-        https://www.mathworks.com/matlabcentral/fileexchange/9542
-        and following work:
-        https://cctbx.sourceforge.net/current/python/scitbx.math.minimum_covering_ellipsoid.html
-
-        Here, P is a numpy array of N dimensional points like:
-        P = [[x,y,z], <-- one point per line
-            [x,y,z],
-            ...
-            [x,y,z]]
-
-        Returns:
-        (center, radii, rotation)
-        """
-        P = np.array(P)
-        N, d = np.shape(P)
-
-        Q = np.vstack([np.copy(P.T), np.ones(N)])  # working array
-        QT = Q.T
-
-        err = 1.0 + tolerance
-        u = (1.0 / N) * np.ones(N)
-
-        while err > tolerance:  # Khachiyan Algorithm
-            V = np.dot(Q, np.dot(np.diag(u), QT))
-            M = np.diag(np.dot(QT, np.dot(np.linalg.inv(V), Q)))  # M the diagonal vector of an NxN matrix
-            j = np.argmax(M)
-            maximum = M[j]
-            step_size = (maximum - d - 1.0) / ((d + 1.0) * (maximum - 1.0))
-            new_u = (1.0 - step_size) * u
-            new_u[j] += step_size
-            err = np.linalg.norm(new_u - u)
-            u = new_u
-
-        center = np.dot(P.T, u)  # center of the ellipse
-
-        A = (  # the A matrix for the ellipse
-            np.linalg.inv(
-                np.dot(P.T, np.dot(np.diag(u), P)) - np.array([[a * b for b in center] for a in center])
-            )
-            / d
-        )
-
-        _U, s, rotation = np.linalg.svd(A)
-        # there can be some small numerical noise and ambiguity in this approach and ``numpy``\s SVD,
-        # so here we ensure consistent & reproducible output regardless of OS etc., favouring alignment
-        # with the positive octant (i.e. along [1, 1, 1]):
-        rotation *= np.where(np.dot(rotation, [1, 1, 1])[:, None] < -tolerance * 2, -1, 1)
-        radii = 1.0 / np.sqrt(s)
-
-        return center, radii, rotation
-
     disp_df = calc_site_displacements(
         defect_entry, relaxed_distances=relaxed_distances, relative_to_defect=True
     )
@@ -719,7 +732,9 @@ def calc_displacements_ellipsoid(
     if points.shape[0] >= 10:  # only proceed if there are at least 10 points over the threshold
         try:
             # Try to fit a minimum volume ellipsoid to the points
-            ellipsoid_center, ellipsoid_radii, ellipsoid_rotation = _get_minimum_volume_ellipsoid(points)
+            ellipsoid_center, ellipsoid_radii, ellipsoid_rotation = _get_minimum_volume_ellipsoid(
+                points, tolerance
+            )
             anisotropy_df = pd.DataFrame(
                 {
                     "Longest Radius": ellipsoid_radii[2],
@@ -980,7 +995,7 @@ def plot_displacements_ellipsoid(
             fig, axs = plt.subplots(1, 2, figsize=(14, 6))
 
             # Part 1: Displacement Distribution Box Plot
-            axs[0].boxplot(disp_df["Displacement"], orientation="vertical", patch_artist=True)
+            axs[0].boxplot(disp_df["Displacement"], patch_artist=True)
             axs[0].set_title("Displacement Norm Distribution")
             axs[0].set_ylabel("Displacement Norm (Å)")
             axs[0].grid(False)
@@ -1046,7 +1061,7 @@ def plot_displacements_ellipsoid(
                     "opacity": 0.5,
                     "color": anisotropy_df["Longest Radius"],  # set color according to column "a"
                     "colorscale": "rainbow",
-                    "colorbar": {"title": "Ellipsoid Maximum Radius (Å)", "titleside": "right"},
+                    "colorbar": {"title": {"text": "Ellipsoid Maximum Radius (Å)", "side": "right"}},
                 },
                 text=anisotropy_df["Longest Radius"],
                 hoverinfo="text",
@@ -1101,8 +1116,7 @@ def plot_displacements_ellipsoid(
     return_list = []
     # If ellipsoid plotting is enabled, plot the ellipsoid with the given lattice matrix
     if plot_ellipsoid:
-        bulk_sc, _defect_sc_with_site, _defect_site_index = _get_bulk_struct_with_defect(defect_entry)
-        lattice_matrix = bulk_sc.as_dict()["lattice"]["matrix"]
+        lattice_matrix = _get_bulk_supercell(defect_entry).lattice.matrix
         func: Callable[..., Any] = _plotly_plot_ellipsoid if use_plotly else _mpl_plot_ellipsoid
         args = [ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix]
         if not use_plotly:
@@ -1135,59 +1149,33 @@ def _get_bulk_struct_with_defect(defect_entry: DefectEntry) -> tuple:
     ``(bulk_sc_with_defect, defect_sc_with_defect, defect_site_index)``.
     """
     defect_type = defect_entry.defect.defect_type.name
-    bulk_sc_with_defect = _get_bulk_supercell(defect_entry).copy()
-    relaxed_sc_defect_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=True)
-    assert relaxed_sc_defect_frac_coords is not None  # always set for a parsed defect entry
-
-    defect_sc_with_defect = _get_defect_supercell(defect_entry).copy()
-    if defect_type == "Vacancy":  # Add Vacancy atom to defect structure
-        defect_sc_with_defect.append(
-            defect_entry.defect.site.specie,
-            relaxed_sc_defect_frac_coords,  # unrelaxed = relaxed site for vacancies
-            coords_are_cartesian=False,
-        )
-        defect_site_index: int | None = len(defect_sc_with_defect) - 1
-    elif defect_type == "Interstitial":  # If Interstitial, add interstitial site to bulk structure
-        bulk_sc_with_defect.append(
-            defect_entry.defect.site.specie,
-            relaxed_sc_defect_frac_coords,  # _relaxed_ defect site for interstitials
-            coords_are_cartesian=False,
-        )
-        # Get index of defect site in defect supercell; typically the last or first, so check these
-        # first for speed
-        defect_site_index = next(
-            (
-                trial_idx
-                for trial_idx in [len(defect_sc_with_defect) - 1, 0]
-                if np.allclose(
-                    defect_sc_with_defect[trial_idx].frac_coords,
-                    relaxed_sc_defect_frac_coords,  # _relaxed_ defect site
-                    atol=1e-2,
-                )
-            ),
-            None,
-        )
-        defect_site_index = defect_site_index or defect_sc_with_defect.index(
-            _get_defect_supercell_site(defect_entry, relaxed=True)
-        )
-
-    elif defect_type == "Substitution":  # If Substitution, replace site in bulk supercell
-        unrelaxed_sc_defect_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=False)
-        bulk_sc_with_defect.replace(
-            bulk_sc_with_defect.index(
-                get_matching_site(
-                    unrelaxed_sc_defect_frac_coords,
-                    bulk_sc_with_defect,
-                )
-            ),
-            defect_entry.defect.site.specie,
-            unrelaxed_sc_defect_frac_coords,  # _unrelaxed_ defect site for bulk_sc_with_defect
-            coords_are_cartesian=False,
-        )
-        # Get index of defect site in defect supercell (may differ from bulk site index)
-        defect_site_index = defect_sc_with_defect.index(
-            _get_defect_supercell_site(defect_entry, relaxed=True)
-        )
-    else:
+    if defect_type not in {"Vacancy", "Interstitial", "Substitution"}:
         raise ValueError(f"Defect type {defect_type} not supported")
-    return bulk_sc_with_defect, defect_sc_with_defect, defect_site_index
+    species = defect_entry.defect.site.specie
+    bulk_sc = _get_bulk_supercell(defect_entry).copy()
+    relaxed_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=True)
+    assert relaxed_frac_coords is not None  # always set for a parsed defect entry
+
+    # remove any rigid translation drift (e.g. due to rattling), placing the relaxed supercell and defect
+    # site in the same frame as the bulk supercell -- otherwise it spuriously adds to every displacement:
+    defect_sc, shifted_frac_coords = remove_translation_drift(
+        _get_defect_supercell(defect_entry), bulk_sc, relaxed_frac_coords
+    )
+    if defect_type == "Vacancy":  # add the vacancy site to the defect structure; vacancy site defined...
+        defect_sc.append(species, relaxed_frac_coords, coords_are_cartesian=False)
+        return bulk_sc, defect_sc, len(defect_sc) - 1  # ...in the _bulk_ frame, so unaffected by drift
+
+    # index of the (relaxed) defect site in the defect supercell, which may differ from the bulk site
+    # index; matched on coordinates, as the drift removal above has shifted all sites:
+    defect_site_index = defect_sc.index(get_matching_site(shifted_frac_coords, defect_sc))
+    if defect_type == "Interstitial":  # add the relaxed interstitial site to the bulk structure
+        bulk_sc.append(species, shifted_frac_coords, coords_are_cartesian=False)
+    else:  # Substitution; replace the (unrelaxed) bulk site with the defect species
+        unrelaxed_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=False)
+        bulk_sc.replace(
+            bulk_sc.index(get_matching_site(unrelaxed_frac_coords, bulk_sc)),
+            species,
+            unrelaxed_frac_coords,
+            coords_are_cartesian=False,
+        )
+    return bulk_sc, defect_sc, defect_site_index

@@ -13931,7 +13931,7 @@
                     "dtype": "float64"
                 },
                 "eigenvalue_data": null,
-                "full_unrelaxed_defect_name": "Al_i_Cs_S2.35_+2",
+                "full_unrelaxed_defect_name": "Al_i_Cs_S2.31_+2",
                 "guessed_defect_displacement": 0.047044588046314756,
                 "guessed_initial_defect_site": {
                     "@class": "PeriodicSite",
@@ -17554,9 +17554,493 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.5,
-                            0.5,
-                            0.5
+                            0.4922,
+                            0.4922,
+                            0.5024
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.4922,
+                            0.5024,
+                            0.4922
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.5024,
+                            0.4922,
+                            0.4922
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.4922,
+                            0.4922,
+                            0.513
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.4922,
+                            0.513,
+                            0.4922
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.513,
+                            0.4922,
+                            0.4922
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.4922,
+                            0.5024,
+                            0.513
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.4922,
+                            0.513,
+                            0.5024
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.5024,
+                            0.4922,
+                            0.513
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.5024,
+                            0.513,
+                            0.4922
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.513,
+                            0.4922,
+                            0.5024
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.513,
+                            0.5024,
+                            0.4922
                         ],
                         "label": "Al",
                         "lattice": {
@@ -17594,16 +18078,16 @@
                         ]
                     }
                 ],
-                "multiplicity": 1,
+                "multiplicity": 12,
                 "oxi_state": 3,
                 "site": {
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "@version": null,
                     "abc": [
-                        0.5,
-                        0.5,
-                        0.5
+                        0.4922,
+                        0.4922,
+                        0.5024
                     ],
                     "label": "Al",
                     "lattice": {
@@ -23676,7 +24160,7 @@
                     "dtype": "float64"
                 },
                 "eigenvalue_data": null,
-                "full_unrelaxed_defect_name": "Al_i_C3v_S2.35_+3",
+                "full_unrelaxed_defect_name": "Al_i_C3v_S2.33_+3",
                 "guessed_defect_displacement": 0.021730827301922075,
                 "guessed_initial_defect_site": {
                     "@class": "PeriodicSite",
@@ -27299,9 +27783,141 @@
                         "@module": "pymatgen.core.sites",
                         "@version": null,
                         "abc": [
-                            0.5,
-                            0.5,
-                            0.5
+                            0.4977,
+                            0.4977,
+                            0.4977
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.4977,
+                            0.4977,
+                            0.5068
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.4977,
+                            0.5068,
+                            0.4977
+                        ],
+                        "label": "Al",
+                        "lattice": {
+                            "@class": "Lattice",
+                            "@module": "pymatgen.core.lattice",
+                            "matrix": [
+                                [
+                                    0.0,
+                                    2.712789048,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    0.0,
+                                    2.712789048
+                                ],
+                                [
+                                    2.712789048,
+                                    2.712789048,
+                                    0.0
+                                ]
+                            ],
+                            "pbc": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
+                        "properties": {},
+                        "species": [
+                            {
+                                "element": "Al",
+                                "occu": 1
+                            }
+                        ]
+                    },
+                    {
+                        "@class": "PeriodicSite",
+                        "@module": "pymatgen.core.sites",
+                        "@version": null,
+                        "abc": [
+                            0.5068,
+                            0.4977,
+                            0.4977
                         ],
                         "label": "Al",
                         "lattice": {
@@ -27339,16 +27955,16 @@
                         ]
                     }
                 ],
-                "multiplicity": 1,
+                "multiplicity": 4,
                 "oxi_state": 3,
                 "site": {
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
                     "@version": null,
                     "abc": [
-                        0.5,
-                        0.5,
-                        0.5
+                        0.4977,
+                        0.4977,
+                        0.4977
                     ],
                     "label": "Al",
                     "lattice": {

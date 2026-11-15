@@ -6,22 +6,25 @@ mutation guards.
 The core contract is the Python data-model invariant: ``a == b`` implies
 ``hash(a) == hash(b)`` (hashes may be coarser than equality -- collisions are
 resolved by ``__eq__`` -- but (ideally) not finer, else ``set``/``dict``/cache
-lookups silently break). Where hashes are deliberately finer than
-tolerance-based equality (near-equal coordinates), that is documented at the
-definition site and not asserted here.
+lookups silently break). Where hashes are deliberately finer than tolerance-
+based equality (near-equal coordinates), that is documented at the definition
+site and not asserted here.
 """
 
 import copy
+import subprocess
+import sys
 
 import numpy as np
 import pytest
-from pymatgen.core import Composition, Element, Lattice, PeriodicSite, Structure
+from pymatgen.core import Composition, Element, Lattice, PeriodicSite, Species, Structure
 from pymatgen.core.ion import Ion
 from pymatgen.core.structure import Molecule
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 import doped.utils.efficiency  # noqa: F401  (applies the ``pymatgen`` patches)
 from doped.core import DefectEntry, Vacancy
+from doped.utils.mappings import _get_closest_coords
 from doped.utils.symmetry import get_all_equiv_sites, get_distance_matrix, get_primitive_structure, get_sga
 
 CUBIC_LATTICE = Lattice.cubic(5.0)
@@ -52,6 +55,16 @@ class TestCompositionHashEq:
         assert Composition("Fe2O3") != {Element("Fe"): 3.0, Element("O"): 2.0}
         # Composition.__eq__ supports dict -- Composition comparison
         assert {Element("Fe"): 2.0, Element("O"): 3.0} == Composition("Fe2O3")
+        # str-keyed dicts are converted (as in ``pymatgen``), and dicts with unparsable or missing keys
+        # compare unequal (rather than raising):
+        assert Composition("Fe2O3") == {"Fe": 2, "O": 3}
+        assert Composition({"Fe3+": 2, "O2-": 3}) == {"Fe3+": 2, "O2-": 3}
+        assert Composition("CdTe") in [{"Cd": 1, "Te": 1}]
+        assert Composition("Fe2O3") != {"Fe": 2, "Al": 3}
+        assert Composition("Fe2O3") != {"Fe": 2, "Zz": 3}
+        assert Composition("Fe2O3") != {Element("Fe"): 2, Element("Al"): 3}
+        assert Composition("CdTe") != {"CdTe": 1}  # unparsable
+        assert Composition("CdTe") != {"limits": 1}  # unparsable
 
     def test_ion_hash_invariant(self):
         # ``Ion.__hash__`` = hash((composition, charge)); inherits the Composition fix:
@@ -161,12 +174,16 @@ class TestStructureHashEq:
         assert s1 != s3  # different coords; full comparison path
 
     def test_tolerant_equality_kept(self):
-        s1 = _simple_structure()
-        permuted = Structure.from_sites(list(reversed(s1.sites)))
-        assert s1 == permuted  # site-order-independent equality
-        noisy = Structure(CUBIC_LATTICE, ["Cd", "Te"], [[0, 0, 1e-9], [0.25, 0.25, 0.25]])
-        # tolerance-based equality (noise above 1e-10 hash rounding, so hashes may differ, but still eq):
-        assert s1 == noisy
+        for s1 in [_simple_structure(), _simple_structure() * 2]:  # brute-force & KD-tree site matching
+            permuted = Structure.from_sites(list(reversed(s1.sites)))
+            assert s1 == permuted  # site-order-independent equality
+            noisy = s1.copy()
+            noisy.translate_sites([0], [0, 0, 1e-9])
+            # tolerance-based equality (noise above 1e-10 hash rounding; hashes may differ, but still eq):
+            assert s1 == noisy
+            moved = s1.copy()
+            moved.translate_sites([0], [0, 0, 0.1])
+            assert s1 != moved
 
     def test_float_noise_twins_share_hash(self):
         # coords/lattices differing only by float noise (<1e-10, e.g. from symmop round-trips) share a hash
@@ -193,6 +210,8 @@ class TestSGACaching:
         with pytest.raises(ValueError):
             rotations[0, 0, 0] = 5
         assert not translations.flags.writeable
+        # copied, so the (cached, shared) ``spglib`` dataset array returned by ``pymatgen`` isn't frozen:
+        assert not np.shares_memory(rotations, sga._space_group_data.rotations)
 
     def test_fresh_symmetry_operations_list_per_call(self):
         sga = get_sga(_simple_structure())
@@ -243,6 +262,100 @@ class TestSharedCacheMutationGuards:
         c2 = _cache_ready_Composition_init("Fe2O3")
         assert c1 == c2
         assert c1 is not c2  # fresh copy each call (incl. cache hits)
+
+    def test_get_orientation_preserving_primitive_returns_fresh_copies(self):
+        from doped.utils.symmetry import _get_orientation_preserving_primitive
+
+        supercell = _simple_structure() * 2
+        prim_and_matrix = _get_orientation_preserving_primitive(supercell)
+        assert prim_and_matrix is not None
+        prim, matrix = prim_and_matrix
+        n_prim_sites, matrix_00 = len(prim), matrix[0, 0]
+        prim.remove_sites([0])  # caller mutation of both returned objects...
+        matrix[0, 0] = 99
+        prim2, matrix2 = _get_orientation_preserving_primitive(supercell)
+        assert len(prim2) == n_prim_sites  # ...does not corrupt the cache
+        assert matrix2[0, 0] == matrix_00
+
+    def test_get_orientation_preserving_primitive_handles_dummy_species(self):
+        # ``DummySpecies.Z`` is ``hash(symbol)`` -- randomised per process and far outside ``spglib``'s
+        # int32 atomic-number range -- which raised ``SpglibError`` for any "X"-decorated structure;
+        # now handled without issue:
+        from doped.utils.symmetry import _get_orientation_preserving_primitive
+
+        supercell = _simple_structure() * 2
+        for frac_coords in np.array(list(np.ndindex(2, 2, 2))) / 2 + 0.125:
+            supercell.append("X", frac_coords)  # one X per sub-cell -> still a 2x2x2 supercell
+        prim, matrix = _get_orientation_preserving_primitive(supercell)
+        assert len(prim) == 3  # Cd + Te + X
+        assert "X0+" in [str(specie) for specie in prim.types_of_species]  # X survives the round-trip
+        assert round(float(np.linalg.det(matrix))) == 8
+
+    def test_direct_spglib_calls_fall_back_on_spglib_failure(self):
+        # with the error handling that ``doped`` sets, ``spglib`` failures raise ``SpglibError`` rather
+        # than returning ``None``, here two atoms 0.03 Å apart make it fail at ``symprec=0.1``:
+        from doped.utils.symmetry import _bulk_cartesian_rotations, _get_orientation_preserving_primitive
+
+        near_overlap = Structure(Lattice.cubic(3.0), ["H", "H"], [[0, 0, 0], [0, 0, 0.01]])
+        assert _get_orientation_preserving_primitive(near_overlap, symprec=0.1) is None
+        # input cell then used directly, with ``get_sga`` recovering at a smaller ``symprec`` (P4/mmm):
+        assert len(_bulk_cartesian_rotations(near_overlap, symprec=0.1)) == 16
+
+
+class TestNonMagneticSymmetryDefault:
+    """
+    ``doped`` ignores magnetism in symmetry analysis unless
+    ``USE_MAGNETIC_SYMMETRY=1``; spins carried on ``Species`` objects must be
+    stripped for that, just like ``magmom`` site properties.
+    """
+
+    @staticmethod
+    def _spin_structure():
+        return Structure(
+            CUBIC_LATTICE,
+            [Species("Fe", 2, spin=4), Species("Fe", 2, spin=-4), Element("O")],
+            [[0, 0, 0], [0.5, 0.5, 0.5], [0.25, 0.25, 0.25]],
+        )
+
+    def test_species_spins_ignored_by_default(self, monkeypatch):
+        # spins live on the ``Species`` objects rather than in ``site_properties``, so they need to be
+        # pruned to avoid magnetic symmetry handling
+        struct = self._spin_structure()
+        monkeypatch.delenv("USE_MAGNETIC_SYMMETRY", raising=False)
+        sga = get_sga(struct)
+        assert len(sga._cell) == 3  # no magmoms handed to spglib
+        assert sga.get_space_group_symbol() == "R-3m"  # spin-degenerate Fe -> inversion retained
+
+        monkeypatch.setenv("USE_MAGNETIC_SYMMETRY", "1")
+        magnetic_sga = get_sga(struct)
+        assert len(magnetic_sga._cell) == 4
+        assert magnetic_sga.get_space_group_symbol() == "R3m"  # spins split the Fe sites -> no inversion
+
+    def test_spin_stripping_preserves_occupancies_and_oxidation_states(self, monkeypatch):
+        # only ``spin`` may be dropped: occupancies must be summed when spin variants merge onto one site,
+        # and oxidation states kept (else mixed-valence sites merge, giving spuriously `higher` symmetry):
+        monkeypatch.delenv("USE_MAGNETIC_SYMMETRY", raising=False)
+        disordered = Structure(
+            CUBIC_LATTICE, [{Species("Fe", 2, spin=4): 0.5, Species("Fe", 2, spin=-4): 0.5}], [[0, 0, 0]]
+        )
+        assert get_sga(disordered)._structure[0].species == Composition({Species("Fe", 2): 1.0})
+
+        mixed_valence = Structure(
+            CUBIC_LATTICE,
+            [Species("Fe", 2, spin=4), Species("Fe", 3, spin=-4), Element("O")],
+            [[0, 0, 0], [0.5, 0.5, 0.5], [0.25, 0.25, 0.25]],
+        )  # Fe2+ and Fe3+ stay distinct -> no inversion centre, unlike the same-valence case above
+        assert get_sga(mixed_valence).get_space_group_symbol() == "R3m"
+
+    def test_spin_stripping_does_not_mutate_input_or_break_dummy_species(self, monkeypatch):
+        monkeypatch.delenv("USE_MAGNETIC_SYMMETRY", raising=False)  # else the strip block is skipped
+        # ``Structure.remove_spin()`` is not usable here: it rebuilds every species as a ``Species``, which
+        # raises on the ``DummySpecies`` ("X") sites used throughout ``doped``:
+        struct = self._spin_structure()
+        struct.append("X", [0.75, 0.75, 0.75])
+        species_before = struct.types_of_species
+        get_sga(struct)  # must not raise
+        assert struct.types_of_species == species_before  # caller's structure untouched
 
 
 class TestDefectAndDefectEntryHashEq:
@@ -359,3 +472,65 @@ class TestMoleculeHashEq:
         stretched_water = Molecule(["O", "H", "H"], np.array(coords) * 1.5)
         assert water != stretched_water
         assert len({water, stretched_water}) == 2
+
+
+@pytest.mark.parametrize("pbc", [(True, True, True), (True, True, False)])
+@pytest.mark.parametrize("clustered", [False, True])
+def test_get_closest_coords(pbc, clustered):
+    """
+    Test that ``_get_closest_coords`` matches the exact ``pymatgen`` distance
+    matrix above its 1e5-pair ``KDTree`` threshold.
+
+    Covers the two cases where its periodic-image search is not sufficient on
+    its own, and so must defer to the exact calculation: matches too far away
+    to be guaranteed minimum-image (``clustered``, where the target coordinates
+    are confined to one corner of the cell), and lattices which are not
+    periodic along every axis (``pbc``, e.g. slabs).
+    """
+    lattice = Lattice(np.array([[20.0, 0.0, 0.0], [2.0, 21.0, 0.0], [0.0, 1.5, 22.0]]), pbc=pbc)
+    rng = np.random.default_rng(42)
+    coords1 = rng.random((400, 3))  # 400 x 400 = 1.6e5 pairs; above the ``KDTree`` threshold
+    coords2 = rng.random((400, 3)) * (0.08 if clustered else 1.0)
+
+    distances, matches = _get_closest_coords(coords1, coords2, lattice=lattice)
+    distance_matrix = np.asarray(lattice.get_all_distances(coords1, coords2))
+    assert np.allclose(distances, distance_matrix.min(axis=1))
+    # the returned index must give that distance (equidistant entries may be broken either way):
+    assert np.allclose(distance_matrix[np.arange(len(coords1)), matches], distances)
+    if clustered:  # check the case is as intended; i.e. matches beyond the image-search guarantee
+        assert distances.max() > 0.5 * min(lattice.abc)
+
+
+def test_pymatgen_patches_are_reload_safe():
+    """
+    Test that reloading ``doped.utils.efficiency`` (e.g. with
+    ``importlib.reload``, or ``%autoreload`` in Jupyter) does not leave its
+    ``pymatgen`` patches delegating to themselves, which would give a
+    ``RecursionError``.
+    """
+    # run in a subprocess, as reloading re-applies the patches and resets the module caches:
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import importlib
+from pymatgen.core import Lattice, Structure
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from doped.utils import efficiency
+
+for _ in range(2):
+    importlib.reload(efficiency)
+    structure = Structure(Lattice.cubic(5.0), ["Na", "Cl"], [[0, 0, 0], [0.5, 0.5, 0.5]])  # __setattr__
+    # a fresh ``SpacegroupAnalyzer`` each time, so the per-instance memos always miss and delegate:
+    assert len(SpacegroupAnalyzer(structure).get_symmetry_operations()) == 48  # Pm-3m
+
+# the captured originals must still be ``pymatgen``'s own methods, not the patches themselves:
+assert efficiency._orig_site__setattr__.__module__ == "pymatgen.core.sites"
+assert efficiency._original_get_symmetry.__module__ == "pymatgen.symmetry.analyzer"
+assert efficiency._original_get_symmetry_operations.__module__ == "pymatgen.symmetry.analyzer"
+""",
+        ],
+        check=True,
+        capture_output=True,
+    )

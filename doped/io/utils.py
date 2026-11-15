@@ -1,10 +1,11 @@
 """
-Calculator-agnostic utilities for handling calculation input/output files;
-currently for locating calculation output files and folders.
+Calculator-agnostic utilities for handling calculation input/output files; for
+locating calculation output files and folders, and warning about mismatching
+calculation settings.
 
 These are generic algorithms parameterised by calculator-specific filename
-masks and subfolder priority lists, which are supplied by each
-``doped.io.<calculator>`` backend (see e.g. their usage in
+masks, subfolder priority lists and mismatch warning specifications, which are
+supplied by each ``doped.io.<calculator>`` backend (see e.g. their usage in
 ``doped.io.vasp.outputs``).
 """
 
@@ -239,3 +240,68 @@ def _multiple_files_warning(file_type, directory, chosen_filepath, action, dir_t
         f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
         f"{action}"
     )
+
+
+_MISMATCH_WARNING_CONTEXTS: dict[bool, dict[str, str]] = {
+    False: {  # defect & bulk supercell calculations
+        "calculations": "defect and bulk",
+        "results": "energies",
+        "name_1": "defect",
+        "name_2": "bulk",
+        "names": "Defects",
+    },
+    True: {  # competing phase calculations, compared to a reference (template) entry
+        "calculations": "competing phases",
+        "results": "energies & thus chemical potential limits",
+        "name_1": "entry",
+        "name_2": "reference",
+        "names": "Entries",
+    },
+}
+
+
+def _warn_calculation_mismatches(
+    named_metadata: Iterable[tuple[str, dict]],
+    mismatch_warning_specs: dict[str, dict],
+    competing_phases: bool = False,
+    reference_name: str | None = None,
+) -> None:
+    """
+    Collectively warn about mismatching calculation settings, as stored under
+    the ``mismatch_warning_specs`` keys in the ``(name, metadata)`` pairs of
+    ``named_metadata``; ``DefectEntry.calculation_metadata`` for defect & bulk
+    supercell calculations, or ``entry.data`` for competing phases (compared to
+    the ``reference_name`` entry).
+
+    ``mismatch_warning_specs`` is the calculator backend
+    ``MISMATCH_WARNING_SPECS`` constant: for each metadata key, the
+    human-readable setting name (``"object_name"``), the ``"format"`` and
+    ``"closing"`` message lines, and optional value ``"transform"`` and
+    message ``"body"`` functions (defaulting to the unchanged values and
+    ``name: value`` lines respectively).
+    """
+    named_metadata = list(named_metadata)
+    context = _MISMATCH_WARNING_CONTEXTS[competing_phases]
+    reference_line = (
+        f"Where {reference_name} was used as the reference entry calculation.\n"
+        if competing_phases
+        else ""
+    )
+    for mismatch_key, spec in mismatch_warning_specs.items():
+        transform = spec.get("transform", lambda value: value)
+        mismatches = [
+            (name, transform(metadata[mismatch_key]))
+            for name, metadata in named_metadata
+            if metadata.get(mismatch_key, False)
+        ]
+        if not mismatches:
+            continue
+
+        mismatches.sort(key=lambda x: (len(x[1]), x[0]), reverse=True)  # by number of items then name
+        body = spec.get("body", lambda lst: "\n".join(f"{name}: {value}" for name, value in lst))
+        warnings.warn(
+            f"There are mismatching {spec['object_name']} for (some of) your {context['calculations']} "
+            f"calculations which are likely to cause errors in the parsed results ({context['results']}). "
+            f"Found the following differences:\n(in the format: {spec['format'].format(**context)}\n"
+            f"{body(mismatches)}\n{reference_line}{spec['closing']}"
+        )

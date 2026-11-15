@@ -1,11 +1,17 @@
+# ``VASP``-recommended DFT PAW ``POTCAR`` set (https://vasp.at/wiki/Available_pseudopotentials).
+# This follows ``pymatgen``'s ``MVLRelax52Set`` with two exceptions:
+#   - ``W``: ``MVLRelax52Set`` gives ``W_pv``, which is known to be faulty, so ``W_sv`` is used.
+#   - ``At``: ``MVLRelax52Set`` gives ``At_d``, which ``VASP`` does not ship in any ``PBE`` library
+#     (only ``At_d_GW``), so plain ``At`` is used.
 POTCAR_FUNCTIONAL: PBE
 POTCAR:
   Ac: Ac
   Ag: Ag
   Al: Al
+  Am: Am
   Ar: Ar
   As: As
-  At: At_d
+  At: At
   Au: Au
   B: B
   Ba: Ba_sv
@@ -17,17 +23,19 @@ POTCAR:
   Cd: Cd
   Ce: Ce
   Cl: Cl
+  Cm: Cm
   Co: Co
   Cr: Cr_pv
   Cs: Cs_sv
   Cu: Cu
   Dy: Dy_3
   Er: Er_3
-  Eu: Eu
+  Eu: Eu_2
   F: F
   Fe: Fe
+  Fr: Fr_sv
   Ga: Ga_d
-  Gd: Gd
+  Gd: Gd_3
   Ge: Ge_d
   H: H
   He: He
@@ -59,12 +67,15 @@ POTCAR:
   Pb: Pb_d
   Pd: Pd
   Pm: Pm_3
+  Po: Po_d
   Pr: Pr_3
   Pt: Pt
   Pu: Pu
+  Ra: Ra_sv
   Rb: Rb_sv
   Re: Re
   Rh: Rh_pv
+  Rn: Rn
   Ru: Ru_pv
   S: S
   Sb: Sb

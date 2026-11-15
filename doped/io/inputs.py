@@ -25,15 +25,27 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, cast
 
 from monty.json import MSONable
-from monty.serialization import dumpfn
+from monty.serialization import dumpfn, loadfn
+from pymatgen.core.structure import Structure
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
 from doped.core import DefectEntry
-from doped.utils import _doped_obj_properties_methods, get_mp_context, pool_manager
+from doped.utils import _doped_obj_properties_methods, _signed_charge, get_mp_context, pool_manager
 
 if TYPE_CHECKING:
     from doped.generation import DefectsGenerator
+
+
+def _get_bulk_folder_name(bulk_supercell: Structure) -> str:
+    """
+    Get the default name of the reference bulk supercell calculation folder,
+    ``"{formula}_bulk"`` (e.g. ``"CdTe_bulk"``), for all calculator backends.
+
+    This matches the default ``bulk_path`` search of |DefectsParser|.
+    """
+    formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+    return f"{formula}_bulk"
 
 
 class DefectsSetBase(MSONable, ABC):
@@ -50,7 +62,12 @@ class DefectsSetBase(MSONable, ABC):
       defect (one item of the ``args_list`` built in :meth:`write_files`).
 
     and may override :meth:`_setup` for any post-input-formatting setup
-    (before the per-defect input sets are built).
+    (before the per-defect input sets are built), and
+    :meth:`_defect_sets_to_write` to filter which defects are written in
+    :meth:`write_files`. As :meth:`write_files` serialises the whole object
+    (via ``MSONable``; see :meth:`to_json`), each ``__init__`` argument should
+    be stored as a same-named, JSON-serialisable attribute (``**kwargs`` are
+    stored as ``self.kwargs`` here).
     """
 
     _input_set_name: str = "defect input set"  # name of the per-defect input-set class, for messages
@@ -153,16 +170,9 @@ class DefectsSetBase(MSONable, ABC):
         from doped.generation import name_defect_entries
         from doped.utils.symmetry import _frac_coords_sort_func
 
-        json_filename = "defect_entries.json.gz"  # global statement in case, but should be skipped
-        json_obj = defect_entries
+        json_obj = defect_entries  # DefectsGenerator, or (below) formatted defect entries dict
         if type(defect_entries).__name__ == "DefectsGenerator":
-            defect_entries = cast("DefectsGenerator", defect_entries)
-            formula = defect_entries.primitive_structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
-            json_filename = f"{formula}_defects_generator.json.gz"
-            json_obj = defect_entries
-            defect_entries = defect_entries.defect_entries
+            defect_entries = cast("DefectsGenerator", defect_entries).defect_entries
 
         elif isinstance(defect_entries, DefectEntry):
             defect_entries = [defect_entries]
@@ -183,8 +193,7 @@ class DefectsSetBase(MSONable, ABC):
             # set name attribute: (these are names without charges!)
             for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
                 defect_entry.name = (
-                    f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
-                    f"{defect_entry.charge_state}"
+                    f"{defect_name_wout_charge}_{_signed_charge(defect_entry.charge_state)}"
                 )
 
             # if any duplicate names, crash (and burn, b...)
@@ -196,10 +205,6 @@ class DefectsSetBase(MSONable, ABC):
                 )
 
             defect_entries = {defect_entry.name: defect_entry for defect_entry in defect_entry_list}
-            formula = defect_entry_list[0].defect.structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
-            json_filename = f"{formula}_defect_entries.json.gz"
             json_obj = defect_entries
 
         # check correct format:
@@ -216,6 +221,13 @@ class DefectsSetBase(MSONable, ABC):
                 f"Input defect_entries must be of type DefectsGenerator, dict, list or DefectEntry, got "
                 f"type {type(defect_entries)} instead."
             )
+
+        json_filename = "DefectsSet.json.gz"  # host formula prefix added below, if determinable
+        if defect_entries:
+            formula = next(
+                iter(defect_entries.values())
+            ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            json_filename = f"{formula}_DefectsSet.json.gz"
 
         # ``defect_entries`` validated as a ``{name: DefectEntry}`` dict above:
         return cast(
@@ -236,8 +248,11 @@ class DefectsSetBase(MSONable, ABC):
         name>/<subfolder>`` folder structure (with subfolders corresponding to
         the calculation stages of the calculator defect workflow).
 
-        The defect entries (``self.json_obj``) are also serialised to
-        ``self.json_name`` in ``output_path``, to aid calculation provenance.
+        This object is also serialised to ``self.json_name`` in ``output_path``
+        (``{Chemical Formula}_DefectsSet.json.gz`` by default; see
+        :meth:`to_json`), preserving both the input |DefectsGenerator| object
+        (or defect entries) and the input settings, to aid calculation
+        provenance.
 
         Args:
             output_path (PathLike):
@@ -257,15 +272,16 @@ class DefectsSetBase(MSONable, ABC):
                 per-defect file writing (passed through to
                 :meth:`_write_defect`).
         """
+        defect_sets = self._defect_sets_to_write(kwargs)
         args_list = [
             (
                 defect_species,
                 defect_input_set,
                 output_path,
-                bulk if i == len(self.defect_sets) - 1 else False,  # write bulk folder(s) for last defect
+                bulk if i == len(defect_sets) - 1 else False,  # write bulk folder(s) for last defect
                 kwargs,
             )
-            for i, (defect_species, defect_input_set) in enumerate(self.defect_sets.items())
+            for i, (defect_species, defect_input_set) in enumerate(defect_sets.items())
         ]
         if processes is None:  # best setting for number of processes, from testing
             mp = get_mp_context()
@@ -283,7 +299,63 @@ class DefectsSetBase(MSONable, ABC):
             for args in tqdm(args_list, desc="Generating and writing input files"):
                 self._write_defect(args)
 
-        dumpfn(self.json_obj, os.path.join(output_path, self.json_name))
+        # serialise this object (input entries & settings), for calculation provenance:
+        self.to_json(os.path.join(output_path, self.json_name))
+
+    def _defect_sets_to_write(self, write_kwargs: dict) -> dict:
+        """
+        Hook returning the ``{defect name: input set}`` dictionary of defects
+        to write in :meth:`write_files` (all of ``self.defect_sets`` by
+        default), given the (calculator-specific) file-writing keyword
+        arguments.
+        """
+        return self.defect_sets
+
+    def as_dict(self) -> dict:
+        """
+        Get a JSON-serializable dict representation of the defects input set.
+
+        ``self.json_obj`` is serialised in place of ``self.defect_entries``, so
+        that defect generation information is retained if a |DefectsGenerator|
+        was input.
+        """
+        dict_repr = super().as_dict()
+        if not isinstance(self.json_obj, dict):  # ``DefectsGenerator`` input
+            dict_repr["defect_entries"] = self.json_obj.as_dict()
+
+        return dict_repr
+
+    def to_json(self, filename: PathLike | None = None):
+        """
+        Save the defects input set object as a json file, which can be reloaded
+        with ``from_json()`` (or ``loadfn()`` from ``monty.serialization``).
+
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
+        Args:
+            filename (PathLike):
+                Filename to save ``json`` file as. If ``None``, the filename
+                will be set to ``{Chemical Formula}_DefectsSet.json.gz`` where
+                {Chemical Formula} is the chemical formula of the host
+                material.
+        """
+        dumpfn(self, filename or self.json_name)
+
+    @classmethod
+    def from_json(cls, filename: PathLike):
+        """
+        Load a defects input set object from a ``json(.gz)`` file.
+
+        Args:
+            filename (PathLike):
+                Filename of json file to load the defects input set object
+                from.
+
+        Returns:
+            Defects input set object (e.g. |DefectsSet|).
+        """
+        return loadfn(filename)
 
     def __repr__(self):
         """
@@ -304,9 +376,10 @@ class DefectsSetBase(MSONable, ABC):
         Redirects an unknown attribute/method call to the ``defect_sets``
         dictionary attribute, if the attribute doesn't exist in this class.
         """
-        # Return the attribute if it exists in self.__dict__
-        if attr in self.__dict__:
-            return self.__dict__[attr]
+        # ``defect_sets`` not yet set (e.g. on a partially-initialised object during copying/unpickling,
+        # which looks up ``__setstate__``), so avoid infinite recursion:
+        if attr == "defect_sets":
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
         # Check if the attribute exists in defect_sets:
         if hasattr(self.defect_sets, attr):
