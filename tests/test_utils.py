@@ -12,9 +12,19 @@ from io import StringIO
 
 import numpy as np
 import pytest
+from pymatgen.core import SETTINGS
 
-# Materials Project API key for tests
-api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/C
+# Materials Project (MP) API key for tests querying the MP database, read as ``MPRester`` does: from the
+# ``MP_API_KEY`` environment variable (a repository secret in CI) or ``PMG_MAPI_KEY`` in ``~/.pmgrc.yaml``.
+# Tests needing it are marked with ``requires_api_key``, so are skipped without it (e.g. for PRs from
+# forks). The CI key (``MP_API_KEY`` GitHub secret) is SK's 910 GMail MP API key, which has access to the
+# (BY-NC licensed) GNoMe data; results can differ for keys without GNoMe access (see the note on GNoMe data
+# access in the ``doped`` Installation docs):
+api_key = os.environ.get("MP_API_KEY") or SETTINGS.get("PMG_MAPI_KEY")
+requires_api_key = pytest.mark.skipif(
+    not api_key,
+    reason="No Materials Project API key (``MP_API_KEY`` or ``PMG_MAPI_KEY`` in ~/.pmgrc.yaml)",
+)
 
 # for pytest-mpl:
 module_path = os.path.dirname(os.path.abspath(__file__))
@@ -30,7 +40,6 @@ def custom_mpl_image_compare(filename, style=STYLE, **kwargs):
     """
 
     def decorator(func):
-        @wraps(func)
         @pytest.mark.mpl_image_compare(
             baseline_dir=BASELINE_DIR,
             filename=filename,
@@ -38,6 +47,7 @@ def custom_mpl_image_compare(filename, style=STYLE, **kwargs):
             savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
             **kwargs,
         )
+        @wraps(func)  # applied first, so any marks on ``func`` are kept along with (not overwrite) this
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
 

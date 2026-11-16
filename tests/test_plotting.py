@@ -958,8 +958,8 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         In this case, the defect folder/entry names match the old ``doped``
         format, with e.g. ``sub_1_Br_on_Se_-1`` and ``inter_2_O_0`` etc.
 
-        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which
-        are removed by including site info, but some (``inter_11_H_X``) which
+        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which are
+        removed by including site info, but some (``inter_11_H_X``) which
         aren't, so ``_a`` & ``_b`` are appended to those names.
         """
         fig = self.Se_ext_no_pnict_thermo.plot(include_site_info=True)
@@ -1794,6 +1794,11 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             "As_i_C2_-3": "As$_i^{-3}$",
             "Ag_i_C3v_Ag2.40_0": "Ag$_i^{0}$",
             "Ga_O_C1_Ga1.93Ga2.08O2.62aas_0": "Ga$_{O}^{0}$",
+            # point group symbols starting with the defect element (previously mistaken for the element):
+            "D_Co_D3d_0": "D$_{Co}^{0}$",
+            "T_Co_Td_0": "T$_{Co}^{0}$",
+            "T_Si_Td_0": "T$_{Si}^{0}$",
+            "C_Si_C3v_0": "C$_{Si}^{0}$",
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():
@@ -1881,6 +1886,14 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             "As_i_C2_-3": "As$_{i_{C_{2}}}^{-3}$",
             "Ag_i_C3v_Ag2.40_0": "Ag$_{i_{C_{3v}-Ag2.40}}^{0}$",
             "Ga_O_C1_Ga1.93Ga2.08O2.62aas_0": "Ga$_{O_{C_{1}-Ga1.93Ga2.08O2.62aas}}^{0}$",
+            # point group symbols starting with the defect element (previously mistaken for the element):
+            "D_i_D3d_Si1.18_+1": "D$_{i_{D_{3d}-Si1.18}}^{+1}$",
+            "D_i_D2d_0": "D$_{i_{D_{2d}}}^{0}$",
+            "D_Co_D3d_0": "D$_{Co_{D_{3d}}}^{0}$",
+            "T_Co_Td_0": "T$_{Co_{T_{d}}}^{0}$",
+            "C_i_C3v_0": "C$_{i_{C_{3v}}}^{0}$",
+            "C_Si_C3v_0": "C$_{Si_{C_{3v}}}^{0}$",
+            "S_i_S4_0": "S$_{i_{S_{4}}}^{0}$",
         }
         for (
             defect_species,

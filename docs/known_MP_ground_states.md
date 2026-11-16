@@ -10,7 +10,7 @@ studies where the hybrid DFT energy analyses (of candidate low-energy polymorphs
 
 > **Note:** the energy-above-hull (EaH) values quoted below correspond to the mixed GGA/GGA+U/r2SCAN 
 > MP phase diagrams (``thermo_types=['GGA_GGA+U_R2SCAN']``; the default for MP queries — including 
-> ``doped``'s ``CompetingPhases`` — since ``mp-api`` 0.46.6), as of September 2026. These mostly match 
+> ``doped``'s ``CompetingPhases`` — since ``mp-api`` 0.47), as of September 2026. These mostly match 
 > the legacy GGA/GGA+U values quoted in the cited studies, with some notable differences (e.g. for K 
 > and P) mentioned below.
 

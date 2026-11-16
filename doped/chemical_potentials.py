@@ -12,7 +12,7 @@ import os
 import warnings
 from bisect import bisect_right
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from functools import cache
 from pathlib import Path
 from re import sub
@@ -21,14 +21,12 @@ from typing import TYPE_CHECKING, Any, overload
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from labellines import labelLines
 from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
-from monty.serialization import loadfn
+from monty.serialization import dumpfn, loadfn
 from mp_api.client.mprester import DEFAULT_THERMOTYPE_CRITERIA, MPRester, MPRestError
-from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import Composition, Element, Lattice, Structure
@@ -59,11 +57,20 @@ from doped.utils.parsing import (
     get_magnetization_from_vasprun,
     get_vasprun,
 )
-from doped.utils.plotting import doped_plot_style, get_colormap
+from doped.utils.plotting import (
+    _add_line_labels,
+    _get_line_intersections,
+    _nudge_labels_inside_axes,
+    doped_plot_style,
+    get_colormap,
+)
 from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
 from doped.vasp import (
     _MODULE_DIR,
     DopedDictSet,
+    _handle_EDIFF_and_update_incar_settings,
+    _is_hybrid,
+    _parse_incar_value,
     default_HSE_set,
     default_relax_set,
     singlepoint_incar_settings,
@@ -108,6 +115,7 @@ MPRESTER_PROPERTY_DATA = (
 Entry properties to request from the Materials Project API, populated in
 ``entry.data``.
 """
+
 MPRESTER_SUMMARY_DATA = (
     "material_id",  # required so we can map docs back to entries via MPID
     "band_gap",
@@ -119,6 +127,7 @@ MPRESTER_SUMMARY_DATA = (
 Fields to request from the Materials Project summary documents, attached to
 ``entry.data["summary"]``.
 """
+
 
 default_get_entries_kwargs: dict[str, Any] = {"property_data": list(MPRESTER_PROPERTY_DATA)}
 """
@@ -646,7 +655,7 @@ def get_MP_summary_dicts(
 def _entries_sort_func(
     entry: ComputedEntry,
     bulk_composition: str | Composition | dict | list | None = None,
-) -> tuple[float, bool, int, list[tuple[int, int]], str]:
+) -> tuple[float, bool, int, list[tuple[int, int, float]], str]:
     r"""
     Function to sort |ComputedEntry|\s by energy above hull, then if
     composition matches ``bulk_composition`` (if provided), then by the number
@@ -664,7 +673,7 @@ def _entries_sort_func(
             Default is ``None`` (don't sort according to this).
 
     Returns:
-        tuple[float, bool, int, list[tuple[int, int]], str]:
+        tuple[float, bool, int, list[tuple[int, int, float]], str]:
             Sort key: energy above hull, whether the composition differs from
             the bulk composition (when ``bulk_composition`` is set), number of
             species in ``entry.name``, periodic-table ordering tuples for each
@@ -1345,9 +1354,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
             if set(entry.composition.elements) <= intrinsic_el_set
             and entry.data.get("energy_above_hull", 0) <= self.energy_above_hull
         ]
-        # record the effective ``mp-api`` thermo-type criteria (for reference/serialisation); placed after
-        # ``get_entries_in_chemsys``, to show the ``mp-api`` warning about updated default thermo type
-        # criteria. Copies avoid mutating the caller's dict or aliasing the ``mp-api`` module-level list:
+        # record the effective ``mp-api`` thermo-type criteria (for reference/serialisation). Copies avoid
+        # mutating the caller's dict or aliasing the ``mp-api`` module-level list:
         self._get_entries_kwargs["additional_criteria"] = {
             "thermo_types": list(DEFAULT_THERMOTYPE_CRITERIA["thermo_types"]),
             **(self._get_entries_kwargs.get("additional_criteria") or {}),
@@ -1636,8 +1644,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
 
         When no structure exists in the entry (e.g. MP-missing bulk represented
         by a hull-energy |ComputedEntry|), emits a ``UserWarning`` and supplies
-        a nominal large-cell |Structure| so that ``INCAR`` and ``POTCAR``
-        files can still be written.
+        a nominal large-cell |Structure| so that ``INCAR`` and ``POTCAR`` files
+        can still be written.
         """
         categorised_entries = [
             (self.nonmetallic_entries, "non-metals"),
@@ -1745,7 +1753,9 @@ class CompetingPhases(_EntriesMixin, MSONable):
         """
         user_incar_settings = user_incar_settings or {}
         base_incar_settings = copy.deepcopy(convergence_set["INCAR"])
-        base_incar_settings.update(user_incar_settings)
+        _handle_EDIFF_and_update_incar_settings(base_incar_settings, user_incar_settings)
+        if base_incar_settings.pop("KSPACING", None) is not None:  # k-point meshes set here
+            warnings.warn("KSPACING in user_incar_settings is ignored for k-point convergence tests.")
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
         dict_sets: dict[str, DopedDictSet] = {}
         extrinsic_entries = getattr(self, "extrinsic_entries", [])
@@ -1775,17 +1785,18 @@ class CompetingPhases(_EntriesMixin, MSONable):
 
                 _generated_kpoints_folders = []
                 for kpoint in np.arange(min_k, max_k, step_k):
-                    dict_set = copy.deepcopy(dict_set)
-                    dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
-                    kpts = dict_set.kpoints.kpts[0]
+                    kpoint_dict_set = copy.deepcopy(dict_set)  # copy base set, as ISMEAR may be reverted
+                    kpoint_dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
+                    kpts = kpoint_dict_set.kpoints.kpts[0]
                     kname = "k" + "_" * (kpts[0] // 10) + ",".join(str(k) for k in kpts)
                     if kname in _generated_kpoints_folders:
                         continue  # this set of kpoints already generated, bump reciprocal density more
 
+                    self._revert_sparse_tetrahedron_smearing(kpoint_dict_set, category)
                     fname = (
                         f"{output_path}/{_get_competing_phase_folder_name(entry)}/kpoint_converge/{kname}"
                     )
-                    dict_sets[fname] = dict_set
+                    dict_sets[fname] = kpoint_dict_set
                     _generated_kpoints_folders.append(kname)
 
         molecular_entries_to_report = (
@@ -1976,6 +1987,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+                ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+                and ``kpoints_nonmetals`` (except for the Γ-only molecules).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2007,16 +2020,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
         """
         user_incar_settings = user_incar_settings or {}
         base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
-        if "EDIFF" in user_incar_settings:  # remove default EDIFF PER ATOM setting if EDIFF set
-            base_incar_settings.pop("EDIFF_PER_ATOM", None)
 
-        lhfcalc = user_incar_settings.get("LHFCALC", True)
-        if isinstance(lhfcalc, str):
-            lhfcalc = lhfcalc.lower().startswith("t")
-        if lhfcalc:
+        if _is_hybrid(user_incar_settings):
             base_incar_settings.update(default_HSE_set["INCAR"])
 
-        base_incar_settings.update(user_incar_settings)
+        _handle_EDIFF_and_update_incar_settings(base_incar_settings, user_incar_settings)
         dict_sets: dict[str, DopedDictSet] = {}
         extrinsic_entries = getattr(self, "extrinsic_entries", [])
 
@@ -2027,6 +2035,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 user_kpoints_settings = Kpoints.gamma_automatic(
                     comment="Gamma-only kpoints for molecule-in-a-box"
                 )
+            elif user_incar_settings.get("KSPACING") is not None:  # used in place of ``kpoints_...``
+                user_kpoints_settings = {}  # (``VASP`` generates the mesh; no ``KPOINTS`` file written)
             elif category == "non-metals":
                 user_kpoints_settings = {"reciprocal_density": kpoints_nonmetals}
             else:  # metals
@@ -2036,8 +2046,6 @@ class CompetingPhases(_EntriesMixin, MSONable):
             if category == "molecules":
                 incar_settings["ISIF"] = 2  # don't change the volume
                 incar_settings["KPAR"] = 1  # don't use k-point parallelization, gamma only
-                if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing needs >1 kpoint:
-                    incar_settings["ISMEAR"] = 0
 
             self._set_spin_polarisation(incar_settings, user_incar_settings, entry)
             if category == "metals":
@@ -2053,10 +2061,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
                     user_potcar_functional=user_potcar_functional,
                     force_gamma=True,
                 )
-                if incar_settings.get("ISMEAR") == -5:  # tetrahedron smearing; needs >= 4 k-points
-                    kpts = dict_set.kpoints.kpts[0] if dict_set.kpoints is not None else None
-                    if kpts and np.prod(kpts) < 4:  # ``pymatgen`` would revert to ISMEAR = 0 for all
-                        dict_set.user_incar_settings["ISMEAR"] = 2 if category == "metals" else 0
+                self._revert_sparse_tetrahedron_smearing(dict_set, category)
 
                 fname = f"{output_path}/{_get_competing_phase_folder_name(entry)}/{subfolder}"
                 dict_sets[fname] = dict_set
@@ -2126,6 +2131,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+                ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+                and ``kpoints_nonmetals`` (except for the Γ-only molecules).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2294,6 +2301,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+                ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+                and ``kpoints_nonmetals`` (except for the Γ-only molecules).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2340,13 +2349,14 @@ class CompetingPhases(_EntriesMixin, MSONable):
                     "should be used for the final single-point energy calculations.",
                 )
 
-        # build merged INCAR settings: singlepoint tags + SOC on top of user settings
+        # build merged INCAR settings: user settings on top of singlepoint tags (+ SOC)
         sp_incar_settings = copy.deepcopy(singlepoint_incar_settings)
         # tetrahedron smearing by default, to maximise k-point sampling accuracy; reverted to 0 for
         sp_incar_settings["ISMEAR"] = -5  # molecules and 2/0 for phases with < 4 k-points
         if soc:
             sp_incar_settings["LSORBIT"] = True
-        sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
+        # user settings take precedence:
+        _handle_EDIFF_and_update_incar_settings(sp_incar_settings, user_incar_settings)
 
         if subfolder is None:
             subfolder = "vasp_ncl" if soc else "SinglePoint"
@@ -2475,6 +2485,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Note that any non-numerical or non-``True``/``False`` flags
                 need to be input as strings with quotation marks.
                 See |RelaxSet.yaml| and |HSESet.yaml| for the default settings.
+                ``KSPACING`` (if set) is used in place of ``kpoints_metals``
+                and ``kpoints_nonmetals`` (except for the Γ-only molecules).
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is ``"PBE"``, which uses
                 whichever ``PBE`` ``POTCAR`` library is installed, resolved
@@ -2584,6 +2596,17 @@ class CompetingPhases(_EntriesMixin, MSONable):
         """
         incar_settings["ISMEAR"] = user_incar_settings.get("ISMEAR", 2)
         incar_settings["SIGMA"] = user_incar_settings.get("SIGMA", 0.2)
+
+    def _revert_sparse_tetrahedron_smearing(self, dict_set: DopedDictSet, category: str) -> None:
+        """
+        Revert tetrahedron smearing (``ISMEAR = -5``) to 2 (Methfessel-Paxton)
+        for metals or 0 (Gaussian) otherwise, if there are too few (< 4)
+        k-points for the tetrahedron method (rather than ``pymatgen``'s blanket
+        revert to ``ISMEAR = 0``).
+        """
+        ismear = _parse_incar_value("ISMEAR", dict_set._config_dict["INCAR"].get("ISMEAR"))
+        if ismear == -5 and (kpts := dict_set._kpts) and np.prod(kpts) < 4:
+            dict_set.user_incar_settings["ISMEAR"] = 2 if category == "metals" else 0
 
     def _generate_elemental_diatomic_phases(self, entries: list[ComputedEntry]) -> list[ComputedEntry]:
         r"""
@@ -4006,8 +4029,8 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         discovered ``vasprun.xml(.gz)`` files are parsed.
 
         If ``path`` is a list, each element may be a direct path to a
-        ``vasprun.xml(.gz)`` file **or** to a directory containing one,
-        which will be located via a recursive search.
+        ``vasprun.xml(.gz)`` file **or** to the directory directly containing
+        one (i.e. not searched recursively).
 
         Args:
             path (PathLike or list):
@@ -4036,7 +4059,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
                 Default is ``True``.
         """
         if isinstance(path, list):
-            self._collect_vaspruns_from_list(path)
+            self._collect_vaspruns_from_list(path, verbose)
         else:
             self._collect_vaspruns_from_directory(path, subfolder, verbose)
 
@@ -4131,12 +4154,15 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
 
         return self._from_entries(self.entries, check_compatibility=check_compatibility)
 
-    def _collect_vaspruns_from_list(self, path_list: list[PathLike]) -> None:
+    def _collect_vaspruns_from_list(self, path_list: list[PathLike], verbose: bool = True) -> None:
         """
         Populate ``self.vasprun_paths`` from a list of paths, where each entry
-        can be a direct ``vasprun.xml(.gz)`` path or a directory containing
-        one.
+        can be a direct ``vasprun.xml(.gz)`` path or the directory directly
+        containing one.
+
+        Directories without one are skipped, with a warning if ``verbose``.
         """
+        skipped_folders = []
         for entry_path in path_list:
             if "vasprun.xml" in str(entry_path) and not os.path.basename(entry_path).startswith("."):
                 self.vasprun_paths.append(str(entry_path))
@@ -4145,6 +4171,11 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
             vasprun_path = self._find_vasprun_in_directory(entry_path)
             if vasprun_path is not None:
                 self.vasprun_paths.append(str(vasprun_path))
+            else:
+                skipped_folders.append(str(entry_path))
+
+        if verbose:
+            _warn_skipped_folders("vasprun.xml", skipped_folders)
 
     def _collect_vaspruns_from_directory(
         self,
@@ -4165,21 +4196,39 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         if calc_files_df.empty:
             return
 
+        subfolder_suffix = ""  # for the skipped folders warning
         if resolved_subfolder != ".":  # actual subfolder found
             filtered = calc_files_df[
                 calc_files_df["folder_path"].apply(lambda p: p.name == resolved_subfolder)
             ]
             if not filtered.empty:
                 calc_files_df = filtered
+                subfolder_suffix = f"/{resolved_subfolder}"
             elif verbose:
                 warnings.warn(
                     f"No vasprun.xml files found in '{resolved_subfolder}' subfolders under {path}. "
                     f"Using all {len(calc_files_df)} vasprun.xml files found."
                 )
 
+        parsed_folders = set()  # top-level folders in ``path`` with parsed outputs
         for directory in sorted(calc_files_df["folder_path"].unique()):
             if (vasprun_path := self._find_vasprun_in_directory(directory)) is not None:
                 self.vasprun_paths.append(vasprun_path)
+                parsed_folders.add(os.path.relpath(directory, root).split(os.sep)[0])
+
+        if verbose:  # warn about calculation folders in ``path`` without parsed outputs
+            _warn_skipped_folders(
+                "vasprun.xml",
+                [
+                    f"{folder.name}{subfolder_suffix}"
+                    for folder in sorted(root.iterdir())
+                    if folder.is_dir()
+                    and not folder.name.startswith(".")
+                    and folder.name not in parsed_folders
+                    and _is_calc_folder_name(folder.name)
+                ],
+                path,
+            )
 
     @staticmethod
     def _find_vasprun_in_directory(directory: PathLike) -> str | None:
@@ -4813,6 +4862,44 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         cpa.vasprun_paths = d.get("vasprun_paths", cpa.vasprun_paths)
         return cpa
 
+    def to_json(self, filename: PathLike | None = None):
+        """
+        Save the |CompetingPhasesAnalyzer| object as a json file, which can be
+        reloaded with the ``CompetingPhasesAnalyzer.from_json()`` class method.
+
+        Note that file extensions with ".gz" will be automatically compressed
+        (recommended to save space)!
+
+        Args:
+            filename (PathLike):
+                Filename to save ``json`` file as. If ``None``, set to
+                ``{Chemical Formula}_competing_phases_analyzer.json.gz`` by
+                default, where ``{Chemical Formula}`` is the reduced chemical
+                formula of the host material.
+        """
+        if filename is None:
+            formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            filename = f"{formula}_competing_phases_analyzer.json.gz"
+
+        dumpfn(self, filename)
+
+    @classmethod
+    def from_json(cls, filename: PathLike):
+        """
+        Load a |CompetingPhasesAnalyzer| object from a json(.gz) file.
+
+        Note that ``.json.gz`` files can be loaded directly.
+
+        Args:
+            filename (PathLike):
+                Filename of json file to load |CompetingPhasesAnalyzer| object
+                from.
+
+        Returns:
+            |CompetingPhasesAnalyzer| object
+        """
+        return loadfn(filename)
+
     @property
     def chempot_grid(self) -> ChemicalPotentialGrid:
         """
@@ -5250,130 +5337,6 @@ def _plot_competing_phase_lines(
         )
 
 
-def _get_line_intersections(
-    f: Callable, xlim: tuple[float, float], ylim: tuple[float, float]
-) -> np.ndarray:
-    """
-    Get intersections of a line with the plot bounding box.
-    """
-    xmin, xmax = xlim
-    ymin, ymax = ylim
-    x_intersections = []
-    y_intersections = []
-
-    # Check intersections with vertical bounds (xmin and xmax)
-    y_at_xmin = f(xmin)
-    y_at_xmax = f(xmax)
-    if ymin <= y_at_xmin <= ymax:
-        x_intersections.append((xmin, float(y_at_xmin)))
-    if ymin <= y_at_xmax <= ymax:
-        x_intersections.append((xmax, float(y_at_xmax)))
-
-    # Check intersections with horizontal bounds (ymin and ymax)
-    if not np.isclose(float(y_at_xmin), float(y_at_xmax), atol=1e-4):  # not a horizontal line
-
-        def inv_f(yy):  # inverse of the line function
-            return (yy - f(0)) / (f(1) - f(0)) if f(1) != f(0) else xmin
-
-        x_at_ymin = inv_f(ymin)
-        x_at_ymax = inv_f(ymax)
-        if xmin <= x_at_ymin <= xmax:
-            y_intersections.append((float(x_at_ymin), ymin))
-        if xmin <= x_at_ymax <= xmax:
-            y_intersections.append((float(x_at_ymax), ymax))
-
-    # take unique points in case intersects at x/y corner (which would give a duplicate):
-    return np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
-
-
-def _add_line_labels(
-    intersections: Sequence[np.ndarray],
-    lines: dict[str, plt.Line2D],
-    x_range: float,
-    y_range: float,
-    label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
-) -> None:
-    """
-    Add labels to the competing phase lines.
-    """
-    if label_positions is True:  # use custom doped algorithm
-        poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
-        plot_label_positions, best_norm_min_dist = _find_best_label_positions(
-            poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
-        )
-        if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
-            poss_label_positions = _possible_label_positions_from_bbox_intersections(
-                intersections, positions_per_line=5
-            )
-            plot_label_positions, best_norm_min_dist = _find_best_label_positions(
-                poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
-            )
-
-    elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
-        orig_line_keys = list(lines)
-        lines = {k: lines[k] for k in lines if k in label_positions}  # drop any without positions
-        if not lines:
-            raise ValueError(
-                f"None of the supplied ``label_positions`` keys ({sorted(label_positions)}) match the "
-                f"plotted competing phase line formulae ({orig_line_keys})!"
-            )
-        plot_label_positions = np.array(  # reorder to match lines
-            [label_positions[k] for k in lines], dtype=float
-        )
-
-    else:  # list/tuple of label positions
-        plot_label_positions = np.array(label_positions, dtype=float)
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", "The value at position")
-        labelLines(
-            list(lines.values()),  # must be in same order as plotting order...
-            xvals=plot_label_positions[:, 0],
-            yoffsets=plot_label_positions[:, 1],
-            align=False,
-            color="black",
-        )
-
-
-def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None, exclude: set | None = None) -> None:
-    """
-    Adjust label positions to ensure they stay within plot bounds (ignoring any
-    ``Text`` artists in ``exclude``, e.g. pre-existing user labels).
-    """
-    xlim, ylim = ax.get_xlim(), ax.get_ylim()
-    x_padding = padding or (xlim[1] - xlim[0]) * 0.1
-    y_padding = padding or (ylim[1] - ylim[0]) * 0.1
-
-    latexified_labels = {
-        artist.get_text(): artist
-        for artist in ax.get_children()
-        if isinstance(artist, plt.Text) and artist not in (exclude or ())
-    }
-    for text in latexified_labels.values():
-        bbox = text.get_window_extent().transformed(ax.transData.inverted())
-        new_position = text.get_position()
-        delta_x = delta_y = 0.0
-
-        if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
-            if bbox.xmin < xlim[0]:  # shift right if label starts before xmin
-                delta_x = (xlim[0] - bbox.xmin) + x_padding * 0.25
-            elif bbox.xmax > xlim[1]:  # shift left if label ends after xmax
-                delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
-
-            if bbox.ymin < ylim[0]:  # shift up if label starts before ymin
-                delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
-            if bbox.ymax > ylim[1]:  # shift down if label ends after ymax
-                delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
-
-            # Apply adjustments while keeping within bounds
-            if delta_x != 0 and new_position[0] + delta_x < xlim[1]:
-                new_position = (new_position[0] + delta_x, new_position[1])
-            if delta_y != 0 and new_position[1] + delta_y < ylim[1]:
-                new_position = (new_position[0], new_position[1] + delta_y)
-
-        text.set_position(new_position)
-
-
 def _parse_entry_from_vasprun_and_catch_exception(
     vasprun_path: PathLike,
 ) -> tuple[str | ComputedStructureEntry, PathLike, bool, bool]:
@@ -5413,107 +5376,35 @@ def _parse_entry_from_vasprun_and_catch_exception(
         return str(e), vasprun_path, False, False
 
 
-def _possible_label_positions_from_bbox_intersections(
-    intersections: Sequence[NDArray[np.floating[Any]]] | NDArray[np.floating[Any]],
-    positions_per_line: int = 3,
-) -> NDArray[np.floating[Any]]:
+def _is_calc_folder_name(folder_name: str) -> bool:
     """
-    From a list or array of ``intersections``, which contains the intersections
-    of lines with a plot bounding box (limits) and thus has shape ``(N_lines,
-    2, 2)`` (because 2 intersections with 2 (x,y) coordinates per line),
-    returns ``positions_per_line`` uniformly-spaced possible x,y coordinates
-    for labels of those lines.
-
-    e.g. if ``positions_per_line = 3`` (default), then returns the x,y
-    coordinates for the positions which are 1/4, 2/4 and 3/4 along the line
-    between the two bbox intersections.
-
-    Args:
-        intersections (list or np.ndarray):
-            A list or array of intersections of lines with the plot bounding
-            box. Should have shape ``(N_lines, 2, 2)``.
-        positions_per_line (int):
-            The number of possible label positions per line to return. Default
-            is 3, which returns positions at 1/4, 2/4 and 3/4 along the line
-            between the two bbox intersections.
-
-    Returns:
-        np.ndarray:
-            The possible label positions, with shape
-            ``(N_lines, positions_per_line, 2)``.
+    Whether ``folder_name`` looks like the name of a (competing phase)
+    calculation folder, i.e. contains ``"EaH"`` (as in the default
+    ``{Formula}_{spg}_EaH_{EaH}`` folder names) or a composition (e.g.
+    ``"ZrO2"``) in its ``"_"``-separated parts.
     """
-    points = np.array([pts[:2] for pts in intersections], dtype=float).reshape(-1, 2, 2)  # first 2 points
-    first_pt_factor = np.arange(positions_per_line, 0, -1) / (positions_per_line + 1)  # (positions,)
-    second_pt_factor = 1 - first_pt_factor
-    return (  # (N_lines, positions_per_line, 2)
-        points[:, 0, None, :] * first_pt_factor[None, :, None]
-        + points[:, 1, None, :] * second_pt_factor[None, :, None]
-    )
+    if "EaH" in folder_name:
+        return True
+    for name_part in folder_name.split("_"):
+        with contextlib.suppress(ValueError):  # not a composition
+            if name_part and Composition(name_part):
+                return True
+    return False
 
 
-def _find_best_label_positions(
-    poss_label_positions: NDArray[np.floating[Any]],
-    x_range: float = 1,
-    y_range: float = 1,
-    return_best_norm_dist: bool = False,
-) -> NDArray[np.floating[Any]] | tuple[NDArray[np.floating[Any]], float]:
+def _warn_skipped_folders(
+    output_file: str, folders: list[str], parent_folder: PathLike | None = None
+) -> None:
     """
-    From an array of possible label positions, find the best possible
-    combination of label positions which maximises the distance between labels
-    (i.e. minimises overlap).
-
-    Args:
-        poss_label_positions (np.ndarray):
-            The possible label positions, with shape
-            ``(N_lines, positions_per_line, 2)``.
-        x_range (float):
-            The range of the x-axis to use for normalisation. Default is 1.
-        y_range (float):
-            The range of the y-axis to use for normalisation. Default is 1.
-        return_best_norm_dist (bool):
-            Whether to return the best normalised minimum distance between
-            labels. Default is ``False``.
-
-    Returns:
-        np.ndarray:
-            The best possible label positions, with shape ``(N_lines, 2)``,
-            where the second dimension is (x,y-offset) coordinates.
-        float:
-            The best normalised minimum distance between labels,
-            if ``return_best_norm_dist`` is True.
+    Warn that calculation output files (``output_file``) could not be found in
+    ``folders`` (in ``parent_folder``, if given), and so they are skipped.
     """
-    # Get all possible combinations of indices, for the first two dimensions (N_labels,
-    # N_possibilities_per_label):
-    N_labels, N_possibilities_per_label = poss_label_positions.shape[:2]  # (..., N_xy = 2)
-    combinations = np.array(  # (N_possibilities_per_label**N_labels, N_labels)
-        list(itertools.product(range(N_possibilities_per_label), repeat=N_labels)), dtype=int
-    ).reshape(-1, N_labels)
-    all_combos = poss_label_positions[np.arange(N_labels), combinations]  # (N_combos, N_labels, N_xy = 2)
-    all_combos[:, :, 0] /= x_range
-    all_combos[:, :, 1] /= y_range
-    dists = np.linalg.norm(all_combos[:, :, np.newaxis] - all_combos[:, np.newaxis, :], axis=-1)
-    # get upper diagonal of distances (removes self-distances = 0 and duplicates ((i,j) = (j,i))
-    mask = np.triu(np.ones((N_labels, N_labels)), k=1).astype(bool)
-    unique_dists = dists[:, mask]
-    dists_list = [sorted(sublist) for sublist in unique_dists.tolist()]
-    max_idx = dists_list.index(max(dists_list))
-    best_combo = all_combos[max_idx]
-    best_combo[:, 0] *= x_range
-    best_combo[:, 1] *= y_range  # reverse normalisation
-
-    # set y-offset to 0 except for vertical lines:
-    for i in range(N_labels):
-        if poss_label_positions[i, 0, 0] == poss_label_positions[i, -1, 0]:  # vertical line
-            best_combo[i, 1] -= np.mean(
-                poss_label_positions[i, :, 1]
-            )  # y_offset relative to midpoint (default for vertical lines)
-        else:
-            best_combo[i, 1] = 0  # zero y-offset
-
-    if return_best_norm_dist:
-        return best_combo, (dists_list[max_idx] or [np.inf])[0]  # inf if < 2 labels (no pairwise dists)
-
-    return best_combo
+    if folders:
+        parent_folder_string = f" (in {parent_folder})" if parent_folder is not None else ""
+        warnings.warn(
+            f"{output_file} files could not be found in the following directories{parent_folder_string}, "
+            f"and so they will be skipped for parsing:\n" + "\n".join(folders)
+        )
 
 
 def _get_bulk_comp_from_chempots(chempots: dict) -> str | None:

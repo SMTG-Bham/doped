@@ -1190,12 +1190,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         with pytest.raises(ValueError) as e:
             chemical_potentials.CompetingPhases(
                 "ZrO2",
-                api_key="c2LiJRMiBeaN5iXsH",  # legacy API key (16 chars, not 32)
+                api_key="legacy_key_16_ch",  # legacy API key (16 chars, not 32)
             )
         assert expected_error_substr in str(e.value)
-
-        # test all works fine with key from new MP API:
-        assert chemical_potentials.CompetingPhases("ZrO2", api_key="UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv")
 
     def test_structure_input(self):
         for struct, name in [
@@ -1219,9 +1216,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         ``get_entries_in_chemsys`` / ``get_entries`` helpers (and onto the
         underlying ``MPRester`` query).
 
-        Here we use ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}``
-        to restrict the MP query to GGA/GGA+U thermo entries, and verify that
-        the resulting entries differ from the default (GGA/GGA+U/R2SCAN) query.
+        Here we use ``additional_criteria={"thermo_types": ["GGA_GGA+U"]}`` to
+        restrict the MP query to GGA/GGA+U thermo entries, and verify that the
+        resulting entries differ from the default (GGA/GGA+U/R2SCAN) query.
         """
         cp_default = chemical_potentials.CompetingPhases(  # GGA/GGA+U/R2SCAN
             "ZrO2", energy_above_hull=0.03, api_key=api_key
@@ -1785,11 +1782,10 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         Co-doping competing phases (entries containing more than one extrinsic
         species, e.g. ``KInO2``) should only be generated when
         ``codoping=True`` (which also forces
-        ``single_extrinsic_phase_limits=False``).
-        ``full_phase_diagram=True`` includes all phases on the MP phase diagram
-        (within ``energy_above_hull``) rather than only those potentially
-        bordering the host, so increases both the intrinsic and extrinsic entry
-        counts.
+        ``single_extrinsic_phase_limits=False``). ``full_phase_diagram=True``
+        includes all phases on the MP phase diagram (within
+        ``energy_above_hull``) rather than only those potentially bordering the
+        host, so increases both the intrinsic and extrinsic entry counts.
         """
         cases = [
             # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
@@ -1903,7 +1899,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         }
 
     def tearDown(self):
-        for i in ["cpa.json"]:
+        for i in ["cpa.json", "ZrO2_competing_phases_analyzer.json.gz"]:
             if_present_rm(i)
 
         if_present_rm(os.path.join(data_dir, "ZrO2_LaTeX_Tables/test.tex"))
@@ -2417,6 +2413,20 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self._compare_cpas(lst_fols_cpa, cpa)
         self._general_cpa_check(lst_fols_cpa)
 
+        # list entries are not searched recursively, so a phase folder (rather than its ``vasp_std``
+        # subfolder) is skipped, with a warning:
+        skipped_folder = next(os.path.dirname(folder) for folder in all_folders if "Zr2O_EaH" in folder)
+        entries = [skipped_folder if "Zr2O_EaH" in folder else folder for folder in all_folders]
+        skip_cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", entries=entries
+        )
+        assert len(skip_cpa.vasprun_paths) == 7
+        assert any(
+            "vasprun.xml files could not be found in the following directories, and so they will be "
+            f"skipped for parsing:\n{skipped_folder}" in str(warning.message)
+            for warning in w
+        )
+
     def test_vaspruns_hidden_files(self):
         with open(f"{self.ZrO2_path}/._OUTCAR", "w") as f:
             f.write("test pop")
@@ -2493,9 +2503,17 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
-            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder="vasp_ncl")
+            cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
+                chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", tmp_dir, subfolder="vasp_ncl"
+            )
             assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
             assert len(cpa.vasprun_paths) == 3
+            # the ignored phase folder (no ``vasp_ncl`` subfolder) is warned about:
+            assert any(
+                f"vasprun.xml files could not be found in the following directories (in {tmp_dir}), and "
+                "so they will be skipped for parsing:\nZr3O_EaH_0.0/vasp_ncl" in str(warning.message)
+                for warning in w
+            )
 
     def test_subfolder_auto_detect_picks_highest_priority(self):
         """
@@ -2759,12 +2777,20 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         reloaded_cpa = loadfn("cpa.json")
         self._compare_cpas(cpa, reloaded_cpa)
 
+        cpa.to_json("cpa.json")
+        self._compare_cpas(cpa, chemical_potentials.CompetingPhasesAnalyzer.from_json("cpa.json"))
+
     def test_general_cpa_reloading(self):
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
         _print_warning_info(w)  # for debugging
         assert not w
         self._general_cpa_check(cpa)
+        cpa.to_json()  # default filename (compressed)
+        json_cpa = chemical_potentials.CompetingPhasesAnalyzer.from_json(
+            "ZrO2_competing_phases_analyzer.json.gz"
+        )
+        self._compare_cpas(cpa, json_cpa)
 
         with warnings.catch_warnings(record=True) as w:
             la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.La_ZrO2_path)
@@ -2776,7 +2802,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         Test warnings for mismatching INCAR settings.
 
-        No warnings for ZrO2 / La_ZrO2 already checked in ``self.test_general_cpa_reloading()`` above.
+        No warnings for ZrO2 / La_ZrO2 already checked in
+        ``self.test_general_cpa_reloading()`` above.
         """
         # convert to mismatching O2 calc:
         shutil.move(
@@ -2839,7 +2866,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         Test warnings for mismatching POTCAR settings.
 
-        No warnings for ZrO2 / La_ZrO2 already checked in ``self.test_general_cpa_reloading()`` above.
+        No warnings for ZrO2 / La_ZrO2 already checked in
+        ``self.test_general_cpa_reloading()`` above.
         """
         # convert to mismatching O2 calc, with fake "O_h" POTCAR:
         shutil.move(
@@ -2859,8 +2887,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             for i in [
                 "There are mismatching POTCAR symbols",
                 "Where ZrO2 was used as the reference entry calculation.",
-                "O2: [[{'titel': 'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}], "
-                "[{'titel': 'PAW_PBE O 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
+                (
+                    "O2: [[{'titel': 'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}], "
+                    "[{'titel': 'PAW_PBE O 08Apr2002', 'hash': None, 'summary_stats': {}}]]"
+                ),
             ]
         )
         self._general_cpa_check(cpa)
@@ -2903,39 +2933,63 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             )
         _print_warning_info(w)  # for debugging
         for expected_warning in [
-            f"Multiple `vasprun.xml` files found in competing phase directory: "
-            f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0",
-            f"vasprun.xml file at {data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
-            f" is corrupted/incomplete. Attempting to continue parsing but may fail!",
-            "There are mismatching INCAR tags for (some of) your competing phases calculations which are "
-            "likely to cause errors in the parsed results (energies & thus chemical potential limits). "
-            "Found the following differences:\n"
-            "(in the format: 'Entries: (INCAR tag, value in entry calculation, value in reference "
-            "calculation))':\n",
-            "['Ag', 'AgBr', 'Bi', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3', 'Sn']:\n[('HFSCREEN', "
-            "0.2, 0.207), ('ADDGRID', True, False), ('LASPH', True, False)]",
+            (
+                f"Multiple `vasprun.xml` files found in competing phase directory: "
+                f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0"
+            ),
+            (
+                f"vasprun.xml file at {data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
+                f" is corrupted/incomplete. Attempting to continue parsing but may fail!"
+            ),
+            (
+                "There are mismatching INCAR tags for (some of) your competing phases calculations which "
+                "are likely to cause errors in the parsed results (energies & thus chemical potential "
+                "limits). Found the following differences:\n"
+                "(in the format: 'Entries: (INCAR tag, value in entry calculation, value in reference "
+                "calculation))':\n"
+            ),
+            (
+                "['Ag', 'AgBr', 'Bi', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3', 'Sn']:\n"
+                "[('HFSCREEN', 0.2, 0.207), ('ADDGRID', True, False), ('LASPH', True, False)]"
+            ),
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
-            "In general, the same INCAR settings should be used in all final calculations for these tags "
-            "which can affect energies!",
-            "There are mismatching POTCAR symbols for (some of) your competing phases calculations which "
-            "are likely to cause errors in the parsed results (energies & thus chemical potential "
-            "limits). Found the following differences:",
+            (
+                "In general, the same INCAR settings should be used in all final calculations for these "
+                "tags which can affect energies!"
+            ),
+            (
+                "There are mismatching POTCAR symbols for (some of) your competing phases calculations "
+                "which are likely to cause errors in the parsed results (energies & thus chemical "
+                "potential limits). Found the following differences:"
+            ),
             "(in the format: (entry POTCARs, reference POTCARs)):",
-            "Bi: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
-            "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
-            "Cs3Bi2Br9: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
-            "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
+            (
+                "Bi: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
+                "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]"
+            ),
+            (
+                "Cs3Bi2Br9: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
+                "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]"
+            ),
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
-            "In general, the same POTCAR settings should be used in all final calculations for these tags "
-            "which can affect energies!",
-            "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull of "
-            "0.0171 eV/atom.",
-            "Formally, this means that (based on the supplied athermal calculation data) the host "
-            "material is unstable and so has no chemical potential limits; though in reality the host may "
-            "be stabilised by temperature effects etc, or just a metastable phase.",
-            "Here we will determine a single chemical potential 'limit' corresponding to the least "
-            "unstable (i.e. closest) point on the convex hull for the host material, as an approximation "
-            "for the true chemical potentials.",
+            (
+                "In general, the same POTCAR settings should be used in all final calculations for these "
+                "tags which can affect energies!"
+            ),
+            (
+                "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull "
+                "of 0.0171 eV/atom."
+            ),
+            (
+                "Formally, this means that (based on the supplied athermal calculation data) the host "
+                "material is unstable and so has no chemical potential limits; though in reality the "
+                "host may be stabilised by temperature effects etc, or just a metastable phase."
+            ),
+            (
+                "Here we will determine a single chemical potential 'limit' corresponding to the least "
+                "unstable (i.e. closest) point on the convex hull for the host material, "
+                "as an approximation for the true chemical potentials."
+            ),
         ]:
             print(expected_warning)
             assert any(expected_warning in str(warning.message) for warning in w)

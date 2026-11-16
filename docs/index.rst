@@ -12,6 +12,17 @@
 .. raw:: html
 
    <br><br>
+
+.. workshop-announcement: start; remove after 16 Dec 2026
+
+.. note::
+   **Workshop:** Computational Methods for Defects in Solids, Cambridge, UK, 6–8 Jan 2027. Talk abstracts due
+   23 Nov; registration open until 16 Dec.
+   `Details <https://aichemy.ac.uk/event/computational-methods-for-defects-in-solids-workshop/>`__
+
+.. workshop-announcement: end
+.. raw:: html
+
    <img src="https://raw.githubusercontent.com/SMTG-Bham/doped/develop/docs/Images/doped_v2_logo.png" align="right" width="200" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
 
 
@@ -105,6 +116,11 @@ Studies using ``doped``, so far
 ===============================
 
 - N\.-R. Skogemyr **First-Principles Defect Thermodynamics of MgSnN₂: Origin and Suppression of Unintentional n-Type Conductivity** `MSc Thesis, Linköping University <https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510>`__ 2026
+- R\. Claes, A. G. Squires and D. O. Scanlon **Resonant doping design for ternary n-type oxides: the case of CdSnO₃** `ChemRxiv <https://doi.org/10.26434/chemrxiv.15012056/v1>`__ 2026
+- S\. Jeon, A. Soon and Y. Shin **Defect Chemistry of Hafnia-Based Ferroelectrics under Oxide-Electrode Constraints** `arXiv <https://doi.org/10.48550/arXiv.2611.02317>`__ 2026
+- L\. Shi et al. **Defect compensation-limited carrier tuning reveals sulfur vacancy tolerance and an n-type growth window in β-AgBiS₂** `Journal of Materials Chemistry A <https://doi.org/10.1039/D6TA06121D>`__ 2026
+- C\. Morel et al. **Mechanochemically Disordered Li₂Ta₂OCl₁₀ Oxyhalide Unlocks Superionic Conductivity (>10 mS.cm⁻¹)** `Advanced Energy Materials <https://doi.org/10.1002/aenm.71736>`__ 2026
+- M\. J. Brady et al. **High Defect Formation Energies Limit Ionic Conductivity in Na₃Ga₂Li₃F₁₂ and Na₃Al₂Li₃F₁₂** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.6c01542>`__ 2026
 - N\. Singh, V. Agarwal and D. Ghosh **Deep Learning the Defect Landscape: Long-Timescale Vacancy Dynamics in Lead-Free Double Perovskites** `ACS Applied Energy Materials <https://doi.org/10.1021/acsaem.6c02409>`__ 2026
 - H\. Lee et al. **Identification and Structural Decomposition of Hidden Defect Configurations: A Case Study of Charged Oxygen Divacancies in HfO₂** `arXiv <https://doi.org/10.48550/arXiv.2610.04892>`__ 2026
 - L\. D. Salzer et al. **DFT reveals why Mo substitution enables multi-electron redox in Wadsley–Roth Mo** :sub:`x` **W** :sub:`1-x` **Nb₁₂O₃₃** `Journal of Materials Chemistry A <https://doi.org/10.1039/D6TA05468D>`__ 2026

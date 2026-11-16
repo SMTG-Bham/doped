@@ -50,7 +50,7 @@ from doped.utils.parsing import (
 from doped.utils.supercells import (
     _get_complex_min_image_distance_from_matrix,
     _get_complex_ws_radius,
-    _get_unwrapped_complex_fc,
+    _get_unwrapped_complex_frac_coords,
     get_min_image_distance,
 )
 
@@ -79,29 +79,17 @@ def _set_spglib_warnings_error_handling_env_var():
     """
     Set the SPGLIB environment variable to use new error handling.
     """
-    os.environ["SPGLIB_OLD_ERROR_HANDLING"] = "False"  # can be removed with spglib >=2.8
+    # can be removed once spglib raises errors by default (announced for v2.8, but not yet in 2.8.0...)
+    os.environ["SPGLIB_OLD_ERROR_HANDLING"] = "False"
     os.environ["SPGLIB_WARNING"] = "OFF"
 
 
-def _check_spglib_version():
-    """
-    Check the versions of spglib and its C libraries, and raise a warning if
-    the correct installation instructions have not been followed.
-    """
-    python_version = spglib.__version__
-    c_version = spglib.spg_get_version_full()
-
-    if python_version != c_version:
-        warnings.warn(  # think this issue is avoided with latest spglib versions, but not sure
-            f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
-            f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
-            f"spglib warning messages, but can be avoided by upgrading spglib with `pip install --upgrade "
-            f"spglib`."
-        )  # previously also had to do conda or special pip install settings, with spglib <2.5
-
-
 _set_spglib_warnings_error_handling_env_var()
-_check_spglib_version()
+# spglib failures raise ``SpglibError`` (rather than returning ``None``) with the error handling set above;
+# ``SpglibError`` added in spglib 2.7.0, can remove check once spglib (indirect) requirement is >= 2.7:
+_SPGLIB_ERRORS: tuple[type[Exception], ...] = (
+    (spglib.SpglibError,) if hasattr(spglib, "SpglibError") else ()
+)
 
 
 def _round_floats(obj, places: int = 5):
@@ -337,11 +325,6 @@ def _cache_ready_get_sga(
 
     sga = None
     trial_symprecs = [symprec, 0.1, 0.001, 1, 0.0001]
-    spg_2pt7 = False
-    symm_error_types: tuple[type[Exception], ...] = (SymmetryUndeterminedError, ValueError)
-    with contextlib.suppress(AttributeError):  # introduced with spglib 2.7.0, can remove once spglib
-        symm_error_types += (spglib.SpglibError,)  # (indirect) requirement is >= 2.7
-        spg_2pt7 = True
 
     for trial_symprec in trial_symprecs:
         try:  # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
@@ -349,13 +332,13 @@ def _cache_ready_get_sga(
             # check symmetry determination, sometimes SpacegroupAnalyzer initialises but methods fail:
             _detected_symmetry = sga._get_symmetry()
             return (sga, trial_symprec) if return_symprec else sga
-        except symm_error_types as latest_symm_error:
+        except ValueError as latest_symm_error:  # incl. SymmetryUndeterminedError (spglib failures)
             symm_error = latest_symm_error  # save before auto-deleted at end of except block
             continue
 
     raise SymmetryUndeterminedError(
         "Could not determine symmetry of input structure!"
-        + (f"Got spglib error: {spglib.get_error_message()}" if not spg_2pt7 else "")
+        + (f" Got spglib error: {spglib.get_error_message()}" if not _SPGLIB_ERRORS else "")
     ) from symm_error
 
 
@@ -554,6 +537,7 @@ LinkageMethod = Literal["single", "complete", "average", "weighted", "centroid",
 """
 Allowed ``method`` values for ``scipy``'s hierarchical ``linkage``.
 """
+
 FclusterCriterion = Literal["inconsistent", "distance", "maxclust", "monocrit", "maxclust_monocrit"]
 """
 Allowed ``criterion`` values for ``scipy``'s ``fcluster``.
@@ -855,7 +839,9 @@ def _cache_ready_get_orientation_preserving_primitive(
     unique_species = list(dict.fromkeys(site.species for site in structure))
     numbers = [unique_species.index(site.species) for site in structure]
     cell = (structure.lattice.matrix, structure.frac_coords, numbers)
-    prim_cell = spglib.standardize_cell(cell, to_primitive=True, no_idealize=True, symprec=symprec)
+    prim_cell = None
+    with contextlib.suppress(*_SPGLIB_ERRORS):  # spglib failure -> None
+        prim_cell = spglib.standardize_cell(cell, to_primitive=True, no_idealize=True, symprec=symprec)
     if prim_cell is None or len(prim_cell[2]) >= len(structure):
         return None
 
@@ -2107,6 +2093,10 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
     - maximum number of abs(x), abs(y), abs(z) that are equal
     - a, b, c magnitudes (favouring c >= b >= a)
 
+    Signs and equalities of matrix elements are compared after rounding to 6
+    decimal places, so that float noise (e.g. ``-4e-16`` entries from Niggli
+    reduction) doesn't affect the ordering.
+
     Args:
         lattice_matrix (np.ndarray): Lattice matrix to sort.
 
@@ -2120,9 +2110,10 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
 
     is_diagonal = np.all(np.abs(lattice_matrix[~np.eye(3, dtype=bool)]) < 1e-3)
     symmetric = is_diagonal or is_symmetric(lattice_matrix)
-    num_negs = np.sum(lattice_matrix < 0)
+    rounded_matrix = np.round(lattice_matrix, 6)  # round off float noise (e.g. -4e-16)
+    num_negs = np.sum(rounded_matrix < 0)
     diag_sum = np.round(np.sum(np.abs(np.diag(lattice_matrix))), 1)
-    flat_matrix = lattice_matrix.ravel()
+    flat_matrix = rounded_matrix.ravel()
     _unique_vals, counts = np.unique(flat_matrix, return_counts=True)
     num_equals = np.sum(counts * (counts + 1) // 2)
     _abs_vals, abs_counts = np.unique(np.abs(flat_matrix), return_counts=True)
@@ -2173,7 +2164,7 @@ def get_clean_structure(
             structure lattice to the new structure lattice (T * Orig = New).
     """
     lattice = structure.lattice
-    if np.all(lattice.matrix <= 0):
+    if np.all(np.round(lattice.matrix, 6) <= 0):  # ignore float noise, as in ``_lattice_matrix_sort_func``
         lattice = Lattice(lattice.matrix * -1)
     possible_lattice_matrices = [
         lattice.matrix,
@@ -2194,7 +2185,7 @@ def get_clean_structure(
 
     possible_lattice_matrices.sort(key=_lattice_matrix_sort_func)
     new_lattice_matrix = possible_lattice_matrices[0]
-    if np.all(new_lattice_matrix <= 0):
+    if np.all(np.round(new_lattice_matrix, 6) <= 0):  # round off any float noise
         new_lattice_matrix = new_lattice_matrix * -1
 
     new_structure = Structure(
@@ -3002,7 +2993,11 @@ def _bulk_cartesian_rotations(bulk_structure: Structure, symprec: float = 0.01) 
     )
     # get primitive cell, but with no reorientation of the Cartesian frame (``no_idealize=True`` is crucial
     # here (keeps original Cartesian orientation), and so we can't use ``get_sga`` directly:
-    primitive_cell = spglib.standardize_cell(cell, to_primitive=True, no_idealize=True, symprec=symprec)
+    primitive_cell = None
+    with contextlib.suppress(*_SPGLIB_ERRORS):  # spglib failure -> None
+        primitive_cell = spglib.standardize_cell(
+            cell, to_primitive=True, no_idealize=True, symprec=symprec
+        )
     if primitive_cell is not None:  # otherwise spglib failure; use the input cell directly
         bulk_structure = Structure(
             Lattice(primitive_cell[0]),
@@ -3648,7 +3643,7 @@ def local_point_symmetry(
             radius = min(get_min_image_distance(defect_supercell) / 2, 12)  # cap at 12 Å (large cells)
     else:
         cplx_cc = defect_supercell.lattice.get_cartesian_coords(
-            _get_unwrapped_complex_fc(defect_supercell, list(complex_sites))
+            _get_unwrapped_complex_frac_coords(defect_supercell, list(complex_sites))
         )
         matrix = defect_supercell.lattice.matrix
         centroid_radius = min(_get_complex_ws_radius(matrix, cplx_cc), 12)  # cap for large supercells

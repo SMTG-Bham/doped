@@ -312,8 +312,8 @@ def _nearest_distances(points: np.ndarray) -> np.ndarray:
 def _adjacent_pairs(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Adjacency of a set of sample points: the edges of their Delaunay graph
-    (consecutive points along the line, in 1D) -- so adjacency adapts to
-    non-uniform sample spacing (e.g. hybrid grids). Duplicate points map to a
+    (consecutive points along the line, in 1D) -- so adjacency adapts to non-
+    uniform sample spacing (e.g. hybrid grids). Duplicate points map to a
     single node.
 
     Returns:

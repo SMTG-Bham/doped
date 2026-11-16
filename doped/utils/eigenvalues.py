@@ -1,8 +1,7 @@
 r"""
 Helper functions for setting up PHS analysis.
 
-Contains modified versions of functions from ``pydefect`` and ``vise``
-(https://github.com/kumagai-group/pydefect / vise).
+Contains modified versions of functions from ``pydefect`` and ``vise``.
 """
 
 import warnings
@@ -21,7 +20,7 @@ from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry, _parse_procar, template_defect_entry_from_structures
 from doped.utils import vise_handling
 from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
-from doped.utils.plotting import doped_plot_style
+from doped.utils.plotting import _add_legend, doped_plot_style
 
 with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
     import pydefect.analyzer.make_band_edge_states
@@ -340,10 +339,8 @@ def get_eigenvalue_analysis(
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
             Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
             ``pymatgen`` |Vasprun| object, for the reference bulk supercell
-            calculation. If ``None`` (default), tries to load the |Vasprun|
-            object from
-            ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``
-            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            calculation. If ``None`` (default), tries to load from a
+            ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
         bulk_procar (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
@@ -361,10 +358,8 @@ def get_eigenvalue_analysis(
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
             Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
             ``pymatgen`` |Vasprun| object, for the defect supercell
-            calculation. If ``None`` (default), tries to load the |Vasprun|
-            object from
-            ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``
-            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            calculation. If ``None`` (default), tries to load from a
+            ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
         defect_procar (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
@@ -492,13 +487,13 @@ def get_eigenvalue_analysis(
 
     try:
         bes = pydefect.analyzer.make_band_edge_states.make_band_edge_states(band_orb, perfect)
-    except ValueError:  # increase to pydefect defaults:
-        defaults._similar_orb_criterion = 0.35
-        defaults._similar_energy_criterion = 0.5
+    except ValueError:  # increase to pydefect defaults (never tightening a wider first-pass criterion):
+        defaults._similar_orb_criterion = max(0.35, defaults._similar_orb_criterion)
+        defaults._similar_energy_criterion = max(0.5, defaults._similar_energy_criterion)
         try:
             bes = pydefect.analyzer.make_band_edge_states.make_band_edge_states(band_orb, perfect)
         except ValueError:
-            defaults._similar_orb_criterion = 0.5
+            defaults._similar_orb_criterion = max(0.5, defaults._similar_orb_criterion)
             # if fails, let it raise pydefect error:
             bes = pydefect.analyzer.make_band_edge_states.make_band_edge_states(band_orb, perfect)
 
@@ -646,10 +641,7 @@ def get_eigenvalue_analysis(
         ax.axhline(-25, 0, 1, color="black", linewidth=0.5, linestyle="-.", label="Band Edges")
 
         if legend_kwargs is not False:  # otherwise no legend
-            legend_kwargs = legend_kwargs or {}
-            legend_kwargs["fontsize"] = legend_kwargs.get("fontsize", 7)
-            legend_kwargs["framealpha"] = legend_kwargs.get("framealpha", 0.5)
-            ax.legend(**legend_kwargs)
+            _add_legend(ax, **{"fontsize": 7, "framealpha": 0.5, **(legend_kwargs or {})})
 
         for text_obj in emp.fig.texts:  # fix x-label alignment
             if text_obj.get_text() == "K-point coords":

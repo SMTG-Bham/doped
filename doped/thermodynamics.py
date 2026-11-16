@@ -10,11 +10,11 @@ import statistics
 import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
-from copy import copy, deepcopy
+from copy import copy
 from functools import lru_cache, partial, reduce
 from itertools import chain, product
 from operator import methodcaller
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -123,10 +123,10 @@ def _parse_limit(chempots: dict, limit: str | None = None):
 def _get_limits_to_plot(chempots: dict, composition: str | Composition | None = None) -> list[str]:
     """
     Get the default chemical potential limits for plotting: the most anion-rich
-    (i.e. most-electronegative-rich) and most cation-rich (i.e.
-    most-electropositive-rich) limits for the host ``composition``, in the
-    order they appear in ``chempots["limits"]`` and de-duplicated if they
-    correspond to the same limit (e.g. for elemental systems).
+    (i.e. most-electronegative-rich) and most cation-rich (i.e. most-
+    electropositive-rich) limits for the host ``composition``, in the order
+    they appear in ``chempots["limits"]`` and de-duplicated if they correspond
+    to the same limit (e.g. for elemental systems).
 
     If ``composition`` is not provided, it is auto-determined from the limit
     names in ``chempots`` (see
@@ -491,10 +491,10 @@ def _group_defects_by_distance(
 
     Takes a (hashable) ``tuple`` of |DefectEntry| objects so that results can
     be cached w/``functools.lru_cache``. Indices (rather than the entry
-    objects) are returned so that cache hits -- possible from equal-hashing
-    but distinct entries, whose un-hashed state (e.g. ``calculation_metadata``)
-    may differ -- never return previously-cached entry objects; the public
-    wrapper rebuilds ``{cluster index: {DefectEntry, ...}}``.
+    objects) are returned so that cache hits -- possible from equal-hashing but
+    distinct entries, whose un-hashed state (e.g. ``calculation_metadata``) may
+    differ -- never return previously-cached entry objects; the public wrapper
+    rebuilds ``{cluster index: {DefectEntry, ...}}``.
     """
     reference_entry = entry_list[0]
     bulk_structure = reference_entry.defect.structure
@@ -2797,7 +2797,11 @@ class DefectThermodynamics(MSONable):
             if stability_tol is not None and fermi_stability_window < stability_tol:
                 continue  # skip
 
-            if defect_entry.is_shallow and fermi_stability_window < shallow_tol:
+            if (
+                fermi_stability_window < shallow_tol
+                and defect_entry.calculation_metadata.get("eigenvalue_data")
+                and defect_entry.is_shallow
+            ):
                 continue  # skip
 
             pruned_defect_entries[name] = defect_entry
@@ -3610,10 +3614,10 @@ class DefectThermodynamics(MSONable):
             all_df = tl_thermo.get_transition_levels(all=True, unstable_entries=True)
             if all_df is None:
                 return
-            for defect_name, tl_df in all_df.groupby("Defect", sort=False):
-                bold_print(f"Defect: {defect_name}")
+            for group_name, tl_df in all_df.groupby("Defect", sort=False):
+                bold_print(f"Defect: {group_name}")
                 for index, row in tl_df.iterrows():
-                    tl_label = tuple(index)[1]
+                    tl_label = cast("tuple", index)[1]  # (Defect, Transition Level) MultiIndex
                     if tl_label != "None":  # TL to print
                         print(f"Transition level {tl_label} at {row['eV from VBM']:.3f} eV above the VBM")
                 print("")  # add space
@@ -5051,12 +5055,9 @@ class DefectThermodynamics(MSONable):
         dictionary attribute, if the attribute doesn't exist in
         |DefectThermodynamics|.
         """
-        try:
-            super().__getattribute__(attr)
-        except AttributeError as exc:
-            if attr == "_defect_entries":
-                raise exc
-            return getattr(self._defect_entries, attr)
+        if attr == "_defect_entries":  # not yet set (e.g. partially-initialised object), avoid recursion:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
+        return getattr(self._defect_entries, attr)
 
     def __getitem__(self, key):
         """
@@ -5357,7 +5358,7 @@ def get_fermi_dos(dos_vr: PathLike | Vasprun):
 
 
 def scissor_dos(
-    dos: Dos | FermiDos = None,
+    dos: Dos | FermiDos,
     delta_VBM: float = 0.0,
     delta_CBM: float = 0.0,
     delta_gap: float = 0.0,
@@ -5415,7 +5416,6 @@ def scissor_dos(
     delta_CBM = delta_CBM or +delta_gap / 2
     delta_gap = delta_CBM - delta_VBM  # change in band gap (keep this ``delta_gap`` definition/usage)
 
-    dos = deepcopy(dos)  # don't overwrite object
     dos_gap = dos.get_gap(tol=tol)
     dos_densities = dos.densities[Spin.up]
     # internally, shift just the CBM region by delta_gap, then rigidly shift all energies by delta_VBM
@@ -5447,50 +5447,23 @@ def scissor_dos(
             f"from dos.get_gap(tol=tol) and new gap: {dos_gap + delta_gap}"
         )
 
-    # Determine the number of values in energies/densities to remove/add to avoid duplication
-    values_to_remove_or_add = int(new_cbm_index - cbm_index)
-    scissored_dos_dict = dos.as_dict()
-
-    # Shift the CBM and remove/add values:
-    if values_to_remove_or_add <= 0:  # remove values (none for rigid shifts / sub-half-grid gap changes)
-        scissored_dos_dict["energies"] = np.concatenate(
-            (dos.energies[: cbm_index + values_to_remove_or_add], dos.energies[cbm_index:] + delta_gap)
-        )
-        scissored_dos_dict["densities"][Spin.up] = np.concatenate(
-            (
-                dos_densities[: cbm_index + values_to_remove_or_add],
-                dos_densities[cbm_index:],
-            )
-        )
-    elif values_to_remove_or_add > 0:  # add more zero DOS values:
-        scissored_dos_dict["energies"] = np.concatenate(
-            (
-                dos.energies[:cbm_index],
-                dos.energies[cbm_index:new_cbm_index],
-                dos.energies[cbm_index:] + delta_gap,
-            )
-        )
-        scissored_dos_dict["densities"][Spin.up] = np.concatenate(
-            (
-                dos_densities[:cbm_index],
-                np.zeros(values_to_remove_or_add),
-                dos_densities[cbm_index:],
-            )
-        )
-
-    # Assuming non-spin-polarised bulk here:
-    scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
-
-    # now apply the rigid shift of all energies by delta_VBM:
-    scissored_dos_dict["energies"] = np.array(scissored_dos_dict["energies"]) + delta_VBM
-    scissored_dos_dict["efermi"] += delta_VBM
+    # Shift the CBM region (and above) to ``new_cbm_index``, removing gap grid points if the gap shrinks or
+    # adding zero-DOS ones if it widens (none for rigid shifts / sub-half-grid gap changes):
+    energies = np.concatenate((dos.energies[:new_cbm_index], dos.energies[cbm_index:] + delta_gap))
+    densities = np.concatenate((dos_densities[:new_cbm_index], dos_densities[cbm_index:]))
+    densities[cbm_index:new_cbm_index] = 0  # zero DOS at any grid points added to the gap
 
     if verbose:
-        print(f"Orig gap: {dos_gap:.4f}, new gap:{dos_gap + delta_gap:.4f}")
-    if isinstance(dos, FermiDos):  # (plain ``Dos`` objects have no ``structure``)
-        scissored_dos_dict["structure"] = dos.structure.as_dict()
-        return FermiDos.from_dict(scissored_dos_dict)
-    return Dos.from_dict(scissored_dos_dict)
+        print(f"Orig gap: {dos_gap:.4f}, new gap: {dos_gap + delta_gap:.4f}")
+
+    # now apply the rigid shift of all energies by delta_VBM, assuming non-spin-polarised bulk (so the
+    # scissored DOS is used for each of the input spin channels):
+    scissored_dos = Dos(
+        dos.efermi + delta_VBM, energies + delta_VBM, dict.fromkeys(dos.densities, densities)
+    )
+    if isinstance(dos, FermiDos):
+        return FermiDos(scissored_dos, structure=dos.structure, nelecs=dos.nelecs)
+    return scissored_dos
 
 
 class FermiSolver(MSONable):
@@ -5691,8 +5664,8 @@ class FermiSolver(MSONable):
         ``self.defect_thermodynamics.bulk_dos``, for use with the ``py-sc-
         fermi`` backend (``None`` if not activated).
 
-        Re-derived automatically if ``self.defect_thermodynamics.bulk_dos``
-        is reassigned.
+        Re-derived automatically if ``self.defect_thermodynamics.bulk_dos`` is
+        reassigned.
         """
         fdos = self.defect_thermodynamics.bulk_dos
         if self._DOS is None or not isinstance(fdos, FermiDos):  # py-sc-fermi backend not activated
@@ -6599,8 +6572,8 @@ class FermiSolver(MSONable):
         site_competition: bool | str = True,
         **user_kwargs,
     ) -> pd.DataFrame:
-        PseudoSolveFunc: TypeAlias = Callable[..., pd.DataFrame]  # 'type aliases' for function signatures
-        EquilibriumSolveFunc: TypeAlias = Callable[..., pd.DataFrame]
+        type PseudoSolveFunc = Callable[..., pd.DataFrame]  # 'type aliases' for function signatures
+        type EquilibriumSolveFunc = Callable[..., pd.DataFrame]
         solve_func: PseudoSolveFunc | EquilibriumSolveFunc = (
             self._pseudo_equilibrium_solve
             if annealing_temperature is not None

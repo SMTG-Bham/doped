@@ -23,15 +23,18 @@ from test_utils import (
     EXAMPLE_DIR,
     _print_warning_info,
     _run_func_and_capture_stdout_warnings,
+    api_key,
     assert_df_rows_equal,
     custom_mpl_image_compare,
     data_dir,
     if_present_rm,
+    requires_api_key,
 )
 
 from doped.analysis import (
     DefectParser,
     DefectsParser,
+    _handle_charge_correction_errors,
     defect_from_structures,
     defect_site_from_structures,
     guess_defect_position,
@@ -204,6 +207,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         cls.CdTe_EXAMPLE_DIR = os.path.abspath(os.path.join(EXAMPLE_DIR, "CdTe"))
         cls.v_Cd_example_dir = os.path.join(cls.CdTe_EXAMPLE_DIR, "v_Cd_example_data")
         cls.moved_v_Cd_example_dirs = []
+        # remove parsing cache left by other tests (e.g. ``test_corrections.py``)
+        if_present_rm(os.path.join(cls.v_Cd_example_dir, "CdTe_defect_dict.json.gz"))
 
         try:
             for i in os.listdir(cls.v_Cd_example_dir):
@@ -406,10 +411,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             any(i in str(warn.message) for warn in recorded_warnings)
             for i in [
                 "Warning(s) encountered when parsing Te_Cd_+1 at ",
-                "The total energies of the provided (bulk) `OUTCAR` (-218.565 eV), used to obtain the "
-                "atomic core potentials for the eFNV correction, and the `vasprun.xml` (-218.518 eV), "
-                "used for energies and structures, do not match. Please make sure the "
-                "correct file combination is being used!",
+                (
+                    "The total energies of the provided (bulk) `OUTCAR` (-218.565 eV), used to obtain the "
+                    "atomic core potentials for the eFNV correction, and the `vasprun.xml` (-218.518 eV), "
+                    "used for energies and structures, do not match. Please make sure the "
+                    "correct file combination is being used!"
+                ),
             ]
         )  # mismatched OUTCAR and vasprun energies warning
 
@@ -666,6 +673,41 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.processes == 4
         assert dp.json_filename == "test_pop.json"
 
+    @requires_api_key
+    def test_bulk_gap_data_from_MP(self):
+        """
+        Test obtaining the bulk band gap & band edges from the Materials
+        Project (MP) with ``use_MP`` / ``mpid`` (live MP queries).
+        """
+        parse_kwargs = {
+            "defect_path": f"{self.CdTe_EXAMPLE_DIR}/v_Cd_0/vasp_ncl",  # neutral, no LOCPOT/OUTCAR; fast
+            "bulk_path": self.CdTe_BULK_DATA_DIR,
+            "parse_projected_eigen": False,  # just for fast testing, not recommended in general!
+            "api_key": api_key,
+        }
+        metadata = DefectParser.from_paths(**parse_kwargs, use_MP=True).defect_entry.calculation_metadata
+        assert metadata["mpid"] == "mp-406"  # zinc blende CdTe, structure-matched to the bulk supercell
+        assert metadata["MP_gga_BScalc_data"]["direct"]  # ``get_band_gap()`` dict of MP band structure
+        assert np.isclose(metadata["MP_gga_BScalc_data"]["energy"], metadata["band_gap"])
+        assert np.isclose(metadata["cbm"] - metadata["vbm"], metadata["band_gap"])
+        # MP GGA values (0.585 & 1.752 eV with MP database v2026.09.28), vs 1.499 & 1.647 eV for the
+        # (HSE+SOC) bulk supercell:
+        assert np.isclose(metadata["band_gap"], 0.585, atol=0.05)
+        assert np.isclose(metadata["vbm"], 1.752, atol=0.05)
+
+        # MP ID with no MP band structure -> reverts to bulk supercell values, with a warning:
+        with warnings.catch_warnings(record=True) as w:
+            dp = DefectParser.from_paths(**parse_kwargs, mpid="mp-0")
+        metadata = dp.defect_entry.calculation_metadata
+        assert any(
+            "No Materials Project band structure could be obtained for MPID mp-0" in str(warn.message)
+            for warn in w
+        )
+        assert metadata["mpid"] == "mp-0"
+        assert metadata["MP_gga_BScalc_data"] is None
+        assert np.isclose(metadata["band_gap"], 1.499, atol=1e-3)
+        assert np.isclose(metadata["vbm"], 1.647, atol=1e-3)
+
     def test_DefectsParser_CdTe_unrecognised_subfolder(self):
         # test setting subfolder to unrecognised one:
         with pytest.raises(FileNotFoundError) as exc:
@@ -739,8 +781,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             "There are mismatching KPOINTS for (some of) your defect and bulk calculations ",
             "Found the following differences:",
             "(in the format: (defect kpoints, bulk kpoints)):",
-            "Int_Te_3_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, "
-            "0.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [0.5, 0.5, 0.5]], [[0.0, 0.0, 0.0]]]",
+            (
+                "Int_Te_3_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, "
+                "0.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [0.5, 0.5, 0.5]], [[0.0, 0.0, 0.0]]]"
+            ),
             "v_Cd_0: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
             "Int_Te_3_Unperturbed_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
             "In general, the same KPOINTS settings should be used",
@@ -1602,6 +1646,15 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
 
+        # an explicit ``shallow_charge_stability_tolerance=None`` uses the default tolerance:
+        _result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            _handle_charge_correction_errors,
+            dp.defect_dict,
+            0.005,
+            shallow_charge_stability_tolerance=None,
+        )
+        assert not any("Estimated error" in str(warn.message) for warn in w)
+
         dp, w = _create_dp_and_capture_warnings(
             # error above tol, shallow but with larger stability window, warning
             output_path=self.shallow_O_Se_DATA_DIR,
@@ -1867,10 +1920,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             -7.105,
             atol=3e-3,
         )  # uncorrected energy
-        assert np.isclose(
-            parsed_int_Te_2_fake_aniso.get_ediff(), -5.4409, atol=2e-2
-        )  # -4.734 with old voronoi frac coords, expanded atol now to account for LOCPOT sub-sampling
-        # compression
+        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -5.4409, atol=2e-2)
 
         if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")
 
@@ -2480,6 +2530,35 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert defect_type == "complex"
         assert sorted(missing_bulk_site_indices) == [0, far_idx]
         assert sorted(additional_defect_site_indices) == [0, len(si) - 1]
+
+        # ``site_tol`` is passed through ``defect_from_structures``, where multiple identified defect sites
+        # give a ``DefectComplex`` (or a single point defect with ``site_tol=None``):
+        split_structure = si.copy()
+        split_structure.translate_sites([0], 0.35 * si_si_bond * direction, frac_coords=False)
+        split_structure.append(
+            "Si", si[0].coords - 0.35 * si_si_bond * direction, coords_are_cartesian=True
+        )
+        defect, _stdout, w = _run_func_and_capture_stdout_warnings(
+            defect_from_structures, split_structure, si, site_tol=0.4, _parameter_order_warn=False
+        )
+        assert not w
+        assert isinstance(defect, DefectComplex)
+        assert defect.name == "Si_i-Si_i-v_Si"
+        assert defect.net_name == "Si_i"
+        defect = defect_from_structures(split_structure, si, site_tol=None, _parameter_order_warn=False)
+        assert not isinstance(defect, DefectComplex)
+        assert defect.name == "Si_i"
+
+        with warnings.catch_warnings():  # complex spans more than half the (small) supercell here
+            warnings.simplefilter("ignore")
+            defect = defect_from_structures(
+                frenkel_structure, si, site_tol=0.4, _parameter_order_warn=False
+            )
+        assert isinstance(defect, DefectComplex)
+        assert defect.name == "Si_i-Si_i-v_Si-v_Si"
+        with pytest.raises(ValueError) as exc:  # no net point defect, so not parseable as one
+            defect_from_structures(frenkel_structure, si, site_tol=None, _parameter_order_warn=False)
+        assert "the defect is a complex defect, but ``site_tol`` is set to ``None``" in str(exc.value)
 
         # similar displacements, but not split across the site (bent at 90°), so not a split interstitial:
         bent_structure = si.copy()
@@ -3104,8 +3183,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         Previously this was handled by attempting to stencil the relaxed defect
         geometry into a periodicity-restoring supercell (giving e.g. ``C2h``
         for ``O_i_D4h_0`` here if not attempted), which was slower and not
-        guaranteed to succeed (e.g. for the ZnS supercell above, with
-        mis-matching lattice definitions).
+        guaranteed to succeed (e.g. for the ZnS supercell above, with mis-
+        matching lattice definitions).
         """
         bulk = Structure.from_file(f"{self.YTOS_EXAMPLE_DIR}/Bulk/POSCAR")
         primitive = get_primitive_structure(bulk)
@@ -4149,6 +4228,19 @@ class DefectsParsingTestCase(unittest.TestCase):
             "similar_orb_criterion=0.35, similar_energy_criterion=0.5 eV." in str(w[0].message)
         )
         assert not bes.has_unoccupied_localized_state  # no longer identified
+
+        # fallback criteria never tighten a wider first-pass criterion (here 0.8 eV, kept over 0.5 eV):
+        _bes, _stdout, w = _run_func_and_capture_stdout_warnings(
+            v_Cd_minus1.get_eigenvalue_analysis,
+            similar_orb_criterion=0.01,
+            similar_energy_criterion=0.8,
+            plot=False,
+        )
+        assert any(
+            "but succeeded with similar_orb_criterion=0.35, similar_energy_criterion=0.8 eV."
+            in str(warning.message)
+            for warning in w
+        )
 
         return fig
 

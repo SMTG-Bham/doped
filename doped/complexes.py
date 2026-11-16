@@ -31,7 +31,7 @@ from doped.utils.parsing import (
     get_defect_type_and_site_indices,
     get_matching_site,
 )
-from doped.utils.supercells import _get_unwrapped_complex_fc
+from doped.utils.supercells import _get_unwrapped_complex_frac_coords
 from doped.utils.symmetry import (
     FclusterCriterion,
     LinkageMethod,
@@ -1611,7 +1611,7 @@ def _transform_complex_fc_to_prim(
         unwrapped_fc (Sequence[np.ndarray]):
             Unwrapped fractional coordinates of the constituent (defect) sites,
             in the ``bulk_supercell`` frame; see
-            ``_get_unwrapped_complex_fc``.
+            ``_get_unwrapped_complex_frac_coords``.
         primitive_structure (|Structure|):
             Primitive host structure to transform the coordinates into.
         symprec (float):
@@ -1707,7 +1707,7 @@ def _unwrap_and_transform_to_prim(
         primitive_structure = get_primitive_structure(bulk_supercell, symprec=symprec)
 
     unwrapped_fc = (
-        _get_unwrapped_complex_fc(bulk_supercell, sites)
+        _get_unwrapped_complex_frac_coords(bulk_supercell, sites)
         if image_cells is None
         else [site.frac_coords + image for site, image in zip(sites, image_cells, strict=True)]
     )

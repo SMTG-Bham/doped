@@ -315,10 +315,10 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
         ``check_mapping`` check should raise a warning.
 
         Here we simulate a basis mismatch by applying a large (non-rigid)
-        shear-like perturbation to the upper half of ``V_Se^-2``, which
-        cannot be resolved by any rigid transformation applied during re-
-        orientation -> leaves significant residual displacements at sites
-        far from the cell centre.
+        shear-like perturbation to the upper half of ``V_Se^-2``, which cannot
+        be resolved by any rigid transformation applied during re- orientation
+        -> leaves significant residual displacements at sites far from the cell
+        centre.
         """
         perturbed = self.V_Se_m2_supercell.copy()
         for i, site in enumerate(perturbed):
@@ -666,10 +666,10 @@ class TestGetPathStructures(ConfigurationsTestCase):
         with ``reorient=False``) and a warning should be raised indicating re-
         orientation was required.
 
-        With ``reorient=True`` on mismatched inputs, ``struct2`` should be
-        re-oriented (matching the ``reorient=None`` re-oriented output) but
-        `no` re-orientation warning should be raised (user explicitly requested
-        re-orientation).
+        With ``reorient=True`` on mismatched inputs, ``struct2`` should be re-
+        oriented (matching the ``reorient=None`` re-oriented output) but `no`
+        re-orientation warning should be raised (user explicitly requested re-
+        orientation).
         """
         result, _, w = _run_func_and_capture_stdout_warnings(
             get_path_structures, self.V_Se_m1_supercell, self.V_Se_m2_supercell
@@ -738,8 +738,8 @@ class TestGetPathStructures(ConfigurationsTestCase):
         with a warning raised (mentioning the small mass-weighted atomic
         displacement).
 
-        Here ``struct2`` is ``struct1`` shifted by one primitive lattice
-        vector (a symmetry-equivalent configuration in the supercell), so
+        Here ``struct2`` is ``struct1`` shifted by one primitive lattice vector
+        (a symmetry-equivalent configuration in the supercell), so
         ``orient_s2_like_s1`` would map it back onto ``struct1`` exactly
         (ΔQ_after ~ 0).
         """
@@ -884,8 +884,8 @@ class TestWritePathStructures(TestGetPathStructures):
         CC mode write (``displacements`` set) creates two ``PES_1`` and
         ``PES_2`` subfolders with ``delQ_<x>`` subfolders.
 
-        Re-reading the POSCARs, ``ΔQ`` from each endpoint should scale
-        linearly with ``|d|`` for both ``PES_1`` and ``PES_2``.
+        Re-reading the POSCARs, ``ΔQ`` from each endpoint should scale linearly
+        with ``|d|`` for both ``PES_1`` and ``PES_2``.
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = os.path.join(tmpdir, "CC_test")

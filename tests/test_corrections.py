@@ -15,6 +15,7 @@ from unittest.mock import patch
 import matplotlib as mpl
 import numpy as np
 import pytest
+from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import PeriodicSite, Structure
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
@@ -22,11 +23,6 @@ from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_p
 from doped.analysis import DefectParser, DefectsParser
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
-
-try:
-    from pymatgen.core.entries import ComputedStructureEntry
-except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
-    from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -186,10 +182,7 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
         assert np.isclose(split_corr.correction_energy, single_corr.correction_energy, atol=5e-4)
         assert split_corr.metadata["point_charges"] == [(qi, list(fc)) for qi, fc in split_charges]
 
-        # split-vacancy-like [V-V_i-V]^-3 model, with an anisotropic dielectric tensor; the point charge
-        # energy matches an independent pymatgen ``EwaldSummation`` calculation (in the eps^-1/2-scaled
-        # frame) of 1.0993703688 eV, and is independent of the ordering and periodic images of the input
-        # point charges (which are unwrapped to a single configuration):
+        # split-vacancy-like [V-V_i-V]^-3 model, with an anisotropic dielectric tensor
         aniso_dielectric = np.array([[12.0, 1.5, 0.0], [1.5, 9.0, -2.0], [0.0, -2.0, 20.0]])
         nn_v_coords = np.array([0.0, 0.09978070333333333, 0.09978070333333333])
         for point_charges in [
@@ -199,11 +192,12 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
                 (-3, coords),
                 (3, (coords + nn_v_coords) / 2 + np.array([0, 1, 0])),
             ],
-        ]:
+        ]:  # independent of the ordering and periodic images of the input point charges
             three_site_corr = get_kumagai_correction(
                 self.defect_entry, aniso_dielectric, verbose=False, point_charges=point_charges
             )
             efnv_corr_obj = three_site_corr.metadata["pydefect_ExtendedFnvCorrection"]
+            # matches an independent pymatgen ``EwaldSummation`` calculation:
             assert np.isclose(efnv_corr_obj.point_charge_correction, 1.0993703688, atol=1e-8)
             assert np.isclose(three_site_corr.correction_energy, 1.2856151718, atol=1e-8)
 
@@ -233,9 +227,10 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
 
     def test_get_kumagai_correction_slab_defect_region_radius(self):
         """
-        Test that the eFNV defect region radius (default or user-supplied) is
-        reduced when fewer than 3 atomic sites lie outside it (e.g. slab
-        supercells with vacuum).
+        Test that the default eFNV defect region radius is reduced when fewer
+        than 3 atomic sites lie outside it (e.g. slab supercells with vacuum),
+        while a user-supplied radius is used as given (with a warning if fewer
+        than 3 sites lie outside it, or an error if none do).
         """
         slab = Structure(  # 4x4 square C monolayer (2 Å spacing), with 20 Å c-axis -> vacuum
             Lattice.from_parameters(8.0, 8.0, 20.0, 90, 90, 90),
@@ -257,16 +252,23 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
             },
         )
 
-        # default radius (half the 20 Å c-axis) exceeds all (in-plane) site distances, and only 1 site
-        # (at 5.66 Å) lies outside a 5 Å radius, so both are reduced to just below the 4 next-furthest
-        # sites (at 4.47 Å), giving 5 sampled sites:
-        for kwargs in [{}, {"defect_region_radius": 5}]:
-            with pytest.warns(UserWarning, match="reduced to 4.47 Å to include at least 3 sites"):
+        # default radius (half the 20 Å c-axis) exceeds all (in-plane) site distances, so is reduced to
+        # just below the 4 next-furthest sites (at 4.47 Å), giving 5 sampled sites, whereas a user-supplied
+        # 5 Å radius is used as given, with only 1 site (at 5.66 Å) outside it:
+        for kwargs, message, num_sampled, correction_energy in [
+            ({}, "reduced to 4.47 Å to include at least 3 sites", 5, 2.6496062676),
+            ({"defect_region_radius": 5}, "Only 1 atomic site lies outside the supplied", 1, 2.5472823613),
+        ]:
+            with pytest.warns(UserWarning, match=message):
                 efnv_corr = get_kumagai_correction(slab_entry, [10, 10, 1], verbose=False, **kwargs)
             efnv_corr_obj = efnv_corr.metadata["pydefect_ExtendedFnvCorrection"]
             sampled = [s for s in efnv_corr_obj.sites if s.distance > efnv_corr_obj.defect_region_radius]
-            assert len(sampled) == 5
-            assert np.isfinite(efnv_corr.correction_energy)
+            assert len(sampled) == num_sampled
+            assert np.isclose(efnv_corr_obj.point_charge_correction, -1.2461289533, atol=1e-8)
+            assert np.isclose(efnv_corr.correction_energy, correction_energy, atol=1e-8)
+
+        with pytest.raises(ValueError, match="No atomic sites lie outside the supplied"):
+            get_kumagai_correction(slab_entry, [10, 10, 1], verbose=False, defect_region_radius=6)
 
 
 class CorrectionsPlottingTestCase(unittest.TestCase):
@@ -491,3 +493,18 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         mpl.pyplot.clf()
         return self.Te_i_2_ent.get_kumagai_correction(plot=True)[1]
+
+    @custom_mpl_image_compare("Te_i_+2_eFNV_plot_multiple_point_charges.png")
+    def test_plot_kumagai_Te_i_2_multiple_point_charges(self):
+        """
+        Test eFNV correction plotting with Te_i^+2 modelled as multiple point
+        charges, split over the Te trimer (with one Te across the cell
+        boundary, so also testing the unwrapping of the point charges).
+        """
+        mpl.pyplot.clf()
+        struct = self.Te_i_2_ent.defect_supercell
+        point_charges = [(2 / 3, struct[i].frac_coords) for i in [64, 63, 53]]  # Te_i & its 2 Te NNs
+        corr, fig = get_kumagai_correction(self.Te_i_2_ent, point_charges=point_charges, plot=True)
+        assert np.isclose(corr.correction_energy, 0.910851106265789, atol=1e-5)  # 0.904 eV for single PC
+        assert corr.metadata["point_charges"] == [(q, list(fc)) for q, fc in point_charges]
+        return fig

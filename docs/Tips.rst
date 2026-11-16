@@ -710,7 +710,9 @@ If you encounter defect states like these and/or suspect that alternative spin c
 possible, you should test the different possibilities by setting ``NUPDOWN`` (and possibly ``MAGMOM``,
 discussed below) accordingly – ideally performing the full structure-searching calculations for these
 species with these settings, as the potential energy surface can differ significantly under different spin
-states.
+states. In ``doped``, a ``NUPDOWN`` value set in ``user_incar_settings`` (e.g. ``{"NUPDOWN": 2}`` for a
+triplet state) is used for all supercells with the same electron number parity (even/odd), with the
+default (0 or 1) used otherwise (with a warning).
 
 .. note::
 

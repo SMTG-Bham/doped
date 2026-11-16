@@ -21,6 +21,13 @@ and can be run from the top directory using ``pytest``. Automatic testing is run
 and ``develop`` branches using `Github Actions <https://github.com/SMTG-Bham/doped/actions>`_. Please
 run tests and add new tests for any new features whenever submitting pull requests.
 
+.. IMPORTANT::
+    Please avoid mocking in tests as much as possible. Our strong preference is for tests to run things
+    directly (e.g. mini ``GPAW`` defect workflows, ``MPRester`` queries with the Materials Project API,
+    thermodynamic analyses etc.) and to work with real DFT / quantum-mechanical / MLIP data (e.g. small,
+    quick calculations run within the tests, or outputs in the ``tests/data`` directory), rather than
+    mocks, as mocking tends to miss actual code issues (e.g. changes in dependency APIs).
+
 .. NOTE::
     If you run into any issues using ``doped`` that aren't addressed on the :ref:`Troubleshooting` page, 
     please contact the developers through the ``GitHub`` 

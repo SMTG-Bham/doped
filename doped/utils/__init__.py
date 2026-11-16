@@ -112,8 +112,8 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", message="Structure charge")
 
     # ignore noisy per-entry ``pymatgen`` warnings from the GGA(+U)/r2SCAN mixing scheme, applied by
-    # ``mp-api`` for (default) mixed thermo type Materials Project queries; ``mp-api`` warns with a summary
-    # of this behaviour instead (``MPRestWarning``, not filtered here):
+    # ``mp-api`` for (default) mixed thermo type Materials Project queries without a pre-built MP phase
+    # diagram; ``mp-api`` logs a summary of this behaviour instead (not filtered here):
     warnings.filterwarnings("ignore", message="WARNING! Discarding")  # entry not in mixing state data
     warnings.filterwarnings("ignore", message="Failed to guess oxidation states")  # MP2020 corrections
 
@@ -131,10 +131,10 @@ def warn_once(message: str, category: type[Warning] = UserWarning, key: Any = No
     Emit ``message`` as a warning at most once per unique ``(message, category,
     key)``, unless ``warn_once.cache_clear()`` is called.
 
-    Unlike Python's default "show once per location" behaviour, this is
-    immune to the ``__warningregistry__`` being reset whenever the warning
-    filters are mutated (which dependencies such as ``pandas`` do internally,
-    defeating the default dedup when warning repeatedly in a loop -- e.g. over
+    Unlike Python's default "show once per location" behaviour, this is immune
+    to the ``__warningregistry__`` being reset whenever the warning filters are
+    mutated (which dependencies such as ``pandas`` do internally, defeating the
+    default dedup when warning repeatedly in a loop -- e.g. over
     temperatures/conditions).
 
     ``key`` is an optional `cheap` hashable used to check if the warning has
@@ -206,7 +206,7 @@ def _doped_obj_properties_methods(obj):
     methods = set()
     for k in dir(obj):
         with contextlib.suppress(Exception):
-            if callable(getattr(obj, k)) and not k.startswith("_"):
+            if callable(getattr(type(obj), k, None)) and not k.startswith("_"):
                 methods.add(k)
     properties = {name for name, value in inspect.getmembers(type(obj)) if isinstance(value, property)}
     return attrs | properties, methods

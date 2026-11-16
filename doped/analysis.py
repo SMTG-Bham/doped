@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
+from emmet.core.mpid import AlphaID
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn
-from mp_api.client import MPRester
+from mp_api.client import MPRester, MPRestError
 from pymatgen.analysis.defects.corrections.freysoldt import (
     _get_dielectric_tensor,
     get_spherically_averaged_dielectric,
@@ -34,7 +35,7 @@ from tqdm import tqdm
 
 from doped.complexes import (
     _get_complex_orbit_in_prim,
-    _get_unwrapped_complex_fc,
+    _get_unwrapped_complex_frac_coords,
     _sorted_defect_complex,
     _unwrap_and_transform_to_prim,
 )
@@ -533,7 +534,7 @@ def _defect_complex_from_sites_info(
     # the complex should be unwrapped once, here according to the sites corresponding to Defect.site.
     # other sets of sites use the same unwrapping to avoid inconsistent unwrappings eg if a site relaxes
     # across WS cell boundary
-    unwrapped_obj_fc = _get_unwrapped_complex_fc(bulk_supercell, defect_obj_sites_sc)
+    unwrapped_obj_fc = _get_unwrapped_complex_frac_coords(bulk_supercell, defect_obj_sites_sc)
     image_cells = [  # the (integer) cell each constituent is unwrapped into, shared by all site sets
         np.rint(obj_fc - site.frac_coords)
         for site, obj_fc in zip(defect_obj_sites_sc, unwrapped_obj_fc, strict=True)
@@ -1083,8 +1084,8 @@ def _get_soap_vecs_for_guess(
     """
     Get per-site SOAP vectors for ``structure``, using ``dscribe``.
 
-    If ``species`` is ``None``, uses the sorted element list of ``struct``
-    only for the set of possible species in the SOAP vectors. When comparing
+    If ``species`` is ``None``, uses the sorted element list of ``struct`` only
+    for the set of possible species in the SOAP vectors. When comparing
     structures with different sets of species, one should pass the `union` of
     their elements for ``species``, so that SOAP vectors are comparable. Extra
     elements not present in ``struct`` are allowed in ``species`` (their SOAP
@@ -2353,22 +2354,38 @@ def _handle_charge_correction_errors(
             Additional keyword arguments, such as
             ``shallow_charge_stability_tolerance``.
     """
-    defect_thermo = DefectThermodynamics(
-        list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
-    )
-    shallow_tol = kwargs.get(
-        "shallow_charge_stability_tolerance",
-        min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
-    )
+    # no charge correction warnings for unstable / shallow charge states (avoid prune_to_stable_entries()
+    # here, as this would require two |DefectThermodynamics| inits):
+    entries_to_check = defect_dict
+    if all(  # no stability filtering if the bulk band edges are undetermined
+        e.calculation_metadata.get(k) is not None
+        for e in defect_dict.values()
+        for k in ("vbm", "band_gap")
+    ):
+        defect_thermo = DefectThermodynamics(
+            list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
+        )
+        shallow_tol = kwargs.get("shallow_charge_stability_tolerance")
+        if shallow_tol is None:  # default
+            shallow_tol = min(
+                error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05
+            )
+
+        entries_to_check = {
+            name: entry
+            for name, entry in defect_dict.items()
+            if (window := defect_thermo._get_in_gap_fermi_level_stability_window(entry)) >= 0
+            and not (  # shallow check here (in ``DefectsParser``) only uses already-parsed eigenvalues
+                window < shallow_tol
+                and entry.calculation_metadata.get("eigenvalue_data")
+                and entry.is_shallow
+            )
+        }
+
     fmt = ".3f" if error_tolerance >= 0.01 else ".2e"  # meV rounding if tol >= 10 meV, else sci notation
     correction_errors: dict[tuple, list[str]] = {("Freysoldt", "FNV"): [], ("Kumagai", "eFNV"): []}
 
-    for name, defect_entry in defect_dict.items():
-        # no charge correction warnings for unstable charge states (we avoid prune_to_stable_entries()
-        # here, as this would require two |DefectThermodynamics| inits):
-        window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
-        if window < 0 or (defect_entry.is_shallow and window < shallow_tol):
-            continue
+    for name, defect_entry in entries_to_check.items():
         for (long_name, _), errors in correction_errors.items():
             err = defect_entry.corrections_metadata.get(f"{long_name.lower()}_charge_correction_error", 0)
             if err > error_tolerance:
@@ -3270,12 +3287,17 @@ class DefectParser:
         ``"band_gap"`` and ``"vbm"`` are used by default when generating
         |DefectThermodynamics| objects, to be used in plotting & analysis.
 
-        Alternatively, one can specify query the Materials Project (MP)
-        database for the bulk gap data, using ``use_MP = True``, in which case
-        the MP entry with the lowest number ID and composition matching the
-        bulk will be used, or the MP ID (``mpid``) of the bulk material to use
-        can be specified. This is not recommended as it will correspond to a
-        severely-underestimated GGA DFT bandgap!
+        Alternatively, one can query the Materials Project (MP) database for
+        the bulk gap data (from the MP band structure calculation), using
+        ``use_MP = True``, in which case the MP material with a structure
+        matching the bulk supercell (or that with the lowest number MP ID, if
+        multiple match) will be used, or the MP ID (``mpid``) of the bulk
+        material to use can be specified. If no MP band structure can be
+        obtained, the bulk supercell values are used (with a warning). **Note**
+        that this is *not* recommended as it will correspond to a severely
+        underestimated GGA DFT bandgap, and the MP VBM eigenvalue (used as the
+        Fermi level reference) is only consistent with the parsed supercell
+        energies if the same functional and calculation settings were used!
 
         Args:
             bulk_band_gap_vr (PathLike or |Vasprun|):
@@ -3325,69 +3347,62 @@ class DefectParser:
         api_key = api_key or self.kwargs.get("api_key", None)
 
         if use_MP and mpid is None:
-            try:
+            try:  # material docs (one per material ID, with structure) for the bulk formula:
                 with MPRester(api_key=api_key) as mpr:
-                    tmp_mplist = mpr.get_entries_in_chemsys(list(bulk_sc_structure.symbol_set))
-                mplist = [
-                    mp_ent.entry_id
-                    for mp_ent in tmp_mplist
-                    if mp_ent.composition.reduced_composition
-                    == bulk_sc_structure.composition.reduced_composition
-                ]
+                    mp_docs = mpr.materials.search(
+                        formula=bulk_sc_structure.composition.reduced_formula,
+                        fields=["material_id", "structure"],
+                    )
+                mplist = [str(doc.material_id) for doc in mp_docs]
             except Exception as exc:
                 raise ValueError(
                     f"Error with querying MPRester for {bulk_sc_structure.composition.reduced_formula}:"
                 ) from exc
 
             mpid_fit_list = []
-            for trial_mpid in mplist:
-                with MPRester(api_key=api_key) as mpr:
-                    mpstruct = mpr.get_structure_by_material_id(trial_mpid)
+            for doc in mp_docs:
                 if StructureMatcher_scan_stol(
                     bulk_sc_structure,
-                    mpstruct,
+                    doc.structure,
                     func_name="fit",
                     primitive_cell=True,
                     scale=False,
                     attempt_supercell=True,
                     allow_subset=False,
                 ):
-                    mpid_fit_list.append(trial_mpid)
+                    mpid_fit_list.append(str(doc.material_id))
 
             if len(mpid_fit_list) == 1:
                 mpid = mpid_fit_list[0]
-                print(f"Single mp-id found for bulk structure:{mpid}.")
+                print(f"Single mp-id found for bulk structure: {mpid}.")
             elif len(mpid_fit_list) > 1:
-                mpid = f"mp-{min(int(mpid.split('-')[1]) for mpid in mpid_fit_list)}"
+                mpid = min(mpid_fit_list, key=AlphaID)  # handles legacy (mp-<int>) & new (mp-<abc>) IDs
                 print(
-                    f"Multiple mp-ids found for bulk structure:{mpid_fit_list}. Will use lowest "
+                    f"Multiple mp-ids found for bulk structure: {mpid_fit_list}. Will use lowest "
                     f"number mpid for bulk band structure = {mpid}."
                 )
             else:
-                print(
-                    "Could not find bulk structure in MP database after tying the following "
-                    f"list:\n{mplist}"
+                warnings.warn(
+                    "Could not find bulk structure in MP database after trying the following list:\n"
+                    f"{mplist}\nReverting to use of bulk supercell calculation for band edge extrema."
                 )
                 mpid = None
 
         if mpid is not None:
-            print(f"Using user-provided mp-id for bulk structure: {mpid}.")
-            with MPRester(api_key=api_key) as mpr:
-                bs = mpr.get_bandstructure_by_material_id(mpid)
-            if bs:
+            print(f"Using mp-id for bulk band structure: {mpid}.")
+            try:
+                with MPRester(api_key=api_key) as mpr:
+                    bs = mpr.get_bandstructure_by_material_id(mpid)  # raises MPRestError if no BS
                 cbm = bs.get_cbm()["energy"]
                 vbm = bs.get_vbm()["energy"]
                 band_gap = bs.get_band_gap()["energy"]
                 gap_calculation_metadata["MP_gga_BScalc_data"] = bs.get_band_gap().copy()
-
-        if (vbm is None or band_gap is None or cbm is None or not bulk_band_gap_vr) and (
-            mpid and band_gap is None
-        ):
-            warnings.warn(
-                f"MPID {mpid} was provided, but no bandstructure entry currently exists for it. "
-                f"Reverting to use of bulk supercell calculation for band edge extrema."
-            )
-            gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
+            except MPRestError as exc:
+                warnings.warn(
+                    f"No Materials Project band structure could be obtained for MPID {mpid}, got error: "
+                    f"{exc!r}\nReverting to use of bulk supercell calculation for band edge extrema."
+                )
+                gap_calculation_metadata["MP_gga_BScalc_data"] = None  # to signal no MP BS is used
 
         if bulk_band_gap_vr:
             if not isinstance(bulk_band_gap_vr, Vasprun):

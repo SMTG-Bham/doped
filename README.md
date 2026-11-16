@@ -6,6 +6,9 @@
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.06433/status.svg)](https://doi.org/10.21105/joss.06433)
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/SMTG-Bham/doped)
 
+<!-- workshop-announcement: start; remove after 16 Dec 2026 -->
+> **Workshop:** Computational Methods for Defects in Solids, Cambridge, UK, 6–8 Jan 2027. Talk abstracts due 23 Nov; registration open until 16 Dec. [Details](https://aichemy.ac.uk/event/computational-methods-for-defects-in-solids-workshop)
+<!-- workshop-announcement: end -->
 <a href="https://doped.readthedocs.io/en/latest/"><img align="right" width="150" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/Images/doped_v2_logo.png" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping."></a>`doped` is a Python software for the generation, pre-/post-processing and analysis of defect supercell calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet powerful and fully-customisable manner.
 `doped` is open-source, developed by members of the [Simulation of Advanced Materials](https://sam-lab.net) lab at
 Cambridge, the Scanlon group at Birmingham, the Walsh group at Imperial College and contributors from across the globe.
@@ -77,6 +80,11 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - N.-R. Skogemyr **_First-Principles Defect Thermodynamics of MgSnN<sub>2</sub>: Origin and Suppression of Unintentional n-Type Conductivity_** [_MSc Thesis, Linköping University_](https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510) 2026
+- R. Claes, A. G. Squires and D. O. Scanlon **_Resonant doping design for ternary n-type oxides: the case of CdSnO<sub>3</sub>_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv.15012056/v1) 2026
+- S. Jeon, A. Soon and Y. Shin **_Defect Chemistry of Hafnia-Based Ferroelectrics under Oxide-Electrode Constraints_** [_arXiv_](https://doi.org/10.48550/arXiv.2611.02317) 2026
+- L. Shi et al. **_Defect compensation-limited carrier tuning reveals sulfur vacancy tolerance and an n-type growth window in β-AgBiS<sub>2</sub>_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D6TA06121D) 2026
+- C. Morel et al. **_Mechanochemically Disordered Li<sub>2</sub>Ta<sub>2</sub>OCl<sub>10</sub> Oxyhalide Unlocks Superionic Conductivity (>10 mS.cm⁻¹)_** [_Advanced Energy Materials_](https://doi.org/10.1002/aenm.71736) 2026
+- M. J. Brady et al. **_High Defect Formation Energies Limit Ionic Conductivity in Na<sub>3</sub>Ga<sub>2</sub>Li<sub>3</sub>F<sub>12</sub> and Na<sub>3</sub>Al<sub>2</sub>Li<sub>3</sub>F<sub>12</sub>_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.6c01542) 2026
 - N. Singh, V. Agarwal and D. Ghosh **_Deep Learning the Defect Landscape: Long-Timescale Vacancy Dynamics in Lead-Free Double Perovskites_** [_ACS Applied Energy Materials_](https://doi.org/10.1021/acsaem.6c02409) 2026
 - H. Lee et al. **_Identification and Structural Decomposition of Hidden Defect Configurations: A Case Study of Charged Oxygen Divacancies in HfO<sub>2</sub>_** [_arXiv_](https://doi.org/10.48550/arXiv.2610.04892) 2026
 - L. D. Salzer et al. **_DFT reveals why Mo substitution enables multi-electron redox in Wadsley–Roth Mo<sub>x</sub>W<sub>1-x</sub>Nb<sub>12</sub>O<sub>33</sub>_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D6TA05468D) 2026
