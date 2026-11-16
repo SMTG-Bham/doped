@@ -1,7 +1,7 @@
 {
     "@class": "DefectsGenerator",
     "@module": "doped.generation",
-    "@version": "3.2.1",
+    "@version": "3.2.0",
     "_BilbaoCS_conv_cell_vector_mapping": [
         0,
         1,
@@ -1528,7 +1528,7 @@
         "Cd_Te_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -3358,6 +3358,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 4,
                 "site": {
@@ -4656,6 +4657,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -4700,6 +4702,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -7007,7 +7010,7 @@
         "Cd_Te_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -8837,6 +8840,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 4,
                 "site": {
@@ -10135,6 +10139,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -10179,6 +10184,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -12486,7 +12492,7 @@
         "Cd_Te_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -14316,6 +14322,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 4,
                 "site": {
@@ -15614,6 +15621,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -15658,6 +15666,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -17965,7 +17974,7 @@
         "Cd_Te_+4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -19795,6 +19804,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 4,
                 "site": {
@@ -21093,6 +21103,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -21137,6 +21148,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -23444,7 +23456,7 @@
         "Cd_Te_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -25295,6 +25307,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 4,
                 "site": {
@@ -26593,6 +26606,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -26637,6 +26651,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -28944,7 +28959,7 @@
         "Cd_i_C3v_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -30979,6 +30994,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 2,
                 "site": {
@@ -32297,6 +32313,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -32461,6 +32478,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -38271,7 +38289,7 @@
         "Cd_i_C3v_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -40306,6 +40324,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 2,
                 "site": {
@@ -41624,6 +41643,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -41788,6 +41808,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -47598,7 +47619,7 @@
         "Cd_i_C3v_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -49654,6 +49675,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 2,
                 "site": {
@@ -50972,6 +50994,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -51136,6 +51159,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -56946,7 +56970,7 @@
         "Cd_i_Td_Cd2.83_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -58723,6 +58747,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -60041,6 +60066,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -60085,6 +60111,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -62412,7 +62439,7 @@
         "Cd_i_Td_Cd2.83_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -64189,6 +64216,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -65507,6 +65535,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -65551,6 +65580,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -67878,7 +67908,7 @@
         "Cd_i_Td_Cd2.83_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -69676,6 +69706,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -70994,6 +71025,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -71038,6 +71070,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -73365,7 +73398,7 @@
         "Cd_i_Td_Te2.83_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -75142,6 +75175,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -76460,6 +76494,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -76504,6 +76539,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -78831,7 +78867,7 @@
         "Cd_i_Td_Te2.83_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -80608,6 +80644,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -81926,6 +81963,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -81970,6 +82008,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -84297,7 +84336,7 @@
         "Cd_i_Td_Te2.83_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -86095,6 +86134,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -87413,6 +87453,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -87457,6 +87498,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -89784,7 +89826,7 @@
         "Te_Cd_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -91694,6 +91736,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -4,
                 "site": {
@@ -92992,6 +93035,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -93036,6 +93080,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -95343,7 +95388,7 @@
         "Te_Cd_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -97253,6 +97298,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -4,
                 "site": {
@@ -98551,6 +98597,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -98595,6 +98642,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -100902,7 +100950,7 @@
         "Te_Cd_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -102812,6 +102860,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -4,
                 "site": {
@@ -104110,6 +104159,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -104154,6 +104204,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -106461,7 +106512,7 @@
         "Te_Cd_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -108371,6 +108422,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -4,
                 "site": {
@@ -109669,6 +109721,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -109713,6 +109766,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -112020,7 +112074,7 @@
         "Te_Cd_-3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -113930,6 +113984,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -4,
                 "site": {
@@ -115228,6 +115283,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -115272,6 +115328,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -117579,7 +117636,7 @@
         "Te_Cd_-4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -119489,6 +119546,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -4,
                 "site": {
@@ -120787,6 +120845,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -120831,6 +120890,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -123138,7 +123198,7 @@
         "Te_Cd_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -125069,6 +125129,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -4,
                 "site": {
@@ -126367,6 +126428,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -126411,6 +126473,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -128718,7 +128781,7 @@
         "Te_i_C3v_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -130833,6 +130896,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 6,
                 "site": {
@@ -132151,6 +132215,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -132315,6 +132380,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -138125,7 +138191,7 @@
         "Te_i_C3v_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -140240,6 +140306,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 6,
                 "site": {
@@ -141558,6 +141625,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -141722,6 +141790,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -147532,7 +147601,7 @@
         "Te_i_C3v_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -149647,6 +149716,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 6,
                 "site": {
@@ -150965,6 +151035,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -151129,6 +151200,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -156939,7 +157011,7 @@
         "Te_i_C3v_+4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -159054,6 +159126,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 6,
                 "site": {
@@ -160372,6 +160445,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -160536,6 +160610,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -166346,7 +166421,7 @@
         "Te_i_C3v_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -168461,6 +168536,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 6,
                 "site": {
@@ -169779,6 +169855,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -169943,6 +170020,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -175753,7 +175831,7 @@
         "Te_i_C3v_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -177868,6 +177946,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 6,
                 "site": {
@@ -179186,6 +179265,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -179350,6 +179430,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -185160,7 +185241,7 @@
         "Te_i_C3v_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -187296,6 +187377,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 6,
                 "site": {
@@ -188614,6 +188696,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -188778,6 +188861,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -194588,7 +194672,7 @@
         "Te_i_Td_Cd2.83_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -196445,6 +196529,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -197763,6 +197848,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -197807,6 +197893,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -200134,7 +200221,7 @@
         "Te_i_Td_Cd2.83_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -201991,6 +202078,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -203309,6 +203397,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -203353,6 +203442,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -205680,7 +205770,7 @@
         "Te_i_Td_Cd2.83_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -207537,6 +207627,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -208855,6 +208946,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -208899,6 +208991,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -211226,7 +211319,7 @@
         "Te_i_Td_Cd2.83_+4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -213083,6 +213176,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -214401,6 +214495,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -214445,6 +214540,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -216772,7 +216868,7 @@
         "Te_i_Td_Cd2.83_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -218629,6 +218725,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -219947,6 +220044,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -219991,6 +220089,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -222318,7 +222417,7 @@
         "Te_i_Td_Cd2.83_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -224175,6 +224274,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -225493,6 +225593,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -225537,6 +225638,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -227864,7 +227966,7 @@
         "Te_i_Td_Cd2.83_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -229742,6 +229844,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -231060,6 +231163,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -231104,6 +231208,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -233431,7 +233536,7 @@
         "Te_i_Td_Te2.83_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -235288,6 +235393,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -236606,6 +236712,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -236650,6 +236757,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -238977,7 +239085,7 @@
         "Te_i_Td_Te2.83_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -240834,6 +240942,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -242152,6 +242261,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -242196,6 +242306,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -244523,7 +244634,7 @@
         "Te_i_Td_Te2.83_+3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -246380,6 +246491,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -247698,6 +247810,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -247742,6 +247855,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -250069,7 +250183,7 @@
         "Te_i_Td_Te2.83_+4": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -251926,6 +252040,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -253244,6 +253359,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -253288,6 +253404,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -255615,7 +255732,7 @@
         "Te_i_Td_Te2.83_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -257472,6 +257589,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -258790,6 +258908,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -258834,6 +258953,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -261161,7 +261281,7 @@
         "Te_i_Td_Te2.83_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -263018,6 +263138,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -264336,6 +264457,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -264380,6 +264502,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -266707,7 +266830,7 @@
         "Te_i_Td_Te2.83_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -268585,6 +268708,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -269903,6 +270027,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -269947,6 +270072,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -272274,7 +272400,7 @@
         "v_Cd_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -274182,6 +274308,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -2,
                 "site": {
@@ -275458,6 +275585,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -275502,6 +275630,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -277789,7 +277918,7 @@
         "v_Cd_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -279697,6 +279826,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -2,
                 "site": {
@@ -280973,6 +281103,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -281017,6 +281148,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -283304,7 +283436,7 @@
         "v_Cd_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -285212,6 +285344,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -2,
                 "site": {
@@ -286488,6 +286621,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -286532,6 +286666,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -288819,7 +288954,7 @@
         "v_Cd_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -290748,6 +290883,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -2,
                 "site": {
@@ -292024,6 +292160,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -292068,6 +292205,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -294355,7 +294493,7 @@
         "v_Te_+1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -296263,6 +296401,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -297539,6 +297678,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -297583,6 +297723,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -299870,7 +300011,7 @@
         "v_Te_+2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -301778,6 +301919,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -303054,6 +303196,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -303098,6 +303241,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -305385,7 +305529,7 @@
         "v_Te_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -307293,6 +307437,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -308569,6 +308714,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -308613,6 +308759,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -310900,7 +311047,7 @@
         "v_Te_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "3.2.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -312829,6 +312976,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -314105,6 +314253,7 @@
                     }
                 ]
             },
+            "defect_supercell_sites": null,
             "degeneracy_factors": {},
             "entry_id": null,
             "equiv_conv_cell_frac_coords": [
@@ -314149,6 +314298,7 @@
                     "dtype": "float64"
                 }
             ],
+            "equivalent_supercell_complexes": null,
             "equivalent_supercell_sites": [
                 {
                     "@class": "PeriodicSite",
@@ -316439,7 +316589,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -316747,6 +316897,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -316886,7 +317037,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -317452,6 +317603,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 2,
                 "site": {
@@ -317591,7 +317743,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -317899,6 +318051,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {
@@ -318038,7 +318191,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -318346,6 +318499,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -318485,7 +318639,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -319051,6 +319205,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 4,
                 "oxi_state": 6,
                 "site": {
@@ -319190,7 +319345,7 @@
             {
                 "@class": "Interstitial",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -319498,6 +319653,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 6,
                 "site": {
@@ -319639,7 +319795,7 @@
             {
                 "@class": "Substitution",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -320000,6 +320156,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 4,
                 "site": {
@@ -320139,7 +320296,7 @@
             {
                 "@class": "Substitution",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -320500,6 +320657,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -4,
                 "site": {
@@ -320641,7 +320799,7 @@
             {
                 "@class": "Vacancy",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -321000,6 +321158,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": -2,
                 "site": {
@@ -321137,7 +321296,7 @@
             {
                 "@class": "Vacancy",
                 "@module": "doped.core",
-                "@version": "3.2.1",
+                "@version": "3.2.0",
                 "_BilbaoCS_conv_cell_vector_mapping": [
                     0,
                     1,
@@ -321496,6 +321655,7 @@
                         ]
                     }
                 ],
+                "map_to_unit_cell": true,
                 "multiplicity": 1,
                 "oxi_state": 2,
                 "site": {

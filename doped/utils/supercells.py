@@ -837,7 +837,7 @@ def _argmin_p_matrix_sort(P_batch: np.ndarray, cell: np.ndarray, eff: float) -> 
     ``_P_matrix_sort_func(P, cell, eff)``, without a Python loop (vectorised).
     """
     P_batch = np.asarray(P_batch)
-    transformed = P_batch @ cell
+    transformed = np.einsum("nik,kj->nij", P_batch, cell, optimize=True)
     norms = np.linalg.norm(transformed, axis=2)
     d = norms / eff - 1.0
     cubic_metric = np.round(np.sum(d * d, axis=1), 4)
@@ -969,8 +969,8 @@ def _get_candidate_P_arrays(
     # any P in valid_P that are all negative, flip the sign of the matrix:
     valid_P[np.all(valid_P <= 0, axis=(1, 2))] *= -1
 
-    # get unique lattices before computing metrics (batched matmul, uses BLAS rather than ``np.einsum``):
-    cell_matrices = valid_P @ norm_cell
+    # optimised matmul
+    cell_matrices = np.einsum("nik,kj->nij", valid_P, norm_cell, optimize=True)
 
     lengths_angles = _vectorized_lengths_and_angles_from_matrices(cell_matrices)
     # for each row in lengths_angles, get the product multiplied by the sum, as a hash:
@@ -1080,133 +1080,190 @@ def _reduce_lattice_matrices(
     return matrices
 
 
-def _get_best_complex_candidates(
-    cell_matrices: np.ndarray,
-    cart_coords: np.ndarray,
-    block_size: int = 512,
-    best_dist: float = -np.inf,
-) -> tuple[float, np.ndarray]:
-    """
-    Get the largest complex minimum image distance over the given candidate
-    supercell lattices, and the indices of all candidates which achieve it.
-
-    The complex min image distance <= point min image distance <= shortest
-    lattice vector, so there is an upper bound for each lattice. This bound
-    is evaluated for all lattices, the lattices are sorted by the bound, then
-    the complex min image distance is evaluated in batches until it's no
-    longer possible for a better candidate to be found.
+def _complex_min_image_distances(
+    matrices: np.ndarray,
+    complex_orbits: Sequence[Sequence[np.ndarray]],
+    min_dist: float | None = None,
+) -> np.ndarray:
+    r"""
+    Evaluate the relevant complex minimum image distance for each lattice
+    matrix over a group of complexes in a cell, i.e. the max over each orbit
+    and the min over all complexes.
 
     Args:
-        cell_matrices (np.ndarray):
-            ``(N, 3, 3)`` array of candidate supercell lattice matrices.
-        cart_coords (np.ndarray):
-            ``(n, 3)`` array of Cartesian coordinates of the constituent
-            point defect sites of the complex, unwrapped.
-        block_size (int):
-            Number of candidates to evaluate per block. (Default = 512)
-        best_dist (float):
-            Best complex minimum image distance already found (e.g. from a
-            previous chunk of candidates), used to screen these candidates
-            at the start. (Default: ``-inf``.)
+        matrices (np.ndarray): ``(N, 3, 3)`` array of lattice matrices.
+        complex_orbits (Sequence[Sequence[np.ndarray]]):
+            For each complex, the ``(n, 3)`` unwrapped Cartesian coordinate
+            sets of its symmetry-equivalent configurations.
+        min_dist (float):
+            If given, only evaluate CMID for lattices which can beat
+            ``min_dist``, such that the returned values then become
+            lower bounds (``-inf``` if ``< min_dist``, else the returned
+            value is between ``min_dist`` and the true CMID over all orbit
+            elements). If ``None`` (default), exact distances are returned
+            for all lattices.
 
     Returns:
-        tuple[float, np.ndarray]:
-            The largest complex minimum image distance, and the indices of the
-            candidates which give it (empty if none beat ``best_dist``).
+        np.ndarray: ``(N,)`` array of complex min image distances, to 4 d.p.
     """
-    # complex minimum image distance D <= d_min <= min_i|L_i| for any basis {L_i}
-    # bounding done in squared distance for speed (other than -inf)
-    sq_bounds = np.einsum("nij,nij->ni", cell_matrices, cell_matrices).min(axis=1)  # (N,)
-    order = np.argsort(-sq_bounds)  # (N,) candidate indices, by decreasing bound
+    dists = np.full(len(matrices), np.inf)  # running min over inequivalent complexes
 
-    dists = np.full(len(cell_matrices), -np.inf)  # (N,)
-    for start_idx in range(0, len(order), block_size):
-        block = order[start_idx : start_idx + block_size]
-        block = block[sq_bounds[block] >= max(best_dist - 1e-4, 0) ** 2]
-        # retain only those candidates which can beat best_dist
-        if not len(block):  # if none left in block, done as already sorted by bound
+    if min_dist is None:
+        # loop over inequivalent complexes - orbits share a max span so same lattice vector box
+        for orbit in complex_orbits:
+            orbit_dists = _get_complex_min_image_distances_from_matrices(matrices, list(orbit))
+            dists = np.minimum(dists, orbit_dists.max(0))
+
+        return dists.round(4)
+
+    remaining = np.arange(len(matrices))  # matrices which could still satisfy every complex
+    for orbit in complex_orbits:
+        if not len(remaining):
             break
 
-        dists[block] = _get_complex_min_image_distances_from_matrices(cell_matrices[block], cart_coords)
-        best_dist = max(best_dist, dists[block].max())
+        # prune on first element of orbit
+        orbit_max = _get_complex_min_image_distances_from_matrices(matrices[remaining], orbit[0])
+        unresolved = np.flatnonzero(orbit_max < min_dist)
 
-    # note unevaluated candidates cannot beat best_dist
-    return best_dist, np.flatnonzero(dists >= best_dist)
+        # test remaining orbit members if necessary
+        if len(orbit) > 1 and len(unresolved):
+            orbit_max[unresolved] = np.maximum(
+                orbit_max[unresolved],
+                _get_complex_min_image_distances_from_matrices(
+                    matrices[remaining[unresolved]], list(orbit[1:])
+                ).max(0),
+            )
+        dists[remaining] = np.minimum(dists[remaining], orbit_max)
+
+        # drop the matrices this complex ruled out
+        failed = remaining[orbit_max < min_dist]
+        dists[failed] = -np.inf
+        remaining = remaining[orbit_max >= min_dist]
+
+    return dists.round(4)
 
 
-def _get_best_complex_P_arrays(
+def _complex_P_arrays(
     cell: np.ndarray,
-    cart_coords: np.ndarray,
+    orbit_groups: Sequence[Sequence[Sequence[np.ndarray]]],
+    min_dists: Sequence[float],
     target_size: int,
-) -> tuple[float, np.ndarray]:
-    """
-    Gets the largest possible complex minimum image distance for a supercell of
-    target_size.
+    maximise: bool = False,
+) -> list[tuple[float, np.ndarray]]:
+    r"""
+    Get all the supercells which satisfy a minimum complex minimum image
+    distance (CMID) for a given ``target_size``, or the supercells with the
+    largest CMID if ``maximise``. The best symmetry-equivalent configuration of
+    each complex is used. Multiple complexes can be evaluated at once, either
+    sharing a supercell or not sharing a supercell (for efficiency).
 
-    A roughly optimised algorithm for target_size up to around 500 (and
+    A roughly optimised algorithm for ``target_size`` up to around 500 (and
     reasonably sized complexes):
-    - generate HNFs
-    - estimate the min image distance from a small sample
-    - reduce HNFs one sweep at a time, pruning by the shortest lattice vector
-      bound after each sweep
-    - sort by shortest lattice vector bound and evaluate complex min image
-      distance until bound below best one found
+    - generate the candidate sublattices as HNFs
+    - reduce their bases one sweep at a time, pruning by the shortest lattice
+      vector bound after each sweep
+    - sort the survivors by that bound and evaluate the complex minimum image
+      distance in blocks, until the bound falls below the requirement
 
-    HNFs are poorly reduced bases so they must be reduced for good
-    pruning and for faster complex min image distance search. Chunking here
-    is mostly just for memory considerations, batching for search is done
-    in _get_best_complex_candidates. Note that the number of
-    supercell lattices scales as ``O(target_size^2)``, taking ~2 s for
-    ``target_size = 1000``, so this is not well suited for large supercells.
+    HNFs are poorly reduced bases so they must be reduced for good pruning and
+    for a faster complex min image distance search. Generating, reducing and
+    pruning is shared between groups, and makes up a significant proportion
+    of the computational cost, so multiple groups can be run at the same
+    time for efficiency. Chunking is for memory; the search
+    itself is batched in blocks below.
+
+    Note that the number of supercell lattices scales as
+    ``O(target_size^2)``, taking ~2 s for ``target_size = 1000``, so this is
+    not well suited for large supercells.
 
     Args:
         cell (np.ndarray): Unit cell matrix, to generate supercells of.
-        cart_coords (np.ndarray):
-            ``(n, 3)`` array of Cartesian coordinates of the constituent
-            point defect sites of the complex, unwrapped.
+        orbit_groups (Sequence[Sequence[Sequence[np.ndarray]]]):
+            For each group, the complexes to satisfy and their configurations.
+            Nested as groups of complexes in the same structure but different
+            supercell -> inequivalent complexes sharing a supercell -> symmetry-
+            equivalent configurations of a single complex.
+        min_dists (Sequence[float]):
+            Complex minimum image distance to reach (in Å) for each group; the
+            requirement, or with ``maximise`` an initial lower bound.
         target_size (int): Target supercell size (in number of unit cells).
+        maximise (bool):
+            Whether to find the largest achievable distance for each group,
+            rather than all supercells reaching ``min_dists``.
+            (Default: False)
 
     Returns:
-        tuple[float, np.ndarray]:
-            The largest complex minimum image distance, and an ``(n, 3, 3)``
-            array of the supercell matrices which give it.
+        list[tuple[float, np.ndarray]]:
+            For each group, the CMID reached (its ``min_dists`` entry
+            unless ``maximise``) and an ``(m, 3, 3)`` array of the supercell
+            matrices reaching it (empty if ``target_size`` cannot).
     """
-    P_arrays = _get_hnf_P_arrays(target_size)  # (a_N, 3, 3), where a_N = sum(b*c^2) ~ 2*target_size^2
-    best_P_arrays = []
+    P_arrays = _get_hnf_P_arrays(target_size)  # (a_N, 3, 3), a_N = sum(b*c^2) ~ 2*target_size^2
+    target_dists = list(min_dists)  # required distance (min_dists or running best if maximise)
+    found: list[list[np.ndarray]] = [[] for _ in orbit_groups]
 
-    # estimate a best distance from a coarse sample
-    sample = P_arrays[:: max(1, len(P_arrays) // 1000)]
-    best_dist = _get_best_complex_candidates(_reduce_lattice_matrices(sample @ cell), cart_coords)[0]
+    # if maximising, estimate a best distance for a bound for pruning using a coarse sample before
+    # full evaluation
+    chunks = [P_arrays[:: max(1, len(P_arrays) // 1000)]] if maximise else []
+    chunks += [P_arrays[start : start + int(5e4)] for start in range(0, len(P_arrays), int(5e4))]
 
-    # chunking for memory usage (~50 MB)
-    for start in range(0, len(P_arrays), int(5e4)):
-        P_chunk = P_arrays[start : start + int(5e4)]  # (M, 3, 3), M <= 5e4
-        cell_matrices = P_chunk @ cell  # (M, 3, 3), real cells
+    # chunked for memory usage (~50 MB)
+    for chunk_idx, chunk in enumerate(chunks):
+        sampling = maximise and chunk_idx == 0
+        P_chunk = chunk  # pruned in place below
+        cell_matrices = np.einsum("nik,kj->nij", P_chunk, cell, optimize=True)  # (M, 3, 3)
 
-        # reduce/prune cycle
-        sq_best_dist = max(best_dist - 1e-4, 0) ** 2
+        # reduce/prune cycle, at the loosest requirement over the groups
+        sq_targets = [max(dist - 1e-4, 0) ** 2 for dist in target_dists]
         for one_directional in (True, False, False, False):
-            # the first sweep is one-directional as the HNF form is basically already reduced
-            # upwards
-            cell_matrices = _reduce_lattice_matrices(
-                cell_matrices,
-                sweeps=1,
-                one_directional=one_directional,
-            )
-            can_win = np.einsum("nij,nij->ni", cell_matrices, cell_matrices).min(axis=1) >= sq_best_dist
-            P_chunk, cell_matrices = P_chunk[can_win], cell_matrices[can_win]
+            # the first sweep is one-directional as the HNF form is basically already reduced upwards
+            cell_matrices = _reduce_lattice_matrices(cell_matrices, 1, one_directional)
+            # complex min image distance D <= d_min <= min_i|L_i| for any basis {L_i}, bounded
+            # in squared distance for speed
+            sq_bounds = np.einsum("nij,nij->ni", cell_matrices, cell_matrices).min(axis=1)  # (M,)
+            can_win = np.flatnonzero(sq_bounds >= min(sq_targets))
+            P_chunk = np.take(P_chunk, can_win, axis=0)  # take faster than index
+            cell_matrices = np.take(cell_matrices, can_win, axis=0)
+            sq_bounds = np.take(sq_bounds, can_win)
         if not len(P_chunk):
             continue
 
-        # min image search
-        chunk_dist, indices = _get_best_complex_candidates(cell_matrices, cart_coords, best_dist=best_dist)
+        # evaluate cmid of surviving candidates, individual for each group
+        for group_idx, orbits in enumerate(orbit_groups):
+            # most promising first (decreasing min lattice vector), to stop search when
+            # bound falls below requirement (which may increase during evaluation)
+            order = np.argsort(-sq_bounds)
 
-        if chunk_dist > best_dist:  # new best
-            best_dist, best_P_arrays = chunk_dist, [P_chunk[indices]]
-        elif len(indices):  # tied best
-            best_P_arrays.append(P_chunk[indices])
+            # group-specific bound
+            order = order[sq_bounds[order] >= sq_targets[group_idx]]
+            group_dists = np.full(len(cell_matrices), -np.inf)  # (M,)
+            previous = target_dists[group_idx]
 
-    return best_dist, np.concatenate(best_P_arrays)
+            # search in blocks
+            block_size = 512
+            for start in range(0, len(order), block_size):
+                block = order[start : start + block_size]
+                block = block[sq_bounds[block] >= max(target_dists[group_idx] - 1e-4, 0) ** 2]
+                if not len(block):  # if none left in block, done as sorted by bound
+                    break
+                group_dists[block] = _complex_min_image_distances(
+                    cell_matrices[block], orbits, min_dist=None if maximise else target_dists[group_idx]
+                )
+                if maximise:  # use best dist for bound for next block
+                    target_dists[group_idx] = max(target_dists[group_idx], group_dists[block].max())
+
+            # records supercells reaching the required cmid
+            reaching = np.flatnonzero(group_dists >= target_dists[group_idx])
+            if sampling or not len(reaching):
+                continue
+            if target_dists[group_idx] > previous:  # new best -> drop earlier supercells found
+                found[group_idx] = []
+            found[group_idx].append(P_chunk[reaching])
+
+    return [
+        (dist, np.concatenate(arrays) if arrays else np.empty((0, 3, 3), dtype=P_arrays.dtype))
+        for dist, arrays in zip(target_dists, found, strict=True)
+    ]
 
 
 def _get_min_complex_target_size(
@@ -1250,7 +1307,7 @@ def _get_min_complex_target_size(
     return int(np.ceil(max(min_dist_volume, two_sphere_volume) / abs(np.linalg.det(cell))))
 
 
-def _get_optimal_complex_P(P_arrays: np.ndarray, cell: np.ndarray) -> np.ndarray:
+def _get_optimal_complex_P(P_arrays: np.ndarray, cell: np.ndarray, clean: bool = True) -> np.ndarray:
     """
     Get a clean, best supercell transformation for a complex, from a set which
     have the same complex minimum image distance. Candidates are ranked by
@@ -1260,6 +1317,10 @@ def _get_optimal_complex_P(P_arrays: np.ndarray, cell: np.ndarray) -> np.ndarray
         P_arrays (np.ndarray):
             ``(n, 3, 3)`` array of candidate supercell matrices.
         cell (np.ndarray): Unit cell matrix which these transform.
+        clean (bool):
+            Whether to tidy the chosen matrix with ``_clean_P_matrix``
+            e.g. to avoid wasted computation if only the distance is
+            needed. (Default: True)
 
     Returns:
         np.ndarray: The best supercell transformation matrix.
@@ -1275,11 +1336,15 @@ def _get_optimal_complex_P(P_arrays: np.ndarray, cell: np.ndarray) -> np.ndarray
         ),
     )
 
-    return _clean_P_matrix(best_P, cell)  # clean
+    return _clean_P_matrix(best_P, cell) if clean else best_P
 
 
 def _get_cubic_complex_P(
-    cell: np.ndarray, cart_coords: np.ndarray, target_size: int, force_diagonal: bool = False
+    cell: np.ndarray,
+    cart_coords: np.ndarray,
+    target_size: int,
+    force_diagonal: bool = False,
+    clean: bool = True,
 ) -> tuple[np.ndarray, float]:
     """
     Get the most cubic supercell transformation (P) matrix of the given
@@ -1298,6 +1363,10 @@ def _get_cubic_complex_P(
         force_diagonal (bool):
             Whether to only consider diagonal transformation matrices.
             (Default = False)
+        clean (bool):
+            Whether to tidy the chosen matrix with ``_clean_P_matrix``.
+            Ignored if ``force_diagonal`` (which must stay diagonal).
+            (Default: True)
 
     Returns:
         tuple[np.ndarray, float]:
@@ -1340,7 +1409,10 @@ def _get_cubic_complex_P(
 
     optimal_P = np.round(cell_matrices[dists.argmax()] @ np.linalg.inv(cell)).astype(int)
 
-    return (optimal_P if force_diagonal else _clean_P_matrix(optimal_P, cell)), float(dists.max())
+    if not force_diagonal and clean:
+        optimal_P = _clean_P_matrix(optimal_P, cell)
+
+    return optimal_P, float(dists.max())
 
 
 def find_ideal_complex_supercell(
@@ -1350,6 +1422,7 @@ def find_ideal_complex_supercell(
     return_min_dist: bool = False,
     force_cubic: bool = False,
     force_diagonal: bool = False,
+    clean: bool = True,
     verbose: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, float]:
     r"""
@@ -1380,6 +1453,9 @@ def find_ideal_complex_supercell(
         force_diagonal (bool):
             As ``force_cubic``, but additionally only considering diagonal
             transformation matrices. (Default = False)
+        clean (bool):
+            Whether to clean the returned matrix with ``_clean_P_matrix``.
+            (Default: True)
         verbose (bool):
             Whether to print out extra information about the supercell search.
             (Default = False)
@@ -1391,10 +1467,12 @@ def find_ideal_complex_supercell(
     """
     num_best = 1
     if force_cubic or force_diagonal:
-        optimal_P, best_dist = _get_cubic_complex_P(cell, cart_coords, target_size, force_diagonal)
+        optimal_P, best_dist = _get_cubic_complex_P(cell, cart_coords, target_size, force_diagonal, clean)
     else:
-        best_dist, P_arrays = _get_best_complex_P_arrays(cell, cart_coords, target_size)
-        optimal_P = _get_optimal_complex_P(P_arrays, cell)
+        best_dist, P_arrays = _complex_P_arrays(
+            cell, [[[cart_coords]]], [-np.inf], target_size, maximise=True
+        )[0]
+        optimal_P = _get_optimal_complex_P(P_arrays, cell, clean)
         num_best = len(P_arrays)
 
     if verbose:
@@ -1714,7 +1792,9 @@ def _get_min_image_distances_from_matrices(matrices: np.ndarray) -> np.ndarray:
         # ``inverse[i]`` is the index of ``naxes[i]``'s match in ``unique_triples`` (``np.unique`` output)
         for chunk in np.array_split(group_indices, max(1, len(group_indices) * len(coeffs) // int(4e6))):
             # chunked to bound peak memory usage (~100 MB) for large candidate sets / ranges
-            vectors = coeffs @ matrices[chunk]  # (M, C, 3) possible lattice vectors, batched matmul
+            vectors = np.einsum(  # (M, C, 3) lattice vectors
+                "ck,nkj->ncj", coeffs, matrices[chunk], optimize=True
+            )
             sq_dists = np.einsum("kij,kij->ki", vectors, vectors)  # (M, C) squared vector lengths
             min_image_dists[chunk] = np.sqrt(sq_dists.min(axis=1))
 
@@ -1723,7 +1803,7 @@ def _get_min_image_distances_from_matrices(matrices: np.ndarray) -> np.ndarray:
 
 def _get_complex_min_image_distances_from_matrices(
     matrices: np.ndarray,
-    cart_coords: np.ndarray,
+    cart_coords: "np.ndarray | Sequence[np.ndarray]",
     min_image_dists: np.ndarray | None = None,
 ) -> np.ndarray:
     """
@@ -1734,9 +1814,10 @@ def _get_complex_min_image_distances_from_matrices(
     Args:
         matrices (np.ndarray):
             ``(N, 3, 3)`` array of lattice matrices.
-        cart_coords (np.ndarray):
+        cart_coords (np.ndarray | Sequence[np.ndarray]):
             ``(n, 3)`` array of Cartesian coordinates of the constituent
-            point defect sites of the complex, unwrapped.
+            point defect sites of the complex, unwrapped (or a sequence of
+            such arrays for evaluating over multiple complexes e.g. the orbit).
         min_image_dists (np.ndarray):
             Optional ``(N,)`` array of pre-computed (single-site) minimum
             image distances for ``matrices``, which upper bound the complex
@@ -1745,12 +1826,18 @@ def _get_complex_min_image_distances_from_matrices(
             instead (looser, but requiring no extra computation).
 
     Returns:
-        np.ndarray: ``(N,)`` array of complex min image distances, to 4 d.p.
+        np.ndarray:
+            ``(N,)`` array of complex min image distances, to 4 d.p., or
+            ``(len(cart_coords), N)`` if a sequence of complexes is given.
     """
+    single = np.ndim(cart_coords[0]) < 2
     # intra complex vectors plus self vector - only i<j needed because (-R,r_ji) -> (R,r_ij)
-    # (1+n(n-1)/2, 3)
-    intra_vecs = np.array([np.zeros(3), *(j - i for i, j in combinations(cart_coords, 2))])
-    complex_span = np.linalg.norm(intra_vecs, axis=1).max()
+    # (1+n(n-1)/2, 3) for each set of coordinates
+    intra_vec_sets = [
+        np.array([np.zeros(3), *(j - i for i, j in combinations(coords, 2))])
+        for coords in ([cart_coords] if single else cart_coords)
+    ]
+    complex_span = max(np.linalg.norm(intra_vecs, axis=1).max() for intra_vecs in intra_vec_sets)
 
     upper_bounds = (
         2 ** (1 / 6) * np.cbrt(np.abs(_fast_3x3_determinant_vectorized(matrices)))
@@ -1762,7 +1849,7 @@ def _get_complex_min_image_distances_from_matrices(
     naxes = np.ceil(max_rs[:, None] * recip_lens + 1e-9).astype(int)  # (N, 3) per-axis integer ranges
 
     # TODO outer loop over intra_vecs instead and use tighter bound instead of span?
-    complex_min_image_dists = np.empty(len(matrices))
+    complex_min_image_dists = np.empty((len(intra_vec_sets), len(matrices)))
     unique_triples, inverse = np.unique(naxes, axis=0, return_inverse=True)
     for triple_idx, (ni, nj, nk) in enumerate(unique_triples):  # group matrices by required ranges
         coeffs = _nonzero_coeffs_in_box(int(ni), int(nj), int(nk))
@@ -1770,19 +1857,25 @@ def _get_complex_min_image_distances_from_matrices(
         for chunk in np.array_split(group_indices, max(1, len(group_indices) * len(coeffs) // int(4e6))):
             # TODO ceil not floor?
             # NOTE peak memory usage is now ~175 MB
-            vectors = coeffs @ matrices[chunk]  # (M, C, 3) possible lattice vectors, batched matmul
+            vectors = np.einsum(  # (M, C, 3) lattice vectors
+                "ck,nkj->ncj", coeffs, matrices[chunk], optimize=True
+            )
             sq_lengths = np.einsum("kij,kij->ki", vectors, vectors)  # (M, C) squared vector lengths
-            best_sq_dists = sq_lengths.min(axis=1)  # (M,); the point min image distances
-            for intra_vec in intra_vecs[1:]:  # loop over O(n^2) intra complex vectors
-                # |a+b|^2 = |a|^2+|b|^2+2a.b in place - instead of extra (M,C,3) to add directly...
-                sq_dists = vectors @ intra_vec  # (M, C) products
-                sq_dists *= 2
-                sq_dists += sq_lengths
-                sq_dists += intra_vec @ intra_vec
-                np.minimum(best_sq_dists, sq_dists.min(axis=1), out=best_sq_dists)
-            complex_min_image_dists[chunk] = np.sqrt(best_sq_dists)
+            point_sq_dists = sq_lengths.min(axis=1)  # (M,); the point min image distances
+            for set_idx, intra_vecs in enumerate(intra_vec_sets):
+                best_sq_dists = point_sq_dists.copy()
+                for intra_vec in intra_vecs[1:]:  # loop over O(n^2) intra complex vectors
+                    # |a+b|^2 = |a|^2+|b|^2+2a.b in place - instead of extra (M,C,3) to add directly...
+                    sq_dists = vectors @ intra_vec  # (M, C) products
+                    sq_dists *= 2
+                    sq_dists += sq_lengths
+                    sq_dists += intra_vec @ intra_vec
+                    np.minimum(best_sq_dists, sq_dists.min(axis=1), out=best_sq_dists)
+                # clamp at 0 for rounding issues
+                complex_min_image_dists[set_idx, chunk] = np.sqrt(np.maximum(best_sq_dists, 0))
 
-    return complex_min_image_dists.round(4)  # as in _get_complex_min_image_distance_from_matrix
+    complex_min_image_dists = complex_min_image_dists.round(4)
+    return complex_min_image_dists[0] if single else complex_min_image_dists
 
 
 def _find_ideal_supercell_for_target_metric(
