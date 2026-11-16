@@ -174,13 +174,14 @@ class EspressoCalculationOutputsTestCase(unittest.TestCase):
     def test_smearing_not_compared_between_defect_and_bulk(self):
         """
         Smearing settings (``occupations``/``smearing``/``degauss``) can
-        legitimately differ between defect and bulk supercell calculations (as
-        with VASP ``ISMEAR``/``SIGMA``), so are not flagged as mismatches --
-        e.g. the smeared ``Mg_O_+1`` vs fixed-occupation bulk MgO calculations.
+        legitimately differ between defect and bulk supercell calculations, so
+        are not flagged as mismatches -- e.g. the smeared ``Mg_O_+1`` vs fixed-
+        occupation bulk MgO calculations.
 
-        Also checks the run metadata serialises without warnings (``PWxml.as_dict()``
-        needs attributes that some ``pymatgen-io-espresso`` versions never set,
-        which ``get_espresso_run`` defaults).
+        Also checks the run metadata serialises without warnings
+        (``PWxml.as_dict()`` needs attributes that some
+        ``pymatgen-io-espresso`` versions never set, which ``get_espresso_run``
+        defaults).
         """
         defects_dir = os.path.join(os.path.dirname(__file__), "../examples/MgO_qe/Defects")
         with warnings.catch_warnings():
@@ -207,8 +208,7 @@ class EspressoCalculationOutputsTestCase(unittest.TestCase):
     def test_mismatch_warning_specs(self):
         """
         The espresso ``MISMATCH_WARNING_SPECS`` render with the calculator-
-        agnostic mismatch-warning machinery (they previously used an older
-        schema, raising ``KeyError`` on any defect/bulk mismatch).
+        agnostic mismatch-warning machinery.
         """
         metadata = {
             "mismatching_QE_input_params": [("ecutwfc", 60.0, 50.0)],
@@ -257,8 +257,7 @@ class SitePotentialSmearingTestCase(unittest.TestCase):
         # the sampled potentials are negated, for the ``doped``/``pydefect`` eFNV sign convention:
         site_potential = get_atomic_site_potentials(volumetric_data, beta=beta)["site_potentials"][0]
 
-        # exact to machine precision, as this site lies on a grid point; the wrong Miller index
-        # would shift the result by ~23%:
+        # exact; as this site lies on a grid point; the wrong Miller index would shift the result by ~23%:
         assert np.isclose(site_potential, -np.exp(-0.5 * beta**2 * (2 * np.pi * h / a) ** 2), rtol=1e-12)
 
     def test_even_grid_frequencies_unchanged(self):

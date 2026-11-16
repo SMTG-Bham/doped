@@ -395,7 +395,7 @@ class DopedDictSetQE(MSONable):
         """
         resolved_dir = os.path.abspath(os.path.expanduser(os.path.expandvars(pseudo_dir)))
         default_note = (
-            f" Note that `pseudo_dir` is still the default placeholder ({DEFAULT_PSEUDO_DIR!r}); set "
+            f"Note that `pseudo_dir` is still the default placeholder ({DEFAULT_PSEUDO_DIR!r}); set "
             f"it to the directory containing your pseudopotentials."
             if pseudo_dir == DEFAULT_PSEUDO_DIR
             else ""
@@ -406,7 +406,7 @@ class DopedDictSetQE(MSONable):
                 f"{resolved_dir!r}) does not exist, so the pseudopotentials required by these espresso "
                 f"inputs could not be found. No pseudopotential library is bundled with `doped` -- "
                 f"point `pseudo_dir` at a directory of pseudopotentials you already have, or download "
-                f"a pseudopotential library.{default_note}"
+                f"a pseudopotential library. {default_note}"
             )
             return
 
@@ -425,7 +425,7 @@ class DopedDictSetQE(MSONable):
                 f"These are the default filenames from `QE_PSEUDO_LIBRARY`, so they will not match if "
                 f"you are using a different pseudopotential library -- use `pseudo_map` to point the "
                 f"affected element(s) at the files you have, or download a pseudopotential library."
-                f"{default_note}"
+                f" {default_note}"
             )
 
     @staticmethod
@@ -560,8 +560,7 @@ class DopedDictSetQE(MSONable):
     def write_input(self, output_dir: PathLike, filename: str = "pw.in") -> None:
         """
         Write the ``pw.x`` input file for this input set to
-        ``<output_dir>/<filename>`` (creating ``output_dir`` if needed); the
-        espresso analogue of ``VaspInputSet.write_input()``.
+        ``<output_dir>/<filename>`` (creating ``output_dir`` if needed).
 
         Args:
             output_dir (PathLike):
@@ -592,8 +591,7 @@ class DopedDictSetQE(MSONable):
 class DefectDictSetQE(DopedDictSetQE):
     r"""
     Input set for a single Quantum ESPRESSO (``pw.x``) defect supercell
-    calculation; the espresso analogue of
-    ``doped.io.vasp.inputs.DefectDictSet``.
+    calculation.
 
     Extends :class:`DopedDictSetQE` with the defect-specific settings: the
     supercell charge state (espresso's ``tot_charge``), a fixed-cell ``relax``
@@ -663,8 +661,7 @@ class DefectDictSetQE(DopedDictSetQE):
 class DefectRelaxSetQE(MSONable):
     r"""
     Input sets for the Quantum ESPRESSO (``pw.x``) calculations of a single
-    defect (and, optionally, its reference bulk supercell); the espresso
-    analogue of ``doped.io.vasp.inputs.DefectRelaxSet``.
+    defect (and, optionally, its reference bulk supercell).
     """
 
     def __init__(
@@ -687,8 +684,7 @@ class DefectRelaxSetQE(MSONable):
             soc (bool):
                 Whether to include spin-orbit coupling. If ``None`` (default),
                 set to ``True`` if the defect supercell contains an element
-                with atomic number >= 31 (Ga and heavier), matching the VASP
-                ``DefectRelaxSet`` behaviour.
+                with atomic number >= 31 (Ga and heavier).
             bulk_supercell (Structure):
                 Reference bulk supercell, for the bulk input set. If ``None``
                 (default), taken from ``defect_entry.bulk_supercell`` when a
@@ -771,7 +767,7 @@ class DefectRelaxSetQE(MSONable):
         """
         :class:`DefectDictSetQE` for a Γ-point-only (``K_POINTS gamma``) fixed-
         cell (``relax``) calculation of the defect supercell in its charge
-        state, spin-polarised; the espresso analogue of ``vasp_gam``.
+        state, spin-polarised.
 
         Any ``kpoints``/``kpoint_density`` settings given when initialising this
         set are overridden, so this is always Γ-only. Usually only needed for
@@ -786,15 +782,12 @@ class DefectRelaxSetQE(MSONable):
     def espresso_std(self) -> DefectDictSetQE:
         """
         :class:`DefectDictSetQE` for the fixed-cell (``relax``) calculation of
-        the defect supercell in its charge state, spin-polarised; the espresso
-        analogue of ``vasp_std``.
+        the defect supercell in its charge state, spin-polarised.
 
         Uses whatever ``kpoints``/``kpoint_density`` were given when
-        initialising this set. Unlike ``vasp_std`` -- which returns ``None`` for
-        Γ-only meshes, because VASP needs a different binary -- this is never
-        ``None``: espresso runs every k-point sampling through ``pw.x``, and its
-        default sampling is Γ-only, so ``espresso_std`` with no k-point settings
-        is the same calculation as :attr:`espresso_gamma`.
+        initialising this set (``pw.x`` default sampling is Γ-only, so
+        ``espresso_std`` with no k-point settings is the same as
+        :attr:`espresso_gamma`).
         """
         return self._dict_set()
 
@@ -803,8 +796,7 @@ class DefectRelaxSetQE(MSONable):
         """
         :class:`DefectDictSetQE` for the fixed-cell (``relax``) calculation of
         the defect supercell with spin-orbit coupling included (``noncolin =
-        .true.``, ``lspinorb = .true.``); the espresso analogue of
-        ``vasp_ncl``.
+        .true.``, ``lspinorb = .true.``).
 
         Note that this is a relaxation, rather than the single-point (static)
         calculation, and that it is written from the *unrelaxed* defect
@@ -815,7 +807,7 @@ class DefectRelaxSetQE(MSONable):
         ``None`` (with a warning) if ``DefectRelaxSetQE.soc`` is ``False``. If
         ``soc`` was not set when initialising this set, it defaults to ``True``
         for defect supercells with a max atomic number (Z) >= 31 (i.e. further
-        down the periodic table than Zn), matching the VASP ``DefectRelaxSet``.
+        down the periodic table than Zn).
         """
         if not self.soc:
             warnings.warn(
@@ -835,11 +827,11 @@ class DefectRelaxSetQE(MSONable):
         ``QE_sets/HSE_set.yaml`` defaults (``input_dft = HSE``,
         ``exx_fraction``, ``screening_parameter``, ``nqx1/2/3``).
 
-        The espresso analogue of the ``vasp_(nkred_)std`` hybrid stage; there is
-        no ``NKRED`` equivalent, as espresso instead controls the exact-exchange
-        cost through the ``nqx1``/``nqx2``/``nqx3`` q-grid (1x1x1 by default,
-        i.e. Γ-only exact exchange). Check ``exxdiv_treatment`` suits your cell.
+        Quantum Espresso sets the exact-exchange q-point grid with the
+        ``nqx1``/``nqx2``/``nqx3`` parameters (1x1x1 by default, i.e. Γ-only
+        exact exchange). Check ``exxdiv_treatment`` suits your cell.
         """
+        # TODO: Set Fock q-points consistent with VASP NKRED defaults?
         return self._dict_set(use_hse=True)
 
     @property
@@ -847,8 +839,9 @@ class DefectRelaxSetQE(MSONable):
         """
         :class:`DefectDictSetQE` for the Γ-point-only single-point (``scf``)
         reference bulk supercell calculation: neutral, and spin-polarised as
-        the defect supercells are. ``None`` (with a warning) if no bulk
-        supercell is available.
+        the defect supercells are.
+
+        ``None`` (with a warning) if no bulk supercell is available.
         """
         if self._check_bulk_supercell_and_warn() is None:
             return None
@@ -860,10 +853,9 @@ class DefectRelaxSetQE(MSONable):
         """
         :class:`DefectDictSetQE` for the single-point (``scf``) reference bulk
         supercell calculation: neutral and, unlike the defect supercells, not
-        relaxed. The same ``starting_magnetization`` (0.1 by default) is used..
+        relaxed. The same ``starting_magnetization`` (0.1 by default) is used.
 
-        ``None`` if no bulk supercell is available (i.e. this set was
-        initialised with a ``Structure`` and no ``bulk_supercell``).
+        ``None`` if no bulk supercell is available.
         """
         if self._check_bulk_supercell_and_warn() is None:
             return None
@@ -876,8 +868,8 @@ class DefectRelaxSetQE(MSONable):
         :class:`DefectDictSetQE` for the single-point (``scf``) spin-orbit-
         coupled reference bulk supercell calculation.
 
-        ``None`` (with a warning)
-        if ``soc`` is ``False`` or no bulk supercell is available.
+        ``None`` (with a warning) if ``soc`` is ``False`` or no bulk supercell
+        is available.
         """
         if not self.soc or self._check_bulk_supercell_and_warn() is None:
             if not self.soc:
@@ -945,17 +937,14 @@ class DefectRelaxSetQE(MSONable):
         """
         Write the ``pw.in`` for one calculation stage
         (``espresso_xxx_attribute``) to ``<defect_dir>/<subfolder>/pw.in``,
-        returning the written path; the espresso analogue of
-        ``doped.vasp.DefectRelaxSet._write_vasp_xxx_files``, and the shared
-        implementation behind :meth:`write_gamma`, :meth:`write_std`,
-        :meth:`write_ncl` and :meth:`write_hybrid` (each of which calls it once
-        for the defect supercell and, if ``bulk``, once for the reference bulk
-        supercell).
+        returning the written path; this is a shared implementation behind
+        :meth:`write_gamma`, :meth:`write_std`, :meth:`write_ncl` and
+        :meth:`write_hybrid` (each of which calls it once for the defect
+        supercell and, if ``bulk``, once for the reference bulk supercell).
 
         The ``DefectEntry`` is also serialised to
-        ``<defect_dir>/<subfolder>/<name>.json.gz`` (as with VASP), to aid
-        calculation provenance -- but not for bulk supercell folders, which have
-        no corresponding ``DefectEntry``.
+        ``<defect_dir>/<subfolder>/<name>.json.gz``, to aid calculation
+        provenance.
         """
         if espresso_xxx_attribute is None:  # bulk sets are None without a bulk supercell (callers check)
             raise ValueError(f"No input set available to write to {defect_dir} ({subfolder}).")
@@ -1027,8 +1016,8 @@ class DefectRelaxSetQE(MSONable):
         supercell calculation, to ``<defect_dir>/<subfolder>/pw.in``.
 
         The ``DefectEntry`` is also serialised to
-        ``<defect_dir>/<subfolder>/<name>.json.gz`` (as with VASP), to aid
-        calculation provenance.
+        ``<defect_dir>/<subfolder>/<name>.json.gz`` , to aid calculation
+        provenance.
 
         Args:
             defect_dir (PathLike):
@@ -1231,7 +1220,7 @@ class DefectsSet(DefectsSetBase):
         super().__init__(defect_entries, **kwargs)
 
         # the bulk supercell is the same for every defect, so take the bulk sets from (any) one of
-        # the per-defect sets, as with the VASP ``DefectsSet``:
+        # the per-defect sets:
         defect_relax_set = list(self.defect_sets.values())[-1]
         self.bulk_supercell = defect_relax_set.bulk_supercell
         with warnings.catch_warnings():  # `self.soc` already records this; don't warn on construction
@@ -1417,8 +1406,7 @@ def qe_convergence_setup_from_structure(
             written to a host-named parent folder as
             ``"{host_formula}_QE/Bulk_convergence"`` (e.g.
             ``"MgO_QE/Bulk_convergence"``), so all espresso inputs for a given host
-            live under a single ``{host}_QE`` folder (matching the VASP
-            example layout).
+            live under a single ``{host}_QE`` folder.
         kpoint_density_range: ``(min, max, step)`` reciprocal k-point
             density (Å^-3) sweep for the k-grid test (``max`` exclusive,
             matching ``range``). Default ``(20, 200, 20)``.
@@ -1587,14 +1575,11 @@ def get_kpoint_convergence_sets(
     Generates a dictionary of :class:`DopedDictSetQE`\s for `k`-point `and`
     plane-wave cutoff (``ecutwfc``) convergence testing of competing phases, as
     single-point (``scf``) ``pw.x`` calculations using the
-    :data:`QE_PSEUDO_LIBRARY` pseudopotential filenames by default; the
-    espresso analogue of
-    :func:`doped.io.vasp.inputs.get_kpoint_convergence_sets`.
+    :data:`QE_PSEUDO_LIBRARY` pseudopotential filenames by default.
 
-    Unlike with VASP, an ``ecutwfc`` convergence sweep is also generated
-    here, as the required plane-wave cutoff depends on the pseudopotentials
-    used. Two sub-trees are generated per phase (under
-    ``<output_path>/<phase>/``):
+    An ``ecutwfc`` convergence sweep is also generated here, as the required
+    plane-wave cutoff depends on the pseudopotentials used. Two sub-trees are
+    generated per phase (under ``<output_path>/<phase>/``):
 
     - ``kpoint_converge/k<kx>_<ky>_<kz>``: `k`-point grid varied at fixed
       ``ecutwfc``. Skipped for diatomic molecules (Γ-only sampling is exact
@@ -1751,8 +1736,7 @@ def write_input_sets(input_sets: dict[str, DopedDictSetQE], **kwargs) -> dict[st
     set}``, as generated by :func:`get_kpoint_convergence_sets` /
     :func:`get_relaxation_sets` / :func:`get_singlepoint_sets`) to their
     corresponding output folders (as ``<output folder>/pw.in``), warning if any
-    already exist; the espresso analogue of
-    :func:`doped.io.vasp.inputs.write_input_sets`.
+    already exist.
 
     Args:
         input_sets (dict[str, DopedDictSetQE]):
@@ -1796,11 +1780,9 @@ def write_kpoint_convergence_files(
     cutoff (``ecutwfc``) convergence testing of competing phases (as single-
     point ``scf`` calculations), to
     ``<output_path>/<phase>/kpoint_converge/k<kx>_<ky>_<kz>/pw.in`` and
-    ``<output_path>/<phase>/ecut_convergence/ecutwfc_<N>/pw.in``; the espresso
-    analogue of :func:`doped.io.vasp.inputs.write_kpoint_convergence_files`
-    (formerly ``CompetingPhasesQE.qe_convergence_setup``), which additionally
-    sweeps ``ecutwfc`` as the required cutoff depends on the pseudopotentials
-    used.
+    ``<output_path>/<phase>/ecut_convergence/ecutwfc_<N>/pw.in``; and
+    additionally sweeps ``ecutwfc`` as the required cutoff depends on the
+    pseudopotentials used.
 
     The input sets are generated with :func:`get_kpoint_convergence_sets`
     (see there for details) and written with :func:`write_input_sets`,
@@ -1926,10 +1908,9 @@ def get_relaxation_sets(
     Generates a dictionary of :class:`DopedDictSetQE`\s for standard (variable-
     cell) ``pw.x`` relaxations of competing phases, using the default settings
     by default (i.e. the functional implied by your chosen pseudopotentials),
-    or HSE06 hybrid DFT if ``use_hse=True``; the espresso analogue of
-    :func:`doped.io.vasp.inputs.get_relaxation_sets` -- note that the VASP
-    function uses HSE06 by default, while here the semi-local (GGA) defaults
-    are used.
+    or HSE06 hybrid DFT if ``use_hse=True`` -- note that semi-local (GGA)
+    defaults are used here.
+    (TODO -- change to be consistent with the VASP default choices).
 
     Solid phases are set up as variable-cell (``vc-relax``) relaxations,
     while diatomic molecules (molecules-in-a-box) are relaxed at fixed cell
@@ -2095,8 +2076,7 @@ def write_relaxation_files(
     ``<output_path>/<phase>/<subfolder>/pw.in`` (``espresso_std`` subfolder by
     default), using the default settings by default (i.e. the functional
     implied by your chosen pseudopotentials), or HSE06 hybrid DFT if
-    ``use_hse=True``. Note that the VASP function uses HSE06 by default, while
-    here the semi-local (GGA) defaults are used.
+    ``use_hse=True``. Note that semi-local (GGA) defaults are used here.
 
     The input sets are generated with :func:`get_relaxation_sets` (see there
     for details) and written with :func:`write_input_sets`, returning the
@@ -2216,10 +2196,8 @@ def get_singlepoint_sets(
     Generates a dictionary of :class:`DopedDictSetQE`\s for single-point
     (``scf``) energy calculations of the competing phases, using the default
     settings by default (i.e. the functional implied by your chosen
-    pseudopotentials), or HSE06 hybrid DFT if ``use_hse=True``; the espresso
-    analogue of :func:`doped.io.vasp.inputs.get_singlepoint_sets` -- note that
-    the VASP function uses HSE06 by default, while here the semi-local (GGA)
-    defaults are used.
+    pseudopotentials), or HSE06 hybrid DFT if ``use_hse=True``; note that semi-
+    local (GGA) defaults are used here.
 
     These are expected to be used as the final energy calculation after
     geometry relaxation (from :func:`write_relaxation_files`), to obtain
@@ -2236,12 +2214,10 @@ def get_singlepoint_sets(
     name will default to ``"espresso_ncl"`` (if not set otherwise). If
     ``soc`` is not explicitly set (i.e. is ``None``), it defaults to
     ``True`` for systems where the max atomic number across all species
-    (host and extrinsic) is Z >= 31 (heavier than Zn), matching the
-    convention in :func:`doped.io.vasp.inputs.get_singlepoint_sets` and
-    ``DefectsSet``. Note that SOC calculations in espresso require
-    fully-relativistic pseudopotentials, so ``pseudo_map`` should then point
-    at these (the :data:`QE_PSEUDO_LIBRARY` defaults are
-    scalar-relativistic).
+    (host and extrinsic) is Z >= 31 (heavier than Zn). Note that SOC
+    calculations in espresso require fully-relativistic pseudopotentials, so
+    ``pseudo_map`` should then point at these (the :data:`QE_PSEUDO_LIBRARY`
+    defaults are scalar-relativistic).
 
     For metals, the tetrahedron method (``occupations = 'tetrahedra'``) is
     used by default (as in :func:`get_relaxation_sets`; override via
@@ -2385,12 +2361,10 @@ def write_singlepoint_files(
     Generates and writes espresso ``pw.in`` input files for single-point
     (``scf``) energy calculations of the competing phases, to
     ``<output_path>/<phase>/<subfolder>/pw.in`` (``espresso_gamma`` subfolder
-    by default, or ``espresso_ncl`` if ``soc``), using the default settings
-    by default (i.e. the functional implied by your chosen pseudopotentials),
-    or HSE06 hybrid DFT if ``use_hse=True``; the espresso analogue of
-    :func:`doped.io.vasp.inputs.write_singlepoint_files` -- note that the
-    VASP function uses HSE06 by default, while here the semi-local (GGA)
-    defaults are used.
+    by default, or ``espresso_ncl`` if ``soc``), using the default settings by
+    default (i.e. the functional implied by your chosen pseudopotentials), or
+    HSE06 hybrid DFT if ``use_hse=True``; note that semi-local (GGA) defaults
+    are used here.
 
     If ``soc`` is not explicitly set, SOC is enabled when the max atomic number
     across all species (host and extrinsic) is Z >= 31 (requiring fully-relativistic
@@ -2498,9 +2472,6 @@ def _set_spin_polarisation(
     Set ``nspin = 2`` and ``tot_magnetization`` in the espresso ``&SYSTEM``
     namelist if the entry has a total magnetization greater than the default
     tolerance of 0.1.
-
-    Analogous to ``doped.io.vasp.inputs._set_spin_polarisation`` for VASP
-    (``ISPIN`` / ``NUPDOWN``).
     """
     magnetization = entry.data.get("summary", {}).get("total_magnetization")
     if magnetization is not None and magnetization > 0.1:  # account for magnetic moment
@@ -2519,9 +2490,7 @@ def _set_default_metal_smearing(system_settings: dict) -> None:
     """
     Set ``occupations = 'smearing'`` (if ``occupations`` is not already set),
     with ``smearing = 'gaussian'`` and ``degauss = 0.005`` Ry, in the espresso
-    ``&SYSTEM`` namelist for metallic phases.  Analogous to
-    ``doped.io.vasp.inputs._set_default_metal_smearing`` for VASP (``ISMEAR`` /
-    ``SIGMA``).
+    ``&SYSTEM`` namelist for metallic phases.
 
     If ``occupations`` is already set to anything other than ``'smearing'``
     (e.g. ``'tetrahedra'``, as used for metals by :func:`get_relaxation_sets`

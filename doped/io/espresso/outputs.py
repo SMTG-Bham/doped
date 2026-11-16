@@ -1542,7 +1542,7 @@ def check_run_compatibility(
     qe_input_mismatches = _compare_qe_input_parameters(
         run_metadata["bulk_qe_input"],
         run_metadata["defect_qe_input"],
-        # smearing can legitimately differ between defect & bulk (as with VASP ``ISMEAR``/``SIGMA``):
+        # smearing can legitimately differ between defect & bulk:
         ignore_params={"occupations", "smearing", "degauss"},
         ref_name="bulk",
         entry_name="defect",
