@@ -3431,6 +3431,7 @@ def local_point_symmetry(
     radius: float | None = None,
     verbose: bool = False,
     complex_sites: Sequence[PeriodicSite] | None = None,  # TODO switch to fc
+    site_tol: float | None = 0.4,
     _first_pass: bool = True,
 ) -> tuple[str, list[tuple[np.ndarray, np.ndarray]], dict]:
     r"""
@@ -3573,6 +3574,12 @@ def local_point_symmetry(
             This should be given for complexes unless the minimum image distance
             of the supercell is very much greater than the span of the complex.
             The sites do not have to be provided unwrapped.
+        site_tol (float | None):
+            Site-matching tolerance used to determine the defect site(s) from
+            bulk vs defect structure comparison, when ``bulk_supercell`` is
+            given but neither ``defect_frac_coords`` nor ``complex_sites`` are
+            (see ``defect_sites_from_structures``). If ``None``, a single point
+            defect is assumed. Default is 0.4.
 
     Returns:
         tuple[str, list, dict]:
@@ -3618,7 +3625,9 @@ def local_point_symmetry(
 
         sites = cast(
             "list[PeriodicSite]",
-            defect_sites_from_structures(defect_supercell, bulk_supercell, _parameter_order_warn=False),
+            defect_sites_from_structures(
+                defect_supercell, bulk_supercell, site_tol=site_tol, _parameter_order_warn=False
+            ),
         )
         if len(sites) > 1:
             complex_sites = sites
@@ -4268,7 +4277,11 @@ def point_symmetry_from_structure(
             when ``relaxed=True`` (``centre_error_range``, ``bulk_symprec``),
             or ``get_all_equiv_sites`` when ``relaxed=False`` (such as
             ``dist_tol_factor``); kwargs not applicable to the chosen mode are
-            ignored.
+            ignored. ``site_tol`` is passed to
+            ``template_defect_entry_from_structures`` when ``bulk_structure``
+            is provided, controlling whether the defect is parsed as a point
+            defect or defect complex (default 0.4; see
+            ``defect_and_info_from_structures``).
 
     Returns:
         str: Defect point symmetry (Schoenflies symbol).
@@ -4282,6 +4295,7 @@ def point_symmetry_from_structure(
             bulk_structure,
             oxi_state="Undetermined",
             multiplicity=1,
+            site_tol=kwargs.pop("site_tol", 0.4),
         )
 
         return point_symmetry_from_defect_entry(

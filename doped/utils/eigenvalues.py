@@ -235,6 +235,10 @@ def get_band_edge_info(
     min_distance = distance_matrix[distance_matrix > 0.5].min()
 
     if defect_supercell_site is None:
+        # TODO: Make complex-aware (``defect_sites_from_structures`` with a ``site_tol`` option; currently
+        #  assumes a single point defect), and for defect complexes use the neighbourhoods of all
+        #  constituent sites for localisation analysis, rather than just the centroid (as currently used
+        #  for parsed ``DefectEntry``s, which pass ``defect_supercell_site`` here).
         defect_supercell_site = defect_site_from_structures(
             defect_vr.final_structure, bulk_vr.final_structure, _parameter_order_warn=False
         )
@@ -280,6 +284,7 @@ def get_eigenvalue_analysis(
     legend_kwargs: dict | None = None,
     similar_orb_criterion: float | None = None,
     similar_energy_criterion: float | None = None,
+    site_tol: float | None = 0.4,
 ) -> BandEdgeStates | tuple[BandEdgeStates, plt.Figure]:
     r"""
     Get eigenvalue & orbital info (with automated classification of PHS states)
@@ -399,6 +404,13 @@ def get_eigenvalue_analysis(
             defect to bulk cells as determined by the charge correction in
             ``defect_entry.corrections_metadata`` if present. If this fails,
             then it is increased to the ``pydefect`` default of 0.5 eV.
+        site_tol (float | None):
+            Site-matching tolerance used to determine the defect site(s) when
+            ``defect_entry`` is not provided (i.e. from ``bulk_vr`` and
+            ``defect_vr``), controlling whether the defect is parsed as a point
+            defect or defect complex (in which case the complex centroid is
+            used as the defect position). If ``None``, a single point defect is
+            assumed. See ``defect_and_info_from_structures``. Default is 0.4.
 
     Returns:
         ``pydefect`` ``BandEdgeStates`` object, containing the band-edge and
@@ -415,7 +427,11 @@ def get_eigenvalue_analysis(
         bulk_vr = bulk_vr if isinstance(bulk_vr, Vasprun) else Vasprun(bulk_vr)
         defect_vr = defect_vr if isinstance(defect_vr, Vasprun) else Vasprun(defect_vr)
         defect_entry = template_defect_entry_from_structures(
-            defect_vr.final_structure, bulk_vr.final_structure, oxi_state="Undetermined", multiplicity=1
+            defect_vr.final_structure,
+            bulk_vr.final_structure,
+            oxi_state="Undetermined",
+            multiplicity=1,
+            site_tol=site_tol,
         )
 
     # TODO: Allow just bulk and 'defect_vr' to be passed directly for this function, so it can be used

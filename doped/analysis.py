@@ -941,6 +941,8 @@ def defect_and_info_from_structures(
                   interstitials, it is the guessed initial (unrelaxed)
                   interstitial site `if` this is within 1 Å of the `relaxed`
                   site, otherwise the `relaxed` site.
+                - ``site_tol``: The ``site_tol`` used for site matching (reused
+                  when re-parsing the defect site information).
 
                 For a defect complex, ``bulk_site`` is the (dummy species)
                 centroid of the `unwrapped` constituent bulk sites, the
@@ -986,7 +988,8 @@ def defect_and_info_from_structures(
     )
 
     defect_structure_metadata: dict[str, Any] = {
-        "guessed_initial_defect_structure": guessed_initial_defect_structure
+        "guessed_initial_defect_structure": guessed_initial_defect_structure,
+        "site_tol": site_tol,  # reused when re-parsing (``_update_defect_entry_structure_metadata``)
     }
     if not isinstance(defect, DefectComplex):
         defect_structure_metadata["defect_site_index"] = defect_site_index
@@ -1406,7 +1409,7 @@ class DefectsParser:
                 ``defect_and_info_from_structures`` or ``get_dimer_bonds()``,
                 including ``bulk_locpot_dict``, ``bulk_site_potentials``,
                 ``use_MP``, ``mpid``, ``api_key``, ``oxi_state``,
-                ``multiplicity``, ``angle_tolerance``,
+                ``multiplicity``, ``site_tol``, ``angle_tolerance``,
                 ``user_charges``, ``rtol`` etc. (see their docstrings); or for
                 controlling shallow defect charge correction error warnings
                 (see ``error_tolerance`` description) with

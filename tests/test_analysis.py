@@ -38,7 +38,7 @@ from doped.analysis import (
     parse_symmetry_and_degeneracy_metadata,
     shallow_dopant_binding_energy,
 )
-from doped.core import DefectComplex
+from doped.core import DefectComplex, template_defect_entry_from_structures
 from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.utils.efficiency import Structure
 from doped.utils.eigenvalues import get_eigenvalue_analysis
@@ -47,6 +47,7 @@ from doped.utils.parsing import (
     _create_unrelaxed_defect_structure,
     _num_electrons_from_charge_state,
     _simple_spin_degeneracy_from_num_electrons,
+    _update_defect_entry_structure_metadata,
     compare_incar_tags,
     compare_kpoints,
     compare_potcar_symbols,
@@ -63,6 +64,7 @@ from doped.utils.symmetry import (
     get_primitive_structure,
     get_sga,
     group_order_from_schoenflies,
+    local_point_symmetry,
     point_symmetry_from_defect_entry,
     point_symmetry_from_structure,
     schoenflies_from_hermann,
@@ -1487,6 +1489,31 @@ class DefectsParsingTestCase(unittest.TestCase):
             * get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"])
             == 8
         )  # same configurational degeneracy as for the complex description above
+
+        # ``site_tol`` is passed through to defect site determination in the structure-based functions:
+        v_Bi_point = dp.defect_dict["v_Bi_+1"]
+        defect_sc, bulk_sc = v_Bi_point.defect_supercell, v_Bi_point.bulk_supercell
+        assert point_symmetry_from_structure(defect_sc, bulk_sc, relaxed=False) == "Cs"  # I_Bi-v_I
+        assert point_symmetry_from_structure(defect_sc, bulk_sc, relaxed=False, site_tol=None) == "C4v"
+        cluster_centres = [
+            local_point_symmetry(defect_sc, bulk_sc, site_tol=site_tol)[2]["cluster_centre_cart"]
+            for site_tol in [0.4, None]
+        ]
+        assert not np.allclose(*cluster_centres)  # complex vs v_Bi site
+
+        # and stored in ``calculation_metadata``, to be reused when re-parsing defect site info (rather
+        # than defaulting to 0.4 for complexes, which would give I_Bi-v_I here):
+        assert v_Bi_complex.calculation_metadata["site_tol"] == 0.4
+        assert v_Bi_point.calculation_metadata["site_tol"] is None
+        entry = template_defect_entry_from_structures(
+            defect_sc, bulk_sc, site_tol=0.2, oxi_state="Undetermined", multiplicity=1
+        )
+        assert entry.defect.name == "I_i-v_Bi-v_I"
+        assert entry.calculation_metadata["site_tol"] == 0.2
+        _update_defect_entry_structure_metadata(
+            entry, overwrite=True, oxi_state="Undetermined", multiplicity=1
+        )
+        assert entry.defect.name == "I_i-v_Bi-v_I"
 
         # test setting symprec during parsing
         dp, w = _create_dp_and_capture_warnings(
@@ -3956,6 +3983,19 @@ class DefectsParsingTestCase(unittest.TestCase):
             ),
         )
         _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.001)
+
+        print("Testing Si_i_-1 with site_tol = None, direct VASP outputs; vaspruns")
+        bes = get_eigenvalue_analysis(
+            bulk_vr=get_vasprun(
+                f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
+            ),
+            defect_vr=get_vasprun(
+                f"{self.Cu2SiSe3_EXAMPLE_DIR}/Si_i_-1/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
+            ),
+            plot=False,
+            site_tol=None,  # Si_i point defect, as above (else a Cu_i + Si_i + v_Cu complex)
+        )
+        _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.001)
 
         print("Testing v_Cu_0 with plot = True, direct VASP outputs; vaspruns and procars")
         self.tearDown()  # ensure PROCARs returned to original state

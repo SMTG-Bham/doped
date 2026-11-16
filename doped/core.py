@@ -1761,11 +1761,12 @@ def template_defect_entry_from_structures(
         bulk_supercell (|Structure|):
             The bulk supercell structure.
         **kwargs:
-            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec`` and ``dist_tol_factor``) and/or |Defect|
-            initialization (such as ``oxi_state``, ``multiplicity``,
-            ``symprec``, ``dist_tol_factor``) in the
-            ``defect_and_info_from_structures`` function.
+            Keyword arguments to pass to ``defect_and_info_from_structures``,
+            such as ``site_tol`` (site-matching tolerance, determining point
+            defect vs defect complex parsing), and kwargs for
+            ``get_equiv_frac_coords_in_primitive`` (such as ``symprec`` and
+            ``dist_tol_factor``) and/or |Defect| initialization (such as
+            ``oxi_state``, ``multiplicity``, ``symprec``, ``dist_tol_factor``).
 
     Returns:
         DefectEntry:

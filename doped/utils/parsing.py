@@ -2816,6 +2816,7 @@ def _update_defect_entry_structure_metadata(
 
     bulk_supercell = _get_bulk_supercell(defect_entry)
     defect_supercell = _get_defect_supercell(defect_entry)
+    calculation_metadata = getattr(defect_entry, "calculation_metadata", None) or {}
     (
         defect,
         defect_site,
@@ -2824,9 +2825,12 @@ def _update_defect_entry_structure_metadata(
         defect_supercell,
         bulk_supercell,
         _parameter_order_warn=False,
-        **{  # keep the stored defect's identity (point defect vs complex) when re-parsing, unless given:
+        **{  # reuse the stored ``site_tol`` (``None`` is a valid value) when re-parsing, unless given;
+            # otherwise (older entries) keep the stored defect's identity (point defect vs complex):
             "site_tol": (
-                0.4
+                calculation_metadata["site_tol"]
+                if "site_tol" in calculation_metadata
+                else 0.4
                 if getattr(defect_entry, "defect", None) is None
                 or isinstance(defect_entry.defect, DefectComplex)
                 else None
