@@ -1559,10 +1559,6 @@ def get_kpoint_convergence_sets(
     output_path: PathLike | None = None,
     kpoints_metals: tuple[float, float, float] = (40, 1000, 5),
     kpoints_nonmetals: tuple[float, float, float] = (5, 120, 5),
-    kpoint_sweep_ecutwfc: int | None = None,
-    ecut_convergence: tuple = (20, 90, 10),
-    ecut_kpoints_metals: float = 200,
-    ecut_kpoints_nonmetals: float = 64,
     pseudo_dir: str = "./pseudo_folder_name/",
     pseudo_map: dict | None = None,
     soc: bool = False,
@@ -1572,23 +1568,15 @@ def get_kpoint_convergence_sets(
     user_electron_settings: dict | None = None,
 ) -> dict[str, DopedDictSetQE]:
     r"""
-    Generates a dictionary of :class:`DopedDictSetQE`\s for `k`-point `and`
-    plane-wave cutoff (``ecutwfc``) convergence testing of competing phases, as
-    single-point (``scf``) ``pw.x`` calculations using the
-    :data:`QE_PSEUDO_LIBRARY` pseudopotential filenames by default.
+    Generates a dictionary of :class:`DopedDictSetQE`\s for `k`-point
+    convergence testing of competing phases, as single-point (``scf``) ``pw.x``
+    calculations using the :data:`QE_PSEUDO_LIBRARY` pseudopotential filenames
+    by default, written to
+    ``<output_path>/<phase>/kpoint_converge/k<kx>_<ky>_<kz>``.
 
-    An ``ecutwfc`` convergence sweep is also generated here, as the required
-    plane-wave cutoff depends on the pseudopotentials used. Two sub-trees are
-    generated per phase (under ``<output_path>/<phase>/``):
-
-    - ``kpoint_converge/k<kx>_<ky>_<kz>``: `k`-point grid varied at fixed
-      ``ecutwfc``. Skipped for diatomic molecules (Γ-only sampling is exact
-      for molecules-in-a-box, so there is no `k`-point grid to converge).
-    - ``ecut_convergence/ecutwfc_<N>``: ``ecutwfc`` varied at a fixed
-      `k`-point grid. Generated for `all` phases including molecules (the
-      plane-wave cutoff must be converged for molecules too). ``ecutrho`` is
-      set to ``4 * ecutwfc`` at each step (i.e. a fixed 'dual'), unless
-      ``ecutrho`` is given in ``user_system_settings``.
+    Diatomic molecules are skipped, as Γ-only sampling is sufficient for
+    molecules-in-a-box. Plane-wave cutoffs (``ecutwfc``/``ecutrho``) are kept
+    fixed for all competing-phase, bulk and defect calculations.
 
     Automatically sets Gaussian smearing (``occupations = 'smearing'``) for
     metallic phases, and spin polarisation (``nspin = 2`` and
@@ -1620,22 +1608,6 @@ def get_kpoint_convergence_sets(
             only unique k-point grids are generated, so small step sizes
             (as default) just result in each k-points choice between
             ``min`` and ``max`` being included.
-        kpoint_sweep_ecutwfc (int or None):
-            ``ecutwfc`` (Ry) held fixed while the k-grid is swept (with
-            ``ecutrho`` then set to ``4 * ecutwfc``, unless given in
-            ``user_system_settings``). ``None`` (default) keeps the YAML set
-            defaults (60 Ry, ``ecutrho`` = 240 Ry).
-        ecut_convergence (tuple):
-            ``(min, max, step)`` ``ecutwfc`` range in Ry for the cutoff
-            convergence sweep, with ``max`` inclusive. Default
-            ``(20, 90, 10)`` (i.e. 20, 30, 40, 50, 60, 70, 80, 90 Ry).
-        ecut_kpoints_metals (float):
-            Fixed reciprocal k-point density (Å^-3) used for metallic
-            phases during the ``ecutwfc`` sweep. Default 200.
-        ecut_kpoints_nonmetals (float):
-            Fixed reciprocal k-point density (Å^-3) used for non-metallic
-            phases during the ``ecutwfc`` sweep. Default 64. Molecules use
-            Γ-only sampling regardless.
         pseudo_dir (str):
             Path to the directory containing UPF pseudopotential files,
             written into ``&CONTROL``. Default ``"./pseudo_folder_name/"``.
@@ -1660,7 +1632,7 @@ def get_kpoint_convergence_sets(
             ``(0, 0, 0)`` (no shift).
         user_system_settings (dict or None):
             Override default ``&SYSTEM`` namelist settings, e.g.
-            ``{"ecutwfc": 80, "ecutrho": 400}``.
+            ``{"ecutwfc": 80, "ecutrho": 640}``.
         user_control_settings (dict or None):
             Override default ``&CONTROL`` namelist settings.
         user_electron_settings (dict or None):
@@ -1675,12 +1647,12 @@ def get_kpoint_convergence_sets(
         output_path = _default_qe_competing_phases_path(competing_phases.composition)
 
     kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
-    ecut_kppvol_by_metallicity = {"non-metals": ecut_kpoints_nonmetals, "metals": ecut_kpoints_metals}
-    ecut_min, ecut_max, ecut_step = ecut_convergence
     dict_sets: dict[str, DopedDictSetQE] = {}
 
     for entry, category, structure, folder_name in competing_phases._iter_entries_with_categories():
-        phase_folder = os.path.join(str(output_path), folder_name)
+        if category == "molecules":  # Γ-only sampling is sufficient for a molecule-in-a-box
+            continue
+
         dict_set_kwargs: dict[str, Any] = {  # settings shared by all this phase's convergence calculations
             "calculation": "scf",  # convergence testing uses single-point SCF
             "kpoints_shift": kpoints_shift,
@@ -1692,39 +1664,23 @@ def get_kpoint_convergence_sets(
             "user_system_settings": _competing_phase_system_settings(entry, user_system_settings, soc),
             "user_electron_settings": user_electron_settings,
         }
-
-        # k-point convergence: vary k-grid at fixed ecutwfc. Skipped for molecules (Γ-only is exact
-        # for a molecule-in-a-box).
-        if category != "molecules":
-            min_k, max_k, step_k = kpoints_by_metallicity[category]
-            seen_kgrids: set[tuple[int, ...]] = set()
-            for kpoint in np.arange(min_k, max_k, step_k):
-                kgrid = _kpoints_grid_from_reciprocal_density(structure, kpoint)
-                if tuple(kgrid) in seen_kgrids:
-                    continue  # this k-point grid already generated, bump reciprocal density more
-                seen_kgrids.add(tuple(kgrid))
-                kname = "k" + "_".join(str(k) for k in kgrid)
-                dict_sets[os.path.join(phase_folder, "kpoint_converge", kname)] = DopedDictSetQE(
-                    structure, ecutwfc=kpoint_sweep_ecutwfc, kpoints=kgrid, **dict_set_kwargs
-                )
-
-        # ecutwfc convergence: vary ecutwfc at a fixed k-grid (Γ-only for molecules)
-        ecut_kgrid = (
-            None
-            if category == "molecules"
-            else _kpoints_grid_from_reciprocal_density(structure, ecut_kppvol_by_metallicity[category])
-        )
-        for ecut in range(ecut_min, ecut_max + 1, ecut_step):
-            dict_sets[os.path.join(phase_folder, "ecut_convergence", f"ecutwfc_{ecut}")] = DopedDictSetQE(
-                structure, ecutwfc=ecut, kpoints=ecut_kgrid, **dict_set_kwargs
+        min_k, max_k, step_k = kpoints_by_metallicity[category]
+        seen_kgrids: set[tuple[int, ...]] = set()
+        for kpoint in np.arange(min_k, max_k, step_k):
+            kgrid = _kpoints_grid_from_reciprocal_density(structure, kpoint)
+            if tuple(kgrid) in seen_kgrids:
+                continue  # this k-point grid already generated, bump reciprocal density more
+            seen_kgrids.add(tuple(kgrid))
+            kname = "k" + "_".join(str(k) for k in kgrid)
+            dict_sets[os.path.join(str(output_path), folder_name, "kpoint_converge", kname)] = (
+                DopedDictSetQE(structure, kpoints=kgrid, **dict_set_kwargs)
             )
 
     if competing_phases.molecular_entries:
         print(
             f"Note that diatomic molecular phases, calculated as molecules-in-a-box "
             f"({', '.join([e.name for e in competing_phases.molecular_entries])} in this case), do not "
-            f"require k-point convergence testing (Γ-only sampling is sufficient), but are "
-            f"still included in the ecutwfc (plane-wave cutoff) convergence sweep."
+            f"require k-point convergence testing, as Γ-only sampling is sufficient."
         )
 
     return dict_sets
@@ -1762,10 +1718,6 @@ def write_kpoint_convergence_files(
     output_path: PathLike | None = None,
     kpoints_metals: tuple[float, float, float] = (40, 1000, 5),
     kpoints_nonmetals: tuple[float, float, float] = (5, 120, 5),
-    kpoint_sweep_ecutwfc: int | None = None,
-    ecut_convergence: tuple = (20, 90, 10),
-    ecut_kpoints_metals: float = 200,
-    ecut_kpoints_nonmetals: float = 64,
     pseudo_dir: str = "./pseudo_folder_name/",
     pseudo_map: dict | None = None,
     soc: bool = False,
@@ -1776,13 +1728,9 @@ def write_kpoint_convergence_files(
     **kwargs,
 ) -> dict[str, DopedDictSetQE]:
     r"""
-    Generates and writes ``pw.x`` input files for `k`-point `and` plane-wave
-    cutoff (``ecutwfc``) convergence testing of competing phases (as single-
-    point ``scf`` calculations), to
-    ``<output_path>/<phase>/kpoint_converge/k<kx>_<ky>_<kz>/pw.in`` and
-    ``<output_path>/<phase>/ecut_convergence/ecutwfc_<N>/pw.in``; and
-    additionally sweeps ``ecutwfc`` as the required cutoff depends on the
-    pseudopotentials used.
+    Generates and writes ``pw.x`` input files for `k`-point convergence testing
+    of competing phases (as single-point ``scf`` calculations), to
+    ``<output_path>/<phase>/kpoint_converge/k<kx>_<ky>_<kz>/pw.in``.
 
     The input sets are generated with :func:`get_kpoint_convergence_sets`
     (see there for details) and written with :func:`write_input_sets`,
@@ -1813,22 +1761,6 @@ def write_kpoint_convergence_files(
             only unique k-point grids are generated, so small step sizes
             (as default) just result in each k-points choice between
             ``min`` and ``max`` being included.
-        kpoint_sweep_ecutwfc (int or None):
-            ``ecutwfc`` (Ry) held fixed while the k-grid is swept (with
-            ``ecutrho`` then set to ``4 * ecutwfc``, unless given in
-            ``user_system_settings``). ``None`` (default) keeps the YAML set
-            defaults (60 Ry, ``ecutrho`` = 240 Ry).
-        ecut_convergence (tuple):
-            ``(min, max, step)`` ``ecutwfc`` range in Ry for the cutoff
-            convergence sweep, with ``max`` inclusive. Default
-            ``(20, 90, 10)`` (i.e. 20, 30, 40, 50, 60, 70, 80, 90 Ry).
-        ecut_kpoints_metals (float):
-            Fixed reciprocal k-point density (Å^-3) used for metallic
-            phases during the ``ecutwfc`` sweep. Default 200.
-        ecut_kpoints_nonmetals (float):
-            Fixed reciprocal k-point density (Å^-3) used for non-metallic
-            phases during the ``ecutwfc`` sweep. Default 64. Molecules use
-            Γ-only sampling regardless.
         pseudo_dir (str):
             Path to the directory containing UPF pseudopotential files,
             written into ``&CONTROL``. Default ``"./pseudo_folder_name/"``.
@@ -1853,7 +1785,7 @@ def write_kpoint_convergence_files(
             ``(0, 0, 0)`` (no shift).
         user_system_settings (dict or None):
             Override default ``&SYSTEM`` namelist settings, e.g.
-            ``{"ecutwfc": 80, "ecutrho": 400}``.
+            ``{"ecutwfc": 80, "ecutrho": 640}``.
         user_control_settings (dict or None):
             Override default ``&CONTROL`` namelist settings.
         user_electron_settings (dict or None):
@@ -1872,10 +1804,6 @@ def write_kpoint_convergence_files(
         output_path=output_path,
         kpoints_metals=kpoints_metals,
         kpoints_nonmetals=kpoints_nonmetals,
-        kpoint_sweep_ecutwfc=kpoint_sweep_ecutwfc,
-        ecut_convergence=ecut_convergence,
-        ecut_kpoints_metals=ecut_kpoints_metals,
-        ecut_kpoints_nonmetals=ecut_kpoints_nonmetals,
         pseudo_dir=pseudo_dir,
         pseudo_map=pseudo_map,
         soc=soc,

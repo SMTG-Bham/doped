@@ -260,17 +260,6 @@ class SitePotentialSmearingTestCase(unittest.TestCase):
         # exact; as this site lies on a grid point; the wrong Miller index would shift the result by ~23%:
         assert np.isclose(site_potential, -np.exp(-0.5 * beta**2 * (2 * np.pi * h / a) ** 2), rtol=1e-12)
 
-    def test_even_grid_frequencies_unchanged(self):
-        """
-        The previous ``arange``-based frequency ladder was only wrong for odd
-        grid dimensions, so no even-grid (e.g. VASP ``LOCPOT``) potentials or
-        reference values move with the switch to ``np.fft.fftfreq``.
-        """
-        for n in (2, 8, 40, 96):
-            assert np.array_equal(
-                np.fft.fftfreq(n, 1 / n), np.roll(np.arange(-n // 2, n // 2, 1, dtype=int), n // 2)
-            )
-
     def test_per_element_smearing_widths(self):
         """
         With ``beta=None`` (the default), each site must be sampled from the
