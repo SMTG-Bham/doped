@@ -425,8 +425,8 @@ def get_kumagai_correction(
             charges for the defect (e.g. for the constituents of a defect
             complex), used in place of the default single point charge (total
             defect charge at ``DefectEntry.defect_supercell_site`` /
-            ``defect_coords``. The charges must sum to the defect charge state.
-            The point charges are unwrapped to a single (minimum image)
+            ``defect_coords``). The charges must sum to the defect charge
+            state. The point charges are unwrapped to a single (minimum image)
             configuration, and the potential sampling region is then defined by
             the distance to the nearest point charge (so
             ``defect_region_radius`` applies around each). Default is ``None``

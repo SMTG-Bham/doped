@@ -116,6 +116,7 @@ Studies using ``doped``, so far
 ===============================
 
 - N\.-R. Skogemyr **First-Principles Defect Thermodynamics of MgSnN₂: Origin and Suppression of Unintentional n-Type Conductivity** `MSc Thesis, Linköping University <https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510>`__ 2026
+- R\. Claes, A. G. Squires and D. O. Scanlon **Resonant doping design for ternary n-type oxides: the case of CdSnO₃** `ChemRxiv <https://doi.org/10.26434/chemrxiv.15012056/v1>`__ 2026
 - S\. Jeon, A. Soon and Y. Shin **Defect Chemistry of Hafnia-Based Ferroelectrics under Oxide-Electrode Constraints** `arXiv <https://doi.org/10.48550/arXiv.2611.02317>`__ 2026
 - L\. Shi et al. **Defect compensation-limited carrier tuning reveals sulfur vacancy tolerance and an n-type growth window in β-AgBiS₂** `Journal of Materials Chemistry A <https://doi.org/10.1039/D6TA06121D>`__ 2026
 - C\. Morel et al. **Mechanochemically Disordered Li₂Ta₂OCl₁₀ Oxyhalide Unlocks Superionic Conductivity (>10 mS.cm⁻¹)** `Advanced Energy Materials <https://doi.org/10.1002/aenm.71736>`__ 2026
