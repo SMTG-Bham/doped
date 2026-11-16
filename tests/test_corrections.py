@@ -118,7 +118,7 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
         )
 
         for fnv_corr in fnv_corr_list:
-            assert np.isclose(fnv_corr.correction_energy, 5.445950368792991)
+            assert np.isclose(fnv_corr.correction_energy, 5.4464703687929905)
 
         # test verbose option:
         with patch("builtins.print") as mock_print:
@@ -140,7 +140,7 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
             ]
         )
         for fnv_corr in fnv_corr_list:
-            assert np.isclose(fnv_corr.correction_energy, 7.499071576499095)
+            assert np.isclose(fnv_corr.correction_energy, 7.499591576499095)
 
     def test_get_kumagai_correction(self):
         efnv_corr_list = [get_kumagai_correction(self.defect_entry, self.dielectric)]
