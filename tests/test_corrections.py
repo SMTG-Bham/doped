@@ -23,6 +23,7 @@ from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_p
 from doped.analysis import DefectParser, DefectsParser
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
+from doped.utils.parsing import _get_defect_supercell_sites
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -492,7 +493,54 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         case).
         """
         mpl.pyplot.clf()
-        return self.Te_i_2_ent.get_kumagai_correction(plot=True)[1]
+        # parsed as a Cd_i-Te_i-v_Cd complex with the default ``site_tol``, so the eFNV sampling region is
+        # centred on the complex centroid, ~1.4 Å from the Te_i site, which changes the alignment term (the
+        # point charge term is the same); 0.9040 eV for Te_i (``site_tol=None``), and 0.9109 eV with the
+        # charge split over the Te trimer (``test_plot_kumagai_Te_i_2_multiple_point_charges``):
+        corr, fig = self.Te_i_2_ent.get_kumagai_correction(plot=True)
+        assert np.isclose(corr.correction_energy, 0.9002, atol=1e-4)
+        return fig
+
+    def test_kumagai_Te_i_2_charge_models(self):
+        """
+        Test the eFNV correction for Te_i^+2 (parsed as a Cd_i-Te_i-v_Cd
+        complex) with different models of the defect charge: a single point
+        charge at the complex centroid (default) or Te_i site, or multiple
+        point charges on the Te trimer or the complex constituents.
+        """
+        ent = self.Te_i_2_ent
+        struct = ent.defect_supercell
+        assert [defect.name for defect in ent.defect.defects] == ["v_Cd", "Cd_i", "Te_i"]
+        constituent_sites = _get_defect_supercell_sites(ent)
+        formal_charges = {"Cd_i": 2, "Te_i": 2, "v_Cd": -2}  # Cd_i is the displaced Cd, 1.58 Å from v_Cd
+
+        for kwargs, correction, point_charge_correction, alignment_correction in [
+            ({}, 0.9002, 0.6839, 0.2163),  # single +2 point charge at complex centroid (default)
+            ({"defect_coords": struct[64].frac_coords}, 0.9040, 0.6839, 0.2201),  # +2 at Te_i site
+            (  # +2/3 on Te_i and its 2 Te nearest neighbours (Te trimer):
+                {"point_charges": [(2 / 3, struct[i].frac_coords) for i in [64, 63, 53]]},
+                0.9109,
+                0.6598,
+                0.2511,
+            ),
+            (  # formal charges on the complex constituents:
+                {
+                    "point_charges": [
+                        (formal_charges[defect.name], site.frac_coords)
+                        for defect, site in zip(ent.defect.defects, constituent_sites, strict=True)
+                    ]
+                },
+                0.8888,
+                0.6630,
+                0.2258,
+            ),
+        ]:
+            print(f"Testing with kwargs: {kwargs}")
+            corr = get_kumagai_correction(ent, verbose=False, **kwargs)
+            assert np.isclose(corr.correction_energy, correction, atol=1e-4)
+            efnv = corr.metadata["pydefect_ExtendedFnvCorrection"]
+            assert np.isclose(efnv.point_charge_correction, point_charge_correction, atol=1e-4)
+            assert np.isclose(efnv.alignment_correction, alignment_correction, atol=1e-4)
 
     @custom_mpl_image_compare("Te_i_+2_eFNV_plot_multiple_point_charges.png")
     def test_plot_kumagai_Te_i_2_multiple_point_charges(self):

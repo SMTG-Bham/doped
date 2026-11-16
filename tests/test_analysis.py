@@ -1846,7 +1846,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             assert (
                 f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-                f"{parsed_int_Te_2_fake_aniso.name} is 0.157 eV (i.e. which is greater than the "
+                f"{parsed_int_Te_2_fake_aniso.name} is 0.135 eV (i.e. which is greater than the "
                 f"`error_tolerance`: 0.050 eV). You may want to check the accuracy of the correction "
                 f"by plotting the site potential differences (using "
                 f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
@@ -1862,7 +1862,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             -7.105,
             atol=3e-3,
         )  # uncorrected energy
-        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.991240009587045, atol=1e-3)
+        # Int_Te_3_2 is parsed as a Cd_i-Te_i-v_Cd complex with the default ``site_tol``, so the eFNV
+        # sampling region is centred on the complex centroid, rather than the Te_i site (``site_tol=None``,
+        # which gives -4.9912 eV with an error of 0.157 eV here); differences exaggerated by this ε:
+        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -5.0034, atol=1e-3)
 
         # test isotropic dielectric but only OUTCAR present:
         with warnings.catch_warnings(record=True) as w:
@@ -1909,6 +1912,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
                 charge_state=2,
+                site_tol=None,  # Te_i point defect; as a Cd_i-Te_i-v_Cd complex (default ``site_tol``) the
+                # complex centroid is used, giving -5.5285 eV with an FNV error (0.041 eV) below tolerance
             ).defect_entry
         _print_warning_info(w)
         assert len(w) == 1

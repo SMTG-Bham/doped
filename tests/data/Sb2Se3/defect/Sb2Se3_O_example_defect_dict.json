@@ -2,7 +2,7 @@
     "O_Se_Cs_Sb2.65_+1": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.0",
+        "@version": "3.2.1",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,
@@ -3485,7 +3485,7 @@
         "calculation_metadata": {
             "band_gap": 1.4734000000000007,
             "bulk site symmetry": "Cs",
-            "bulk_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/bulk",
+            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
             "bulk_site": {
                 "@class": "PeriodicSite",
                 "@module": "pymatgen.core.sites",
@@ -3616,7 +3616,7 @@
                 ],
                 "dtype": "float64"
             },
-            "defect_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/defect/O_1",
+            "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_1",
             "defect_site_index": 0,
             "defect_site_potentials": {
                 "@class": "array",
@@ -31351,7 +31351,6 @@
                     "vasp_version": "6.2.0"
                 }
             },
-            "site_tol": 0.4,
             "symmetry cluster centre": {
                 "@class": "array",
                 "@module": "numpy",
@@ -33080,7 +33079,7 @@
         "conv_cell_frac_coords": null,
         "conventional_structure": null,
         "corrections": {
-            "kumagai_charge_correction": -0.12106839772304971
+            "kumagai_charge_correction": -0.12838225334372977
         },
         "corrections_metadata": {
             "kumagai_charge_correction": {
@@ -33095,14 +33094,14 @@
                         0.92358444
                     ],
                     "defect_region_radius": 5.964071,
-                    "point_charge_correction": 0.01622692060572421,
+                    "point_charge_correction": 0.023013240017276657,
                     "sites": [
                         {
                             "@class": "PotentialSite",
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.057236852471965,
-                            "pc_potential": -0.0014210880523918043,
+                            "pc_potential": -0.01572139760216859,
                             "potential": 0.08969999999999345,
                             "specie": "Sb"
                         },
@@ -33111,7 +33110,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.885489082551875,
-                            "pc_potential": -0.03814238528203786,
+                            "pc_potential": -0.05250156049692316,
                             "potential": 0.10529999999999973,
                             "specie": "Sb"
                         },
@@ -33120,7 +33119,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.8912949898193245,
-                            "pc_potential": -0.03813837236961456,
+                            "pc_potential": -0.05221343451322767,
                             "potential": 0.10640000000000782,
                             "specie": "Sb"
                         },
@@ -33129,7 +33128,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.777368932500999,
-                            "pc_potential": -0.037188832748799715,
+                            "pc_potential": -0.05117015577319318,
                             "potential": 0.120900000000006,
                             "specie": "Sb"
                         },
@@ -33138,7 +33137,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.483195783757145,
-                            "pc_potential": -0.04295676581754308,
+                            "pc_potential": -0.05685727175855567,
                             "potential": 0.10380000000000678,
                             "specie": "Sb"
                         },
@@ -33147,7 +33146,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.372887221965763,
-                            "pc_potential": -0.04275965646818635,
+                            "pc_potential": -0.05647320447617007,
                             "potential": 0.10380000000000678,
                             "specie": "Sb"
                         },
@@ -33165,7 +33164,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 5.9919081625205095,
-                            "pc_potential": 0.03971490559197811,
+                            "pc_potential": 0.025923676364080887,
                             "potential": 0.07260000000000844,
                             "specie": "Sb"
                         },
@@ -33210,7 +33209,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.374043393365662,
-                            "pc_potential": -0.04277635230140746,
+                            "pc_potential": -0.05706380268660695,
                             "potential": 0.10429999999999495,
                             "specie": "Sb"
                         },
@@ -33219,7 +33218,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.987957257045058,
-                            "pc_potential": -0.019365347656700057,
+                            "pc_potential": -0.03319020629028365,
                             "potential": 0.08499999999999375,
                             "specie": "Sb"
                         },
@@ -33237,7 +33236,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.195344872329825,
-                            "pc_potential": -0.004104301571804521,
+                            "pc_potential": -0.018596390623250608,
                             "potential": 0.11220000000000141,
                             "specie": "Sb"
                         },
@@ -33246,7 +33245,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.060242241241074,
-                            "pc_potential": -0.0014094358205775667,
+                            "pc_potential": -0.016269882314132005,
                             "potential": 0.09149999999999636,
                             "specie": "Sb"
                         },
@@ -33282,7 +33281,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.5284285423388795,
-                            "pc_potential": -0.041328030672603024,
+                            "pc_potential": -0.055002354509608706,
                             "potential": 0.10309999999999775,
                             "specie": "Sb"
                         },
@@ -33291,7 +33290,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.5200588614877475,
-                            "pc_potential": -0.04133308488950893,
+                            "pc_potential": -0.05529155415152691,
                             "potential": 0.10210000000000719,
                             "specie": "Sb"
                         },
@@ -33318,7 +33317,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.63999706389672,
-                            "pc_potential": -0.04362934570505919,
+                            "pc_potential": -0.057528734159814035,
                             "potential": 0.08200000000000074,
                             "specie": "Se"
                         },
@@ -33327,7 +33326,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.573851777536759,
-                            "pc_potential": -0.04348701324734188,
+                            "pc_potential": -0.05777126760935841,
                             "potential": 0.10430000000000206,
                             "specie": "Se"
                         },
@@ -33372,7 +33371,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.973957137895999,
-                            "pc_potential": -0.01869451709634481,
+                            "pc_potential": -0.032726570834727284,
                             "potential": 0.11199999999999477,
                             "specie": "Se"
                         },
@@ -33390,7 +33389,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.116830619103261,
-                            "pc_potential": 0.03587962429558662,
+                            "pc_potential": 0.021581600588035026,
                             "potential": 0.17490000000000094,
                             "specie": "Se"
                         },
@@ -33417,7 +33416,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.973228529929081,
-                            "pc_potential": -0.018702198522135522,
+                            "pc_potential": -0.0330142646715561,
                             "potential": 0.11189999999999856,
                             "specie": "Se"
                         },
@@ -33435,7 +33434,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.578555482173342,
-                            "pc_potential": -0.043492872401479074,
+                            "pc_potential": -0.0572039306053939,
                             "potential": 0.10549999999999926,
                             "specie": "Se"
                         },
@@ -33462,7 +33461,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.633571318022941,
-                            "pc_potential": -0.02191917861114991,
+                            "pc_potential": -0.0367529859781433,
                             "potential": 0.12860000000000582,
                             "specie": "Se"
                         },
@@ -33480,7 +33479,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.67638972782068,
-                            "pc_potential": -0.04225338245775544,
+                            "pc_potential": -0.05609546942689653,
                             "potential": 0.11260000000000048,
                             "specie": "Se"
                         },
@@ -33489,7 +33488,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.7463558927409055,
-                            "pc_potential": -0.0423478165659409,
+                            "pc_potential": -0.05628123232723267,
                             "potential": 0.12160000000000082,
                             "specie": "Se"
                         },
@@ -33498,7 +33497,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.741456009841604,
-                            "pc_potential": -0.04233486880070659,
+                            "pc_potential": -0.056552952253338215,
                             "potential": 0.12170000000000414,
                             "specie": "Se"
                         },
@@ -33507,7 +33506,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.634598029753298,
-                            "pc_potential": -0.02183380894466076,
+                            "pc_potential": -0.03609549523991105,
                             "potential": 0.12890000000000157,
                             "specie": "Se"
                         },
@@ -33516,7 +33515,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.686587170517694,
-                            "pc_potential": -0.02343724398976165,
+                            "pc_potential": -0.037884611397085384,
                             "potential": 0.12710000000000576,
                             "specie": "Se"
                         },
@@ -33525,7 +33524,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.630260174590894,
-                            "pc_potential": 0.0009188262182956164,
+                            "pc_potential": -0.012917536542744256,
                             "potential": 0.19700000000000273,
                             "specie": "Se"
                         },
@@ -33570,7 +33569,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.424519336542258,
-                            "pc_potential": -0.0343737756073986,
+                            "pc_potential": -0.04817612001916144,
                             "potential": 0.11079999999999757,
                             "specie": "Se"
                         },
@@ -33597,7 +33596,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.575162549578682,
-                            "pc_potential": 0.017947406289412576,
+                            "pc_potential": 0.004073295200748568,
                             "potential": 0.15169999999999817,
                             "specie": "Se"
                         },
@@ -33631,7 +33630,7 @@
                     ]
                 }
             },
-            "kumagai_charge_correction_error": 0.005596679252090205
+            "kumagai_charge_correction_error": 0.005590903093091584
         },
         "defect": {
             "@class": "Substitution",
@@ -33664,7 +33663,7 @@
                     0.0
                 ],
                 "index": 11,
-                "label": "Se2-",
+                "label": "Se",
                 "lattice": {
                     "@class": "Lattice",
                     "@module": "pymatgen.core.lattice",
@@ -33692,7 +33691,13 @@
                     ]
                 },
                 "nn_distance": 1.0175362097255202e-15,
-                "properties": {},
+                "properties": {
+                    "selective_dynamics": [
+                        true,
+                        true,
+                        true
+                    ]
+                },
                 "species": {
                     "Se2-": 1.0
                 }
@@ -33876,7 +33881,6 @@
                     ]
                 }
             ],
-            "map_to_unit_cell": true,
             "multiplicity": 4,
             "oxi_state": 0,
             "site": {
@@ -33967,8 +33971,14 @@
                             0.32776977,
                             0.03227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -33989,8 +33999,14 @@
                             0.17223023,
                             0.53227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -34011,8 +34027,14 @@
                             0.53729851,
                             0.35546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -34033,8 +34055,14 @@
                             0.03729851,
                             0.14453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -34055,8 +34083,14 @@
                             0.46270149,
                             0.64453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -34077,8 +34111,14 @@
                             0.82776977,
                             0.46772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -34099,8 +34139,14 @@
                             0.96270149,
                             0.85546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -34121,8 +34167,14 @@
                             0.67223023,
                             0.96772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -34143,8 +34195,14 @@
                             0.19228864,
                             0.20998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34165,8 +34223,14 @@
                             0.30771136,
                             0.70998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34187,8 +34251,14 @@
                             0.62788995,
                             0.55257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34209,8 +34279,14 @@
                             0.44485469,
                             0.12774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34231,8 +34307,14 @@
                             0.87211005,
                             0.05257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34253,8 +34335,14 @@
                             0.37211005,
                             0.44742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34275,8 +34363,14 @@
                             0.05514531,
                             0.62774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34297,8 +34391,14 @@
                             0.94485469,
                             0.37225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34319,8 +34419,14 @@
                             0.69228864,
                             0.29001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34341,8 +34447,14 @@
                             0.55514531,
                             0.87225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34363,8 +34475,14 @@
                             0.12788995,
                             0.94742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -34385,8 +34503,14 @@
                             0.80771136,
                             0.79001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -35689,14 +35813,12 @@
                 }
             ]
         },
-        "defect_supercell_sites": null,
         "degeneracy_factors": {
             "orientational degeneracy": 1.0,
             "spin degeneracy": 2.0
         },
         "entry_id": "vasprun-20231009-12.0-e1b77312b18783984e1cb4e01e2123b8",
         "equiv_conv_cell_frac_coords": [],
-        "equivalent_supercell_complexes": null,
         "equivalent_supercell_sites": [],
         "name": "O_Se_Cs_Sb2.65_+1",
         "sc_defect_frac_coords": {
@@ -36994,7 +37116,7 @@
     "O_Se_Cs_Sb2.65_+2": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.0",
+        "@version": "3.2.1",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,
@@ -40477,7 +40599,7 @@
         "calculation_metadata": {
             "band_gap": 1.4734000000000007,
             "bulk site symmetry": "Cs",
-            "bulk_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/bulk",
+            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
             "bulk_site": {
                 "@class": "PeriodicSite",
                 "@module": "pymatgen.core.sites",
@@ -40608,7 +40730,7 @@
                 ],
                 "dtype": "float64"
             },
-            "defect_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/defect/O_2",
+            "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_2",
             "defect_site_index": 0,
             "defect_site_potentials": {
                 "@class": "array",
@@ -68403,7 +68525,6 @@
                     "vasp_version": "6.2.0"
                 }
             },
-            "site_tol": 0.4,
             "symmetry cluster centre": {
                 "@class": "array",
                 "@module": "numpy",
@@ -70132,7 +70253,7 @@
         "conv_cell_frac_coords": null,
         "conventional_structure": null,
         "corrections": {
-            "kumagai_charge_correction": -0.28603843139688495
+            "kumagai_charge_correction": -0.3152141052970008
         },
         "corrections_metadata": {
             "kumagai_charge_correction": {
@@ -70147,14 +70268,14 @@
                         0.92598697
                     ],
                     "defect_region_radius": 5.964071,
-                    "point_charge_correction": 0.06490768242289684,
+                    "point_charge_correction": 0.09205296006910663,
                     "sites": [
                         {
                             "@class": "PotentialSite",
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.0582961640047825,
-                            "pc_potential": -0.000996204613155838,
+                            "pc_potential": -0.02958779840609437,
                             "potential": 0.10009999999999764,
                             "specie": "Sb"
                         },
@@ -70163,7 +70284,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.898933781571927,
-                            "pc_potential": -0.07704202681381019,
+                            "pc_potential": -0.10575570381142359,
                             "potential": 0.10410000000000252,
                             "specie": "Sb"
                         },
@@ -70172,7 +70293,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.905406289979777,
-                            "pc_potential": -0.07703762324000807,
+                            "pc_potential": -0.10518142436545136,
                             "potential": 0.10300000000000864,
                             "specie": "Sb"
                         },
@@ -70181,7 +70302,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.790548918110053,
-                            "pc_potential": -0.07514971537509285,
+                            "pc_potential": -0.1031059847840355,
                             "potential": 0.11010000000000275,
                             "specie": "Sb"
                         },
@@ -70190,7 +70311,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.500454000269068,
-                            "pc_potential": -0.086046262284518,
+                            "pc_potential": -0.1138512811710597,
                             "potential": 0.1021999999999963,
                             "specie": "Sb"
                         },
@@ -70199,7 +70320,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.39382621808333,
-                            "pc_potential": -0.08561664482733702,
+                            "pc_potential": -0.11304789343382189,
                             "potential": 0.11050000000000182,
                             "specie": "Sb"
                         },
@@ -70217,7 +70338,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 5.988232048583217,
-                            "pc_potential": 0.0801575013677561,
+                            "pc_potential": 0.052574109899256434,
                             "potential": 0.06850000000000023,
                             "specie": "Sb"
                         },
@@ -70262,7 +70383,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.393051701872794,
-                            "pc_potential": -0.08564805334325855,
+                            "pc_potential": -0.11422756438603446,
                             "potential": 0.11029999999999518,
                             "specie": "Sb"
                         },
@@ -70271,7 +70392,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.0062348345520356,
-                            "pc_potential": -0.04037448448439195,
+                            "pc_potential": -0.06802397802328933,
                             "potential": 0.08449999999999136,
                             "specie": "Sb"
                         },
@@ -70289,7 +70410,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.18158632595598,
-                            "pc_potential": -0.006709262957033605,
+                            "pc_potential": -0.03569517376697323,
                             "potential": 0.1075000000000017,
                             "specie": "Sb"
                         },
@@ -70298,7 +70419,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.0595038466253675,
-                            "pc_potential": -0.0009122226511341728,
+                            "pc_potential": -0.030625161691276354,
                             "potential": 0.10089999999999577,
                             "specie": "Sb"
                         },
@@ -70334,7 +70455,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.501936369444935,
-                            "pc_potential": -0.08231879294786368,
+                            "pc_potential": -0.10966557466127283,
                             "potential": 0.10360000000000014,
                             "specie": "Sb"
                         },
@@ -70343,7 +70464,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.49498512805431,
-                            "pc_potential": -0.08233079157967815,
+                            "pc_potential": -0.11024623071936822,
                             "potential": 0.10340000000000771,
                             "specie": "Sb"
                         },
@@ -70370,7 +70491,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.67047283871215,
-                            "pc_potential": -0.08742225102892698,
+                            "pc_potential": -0.11522098284018606,
                             "potential": 0.07900000000000063,
                             "specie": "Se"
                         },
@@ -70379,7 +70500,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.610076985348261,
-                            "pc_potential": -0.08714331937852936,
+                            "pc_potential": -0.11571047075287565,
                             "potential": 0.11169999999999902,
                             "specie": "Se"
                         },
@@ -70397,7 +70518,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 5.978184211585939,
-                            "pc_potential": -0.07101652866901526,
+                            "pc_potential": -0.09835291263686326,
                             "potential": 0.12510000000000332,
                             "specie": "Se"
                         },
@@ -70406,7 +70527,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 5.968474861188215,
-                            "pc_potential": -0.07098568358573094,
+                            "pc_potential": -0.09888897691358232,
                             "potential": 0.12530000000000285,
                             "specie": "Se"
                         },
@@ -70424,7 +70545,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.943223553294418,
-                            "pc_potential": -0.035625825475006305,
+                            "pc_potential": -0.06368630175729847,
                             "potential": 0.15029999999999433,
                             "specie": "Se"
                         },
@@ -70442,7 +70563,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.108010332516077,
-                            "pc_potential": 0.0719432038850409,
+                            "pc_potential": 0.04335025965910266,
                             "potential": 0.2289999999999992,
                             "specie": "Se"
                         },
@@ -70469,7 +70590,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.941315997548399,
-                            "pc_potential": -0.03566341448879875,
+                            "pc_potential": -0.06428538040486519,
                             "potential": 0.15139999999999532,
                             "specie": "Se"
                         },
@@ -70487,7 +70608,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.614275903177465,
-                            "pc_potential": -0.08715184247692351,
+                            "pc_potential": -0.11457191265955803,
                             "potential": 0.1127000000000038,
                             "specie": "Se"
                         },
@@ -70514,7 +70635,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.662162649603401,
-                            "pc_potential": -0.04500948356591795,
+                            "pc_potential": -0.07467168172835469,
                             "potential": 0.15160000000000196,
                             "specie": "Se"
                         },
@@ -70532,7 +70653,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.667413838751376,
-                            "pc_potential": -0.08429000769008188,
+                            "pc_potential": -0.11197826761658249,
                             "potential": 0.14060000000000628,
                             "specie": "Se"
                         },
@@ -70541,7 +70662,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.734424796537917,
-                            "pc_potential": -0.08441704604593024,
+                            "pc_potential": -0.11228816577465266,
                             "potential": 0.14330000000000354,
                             "specie": "Se"
                         },
@@ -70550,7 +70671,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.728242255414567,
-                            "pc_potential": -0.08440366755422755,
+                            "pc_potential": -0.112845272264571,
                             "potential": 0.14450000000000074,
                             "specie": "Se"
                         },
@@ -70559,7 +70680,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.666611781598148,
-                            "pc_potential": -0.044914405750321816,
+                            "pc_potential": -0.07343076508318759,
                             "potential": 0.15150000000000574,
                             "specie": "Se"
                         },
@@ -70568,7 +70689,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.713202792635702,
-                            "pc_potential": -0.04828311545974209,
+                            "pc_potential": -0.07717137899083755,
                             "potential": 0.1384000000000043,
                             "specie": "Se"
                         },
@@ -70577,7 +70698,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.612259772510816,
-                            "pc_potential": 0.0035801138191381724,
+                            "pc_potential": -0.024091696866879075,
                             "potential": 0.21700000000000585,
                             "specie": "Se"
                         },
@@ -70622,7 +70743,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.409732263249575,
-                            "pc_potential": -0.06803512351603165,
+                            "pc_potential": -0.0956423577839124,
                             "potential": 0.1384000000000043,
                             "specie": "Se"
                         },
@@ -70649,7 +70770,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.586731641718457,
-                            "pc_potential": 0.034471273433831565,
+                            "pc_potential": 0.006719943244366004,
                             "potential": 0.20129999999999626,
                             "specie": "Se"
                         },
@@ -70683,7 +70804,7 @@
                     ]
                 }
             },
-            "kumagai_charge_correction_error": 0.01766035253260902
+            "kumagai_charge_correction_error": 0.017629676026285124
         },
         "defect": {
             "@class": "Substitution",
@@ -70716,7 +70837,7 @@
                     0.0
                 ],
                 "index": 11,
-                "label": "Se2-",
+                "label": "Se",
                 "lattice": {
                     "@class": "Lattice",
                     "@module": "pymatgen.core.lattice",
@@ -70744,7 +70865,13 @@
                     ]
                 },
                 "nn_distance": 1.0175362097255202e-15,
-                "properties": {},
+                "properties": {
+                    "selective_dynamics": [
+                        true,
+                        true,
+                        true
+                    ]
+                },
                 "species": {
                     "Se2-": 1.0
                 }
@@ -70928,7 +71055,6 @@
                     ]
                 }
             ],
-            "map_to_unit_cell": true,
             "multiplicity": 4,
             "oxi_state": 0,
             "site": {
@@ -71019,8 +71145,14 @@
                             0.32776977,
                             0.03227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -71041,8 +71173,14 @@
                             0.17223023,
                             0.53227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -71063,8 +71201,14 @@
                             0.53729851,
                             0.35546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -71085,8 +71229,14 @@
                             0.03729851,
                             0.14453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -71107,8 +71257,14 @@
                             0.46270149,
                             0.64453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -71129,8 +71285,14 @@
                             0.82776977,
                             0.46772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -71151,8 +71313,14 @@
                             0.96270149,
                             0.85546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -71173,8 +71341,14 @@
                             0.67223023,
                             0.96772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -71195,8 +71369,14 @@
                             0.19228864,
                             0.20998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71217,8 +71397,14 @@
                             0.30771136,
                             0.70998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71239,8 +71425,14 @@
                             0.62788995,
                             0.55257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71261,8 +71453,14 @@
                             0.44485469,
                             0.12774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71283,8 +71481,14 @@
                             0.87211005,
                             0.05257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71305,8 +71509,14 @@
                             0.37211005,
                             0.44742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71327,8 +71537,14 @@
                             0.05514531,
                             0.62774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71349,8 +71565,14 @@
                             0.94485469,
                             0.37225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71371,8 +71593,14 @@
                             0.69228864,
                             0.29001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71393,8 +71621,14 @@
                             0.55514531,
                             0.87225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71415,8 +71649,14 @@
                             0.12788995,
                             0.94742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -71437,8 +71677,14 @@
                             0.80771136,
                             0.79001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -72741,14 +72987,12 @@
                 }
             ]
         },
-        "defect_supercell_sites": null,
         "degeneracy_factors": {
             "orientational degeneracy": 1.0,
             "spin degeneracy": 1.0
         },
         "entry_id": "vasprun-20231009-12.0-31d3375b5697cad38df0cb03370f1e11",
         "equiv_conv_cell_frac_coords": [],
-        "equivalent_supercell_complexes": null,
         "equivalent_supercell_sites": [],
         "name": "O_Se_Cs_Sb2.65_+2",
         "sc_defect_frac_coords": {
@@ -74046,7 +74290,7 @@
     "O_Se_Cs_Sb2.65_-1": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.0",
+        "@version": "3.2.1",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,
@@ -77529,7 +77773,7 @@
         "calculation_metadata": {
             "band_gap": 1.4734000000000007,
             "bulk site symmetry": "Cs",
-            "bulk_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/bulk",
+            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
             "bulk_site": {
                 "@class": "PeriodicSite",
                 "@module": "pymatgen.core.sites",
@@ -77660,7 +77904,7 @@
                 ],
                 "dtype": "float64"
             },
-            "defect_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/defect/O_-1",
+            "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_-1",
             "defect_site_index": 0,
             "defect_site_potentials": {
                 "@class": "array",
@@ -105395,7 +105639,6 @@
                     "vasp_version": "6.2.0"
                 }
             },
-            "site_tol": 0.4,
             "symmetry cluster centre": {
                 "@class": "array",
                 "@module": "numpy",
@@ -107124,7 +107367,7 @@
         "conv_cell_frac_coords": null,
         "conventional_structure": null,
         "corrections": {
-            "kumagai_charge_correction": 0.07607908464229478
+            "kumagai_charge_correction": 0.06876666159685946
         },
         "corrections_metadata": {
             "kumagai_charge_correction": {
@@ -107139,14 +107382,14 @@
                         0.9175463
                     ],
                     "defect_region_radius": 5.964071,
-                    "point_charge_correction": 0.01622692060572421,
+                    "point_charge_correction": 0.023013240017276657,
                     "sites": [
                         {
                             "@class": "PotentialSite",
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.081976496190115,
-                            "pc_potential": 0.003134474494894154,
+                            "pc_potential": 0.01743463317271208,
                             "potential": 0.05740000000000123,
                             "specie": "Sb"
                         },
@@ -107155,7 +107398,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.825910510139353,
-                            "pc_potential": 0.03739596392167415,
+                            "pc_potential": 0.05175181257917483,
                             "potential": 0.04410000000000025,
                             "specie": "Sb"
                         },
@@ -107164,7 +107407,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.8293370598620475,
-                            "pc_potential": 0.03738599947422698,
+                            "pc_potential": 0.0514571425284048,
                             "potential": 0.04359999999999786,
                             "specie": "Sb"
                         },
@@ -107173,7 +107416,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.703422134699255,
-                            "pc_potential": 0.036333835884544884,
+                            "pc_potential": 0.05031129955947889,
                             "potential": 0.07330000000000325,
                             "specie": "Sb"
                         },
@@ -107182,7 +107425,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.458802866210563,
-                            "pc_potential": 0.042676980545520424,
+                            "pc_potential": 0.05658354588160863,
                             "potential": 0.04739999999999611,
                             "specie": "Sb"
                         },
@@ -107191,7 +107434,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.3447852164359615,
-                            "pc_potential": 0.04249550726253334,
+                            "pc_potential": 0.05621460718771811,
                             "potential": 0.05290000000000816,
                             "specie": "Sb"
                         },
@@ -107209,7 +107452,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.000814637734164,
-                            "pc_potential": -0.03900359636443028,
+                            "pc_potential": -0.025211692553971488,
                             "potential": 0.0010000000000047748,
                             "specie": "Sb"
                         },
@@ -107254,7 +107497,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.348304312902717,
-                            "pc_potential": 0.042523077508328726,
+                            "pc_potential": 0.05681581199911412,
                             "potential": 0.052300000000002456,
                             "specie": "Sb"
                         },
@@ -107263,7 +107506,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.936576533291931,
-                            "pc_potential": 0.017975352185045115,
+                            "pc_potential": 0.03179768196306397,
                             "potential": 0.1016000000000048,
                             "specie": "Sb"
                         },
@@ -107281,7 +107524,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.236776099592719,
-                            "pc_potential": 0.005929645655171086,
+                            "pc_potential": 0.020416524324369516,
                             "potential": 0.07800000000000296,
                             "specie": "Sb"
                         },
@@ -107290,7 +107533,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.088167676502444,
-                            "pc_potential": 0.003192599893809341,
+                            "pc_potential": 0.018054567054131745,
                             "potential": 0.058099999999996044,
                             "specie": "Sb"
                         },
@@ -107326,7 +107569,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.578398820423298,
-                            "pc_potential": 0.041719662754905344,
+                            "pc_potential": 0.05539317101850859,
                             "potential": 0.1080999999999932,
                             "specie": "Sb"
                         },
@@ -107335,7 +107578,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.568009427325097,
-                            "pc_potential": 0.04171963539864309,
+                            "pc_potential": 0.055677441709274134,
                             "potential": 0.10840000000000316,
                             "specie": "Sb"
                         },
@@ -107362,7 +107605,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.569914361014233,
-                            "pc_potential": 0.043463584421648195,
+                            "pc_potential": 0.0573578854802393,
                             "potential": 0.08899999999999864,
                             "specie": "Se"
                         },
@@ -107371,7 +107614,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.482504236318831,
-                            "pc_potential": 0.04330410697088204,
+                            "pc_potential": 0.05758419241269785,
                             "potential": 0.0958000000000041,
                             "specie": "Se"
                         },
@@ -107416,7 +107659,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.999524516792436,
-                            "pc_potential": 0.020172524428165046,
+                            "pc_potential": 0.03420136073179969,
                             "potential": 0.019899999999999807,
                             "specie": "Se"
                         },
@@ -107434,7 +107677,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.091128055892755,
-                            "pc_potential": -0.03554622505095566,
+                            "pc_potential": -0.021255471349944755,
                             "potential": 0.1390999999999991,
                             "specie": "Se"
                         },
@@ -107461,7 +107704,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.999297949569955,
-                            "pc_potential": 0.020196447191503777,
+                            "pc_potential": 0.0345052378983768,
                             "potential": 0.020599999999994623,
                             "specie": "Se"
                         },
@@ -107479,7 +107722,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.485813802308538,
-                            "pc_potential": 0.043305321469867986,
+                            "pc_potential": 0.057011650660625086,
                             "potential": 0.09600000000000364,
                             "specie": "Se"
                         },
@@ -107506,7 +107749,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.631736277803595,
-                            "pc_potential": 0.02043192160716629,
+                            "pc_potential": 0.03525444375207077,
                             "potential": 0.12460000000000093,
                             "specie": "Se"
                         },
@@ -107524,7 +107767,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.76851983656893,
-                            "pc_potential": 0.04258930594611785,
+                            "pc_potential": 0.05643846755971932,
                             "potential": 0.12510000000000332,
                             "specie": "Se"
                         },
@@ -107533,7 +107776,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.814284031170252,
-                            "pc_potential": 0.042638073314040126,
+                            "pc_potential": 0.056577183279532595,
                             "potential": 0.11960000000000548,
                             "specie": "Se"
                         },
@@ -107542,7 +107785,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.808991418975583,
-                            "pc_potential": 0.04262557569687707,
+                            "pc_potential": 0.0568490284334243,
                             "potential": 0.12310000000000088,
                             "specie": "Se"
                         },
@@ -107551,7 +107794,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.635187769731524,
-                            "pc_potential": 0.020414214143844717,
+                            "pc_potential": 0.03466580872215114,
                             "potential": 0.12280000000000513,
                             "specie": "Se"
                         },
@@ -107560,7 +107803,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.682552500503308,
-                            "pc_potential": 0.022065121229309627,
+                            "pc_potential": 0.03650230778609847,
                             "potential": 0.12400000000000233,
                             "specie": "Se"
                         },
@@ -107569,7 +107812,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.6472767140427536,
-                            "pc_potential": 0.0010059272815127927,
+                            "pc_potential": 0.014839528517235589,
                             "potential": 0.13210000000000122,
                             "specie": "Se"
                         },
@@ -107614,7 +107857,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.480973431301791,
-                            "pc_potential": 0.035337707709155904,
+                            "pc_potential": 0.0491416502671345,
                             "potential": 0.08030000000000115,
                             "specie": "Se"
                         },
@@ -107641,7 +107884,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.573548686621492,
-                            "pc_potential": -0.019543337997948492,
+                            "pc_potential": -0.005665624803037531,
                             "potential": 0.09359999999999502,
                             "specie": "Se"
                         },
@@ -107675,7 +107918,7 @@
                     ]
                 }
             },
-            "kumagai_charge_correction_error": 0.008215048762811945
+            "kumagai_charge_correction_error": 0.008208059700582974
         },
         "defect": {
             "@class": "Substitution",
@@ -107708,7 +107951,7 @@
                     0.0
                 ],
                 "index": 11,
-                "label": "Se2-",
+                "label": "Se",
                 "lattice": {
                     "@class": "Lattice",
                     "@module": "pymatgen.core.lattice",
@@ -107736,7 +107979,13 @@
                     ]
                 },
                 "nn_distance": 1.0175362097255202e-15,
-                "properties": {},
+                "properties": {
+                    "selective_dynamics": [
+                        true,
+                        true,
+                        true
+                    ]
+                },
                 "species": {
                     "Se2-": 1.0
                 }
@@ -107920,7 +108169,6 @@
                     ]
                 }
             ],
-            "map_to_unit_cell": true,
             "multiplicity": 4,
             "oxi_state": 0,
             "site": {
@@ -108011,8 +108259,14 @@
                             0.32776977,
                             0.03227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -108033,8 +108287,14 @@
                             0.17223023,
                             0.53227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -108055,8 +108315,14 @@
                             0.53729851,
                             0.35546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -108077,8 +108343,14 @@
                             0.03729851,
                             0.14453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -108099,8 +108371,14 @@
                             0.46270149,
                             0.64453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -108121,8 +108399,14 @@
                             0.82776977,
                             0.46772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -108143,8 +108427,14 @@
                             0.96270149,
                             0.85546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -108165,8 +108455,14 @@
                             0.67223023,
                             0.96772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -108187,8 +108483,14 @@
                             0.19228864,
                             0.20998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108209,8 +108511,14 @@
                             0.30771136,
                             0.70998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108231,8 +108539,14 @@
                             0.62788995,
                             0.55257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108253,8 +108567,14 @@
                             0.44485469,
                             0.12774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108275,8 +108595,14 @@
                             0.87211005,
                             0.05257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108297,8 +108623,14 @@
                             0.37211005,
                             0.44742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108319,8 +108651,14 @@
                             0.05514531,
                             0.62774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108341,8 +108679,14 @@
                             0.94485469,
                             0.37225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108363,8 +108707,14 @@
                             0.69228864,
                             0.29001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108385,8 +108735,14 @@
                             0.55514531,
                             0.87225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108407,8 +108763,14 @@
                             0.12788995,
                             0.94742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -108429,8 +108791,14 @@
                             0.80771136,
                             0.79001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -109733,14 +110101,12 @@
                 }
             ]
         },
-        "defect_supercell_sites": null,
         "degeneracy_factors": {
             "orientational degeneracy": 1.0,
             "spin degeneracy": 2.0
         },
         "entry_id": "vasprun-20231009-12.0-d1f5f4d5b75de743a7b3b259b402392f",
         "equiv_conv_cell_frac_coords": [],
-        "equivalent_supercell_complexes": null,
         "equivalent_supercell_sites": [],
         "name": "O_Se_Cs_Sb2.65_-1",
         "sc_defect_frac_coords": {
@@ -111038,7 +111404,7 @@
     "O_Se_Cs_Sb2.65_-2": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.0",
+        "@version": "3.2.1",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,
@@ -114521,7 +114887,7 @@
         "calculation_metadata": {
             "band_gap": 1.4734000000000007,
             "bulk site symmetry": "Cs",
-            "bulk_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/bulk",
+            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
             "bulk_site": {
                 "@class": "PeriodicSite",
                 "@module": "pymatgen.core.sites",
@@ -114652,7 +115018,7 @@
                 ],
                 "dtype": "float64"
             },
-            "defect_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/defect/O_-2",
+            "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_-2",
             "defect_site_index": 0,
             "defect_site_potentials": {
                 "@class": "array",
@@ -142382,7 +142748,6 @@
                     "vasp_version": "6.2.0"
                 }
             },
-            "site_tol": 0.4,
             "symmetry cluster centre": {
                 "@class": "array",
                 "@module": "numpy",
@@ -144111,7 +144476,7 @@
         "conv_cell_frac_coords": null,
         "conventional_structure": null,
         "corrections": {
-            "kumagai_charge_correction": 0.11188655037000741
+            "kumagai_charge_correction": 0.08264015557986833
         },
         "corrections_metadata": {
             "kumagai_charge_correction": {
@@ -144126,14 +144491,14 @@
                         0.91241348
                     ],
                     "defect_region_radius": 5.964071,
-                    "point_charge_correction": 0.06490768242289684,
+                    "point_charge_correction": 0.09205296006910663,
                     "sites": [
                         {
                             "@class": "PotentialSite",
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.104900671705749,
-                            "pc_potential": 0.009150313696205163,
+                            "pc_potential": 0.03775025696570774,
                             "potential": 0.054299999999997794,
                             "specie": "Sb"
                         },
@@ -144142,7 +144507,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.756669492013544,
-                            "pc_potential": 0.07328231882472205,
+                            "pc_potential": 0.1019834921976555,
                             "potential": 0.007000000000005002,
                             "specie": "Sb"
                         },
@@ -144151,7 +144516,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.763632871619067,
-                            "pc_potential": 0.07331220100385227,
+                            "pc_potential": 0.10144342167898629,
                             "potential": 0.00740000000000407,
                             "specie": "Sb"
                         },
@@ -144160,7 +144525,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.624264988145654,
-                            "pc_potential": 0.071077070718226,
+                            "pc_potential": 0.09901880135516317,
                             "potential": 0.03830000000000666,
                             "specie": "Sb"
                         },
@@ -144169,7 +144534,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.43159298637433,
-                            "pc_potential": 0.08490262410210175,
+                            "pc_potential": 0.11271890872252138,
                             "potential": 0.010000000000005116,
                             "specie": "Sb"
                         },
@@ -144178,7 +144543,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.306386448611637,
-                            "pc_potential": 0.08452747546950093,
+                            "pc_potential": 0.11196829794665959,
                             "potential": 0.021200000000007435,
                             "specie": "Sb"
                         },
@@ -144196,7 +144561,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.007270546442785,
-                            "pc_potential": -0.07721363442882287,
+                            "pc_potential": -0.0496284880759009,
                             "potential": -0.11220000000000141,
                             "specie": "Sb"
                         },
@@ -144241,7 +144606,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.308813864299232,
-                            "pc_potential": 0.08458758494158818,
+                            "pc_potential": 0.11317760284149574,
                             "potential": 0.01839999999999975,
                             "specie": "Sb"
                         },
@@ -144250,7 +144615,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.899811932048938,
-                            "pc_potential": 0.03347900828578048,
+                            "pc_potential": 0.06112044503279889,
                             "potential": 0.10599999999999454,
                             "specie": "Sb"
                         },
@@ -144268,7 +144633,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.242749307823587,
-                            "pc_potential": 0.014701151813316297,
+                            "pc_potential": 0.0436877439728905,
                             "potential": 0.08979999999999677,
                             "specie": "Sb"
                         },
@@ -144277,7 +144642,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.103059921281256,
-                            "pc_potential": 0.009125711807854868,
+                            "pc_potential": 0.03885608211955618,
                             "potential": 0.05570000000000164,
                             "specie": "Sb"
                         },
@@ -144313,7 +144678,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.6217865839581895,
-                            "pc_potential": 0.0840818337198811,
+                            "pc_potential": 0.11142785275845765,
                             "potential": 0.11910000000000309,
                             "specie": "Sb"
                         },
@@ -144322,7 +144687,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.614840165505734,
-                            "pc_potential": 0.08410037617763941,
+                            "pc_potential": 0.1120160379070163,
                             "potential": 0.12069999999999936,
                             "specie": "Sb"
                         },
@@ -144349,7 +144714,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.519737384894727,
-                            "pc_potential": 0.08656952570117832,
+                            "pc_potential": 0.11435507560927088,
                             "potential": 0.10249999999999915,
                             "specie": "Se"
                         },
@@ -144358,7 +144723,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.416200774275362,
-                            "pc_potential": 0.08620605231936918,
+                            "pc_potential": 0.11476335653174584,
                             "potential": 0.10940000000000083,
                             "specie": "Se"
                         },
@@ -144403,7 +144768,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.043966196164573,
-                            "pc_potential": 0.042986716562400516,
+                            "pc_potential": 0.07104679639542845,
                             "potential": -0.0012000000000043087,
                             "specie": "Se"
                         },
@@ -144421,7 +144786,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.081566165377769,
-                            "pc_potential": -0.07033991040464414,
+                            "pc_potential": -0.04176537699314991,
                             "potential": 0.1647999999999996,
                             "specie": "Se"
                         },
@@ -144448,7 +144813,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.044911324189406,
-                            "pc_potential": 0.04311364960557774,
+                            "pc_potential": 0.07173390207424367,
                             "potential": -0.0016000000000033765,
                             "specie": "Se"
                         },
@@ -144466,7 +144831,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.422353554182941,
-                            "pc_potential": 0.08621528592415668,
+                            "pc_potential": 0.11362629755218048,
                             "potential": 0.10790000000000077,
                             "specie": "Se"
                         },
@@ -144493,7 +144858,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.6241951698500365,
-                            "pc_potential": 0.03843834571958171,
+                            "pc_potential": 0.06807014610589424,
                             "potential": 0.11670000000000158,
                             "specie": "Se"
                         },
@@ -144511,7 +144876,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.817989142220126,
-                            "pc_potential": 0.08558479041801478,
+                            "pc_potential": 0.11328683581215716,
                             "potential": 0.13070000000000448,
                             "specie": "Se"
                         },
@@ -144520,7 +144885,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.856067103266167,
-                            "pc_potential": 0.08571878719378864,
+                            "pc_potential": 0.11359922552268777,
                             "potential": 0.11080000000000467,
                             "specie": "Se"
                         },
@@ -144529,7 +144894,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.846989384027128,
-                            "pc_potential": 0.08568272736606182,
+                            "pc_potential": 0.1141314659374081,
                             "potential": 0.10970000000000368,
                             "specie": "Se"
                         },
@@ -144538,7 +144903,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.629012912242241,
-                            "pc_potential": 0.03843946600531764,
+                            "pc_potential": 0.06692837560034268,
                             "potential": 0.1174000000000035,
                             "specie": "Se"
                         },
@@ -144547,7 +144912,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 8.67454579888588,
-                            "pc_potential": 0.041823395184267295,
+                            "pc_potential": 0.07068456261233913,
                             "potential": 0.09770000000000323,
                             "specie": "Se"
                         },
@@ -144556,7 +144921,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.670387166332819,
-                            "pc_potential": 0.005542896897304727,
+                            "pc_potential": 0.033207583574598264,
                             "potential": 0.10410000000000252,
                             "specie": "Se"
                         },
@@ -144601,7 +144966,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 7.517819452597497,
-                            "pc_potential": 0.07195926249845341,
+                            "pc_potential": 0.09956729787968482,
                             "potential": 0.09530000000000172,
                             "specie": "Se"
                         },
@@ -144628,7 +144993,7 @@
                             "@module": "pydefect.corrections.efnv_correction",
                             "@version": "0.9.9",
                             "distance": 6.577514149306042,
-                            "pc_potential": -0.04135917838218851,
+                            "pc_potential": -0.013596736788469758,
                             "potential": 0.07349999999999568,
                             "specie": "Se"
                         },
@@ -144662,7 +145027,7 @@
                     ]
                 }
             },
-            "kumagai_charge_correction_error": 0.026220451273178094
+            "kumagai_charge_correction_error": 0.02617850960548303
         },
         "defect": {
             "@class": "Substitution",
@@ -144695,7 +145060,7 @@
                     0.0
                 ],
                 "index": 11,
-                "label": "Se2-",
+                "label": "Se",
                 "lattice": {
                     "@class": "Lattice",
                     "@module": "pymatgen.core.lattice",
@@ -144723,7 +145088,13 @@
                     ]
                 },
                 "nn_distance": 1.0175362097255202e-15,
-                "properties": {},
+                "properties": {
+                    "selective_dynamics": [
+                        true,
+                        true,
+                        true
+                    ]
+                },
                 "species": {
                     "Se2-": 1.0
                 }
@@ -144907,7 +145278,6 @@
                     ]
                 }
             ],
-            "map_to_unit_cell": true,
             "multiplicity": 4,
             "oxi_state": 0,
             "site": {
@@ -144998,8 +145368,14 @@
                             0.32776977,
                             0.03227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -145020,8 +145396,14 @@
                             0.17223023,
                             0.53227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -145042,8 +145424,14 @@
                             0.53729851,
                             0.35546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -145064,8 +145452,14 @@
                             0.03729851,
                             0.14453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -145086,8 +145480,14 @@
                             0.46270149,
                             0.64453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -145108,8 +145508,14 @@
                             0.82776977,
                             0.46772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -145130,8 +145536,14 @@
                             0.96270149,
                             0.85546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -145152,8 +145564,14 @@
                             0.67223023,
                             0.96772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -145174,8 +145592,14 @@
                             0.19228864,
                             0.20998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145196,8 +145620,14 @@
                             0.30771136,
                             0.70998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145218,8 +145648,14 @@
                             0.62788995,
                             0.55257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145240,8 +145676,14 @@
                             0.44485469,
                             0.12774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145262,8 +145704,14 @@
                             0.87211005,
                             0.05257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145284,8 +145732,14 @@
                             0.37211005,
                             0.44742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145306,8 +145760,14 @@
                             0.05514531,
                             0.62774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145328,8 +145788,14 @@
                             0.94485469,
                             0.37225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145350,8 +145816,14 @@
                             0.69228864,
                             0.29001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145372,8 +145844,14 @@
                             0.55514531,
                             0.87225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145394,8 +145872,14 @@
                             0.12788995,
                             0.94742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -145416,8 +145900,14 @@
                             0.80771136,
                             0.79001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -146720,14 +147210,12 @@
                 }
             ]
         },
-        "defect_supercell_sites": null,
         "degeneracy_factors": {
             "orientational degeneracy": 1.0,
             "spin degeneracy": 1.0
         },
         "entry_id": "vasprun-20231009-12.0-11cbc1af900c78357c960e96cbc55c4f",
         "equiv_conv_cell_frac_coords": [],
-        "equivalent_supercell_complexes": null,
         "equivalent_supercell_sites": [],
         "name": "O_Se_Cs_Sb2.65_-2",
         "sc_defect_frac_coords": {
@@ -148025,7 +148513,7 @@
     "O_Se_Cs_Sb2.65_0": {
         "@class": "DefectEntry",
         "@module": "doped.core",
-        "@version": "3.2.0",
+        "@version": "3.2.1",
         "_BilbaoCS_conv_cell_vector_mapping": [
             0,
             1,
@@ -151508,7 +151996,7 @@
         "calculation_metadata": {
             "band_gap": 1.4734000000000007,
             "bulk site symmetry": "Cs",
-            "bulk_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/bulk",
+            "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
             "bulk_site": {
                 "@class": "PeriodicSite",
                 "@module": "pymatgen.core.sites",
@@ -151572,7 +152060,7 @@
                 ],
                 "dtype": "float64"
             },
-            "defect_path": "/Users/kavanase/Packages/doped/.claude/worktrees/kcd_split_vacancies/tests/data/Sb2Se3/defect/O_0",
+            "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_0",
             "defect_site_index": 0,
             "dielectric": {
                 "@class": "array",
@@ -179410,7 +179898,6 @@
                     "vasp_version": "6.2.0"
                 }
             },
-            "site_tol": 0.4,
             "symmetry cluster centre": {
                 "@class": "array",
                 "@module": "numpy",
@@ -181171,7 +181658,7 @@
                     0.0
                 ],
                 "index": 11,
-                "label": "Se2-",
+                "label": "Se",
                 "lattice": {
                     "@class": "Lattice",
                     "@module": "pymatgen.core.lattice",
@@ -181199,7 +181686,13 @@
                     ]
                 },
                 "nn_distance": 1.0175362097255202e-15,
-                "properties": {},
+                "properties": {
+                    "selective_dynamics": [
+                        true,
+                        true,
+                        true
+                    ]
+                },
                 "species": {
                     "Se2-": 1.0
                 }
@@ -181383,7 +181876,6 @@
                     ]
                 }
             ],
-            "map_to_unit_cell": true,
             "multiplicity": 4,
             "oxi_state": 0,
             "site": {
@@ -181474,8 +181966,14 @@
                             0.32776977,
                             0.03227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -181496,8 +181994,14 @@
                             0.17223023,
                             0.53227558
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -181518,8 +182022,14 @@
                             0.53729851,
                             0.35546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -181540,8 +182050,14 @@
                             0.03729851,
                             0.14453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -181562,8 +182078,14 @@
                             0.46270149,
                             0.64453757
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -181584,8 +182106,14 @@
                             0.82776977,
                             0.46772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -181606,8 +182134,14 @@
                             0.96270149,
                             0.85546243
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -181628,8 +182162,14 @@
                             0.67223023,
                             0.96772442
                         ],
-                        "label": "Sb3+",
-                        "properties": {},
+                        "label": "Sb",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Sb",
@@ -181650,8 +182190,14 @@
                             0.19228864,
                             0.20998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181672,8 +182218,14 @@
                             0.30771136,
                             0.70998203
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181694,8 +182246,14 @@
                             0.62788995,
                             0.55257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181716,8 +182274,14 @@
                             0.44485469,
                             0.12774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181738,8 +182302,14 @@
                             0.87211005,
                             0.05257709
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181760,8 +182330,14 @@
                             0.37211005,
                             0.44742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181782,8 +182358,14 @@
                             0.05514531,
                             0.62774117
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181804,8 +182386,14 @@
                             0.94485469,
                             0.37225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181826,8 +182414,14 @@
                             0.69228864,
                             0.29001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181848,8 +182442,14 @@
                             0.55514531,
                             0.87225883
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181870,8 +182470,14 @@
                             0.12788995,
                             0.94742291
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -181892,8 +182498,14 @@
                             0.80771136,
                             0.79001797
                         ],
-                        "label": "Se2-",
-                        "properties": {},
+                        "label": "Se",
+                        "properties": {
+                            "selective_dynamics": [
+                                true,
+                                true,
+                                true
+                            ]
+                        },
                         "species": [
                             {
                                 "element": "Se",
@@ -183196,14 +183808,12 @@
                 }
             ]
         },
-        "defect_supercell_sites": null,
         "degeneracy_factors": {
             "orientational degeneracy": 1.0,
             "spin degeneracy": 1.0
         },
         "entry_id": "vasprun-20231009-12.0-6ff99a3dcc56431f933a83ea1ae79414",
         "equiv_conv_cell_frac_coords": [],
-        "equivalent_supercell_complexes": null,
         "equivalent_supercell_sites": [],
         "name": "O_Se_Cs_Sb2.65_0",
         "sc_defect_frac_coords": {
