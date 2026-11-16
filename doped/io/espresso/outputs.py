@@ -188,14 +188,15 @@ def get_espresso_run(espressorun_path: PathLike, **kwargs) -> PWxml:
     try:
         vasprun = PWxml(find_archived_fname(espressorun_path), **default_kwargs)
 
-        # ``PWxml`` never calls ``Vasprun.__init__``, so these two can be missing entirely rather
-        # than ``None`` (pymatgen-io-espresso#27): ``atomic_states`` whenever projections were not
-        # requested, and ``kpoints_opt_props`` unconditionally. Both are read unguarded downstream
-        # (``projected_eigenvalues`` tests ``atomic_states is None``, so raises instead of returning
-        # ``None``; ``as_dict()`` needs ``kpoints_opt_props``), so default them -- but only *where
-        # missing*: assigning unconditionally destroyed the projections ``PWxml`` had just parsed
-        # into ``atomic_states``.
-        for _attr in ("atomic_states", "kpoints_opt_props"):
+        # ``PWxml`` never calls ``Vasprun.__init__``, so these can be missing entirely rather than
+        # ``None`` (pymatgen-io-espresso#27): ``atomic_states`` whenever projections were not
+        # requested, ``kpoints_opt_props`` unconditionally, and ``projected_magnetization`` (which
+        # upstream ``PWxml`` only provides as ``projected_magnetisation``, pymatgen's deprecated
+        # spelling). All are read unguarded downstream (``projected_eigenvalues`` tests
+        # ``atomic_states is None``, so raises instead of returning ``None``; ``as_dict()`` needs
+        # the other two), so default them -- but only *where missing*: assigning unconditionally
+        # destroyed the projections ``PWxml`` had just parsed into ``atomic_states``.
+        for _attr in ("atomic_states", "kpoints_opt_props", "projected_magnetization"):
             if not hasattr(vasprun, _attr):
                 setattr(vasprun, _attr, None)
 
@@ -663,8 +664,7 @@ def _archived_exists(path: PathLike) -> bool:
 def find_calc_output(directory: PathLike) -> str:
     """
     Find the ``pw.x`` XML output file in a calculation ``directory``, searching
-    the ``CALC_OUTPUT_MASK`` patterns in order (so that ``pw.x``'s default
-    ``<prefix>.xml`` naming is found, not just ``espresso.xml``).
+    the ``CALC_OUTPUT_MASK`` patterns in order.
 
     Used by :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` for
     calculation output file selection.

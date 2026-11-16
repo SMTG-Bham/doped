@@ -52,8 +52,6 @@ from pymatgen.io.vasp import VolumetricData
 # collection of) this module without it:
 pytest.importorskip("pymatgen.io.espresso")
 
-from pymatgen.io.espresso.outputs import PWxml
-
 from doped.io import get_calculation_outputs
 from doped.io.espresso.outputs import (
     _FALLBACK_SMEARING_WIDTH,
@@ -62,6 +60,7 @@ from doped.io.espresso.outputs import (
     PAW_COMPENSATION_RADII,
     check_run_compatibility,
     get_atomic_site_potentials,
+    get_espresso_run,
 )
 from doped.io.utils import _warn_calculation_mismatches
 from doped.parsing import DefectsParser
@@ -178,12 +177,19 @@ class EspressoCalculationOutputsTestCase(unittest.TestCase):
         legitimately differ between defect and bulk supercell calculations (as
         with VASP ``ISMEAR``/``SIGMA``), so are not flagged as mismatches --
         e.g. the smeared ``Mg_O_+1`` vs fixed-occupation bulk MgO calculations.
+
+        Also checks the run metadata serialises without warnings (``PWxml.as_dict()``
+        needs attributes that some ``pymatgen-io-espresso`` versions never set,
+        which ``get_espresso_run`` defaults).
         """
         defects_dir = os.path.join(os.path.dirname(__file__), "../examples/MgO_qe/Defects")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # pymatgen-io-espresso ``NotImplementedForQE`` etc.
             defect_pwxml, bulk_pwxml = (
-                PWxml(os.path.join(defects_dir, name, "espresso_std", "espresso.xml"))
+                get_espresso_run(
+                    os.path.join(defects_dir, name, "espresso_std", "espresso.xml"),
+                    parse_projected_eigen=False,
+                )
                 for name in ("Mg_O_+1", "MgO_bulk")
             )
         defect_occupations, bulk_occupations = (
@@ -195,6 +201,8 @@ class EspressoCalculationOutputsTestCase(unittest.TestCase):
             compatibility = check_run_compatibility(defect_pwxml, bulk_pwxml)
         assert compatibility["mismatching_QE_input_params"] is False
         assert not [x for x in w if "mismatch" in str(x.message).lower()]
+        assert not [x for x in w if "could not be serialised" in str(x.message)]
+        assert "defect_vasprun_dict" in compatibility["run_metadata"]
 
     def test_mismatch_warning_specs(self):
         """
