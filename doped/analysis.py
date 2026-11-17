@@ -222,17 +222,13 @@ def defect_site_from_structures(
     """
     if _parameter_order_warn:
         _warn_parameter_order("defect_site_from_structures")  # TODO: Remove in doped v4.1
-    defect_site_info = cast(
-        "tuple[PeriodicSite, str, PeriodicSite, int | None, int | None, Structure, Structure]",
-        defect_sites_from_structures(
-            defect_supercell,
-            bulk_supercell,
-            return_point_info=True,
-            site_tol=None,
-            _parameter_order_warn=False,
-        )[0],
-    )
-    return defect_site_info if return_all_info else defect_site_info[0]
+    return defect_sites_from_structures(
+        defect_supercell,
+        bulk_supercell,
+        return_point_info=return_all_info,  # only determine additional info if requested
+        site_tol=None,
+        _parameter_order_warn=False,
+    )[0]
 
 
 def defect_sites_from_structures(
