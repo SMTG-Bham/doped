@@ -49,8 +49,8 @@ if TYPE_CHECKING:
 
 
 def classify_vacancy_geometry(
-    bulk_supercell: Structure,
     vacancy_supercell: Structure,
+    bulk_supercell: Structure,
     site_tol: float = 0.5,
     abs_tol: bool = False,
     verbose: bool = False,
@@ -81,22 +81,22 @@ def classify_vacancy_geometry(
     further details.
 
     Args:
-        bulk_supercell (Structure):
-            The bulk supercell structure to compare against for site-matching.
         vacancy_supercell (Structure):
             The defect supercell containing the vacancy to be classified.
+        bulk_supercell (Structure):
+            The bulk supercell structure to compare against for site-matching.
         site_tol (float):
             The (fractional) tolerance for matching sites between the defect
             and bulk structures. If ``abs_tol`` is ``False`` (default), then
-            this value multiplied by the shortest bond length in the bulk
-            structure will be used as the distance threshold for matching,
+            the distance threshold for matching each bulk site is set to the
+            product of ``site_tol`` and the shortest bond length of that site
+            in the bulk structure (see ``get_defect_type_and_site_indices``),
             otherwise the value is used directly (as a length in Å).
-            Default is 0.5 (i.e. half the shortest bond length in the bulk
-            structure).
+            Default is 0.5 (i.e. half the shortest bond length of each site).
         abs_tol (bool):
             Whether to use ``site_tol`` as an absolute distance tolerance (in
             Å) instead of a fractional tolerance (in terms of the shortest bond
-            length in the structure). Default is ``False``.
+            length of each bulk site). Default is ``False``.
         verbose (bool):
             Whether to print additional information about the classification
             for non-trivial vacancies.
@@ -123,13 +123,20 @@ def classify_vacancy_geometry(
         )
         use_oxi_states = False
 
-    defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)
+    defect_type, comp_diff = get_defect_type_and_composition_diff(
+        vacancy_supercell, bulk_supercell, _parameter_order_warn=False
+    )
     if defect_type != "vacancy":
         warnings.warn(
             f"Note that based on the defect/bulk structure composition difference ({comp_diff}), the "
             f"defect supercell is not classified as a vacancy, but as a {defect_type}."
         )
-    old_species = next(el for el, amt in comp_diff.items() if amt == -1)
+    old_species = next((el for el, amt in comp_diff.items() if amt == -1), None)
+    if old_species is None:
+        raise ValueError(
+            f"No species is missing from the defect supercell compared to the bulk supercell (composition "
+            f"difference: {comp_diff}), so its vacancy geometry cannot be classified."
+        )
     _, bulk_species_indices = get_coords_and_idx_of_species(
         bulk_supercell, old_species, use_oxi_states=use_oxi_states
     )
@@ -139,8 +146,8 @@ def classify_vacancy_geometry(
 
     defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
         get_defect_type_and_site_indices(
-            bulk_supercell,
             vacancy_supercell,
+            bulk_supercell,
             site_tol=site_tol,
             abs_tol=abs_tol,
         )
