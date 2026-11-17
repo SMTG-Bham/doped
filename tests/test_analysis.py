@@ -35,6 +35,7 @@ from doped.analysis import (
     DefectParser,
     DefectsParser,
     _handle_charge_correction_errors,
+    check_and_set_defect_entry_name,
     defect_from_structures,
     defect_site_from_structures,
     guess_defect_position,
@@ -62,6 +63,7 @@ from doped.utils.parsing import (
     get_vasprun,
     spin_degeneracy_from_vasprun,
 )
+from doped.utils.supercells import get_min_image_distance
 from doped.utils.symmetry import (
     get_orientational_degeneracy,
     get_primitive_structure,
@@ -2590,6 +2592,56 @@ class DefectsParsingTestCase(unittest.TestCase):
             [len(si)],
         )
 
+        # no defect sites identified (e.g. bulk supercell given as defect supercell) gives a clear error:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for func in [defect_from_structures, local_point_symmetry]:
+                kwargs = {"_parameter_order_warn": False} if func is defect_from_structures else {}
+                with pytest.raises(ValueError) as exc:
+                    func(si, si, **kwargs)
+                assert "No defect sites could be identified from the defect and bulk supercells" in str(
+                    exc.value
+                )
+
+    def test_local_point_symmetry_radius_periodic_images(self):
+        """
+        Test that ``local_point_symmetry`` includes all periodic images of
+        atoms within ``radius`` of the defect, so that radii above half the
+        minimum image distance do not give asymmetrically truncated clusters
+        (and thus lower symmetries).
+        """
+        defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json"))
+        for name, point_group in [("v_Cd_-2", "Td"), ("v_Cd_0", "C2v"), ("Te_Cd_+1", "C3v")]:
+            defect_entry = defect_dict[name]
+            min_image_distance = get_min_image_distance(defect_entry.defect_supercell)
+            for radius in [
+                None,
+                0.45 * min_image_distance,
+                0.55 * min_image_distance,
+                0.7 * min_image_distance,
+            ]:
+                print(f"Testing {name} with radius = {radius}")
+                assert (
+                    local_point_symmetry(
+                        defect_entry.defect_supercell,
+                        defect_entry.bulk_supercell,
+                        site_tol=None,
+                        radius=radius,
+                    )[0]
+                    == point_group
+                )
+
+    def test_hyphenated_folder_names_kept(self):
+        """
+        Test that (user-defined) point defect folder names with hyphens in
+        their suffixes are recognised and kept as the ``DefectEntry`` names
+        (rather than being taken as unrecognised defect complex names).
+        """
+        defect_entry = loadfn(os.path.join(data_dir, "v_Cd_defect_entry.json.gz"))
+        for folder_name in ["v_Cd-HSE06_0", "v_Cd_C2v-meta_0", "v_Cd_2x2x2-cell_0", "v_Cd_HSE06_0"]:
+            check_and_set_defect_entry_name(defect_entry, folder_name)
+            assert defect_entry.name == folder_name
+
     def test_bond_centre_H_interstitial_initial_site(self):
         """
         Test that the guessed initial (unrelaxed) site of a hydrogen
@@ -3507,6 +3559,28 @@ class DefectsParsingTestCase(unittest.TestCase):
                 assert len(ops) < 24, f"{offset_magnitude} Å: expected lowered symmetry, got {symbol}"
                 assert symbol == "C3v"
                 assert len(ops) == 6
+
+    def test_local_point_symmetry_rigidly_offset_vacancy(self):
+        """
+        Test that the point symmetry of a (symmetric) vacancy is correctly
+        determined when the defect supercell is rigidly offset from the bulk
+        supercell (e.g. from a small drift during relaxation), including for
+        tight ``symprec`` values.
+        """
+        bulk = (
+            Structure.from_spacegroup(
+                "F-43m", np.eye(3) * 6.55, ["Cd", "Te"], [[0, 0, 0], [0.25, 0.25, 0.25]]
+            )
+            * 2
+        )
+        direction = np.array([0.6, 0.3, 0.74]) / np.linalg.norm([0.6, 0.3, 0.74])
+        for offset in [0, 0.01, 0.03, 0.06]:
+            defect = bulk.copy()
+            defect.remove_sites([0])
+            defect.translate_sites(range(len(defect)), offset * direction, frac_coords=False)
+            for symprec in [0.01, 0.03, 0.1]:
+                print(f"Testing offset = {offset} Å, symprec = {symprec}")
+                assert local_point_symmetry(defect, bulk, symprec=symprec)[0] == "Td"
 
     def test_local_symmetry_symprec_monotonicity(self):
         """
