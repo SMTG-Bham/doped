@@ -2936,10 +2936,10 @@ def _extract_defect_cluster(
     sphere_centres = centre_cart + centres if centres is not None else [centre_cart]
     for centre, radius in zip(sphere_centres, np.ravel(radii), strict=True):
         for site in structure.get_sites_in_sphere(centre, radius):
-            # dedupe same site in multiple spheres. note also won't give multiple periodic images
-            # of an atom - we assume cluster resides in a single WS cell/complex WS cell
-            if site.index not in seen:
-                seen.add(site.index)
+            # dedupe the same site (image) in multiple spheres; different periodic images of an atom are
+            # kept (as for a single sphere), which matters for radii above half the min image distance
+            if (key := (site.index, tuple(site.image))) not in seen:
+                seen.add(key)
                 sites.append(site)
 
     coords = np.array([site.coords for site in sites]).reshape(-1, 3) - centre_cart
