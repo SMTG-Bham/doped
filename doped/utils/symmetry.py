@@ -3607,13 +3607,15 @@ def local_point_symmetry(
     map_residual = partial(_map_residual, coords, species, trees, radius=radius, symprec=symprec)
     for candidate_rotation in rotations:
         # get candidate translations from anchor -> orbit-partner correspondences, deduped within 0.05 Å.
-        # t=0 always included (already for int/sub, but explicitly add for vacancies):
+        # t=0 always included (already for int/sub, but explicitly add for vacancies), separately to the
+        # anchor-derived translations (so that it doesn't replace near-zero anchor-derived translations;
+        # e.g. for a defect symmetry centre slightly displaced from the bulk-pinned / input position):
         candidate_translations: list[np.ndarray] = [np.zeros(3)]
         for anchor_species, species_anchor in anchors:
             for translation in species_coords[anchor_species] - candidate_rotation @ species_anchor:
                 if np.linalg.norm(translation) <= t_max and not any(
-                    np.linalg.norm(translation - prev) < 0.05 for prev in candidate_translations
-                ):  # within t_max and not already in the list (to within 0.05 Å)
+                    np.linalg.norm(translation - prev) < 0.05 for prev in candidate_translations[1:]
+                ):  # within t_max and not already in the anchor-derived translations (within 0.05 Å)
                     candidate_translations.append(translation)
 
         # determine translation with the best (minimum) residual (displacement):

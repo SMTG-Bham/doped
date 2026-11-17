@@ -271,7 +271,11 @@ def _get_unwrapped_complex_frac_coords(
         # CMID-optimal unwrapping is then generally not unique; pairs separated by less than the CMID must
         # be reduced, so group constituents connected by these, and choose the relative images of these
         # groups which minimise the variance of the constituent positions:
-        cmid = min(d_min, next_image_dists[reduced].min(), min_image_dists[intersite & ~reduced].min())
+        cmid = min(  # use ``initial`` as may have no (un)reduced pairs; e.g. exact Wigner-Seitz cell ties
+            d_min,
+            next_image_dists[reduced].min(initial=np.inf),
+            min_image_dists[intersite & ~reduced].min(initial=np.inf),
+        )
         block = np.arange(n_sites)
         for i, j in zip(*np.nonzero(np.triu(min_image_dists < cmid - 1e-8, 1)), strict=True):
             block[block == block[j]] = block[i]
@@ -303,7 +307,11 @@ def _get_unwrapped_complex_frac_coords(
 
     unwrapped_fc = list(frac_coords + translations)
     if not reduced[intersite].all():  # no unambiguous unwrapping exists
-        cmid = min(d_min, next_image_dists[reduced].min(), min_image_dists[intersite & ~reduced].min())
+        cmid = min(  # use ``initial`` as may have no (un)reduced pairs; e.g. exact Wigner-Seitz cell ties
+            d_min,
+            next_image_dists[reduced].min(initial=np.inf),
+            min_image_dists[intersite & ~reduced].min(initial=np.inf),
+        )
         cart_coords = lattice.get_cartesian_coords(unwrapped_fc)
         span = np.linalg.norm(cart_coords[:, None] - cart_coords, axis=-1).max()
         warnings.warn(

@@ -3444,6 +3444,30 @@ class DefectsParsingTestCase(unittest.TestCase):
                 assert symbol == "C3v"
                 assert len(ops) == 6
 
+    def test_local_point_symmetry_rigidly_offset_vacancy(self):
+        """
+        Test that the point symmetry of a (symmetric) vacancy is correctly
+        determined when the defect supercell is rigidly offset from the bulk
+        supercell (e.g. from a small drift during relaxation), including for
+        tight ``symprec`` values.
+        """
+        from doped.utils.symmetry import local_point_symmetry
+
+        bulk = (
+            Structure.from_spacegroup(
+                "F-43m", np.eye(3) * 6.55, ["Cd", "Te"], [[0, 0, 0], [0.25, 0.25, 0.25]]
+            )
+            * 2
+        )
+        direction = np.array([0.6, 0.3, 0.74]) / np.linalg.norm([0.6, 0.3, 0.74])
+        for offset in [0, 0.01, 0.03, 0.06]:
+            defect = bulk.copy()
+            defect.remove_sites([0])
+            defect.translate_sites(range(len(defect)), offset * direction, frac_coords=False)
+            for symprec in [0.01, 0.03, 0.1]:
+                print(f"Testing offset = {offset} Å, symprec = {symprec}")
+                assert local_point_symmetry(defect, bulk, symprec=symprec)[0] == "Td"
+
     def test_local_symmetry_symprec_monotonicity(self):
         """
         Determined local point symmetries should be non-decreasing with

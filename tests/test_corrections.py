@@ -18,11 +18,13 @@ import pytest
 from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.io.vasp.outputs import Outcar
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
 
 from doped.analysis import DefectParser, DefectsParser
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
+from doped.utils.supercells import _get_unwrapped_complex_frac_coords
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -270,6 +272,23 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
         with pytest.raises(ValueError, match="No atomic sites lie outside the supplied"):
             get_kumagai_correction(slab_entry, [10, 10, 1], verbose=False, defect_region_radius=6)
 
+    def test_unwrapped_complex_frac_coords_half_lattice_vector_separations(self):
+        """
+        Test that complexes with 3+ sites separated by exactly half lattice
+        vectors (so that all pairs are Wigner-Seitz cell boundary ties) are
+        unwrapped with a warning, rather than raising an error.
+        """
+        for frac_coords in [
+            [[0, 0, 0], [0.5, 0, 0], [0, 0.5, 0]],
+            [[0, 0, 0], [0.5, 0, 0], [0, 0.5, 0], [0.5, 0.5, 0]],
+        ]:
+            with pytest.warns(UserWarning, match="not a minimum image of the supercell"):
+                unwrapped_frac_coords = _get_unwrapped_complex_frac_coords(
+                    Lattice.cubic(10), np.array(frac_coords, dtype=float)
+                )
+            shifts = np.array(unwrapped_frac_coords) - frac_coords
+            assert np.allclose(shifts, np.round(shifts))  # same sites, modulo lattice vectors
+
 
 class CorrectionsPlottingTestCase(unittest.TestCase):
     module_path: str
@@ -484,6 +503,26 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             sum(self.F_O_1_entry.corrections.values()), 0.12224386127739299
         )  # correction now applied to DefectEntry when using DefectEntry.get_kumagai_correction()
         return fig
+
+    def test_kumagai_correction_w_outcar_objects(self):
+        """
+        Test that ``Outcar`` objects can be used as the ``defect_outcar`` and
+        ``bulk_outcar`` inputs, giving the same result as their file paths.
+        """
+        outcar_paths = {
+            "defect_outcar": f"{self.CdTe_example_dir}/Int_Te_3_2/vasp_ncl/OUTCAR.gz",
+            "bulk_outcar": f"{self.CdTe_bulk_data_dir}/OUTCAR.gz",
+        }
+        corr_from_paths = get_kumagai_correction(self.Te_i_2_ent, verbose=False, **outcar_paths)
+        corr_from_objs = get_kumagai_correction(
+            self.Te_i_2_ent, verbose=False, **{k: Outcar(path) for k, path in outcar_paths.items()}
+        )
+        assert np.isclose(corr_from_objs.correction_energy, corr_from_paths.correction_energy, atol=1e-8)
+        assert np.isclose(
+            corr_from_objs.correction_energy,
+            self.Te_i_2_ent.corrections["kumagai_charge_correction"],
+            atol=1e-6,
+        )
 
     @custom_mpl_image_compare("Te_i_+2_eFNV_plot.png")
     def test_plot_kumagai_Te_i_2(self):
