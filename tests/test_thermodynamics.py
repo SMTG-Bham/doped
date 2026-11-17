@@ -1587,10 +1587,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 )
             )
 
-        # CdTe with unstable_entries=False prunes v_Cd_-1 & Int_Te_3_Unperturbed_1 (only stable outside
-        # the gap). Int_Te_3_1 & Int_Te_3_2 are parsed as defect complexes here, 1.04 Å apart (using their
-        # constituent sites), so remain clustered with their ε(+2/+1) TL (whereas as point defects they
-        # are 1.73 Å apart; only clustered through Int_Te_3_Unperturbed_1, so the cluster would be split):
+        # CdTe with unstable_entries=False prunes v_Cd_-1 & Int_Te_3_Unperturbed_1 (only stable outside the
+        # gap). The remaining Int_Te_3_1 & Int_Te_3_2 are within ``dist_tol`` of each other (1.04 Å apart),
+        # so they stay clustered and keep their ε(+2/+1) TL:
         false_tl_df = self.CdTe_defect_thermo.get_transition_levels(unstable_entries=False)
         assert ("Int_Te_3", "ε(+2/+1)") in default_tl_df.index
         assert ("Int_Te_3", "ε(+2/+1)") in false_tl_df.index
@@ -1602,6 +1601,22 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert len(func(all=all, unstable_entries=True)) == n_true
             assert len(func(all=all)) == n_notshallow  # default is "not shallow"
             assert len(func(all=all, unstable_entries=False)) == n_false
+
+        # pruning unstable entries can also split a defect cluster, when its remaining (stable) entries
+        # were only clustered together (within ``dist_tol``) through the pruned entries; e.g. inter_6_S_0
+        # and inter_6_S_-2 here, the only stable entries of the 10 in the inter_5_S cluster, which are then
+        # separate defects (inter_6_S_a & inter_6_S_b) with no ε(0/-2) TL between them:
+        true_tl_df, false_tl_df = func(unstable_entries=True), func(unstable_entries=False)
+        assert ("inter_5_S", "ε(0/-2)") in true_tl_df.index
+        assert not any("inter_6_S" in name for name in true_tl_df.index.get_level_values("Defect"))
+        assert not any("inter_5_S" in name for name in false_tl_df.index.get_level_values("Defect"))
+        assert ("inter_6_S_a", "None") in false_tl_df.index
+        assert ("inter_6_S_b", "None") in false_tl_df.index
+        # ...or inter_7_Cl_-1, split from the inter_8_Cl cluster, removing its ε(0/-1) TL:
+        assert {("inter_8_Cl", "ε(+1/0)"), ("inter_8_Cl", "ε(0/-1)")}.issubset(true_tl_df.index)
+        assert ("inter_8_Cl", "ε(+1/0)") in false_tl_df.index
+        assert ("inter_8_Cl", "ε(0/-1)") not in false_tl_df.index
+        assert ("inter_7_Cl", "None") in false_tl_df.index
 
         # shallow sub_1_Te_on_Se_1/+2 states pruned by default, no single-electron TLs when ``False`` (
         # only 0/-2 TL remains):
