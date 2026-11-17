@@ -189,11 +189,14 @@ def _get_final_energy_from_outcar(outcar_path):
 def _get_core_potentials_from_outcar_obj(
     outcar: Outcar, dir_type: str = "", total_energy: list | float | None = None
 ):
-    if outcar.electrostatic_potential is None and not outcar.read_avg_core_poten():
-        _raise_incomplete_outcar_error(outcar, dir_type=dir_type)
+    site_potentials = outcar.electrostatic_potential
+    if site_potentials is None or len(site_potentials) == 0:  # else average core potentials (last step)
+        if not (avg_core_potentials := outcar.read_avg_core_poten()):
+            _raise_incomplete_outcar_error(outcar, dir_type=dir_type)
+        site_potentials = avg_core_potentials[-1]
     _check_outcar_energy(outcar, total_energy=total_energy)
 
-    return -1 * np.array(outcar.electrostatic_potential) or -1 * np.array(outcar.read_avg_core_poten()[-1])
+    return -1 * np.array(site_potentials)
 
 
 def _check_outcar_energy(outcar: Outcar | PathLike, total_energy: list | float | None = None):

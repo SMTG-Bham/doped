@@ -3237,6 +3237,9 @@ class DefectsGenerator(MSONable):
             if key not in {"@module", "@class", "@version"}:
                 setattr(defects_generator, key, MontyDecoder().process_decoded(value))
 
+        # ``padding`` (removed in v4.0; see ``__init__``) may be saved in generators from older versions:
+        getattr(defects_generator, "charge_state_gen_kwargs", {}).pop("padding", None)  # TODO: remove v4.1
+
         return defects_generator
 
     def to_json(self, filename: PathLike | None = None):

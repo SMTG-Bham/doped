@@ -3338,6 +3338,8 @@ class DefectComplex(core.DefectComplex, Defect):
         # if done as intended they should commute
         # TODO: warning for coincident sites - map_to_unit_cell should be False for your constituents?
         self.defects = defects
+        for defect in self.defects:  # constituent sites are kept unwrapped, so ensure that they are not...
+            defect.map_to_unit_cell = False  # ...mapped back to unit cell when reloaded (from dict/JSON)
         self.equivalent_complexes = equivalent_complexes
         self.point_group = point_group
         self.structure = defects[0].structure
