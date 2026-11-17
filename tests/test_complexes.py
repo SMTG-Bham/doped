@@ -9,6 +9,7 @@ import shutil
 import unittest
 import warnings
 from collections import Counter
+from itertools import permutations
 
 import numpy as np
 import pytest
@@ -368,8 +369,8 @@ class MoleculeMatcherTest(unittest.TestCase):
         # permutation invariance:
         assert is_periodic_image(sites, [periodically_shifted_sites[i] for i in [1, 2, 0]])
 
-        # each site must be matched with a different site of the other complex, so not a periodic image if
-        # a site is repeated (here the first site twice, in place of the second):
+        # each site must be uniquely matched (no duplicate matches) with a site of the other complex, so
+        # not a periodic image if a site is repeated (here the first site twice, in place of the second):
         assert not is_periodic_image(sites, [periodically_shifted_sites[i] for i in [0, 0, 2]])
         # nor if the species differ (here all Ga), or if a site is displaced (here by 0.1 in frac coords):
         assert not is_periodic_image(
@@ -381,10 +382,10 @@ class MoleculeMatcherTest(unittest.TestCase):
         # vacancies of a split vacancy, on the same primitive cell site in neighbouring cells), compared
         # to the same complex translated by a lattice vector, with these two sites listed in the other
         # order. Each of these sites is then a periodic image of `both` such sites in the other complex,
-        # so matching sites individually by their closest periodic images is ambiguous, and can pair them
+        # so matching sites _individually_ by their closest periodic images is ambiguous, and can pair them
         # such that no single lattice vector relates all pairs (as in a previous implementation, which
         # then double-counted such complexes). They are periodic images, as one lattice vector maps all
-        # sites of one complex onto those of the other...
+        # sites of one complex onto those of the other (now handled in the updated periodic-image function)
         vac_1, vac_2, interstitial = (
             PeriodicSite("Ga", frac_coords, lattice)
             for frac_coords in ([0.2, 0.3, 0.4], [1.2, 0.3, 0.4], [0.75, 0.3, 0.6])
@@ -417,70 +418,138 @@ def rotate_45_degrees_x(coords):
 
 class SymmetryMultiplicityTest(unittest.TestCase):
     def setUp(self):
-        self.R3c_Ga2O3_split_vac_info_dict = loadfn(
-            os.path.join(data_dir, "Split_Vacancies/Ga2O3-mp-1243.json.gz")
-        )
-        self.C2m_Ga2O3_split_vac_info_dict = loadfn(
-            os.path.join(data_dir, "Split_Vacancies/Ga2O3-mp-886.json.gz")
-        )
         self.energy_key = "small_f32_GOQN"
         # reference symmetries & multiplicities (of the complexes in the host crystal; i.e. independent of
         # any periodicity breaking in the supercell), generated with ``doped`` and cross-checked in
-        # ``_check_complex_multiplicity_and_point_group`` below. ``relaxed_symm`` is ``None`` for relaxed
-        # structures where the determined symmetry is sensitive to ``symprec`` (differs for 0.08 - 0.12):
+        # ``_check_split_vacancies`` below. ``relaxed_symm`` is ``None`` for relaxed structures where the
+        # determined symmetry is sensitive to ``symprec`` (differs for 0.08 - 0.12):
         self.reference_values = loadfn(
             os.path.join(data_dir, "Split_Vacancies/doped_reference_values.json")
         )
 
-    def _check_complex_multiplicity_and_point_group(
-        self, info_dict, subdict, reference, complex_symm, num_symm_ops
-    ):
+    def _check_split_vacancies(self, formula_mpid, max_entries=None):
         """
-        Check the split vacancy multiplicity against the reference value, the
-        orbit-stabiliser relation (multiplicity x point group order = number of
-        symmetry operations of the primitive cell), and that the complex point
-        group from the orbit analysis (``get_all_equiv_complexes``) matches
-        that from the local symmetry analysis of the structure
-        (``complex_symm``; from ``point_symmetry_from_structure``).
+        Check the symmetry and multiplicity analysis of the split vacancies in
+        the ``formula_mpid`` test file (or a random subset of ``max_entries``
+        of them, if set) against the reference values.
 
-        Returns the primitive cell multiplicity of the complex.
+        Also checks that the complex point group from the orbit analysis
+        (``get_all_equiv_complexes``) matches that from the local symmetry
+        analysis of the structure (``point_symmetry_from_structure``), and the
+        orbit-stabiliser relation (multiplicity x point group order = number of
+        symmetry operations of the primitive cell).
+
+        Returns a list of dicts with the symmetries, multiplicities (per
+        primitive cell) and ``Molecule`` of each split vacancy, for further
+        (host-specific) checks.
         """
+        info_dict = loadfn(os.path.join(data_dir, f"Split_Vacancies/{formula_mpid}.json.gz"))
+        reference_values = self.reference_values[formula_mpid]
         bulk_supercell = info_dict["bulk_supercell"]
         bulk_prim = get_primitive_structure(bulk_supercell)
+        num_symm_ops = len(get_sga(bulk_prim).get_symmetry_operations())
         supercell_over_prim_factor = len(bulk_supercell) / len(bulk_prim)
-        sites_kwargs = {
-            "vacancy_sites": [subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
-            "interstitial_sites": [subdict["interstitial_site"]],
-        }
-        comp_mult = get_complex_defect_multiplicity(bulk_supercell=bulk_supercell, **sites_kwargs)
-        assert comp_mult == reference["multiplicity"]
-        assert comp_mult == get_complex_defect_multiplicity(  # same answer with primitive structure input
-            bulk_supercell=bulk_supercell, primitive_structure=bulk_prim, **sites_kwargs
-        )
-        supercell_comp_mult = get_complex_defect_multiplicity(
-            bulk_supercell=bulk_supercell,
-            primitive_structure=bulk_prim,
-            primitive_cell_multiplicity=False,
-            **sites_kwargs,
-        )
-        assert supercell_comp_mult == reference["multiplicity"] * supercell_over_prim_factor
 
-        sites = [*sites_kwargs["vacancy_sites"], *sites_kwargs["interstitial_sites"]]
-        equiv_complexes, point_group = get_all_equiv_complexes(
-            [
-                PeriodicSite(site.species, frac_coords, bulk_supercell.lattice)
-                for site, frac_coords in zip(
-                    sites, _get_unwrapped_complex_frac_coords(bulk_supercell, sites), strict=True
-                )
-            ],
-            bulk_supercell,
-            return_point_group=True,
-        )
-        assert len(equiv_complexes) == supercell_comp_mult
-        assert point_group == complex_symm == reference["unrelaxed_symm"]
-        assert comp_mult * group_order_from_schoenflies(point_group) == num_symm_ops
+        split_vacancies = [
+            (cation, energy, subdict)
+            for cation, cation_dict in info_dict.items()
+            if isinstance(cation_dict, dict) and "split_vacancies_energy_dict" in cation_dict
+            for energy, subdict in cation_dict["split_vacancies_energy_dict"].items()
+            if self.energy_key in subdict
+        ]
+        if max_entries is not None:
+            split_vacancies = random.sample(split_vacancies, min(max_entries, len(split_vacancies)))
 
-        return comp_mult
+        results = []
+        for cation, energy, subdict in split_vacancies:
+            reference = reference_values[f"{cation}|{energy}"]
+            vacancy_sites = [subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]]
+            interstitial_site = subdict["interstitial_site"]
+            sites = [*vacancy_sites, interstitial_site]
+            sites_kwargs = {"vacancy_sites": vacancy_sites, "interstitial_sites": [interstitial_site]}
+
+            # point symmetries of the constituent sites, and the unrelaxed and relaxed split vacancy:
+            vac_symms = [point_symmetry_from_site(site, bulk_supercell) for site in vacancy_sites]
+            int_symm = point_symmetry_from_site(interstitial_site, bulk_supercell)
+            symm = point_symmetry_from_structure(
+                defect_structure_from_sites(bulk_supercell, **sites_kwargs),
+                bulk_supercell,
+                relaxed=True,
+                verbose=False,
+            )
+            relaxed_symm = point_symmetry_from_structure(
+                Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
+                bulk_supercell,
+                verbose=False,
+            )
+            assert vac_symms == reference["vac_symms"]
+            assert int_symm == reference["int_symm"]
+            assert symm == reference["unrelaxed_symm"]
+            if reference["relaxed_symm"] is not None:  # ``None`` if sensitive to ``symprec``
+                assert relaxed_symm == reference["relaxed_symm"]
+
+            # multiplicities (per primitive cell) of the constituent point defects and the split vacancy:
+            vac_multiplicities = [
+                Vacancy(bulk_supercell, site).multiplicity / supercell_over_prim_factor
+                for site in vacancy_sites
+            ]
+            int_multiplicity = (
+                Interstitial(bulk_supercell, interstitial_site).multiplicity / supercell_over_prim_factor
+            )
+            assert vac_multiplicities == [subdict["vac_1_multiplicity"], subdict["vac_2_multiplicity"]]
+            assert int_multiplicity == subdict["int_multiplicity"]
+
+            multiplicity = get_complex_defect_multiplicity(bulk_supercell=bulk_supercell, **sites_kwargs)
+            assert multiplicity == reference["multiplicity"]
+            assert multiplicity == get_complex_defect_multiplicity(  # same with primitive structure input
+                bulk_supercell=bulk_supercell, primitive_structure=bulk_prim, **sites_kwargs
+            )
+            supercell_multiplicity = get_complex_defect_multiplicity(
+                bulk_supercell=bulk_supercell,
+                primitive_structure=bulk_prim,
+                primitive_cell_multiplicity=False,
+                **sites_kwargs,
+            )
+            assert supercell_multiplicity == multiplicity * supercell_over_prim_factor
+            # the split vacancy multiplicity is at least that of its interstitial site, as any symmetry
+            # operation of the complex must also be a symmetry operation of its (only) interstitial:
+            assert multiplicity >= int_multiplicity
+
+            # orbit of the complex under the host symmetry operations (``get_all_equiv_complexes``; which
+            # takes the `unwrapped` complex sites as input:
+            equiv_complexes, point_group = get_all_equiv_complexes(
+                [
+                    PeriodicSite(site.species, frac_coords, bulk_supercell.lattice)
+                    for site, frac_coords in zip(
+                        sites, _get_unwrapped_complex_frac_coords(bulk_supercell, sites), strict=True
+                    )
+                ],
+                bulk_supercell,
+                return_point_group=True,
+            )
+            assert len(equiv_complexes) == supercell_multiplicity
+            assert point_group == symm
+            assert multiplicity * group_order_from_schoenflies(point_group) == num_symm_ops
+
+            results.append(
+                {
+                    "energy": round(float(energy), 2),
+                    "symm": symm,
+                    "vac_symms": vac_symms,
+                    "int_symm": int_symm,
+                    "multiplicity": multiplicity,
+                    "vac_multiplicities": vac_multiplicities,
+                    "int_multiplicity": int_multiplicity,
+                    "molecule": Molecule(
+                        [site.species for site in sites],
+                        bulk_supercell.lattice.get_cartesian_coords(
+                            [site.frac_coords + sites[0].distance_and_image(site)[1] for site in sites]
+                        ),
+                    ),
+                }
+            )
+
+        return results
 
     def test_symmetry_multiplicity_R3c_Ga2O3(self):
         """
@@ -494,99 +563,18 @@ class SymmetryMultiplicityTest(unittest.TestCase):
         are unaffected by this. Useful test case for future stenciling to avoid
         periodicity breaking.
         """
-        info_dict = self.R3c_Ga2O3_split_vac_info_dict
-        reference_values = self.reference_values["Ga2O3-mp-1243"]
-        bulk_prim = get_primitive_structure(info_dict["bulk_supercell"])
-        num_symm_ops = len(get_sga(bulk_prim).get_symmetry_operations())
-        supercell_over_prim_factor = len(info_dict["bulk_supercell"]) / len(bulk_prim)
-        molecule_dict = {}
-
-        ml_calculated_split_vac_dicts = [
-            (cation, energy, subdict)
-            for cation, cation_dict in info_dict.items()
-            if isinstance(cation_dict, dict) and "split_vacancies_energy_dict" in cation_dict
-            for energy, subdict in cation_dict["split_vacancies_energy_dict"].items()
-            if self.energy_key in subdict
-        ]
-
-        for cation, energy, subdict in ml_calculated_split_vac_dicts:
-            reference = reference_values[f"{cation}|{energy}"]
-            orig_split_vacancy = defect_structure_from_sites(
-                info_dict["bulk_supercell"],
-                vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
-                interstitial_sites=[subdict["interstitial_site"]],
-            )
-            orig_split_vacancy_symm = point_symmetry_from_structure(
-                orig_split_vacancy,
-                info_dict["bulk_supercell"],
-                relaxed=True,
-                verbose=False,
-            )
-            assert orig_split_vacancy_symm == reference["unrelaxed_symm"]
-
-            for v_idx in [1, 2]:
-                vac_symm = point_symmetry_from_site(
-                    subdict[f"vac_defect_{v_idx}_site"], info_dict["bulk_supercell"]
-                )
-                assert vac_symm == "C3"  # only C3 Ga sites in R-3c Ga2O3
-                assert vac_symm == reference["vac_symms"][v_idx - 1]
-
-            int_symm = point_symmetry_from_site(subdict["interstitial_site"], info_dict["bulk_supercell"])
-            assert int_symm in [
-                "C2",
-                "C3i",
-                "D3",
-            ]  # unrelaxed interstitial sites in R-3c Ga2O3
-            assert int_symm == reference["int_symm"]
-            relaxed_symm = point_symmetry_from_structure(
-                Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
-                info_dict["bulk_supercell"],
-                verbose=False,
-            )
-            if reference["relaxed_symm"] is not None:  # ``None`` if sensitive to ``symprec``
-                assert relaxed_symm == reference["relaxed_symm"]
-
-            comp_mult = self._check_complex_multiplicity_and_point_group(
-                info_dict, subdict, reference, orig_split_vacancy_symm, num_symm_ops
-            )
-
-            int_obj = Interstitial(info_dict["bulk_supercell"], subdict["interstitial_site"])
-            v1_obj = Vacancy(info_dict["bulk_supercell"], subdict["vac_defect_1_site"])
-            v2_obj = Vacancy(info_dict["bulk_supercell"], subdict["vac_defect_2_site"])
-
-            assert int_obj.multiplicity == subdict["int_multiplicity"] * supercell_over_prim_factor
-            assert v1_obj.multiplicity == subdict["vac_1_multiplicity"] * supercell_over_prim_factor
-            assert v2_obj.multiplicity == subdict["vac_2_multiplicity"] * supercell_over_prim_factor
-
-            # this isn't universally true for complex defects, but is for the split vacancies:
-            assert (
-                comp_mult
-                <= (int_obj.multiplicity * v1_obj.multiplicity * v2_obj.multiplicity)
-                / supercell_over_prim_factor**3
-            )
-
-            raw_complex_defect_sites = [
-                subdict["vac_defect_1_site"],
-                subdict["vac_defect_2_site"],
-                subdict["interstitial_site"],
-            ]
-            molecule_dict[round(float(energy), 2)] = Molecule(
-                [site.species for site in raw_complex_defect_sites],
-                info_dict["bulk_supercell"].lattice.get_cartesian_coords(
-                    [
-                        site.frac_coords + raw_complex_defect_sites[0].distance_and_image(site)[1]
-                        for site in raw_complex_defect_sites
-                    ]
-                ),
-            )
+        results = self._check_split_vacancies("Ga2O3-mp-1243")
+        for result in results:
+            assert result["vac_symms"] == ["C3", "C3"]  # only C3 Ga sites in R-3c Ga2O3
+            assert result["int_symm"] in ["C2", "C3i", "D3"]  # unrelaxed interstitial sites in R-3c Ga2O3
 
         # in this case, two of the molecules are actually equivalent, with slightly different ES energies
         # because of the periodicity breaking in the generated supercell:
-        for key, mol in molecule_dict.items():
-            if key in [-4245.99, -4246.28]:
-                assert are_equivalent_molecules(molecule_dict[-4245.99], mol)
-            else:
-                assert not are_equivalent_molecules(molecule_dict[-4245.99], mol)
+        molecule_dict = {result["energy"]: result["molecule"] for result in results}
+        for energy, mol in molecule_dict.items():
+            assert bool(are_equivalent_molecules(molecule_dict[-4245.99], mol)) == (
+                energy in [-4245.99, -4246.28]
+            )
 
     def test_symmetry_multiplicity_C2m_Ga2O3(self):
         """
@@ -596,124 +584,26 @@ class SymmetryMultiplicityTest(unittest.TestCase):
         For C2/m Ga2O3, we have no periodicity breaking. Ga site symmetries are
         all Cs, while we have Cs, C2h, C2 and C1 interstitial site symmetries.
         """
-        info_dict = self.C2m_Ga2O3_split_vac_info_dict
-        reference_values = self.reference_values["Ga2O3-mp-886"]
-        bulk_prim = get_primitive_structure(info_dict["bulk_supercell"])
-        num_symm_ops = len(get_sga(bulk_prim).get_symmetry_operations())
-        supercell_over_prim_factor = len(info_dict["bulk_supercell"]) / len(bulk_prim)
-        molecule_dict = {}
-
-        ml_calculated_split_vac_dicts = [
-            (cation, energy, subdict)
-            for cation, cation_dict in info_dict.items()
-            if isinstance(cation_dict, dict) and "split_vacancies_energy_dict" in cation_dict
-            for energy, subdict in cation_dict["split_vacancies_energy_dict"].items()
-            if self.energy_key in subdict
-        ]
-
-        for cation, energy, subdict in ml_calculated_split_vac_dicts:
-            reference = reference_values[f"{cation}|{energy}"]
-            orig_split_vacancy = defect_structure_from_sites(
-                info_dict["bulk_supercell"],
-                vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
-                interstitial_sites=[subdict["interstitial_site"]],
-            )
-            orig_split_vacancy_symm = point_symmetry_from_structure(
-                orig_split_vacancy,
-                info_dict["bulk_supercell"],
-                relaxed=True,
-                verbose=False,
-            )
-            assert orig_split_vacancy_symm == reference["unrelaxed_symm"]
-
-            for v_idx in [1, 2]:
-                vac_symm = point_symmetry_from_site(
-                    subdict[f"vac_defect_{v_idx}_site"], info_dict["bulk_supercell"]
-                )
-                assert vac_symm == "Cs"  # only Cs Ga sites in C2/m Ga2O3
-                assert vac_symm == reference["vac_symms"][v_idx - 1]
-
-            int_symm = point_symmetry_from_site(subdict["interstitial_site"], info_dict["bulk_supercell"])
-            assert int_symm in [
-                "Cs",
-                "C2h",
-                "C2",
-                "C1",
-            ]  # unrelaxed interstitial sites in C2/m Ga2O3
-            assert int_symm == reference["int_symm"]
-            relaxed_symm = point_symmetry_from_structure(
-                Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
-                info_dict["bulk_supercell"],
-                verbose=False,
-            )
-            if reference["relaxed_symm"] is not None:  # ``None`` if sensitive to ``symprec``
-                assert relaxed_symm == reference["relaxed_symm"]
-
-            comp_mult = self._check_complex_multiplicity_and_point_group(
-                info_dict, subdict, reference, orig_split_vacancy_symm, num_symm_ops
-            )
-
-            int_obj = Interstitial(info_dict["bulk_supercell"], subdict["interstitial_site"])
-            v1_obj = Vacancy(info_dict["bulk_supercell"], subdict["vac_defect_1_site"])
-            v2_obj = Vacancy(info_dict["bulk_supercell"], subdict["vac_defect_2_site"])
-
-            assert int_obj.multiplicity == subdict["int_multiplicity"] * supercell_over_prim_factor
-            assert v1_obj.multiplicity == subdict["vac_1_multiplicity"] * supercell_over_prim_factor
-            assert v2_obj.multiplicity == subdict["vac_2_multiplicity"] * supercell_over_prim_factor
-
-            point_symm_mult_dict = {
-                "Cs": 2,
-                "C2h": 1,
-                "C2": 2,
-                "C1": 4,
-            }
-            for v_idx, v_obj in enumerate([v1_obj, v2_obj]):
-                assert (
-                    v_obj.multiplicity
-                    == point_symm_mult_dict[reference["vac_symms"][v_idx]] * supercell_over_prim_factor
-                )
-            assert (
-                int_obj.multiplicity
-                == point_symm_mult_dict[reference["int_symm"]] * supercell_over_prim_factor
-            )
-
-            # this isn't universally true for complex defects, but is for the split vacancies:
-            assert (
-                comp_mult
-                <= (int_obj.multiplicity * v1_obj.multiplicity * v2_obj.multiplicity)
-                / supercell_over_prim_factor**3
-            )
-
+        results = self._check_split_vacancies("Ga2O3-mp-886")
+        point_symm_mult_dict = {"Cs": 2, "C2h": 1, "C2": 2, "C1": 4}  # site multiplicities in C2/m Ga2O3
+        for result in results:
+            assert result["vac_symms"] == ["Cs", "Cs"]  # only Cs Ga sites in C2/m Ga2O3
+            assert result["int_symm"] in point_symm_mult_dict  # unrelaxed interstitial site symmetries
+            assert result["vac_multiplicities"] == [point_symm_mult_dict["Cs"]] * 2
+            assert result["int_multiplicity"] == point_symm_mult_dict[result["int_symm"]]
             # in C2/m Ga2O3, each split vacancy has the same multiplicity as the interstitial site, unless
             # its symmetry is lower than that of the interstitial site (-> greater multiplicity):
-            assert comp_mult == (
-                int_obj.multiplicity
-                / supercell_over_prim_factor
-                * group_order_from_schoenflies(int_symm)
-                / group_order_from_schoenflies(orig_split_vacancy_symm)
-            )
-
-            raw_complex_defect_sites = [
-                subdict["vac_defect_1_site"],
-                subdict["vac_defect_2_site"],
-                subdict["interstitial_site"],
-            ]
-            molecule_dict[round(float(energy), 2)] = Molecule(
-                [site.species for site in raw_complex_defect_sites],
-                info_dict["bulk_supercell"].lattice.get_cartesian_coords(
-                    [
-                        site.frac_coords + raw_complex_defect_sites[0].distance_and_image(site)[1]
-                        for site in raw_complex_defect_sites
-                    ]
-                ),
+            assert result["multiplicity"] == (
+                result["int_multiplicity"]
+                * group_order_from_schoenflies(result["int_symm"])
+                / group_order_from_schoenflies(result["symm"])
             )
 
         # Here the `relaxed` -3538.32 structure goes to the -3540.98 structure, so can use this in future
         # tests of relaxed complex defect site determinations! (TODO)
-        for key, mol in molecule_dict.items():
-            for other_key, other_mol in molecule_dict.items():
-                if key != other_key:
-                    assert not are_equivalent_molecules(mol, other_mol)
+        molecule_dict = {result["energy"]: result["molecule"] for result in results}
+        for mol, other_mol in permutations(molecule_dict.values(), 2):
+            assert not are_equivalent_molecules(mol, other_mol)
 
     def test_symmetry_multiplicity_tricky_structures(self):
         """
@@ -724,115 +614,27 @@ class SymmetryMultiplicityTest(unittest.TestCase):
         prior to robustness updates. Here we test that the analysis proceeds
         fine and matches expected values.
         """
-        database_folder = f"{data_dir}/Split_Vacancies"
-        formula_mpid_files = [
-            i for i in os.listdir(database_folder) if i.endswith(".json.gz") and "Ga2O3" not in i
-        ]
-        for formula_mpid_file in formula_mpid_files:
-            info_dict = loadfn(f"{database_folder}/{formula_mpid_file}")
-            reference_values = self.reference_values[formula_mpid_file.split(".json")[0]]
-            bulk_prim = get_primitive_structure(info_dict["bulk_supercell"])
-            num_symm_ops = len(get_sga(bulk_prim).get_symmetry_operations())
-            supercell_over_prim_factor = len(info_dict["bulk_supercell"]) / len(bulk_prim)
-            molecule_dict = {}
-
-            ml_calculated_split_vac_dicts = [
-                (cation, energy, subdict)
-                for cation, cation_dict in info_dict.items()
-                if isinstance(cation_dict, dict) and "split_vacancies_energy_dict" in cation_dict
-                for energy, subdict in cation_dict["split_vacancies_energy_dict"].items()
-                if self.energy_key in subdict
-            ]
-            if "GeI2" not in formula_mpid_file and "Li3Ti4O8" not in formula_mpid_file:
-                # take a random subset of max 10:
-                ml_calculated_split_vac_dicts = random.sample(
-                    ml_calculated_split_vac_dicts, min(10, len(ml_calculated_split_vac_dicts))
-                )
-            for cation, energy, subdict in ml_calculated_split_vac_dicts:
-                reference = reference_values[f"{cation}|{energy}"]
-                orig_split_vacancy = defect_structure_from_sites(
-                    info_dict["bulk_supercell"],
-                    vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
-                    interstitial_sites=[subdict["interstitial_site"]],
-                )
-                orig_split_vacancy_symm = point_symmetry_from_structure(
-                    orig_split_vacancy,
-                    info_dict["bulk_supercell"],
-                    relaxed=True,
-                    verbose=False,
-                )
-                assert orig_split_vacancy_symm == reference["unrelaxed_symm"]
-
-                for v_idx in [1, 2]:
-                    vac_symm = point_symmetry_from_site(
-                        subdict[f"vac_defect_{v_idx}_site"], info_dict["bulk_supercell"]
-                    )
-                    assert vac_symm == reference["vac_symms"][v_idx - 1]
-
-                int_symm = point_symmetry_from_site(
-                    subdict["interstitial_site"], info_dict["bulk_supercell"]
-                )
-                assert int_symm == reference["int_symm"]
-                relaxed_symm = point_symmetry_from_structure(
-                    Structure.from_ase_atoms(subdict[self.energy_key]["struct_atoms"]),
-                    info_dict["bulk_supercell"],
-                    verbose=False,
-                )
-                if reference["relaxed_symm"] is not None:  # ``None`` if sensitive to ``symprec``
-                    assert relaxed_symm == reference["relaxed_symm"]
-
-                comp_mult = self._check_complex_multiplicity_and_point_group(
-                    info_dict, subdict, reference, orig_split_vacancy_symm, num_symm_ops
-                )
-
-                int_obj = Interstitial(info_dict["bulk_supercell"], subdict["interstitial_site"])
-                v1_obj = Vacancy(info_dict["bulk_supercell"], subdict["vac_defect_1_site"])
-                v2_obj = Vacancy(info_dict["bulk_supercell"], subdict["vac_defect_2_site"])
-
-                assert int_obj.multiplicity == subdict["int_multiplicity"] * supercell_over_prim_factor
-                assert v1_obj.multiplicity == subdict["vac_1_multiplicity"] * supercell_over_prim_factor
-                assert v2_obj.multiplicity == subdict["vac_2_multiplicity"] * supercell_over_prim_factor
-
-                for v_idx, v_obj in enumerate([v1_obj, v2_obj]):
-                    assert (
-                        v_obj.multiplicity
-                        == subdict[f"vac_{v_idx + 1}_multiplicity"] * supercell_over_prim_factor
-                    )
-                assert int_obj.multiplicity == subdict["int_multiplicity"] * supercell_over_prim_factor
-
-                # the split vacancy multiplicity is at least that of its interstitial site, as any symmetry
-                # operation of the complex must also be a symmetry operation of its (only) interstitial:
-                assert comp_mult >= int_obj.multiplicity / supercell_over_prim_factor
-
-                raw_complex_defect_sites = [
-                    subdict["vac_defect_1_site"],
-                    subdict["vac_defect_2_site"],
-                    subdict["interstitial_site"],
-                ]
-                molecule_dict[round(float(energy), 2)] = Molecule(
-                    [site.species for site in raw_complex_defect_sites],
-                    info_dict["bulk_supercell"].lattice.get_cartesian_coords(
-                        [
-                            site.frac_coords + raw_complex_defect_sites[0].distance_and_image(site)[1]
-                            for site in raw_complex_defect_sites
-                        ]
-                    ),
-                )
-
-            eq_mol_count = 0
-            for key, mol in molecule_dict.items():
-                for other_key, other_mol in molecule_dict.items():
-                    if (  # same cations, different molecules
-                        sorted(mol.atomic_numbers) == sorted(other_mol.atomic_numbers) and key != other_key
-                    ) and are_equivalent_molecules(mol, other_mol):
-                        eq_mol_count += 1
-
-            # (ordered) pairs of split vacancies with equivalent (V-I-V) geometries:
-            if "GeI2" in formula_mpid_file:
+        for formula_mpid in sorted(
+            filename.split(".json")[0]
+            for filename in os.listdir(f"{data_dir}/Split_Vacancies")
+            if filename.endswith(".json.gz") and "Ga2O3" not in filename
+        ):
+            results = self._check_split_vacancies(  # random subset of max 10, except for GeI2 & Li3Ti4O8
+                formula_mpid,
+                max_entries=None if any(i in formula_mpid for i in ["GeI2", "Li3Ti4O8"]) else 10,
+            )
+            molecule_dict = {result["energy"]: result["molecule"] for result in results}
+            # (ordered) pairs of split vacancies with the same cations and equivalent (V-I-V) geometries:
+            eq_mol_count = sum(
+                bool(are_equivalent_molecules(mol, other_mol))
+                for mol, other_mol in permutations(molecule_dict.values(), 2)
+                if sorted(mol.atomic_numbers) == sorted(other_mol.atomic_numbers)
+            )
+            if "GeI2" in formula_mpid:
                 assert eq_mol_count == 8
-            elif "Li3Ti4O8" in formula_mpid_file:
+            elif "Li3Ti4O8" in formula_mpid:
                 assert eq_mol_count == 62
-            elif "Na2Mg(NiO2)2" in formula_mpid_file:
+            elif "Na2Mg(NiO2)2" in formula_mpid:
                 assert eq_mol_count <= 22  # 22 for the full set; random subset of 10 here
             else:
                 assert eq_mol_count == 0
