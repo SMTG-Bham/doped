@@ -1176,28 +1176,32 @@ def format_defect_name(
     # defect complex names (constituent point defects and their separations, then the point group, as
     # hyphen-delimited terms; e.g. ``v_Cd-1.87-Cd_i-1.87-v_Cd-C3v_0``) are formatted as their constituents.
     # Hyphens directly following underscores are negative charge states (``v_Cd_-2``), not delimiters:
-    pre_charge_name, charge_str = defect_species.rsplit("_", 1)
+    pre_charge_name, _, charge_str = defect_species.rpartition("_")
     if len(complex_terms := re.split(r"(?<!_)-", pre_charge_name)) > 1:
+        # same-named complexes are given ``_a``, ``_b``... suffixes after the point group (``...-C3v_a``):
+        if (match := re.fullmatch(r"(.+)_[a-z]+", complex_terms[-1])) and match[1] in sch_symbols:
+            complex_terms[-1] = match[1]
         constituents = [  # skip separations and point group terms
             term for term in complex_terms if term not in sch_symbols and not re.fullmatch(r"[\d.]+", term)
         ]
         formatted_constituents = [
             format_defect_name(f"{term}_99", include_charge=False) for term in constituents
         ]
-        if not constituents or any(name is None for name in formatted_constituents):
-            return None
-        complex_name = "\u2013".join(
-            name for name in formatted_constituents if name is not None
-        )  # en dash
-        if not include_charge:
-            return complex_name
-        try:
-            return f"{complex_name}$^{{{_signed_charge(int(charge_str))}}}$"
-        except ValueError as e:
-            raise ValueError(
-                f"Problem reading defect name {defect_species}, should end with charge state after "
-                f"underscore (e.g. Te_i_Td_Te2.83_+1)"
-            ) from e
+        # only a defect complex name if there are multiple recognised constituent point defects, otherwise
+        # (e.g. hyphens in user-defined name suffixes; ``v_Cd-HSE06_0``) parsed as a point defect below:
+        if len(constituents) > 1 and all(name is not None for name in formatted_constituents):
+            complex_name = "\u2013".join(
+                name for name in formatted_constituents if name is not None
+            )  # en dash
+            if not include_charge:
+                return complex_name
+            try:
+                return f"{complex_name}$^{{{_signed_charge(int(charge_str))}}}$"
+            except ValueError as e:
+                raise ValueError(
+                    f"Problem reading defect name {defect_species}, should end with charge state after "
+                    f"underscore (e.g. Te_i_Td_Te2.83_+1)"
+                ) from e
 
     name_parts = defect_species.split("_")
     try:
