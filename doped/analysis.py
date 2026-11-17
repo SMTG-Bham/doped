@@ -329,6 +329,12 @@ def defect_sites_from_structures(
                 defect_supercell, bulk_supercell, site_tol=None
             )
 
+    if not point_defects:
+        raise ValueError(
+            f"No defect sites could be identified from the defect and bulk supercells with ``site_tol`` = "
+            f"{site_tol}; the structures may be equivalent, or ``site_tol`` may be too large."
+        )
+
     all_point_defects_info: list = []
     for defect_type, bulk_site_index, defect_site_index in point_defects:
         if defect_type == "vacancy":
