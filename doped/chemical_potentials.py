@@ -2469,7 +2469,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
         user_potcar_settings: dict | None = None,
         extrinsic_only: bool = False,
         output_path: PathLike = "CompetingPhases",
-        subfolder: PathLike | None = None,
+        subfolder: PathLike = "SinglePoint",
     ) -> dict[str, DopedDictSet]:
         r"""
         Generates ``DopedDictSet``\s for single-point (static) energy
@@ -2482,20 +2482,19 @@ class CompetingPhases(_EntriesMixin, MSONable):
         accurate total energies with tight convergence settings.
 
         If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
-        ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
-        default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
-        explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
-        where the max atomic number across all species (host and extrinsic) is
-        Z >= 31 (heavier than Zn), matching the convention in
-        :mod:`doped.vasp`.
+        ``LSORBIT = True`` for ``VASP``). If ``soc`` is not explicitly set
+        (i.e. is ``None``), it defaults to ``True`` for systems where the max
+        atomic number across all species (host and extrinsic) is Z >= 31
+        (heavier than Zn), matching the convention in :mod:`doped.vasp`.
 
         Inclusion of SOC is crucial for accurate formation energies and
         chemical potentials in heavy-element systems, as discussed in
         |Guidelines Perspective|. However, non-SOC energies can generally be
         reliably used to determine `relative` energies of polymorphs, of the
         same composition/oxidation states, to good accuracy, which can be
-        useful for pre-screening (e.g. then only performing more expensive SOC
-        calculations on the ground-state polymorph of each potential competing
+        useful for pre-screening (e.g. with energies from the non-SOC
+        relaxations, then only performing more expensive SOC single-point
+        calculations on the ground-state polymorph of each candidate competing
         phase). Moreover, one typically turns off symmetry for SOC calculations
         (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
         crystal symmetries due to spin-space coupling. However, one generally
@@ -2560,8 +2559,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 (when ``soc = None``; default), SOC is enabled when the max
                 atomic number across all species (host and extrinsic) is Z >=
                 31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
-                calculations, and the default ``subfolder`` name is set to
-                ``"vasp_ncl"`` when ``soc`` is ``True``.
+                calculations.
             user_incar_settings (dict):
                 Override the default INCAR settings e.g.
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
@@ -2589,12 +2587,10 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Default is ``"CompetingPhases"``.
             subfolder (PathLike):
                 Output folder structure is
-                ``<output_path>/<competing_phase_dir>/<subfolder>`` where
-                ``subfolder`` = 'SinglePoint' by default if ``soc`` is
-                ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
-                to write input files directly to
-                ``<output_path>/<competing_phase_dir>``, with no subfolders
-                created.
+                ``<output_path>/<competing_phase_dir>/<subfolder>``.
+                Default is ``"SinglePoint"``. Set to ``"."`` to write input
+                files directly to ``<output_path>/<competing_phase_dir>``, with
+                no subfolders created.
 
         Returns:
             dict[str, DopedDictSet]:
@@ -2625,9 +2621,6 @@ class CompetingPhases(_EntriesMixin, MSONable):
         # user settings take precedence:
         _handle_EDIFF_and_update_incar_settings(sp_incar_settings, user_incar_settings)
 
-        if subfolder is None:
-            subfolder = "vasp_ncl" if soc else "SinglePoint"
-
         # reuse relaxation set generation with the singlepoint INCAR overrides
         return self.get_relaxation_sets(
             kpoints_metals=kpoints_metals,
@@ -2650,7 +2643,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
         user_potcar_settings: dict | None = None,
         extrinsic_only: bool = False,
         output_path: PathLike = "CompetingPhases",
-        subfolder: PathLike | None = None,
+        subfolder: PathLike = "SinglePoint",
         poscar: bool = False,
         **kwargs,
     ) -> dict[str, DopedDictSet]:
@@ -2666,20 +2659,19 @@ class CompetingPhases(_EntriesMixin, MSONable):
         accurate total energies with tight convergence settings.
 
         If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
-        ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
-        default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
-        explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
-        where the max atomic number across all species (host and extrinsic) is
-        Z >= 31 (heavier than Zn), matching the convention in
-        :mod:`doped.vasp`.
+        ``LSORBIT = True`` for ``VASP``). If ``soc`` is not explicitly set
+        (i.e. is ``None``), it defaults to ``True`` for systems where the max
+        atomic number across all species (host and extrinsic) is Z >= 31
+        (heavier than Zn), matching the convention in :mod:`doped.vasp`.
 
         Inclusion of SOC is crucial for accurate formation energies and
         chemical potentials in heavy-element systems, as discussed in
         |Guidelines Perspective|. However, non-SOC energies can generally be
         reliably used to determine `relative` energies of polymorphs, of the
         same composition/oxidation states, to good accuracy, which can be
-        useful for pre-screening (e.g. then only performing more expensive SOC
-        calculations on the ground-state polymorph of each potential competing
+        useful for pre-screening (e.g. with energies from the non-SOC
+        relaxations, then only performing more expensive SOC single-point
+        calculations on the ground-state polymorph of each candidate competing
         phase). Moreover, one typically turns off symmetry for SOC calculations
         (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
         crystal symmetries due to spin-space coupling. However, one generally
@@ -2744,8 +2736,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 (when ``soc = None``; default), SOC is enabled when the max
                 atomic number across all species (host and extrinsic) is Z >=
                 31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
-                calculations, and the default ``subfolder`` name is set to
-                ``"vasp_ncl"`` when ``soc`` is ``True``.
+                calculations.
             user_incar_settings (dict):
                 Override the default INCAR settings e.g.
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
@@ -2773,12 +2764,10 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 Default is ``"CompetingPhases"``.
             subfolder (PathLike):
                 Output folder structure is
-                ``<output_path>/<competing_phase_dir>/<subfolder>`` where
-                ``subfolder`` = 'SinglePoint' by default if ``soc`` is
-                ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
-                to write input files directly to
-                ``<output_path>/<competing_phase_dir>``, with no subfolders
-                created.
+                ``<output_path>/<competing_phase_dir>/<subfolder>``.
+                Default is ``"SinglePoint"``. Set to ``"."`` to write input
+                files directly to ``<output_path>/<competing_phase_dir>``, with
+                no subfolders created.
             poscar (bool):
                 Whether to write ``POSCAR`` files. Defaults to ``False``, as
                 single-point (static) calculations are intended to be run on

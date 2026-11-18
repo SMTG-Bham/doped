@@ -1013,9 +1013,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
         assert not os.path.exists("CompetingPhases")
 
-        # check SOC defaults on for ZrO2 (Zr Z=40 >= 31) -> vasp_ncl subfolder
-        assert all("vasp_ncl" in key for key in dict_sets)
-        sample_key = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl"
+        # check SOC defaults on for ZrO2 (Zr Z=40 >= 31):
+        assert all("SinglePoint" in key for key in dict_sets)
+        sample_key = "CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint"
         assert sample_key in dict_sets
         ds = dict_sets[sample_key]
         assert ds.incar["LSORBIT"] is True
@@ -1026,17 +1026,16 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert "ISIF" not in ds.incar  # not a relaxation
         assert ds.incar["AEXX"] == 0.25  # HSE06 by default
 
-        # explicitly disable SOC -> SinglePoint subfolder, no LSORBIT
+        # explicitly disable SOC -> no LSORBIT
         dict_sets_no_soc = cp.get_singlepoint_sets(soc=False)
         assert all("SinglePoint" in key for key in dict_sets_no_soc)
-        assert all("vasp_ncl" not in key for key in dict_sets_no_soc)
         sample_ds = dict_sets_no_soc["CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint"]
         assert "LSORBIT" not in sample_ds.incar
         assert sample_ds.incar["NSW"] == 0
 
         # explicitly enable SOC
         dict_sets_soc = cp.get_singlepoint_sets(soc=True)
-        assert all("vasp_ncl" in key for key in dict_sets_soc)
+        assert all("SinglePoint" in key for key in dict_sets_soc)
         for ds in dict_sets_soc.values():
             assert ds.incar["LSORBIT"] is True
 
@@ -1123,14 +1122,14 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         if_present_rm("CompetingPhases")
 
-        # ZrO2 defaults to SOC (Zr Z=40), so subfolder is vasp_ncl
+        # ZrO2 defaults to SOC (Zr Z=40)
         dict_sets = cp.write_singlepoint_files(potcar_spec=True)
         assert len(dict_sets) == len(cp)
         assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
 
-        ZrO2_ncl_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl/"
-        assert os.path.exists(ZrO2_ncl_folder)
-        dict_set = dict_sets["CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl"]
+        ZrO2_soc_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint/"
+        assert os.path.exists(ZrO2_soc_folder)
+        dict_set = dict_sets["CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint"]
         assert dict_set.incar["LSORBIT"] is True
         assert dict_set.incar["NSW"] == 0
         assert dict_set.incar["ISMEAR"] == -5  # tetrahedron smearing for single-point energies
@@ -1138,7 +1137,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert sum(ds.incar["ISMEAR"] == -5 for ds in dict_sets.values()) == len(cp) - len(
             cp.molecular_entries
         )
-        assert dict_sets["CompetingPhases/O2_mmm_EaH_0/vasp_ncl"].incar["ISMEAR"] == 0
+        assert dict_sets["CompetingPhases/O2_mmm_EaH_0/SinglePoint"].incar["ISMEAR"] == 0
 
         # k-mesh too sparse for tetrahedron smearing -> Methfessel-Paxton for metals, Gaussian otherwise
         # (handled before ``pymatgen``'s blanket ISMEAR = 0 revert, so no warning):
@@ -1149,7 +1148,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert not any(ds.incar["ISMEAR"] == -5 for ds in sparse_sets.values())
         assert not any("tetrahedron" in str(ww.message) for ww in w)
 
-        with open(f"{ZrO2_ncl_folder}/INCAR", encoding="utf-8") as file:
+        with open(f"{ZrO2_soc_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any("NSW = 0" in line for line in contents)
             assert any("LSORBIT = True" in line for line in contents)
@@ -1158,29 +1157,28 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert not any("EDIFFG" in line for line in contents)  # removed
             assert not any("POTIM" in line for line in contents)  # removed
 
-        with open(f"{ZrO2_ncl_folder}/POTCAR.spec", encoding="utf-8") as file:
+        with open(f"{ZrO2_soc_folder}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents == ["Zr_sv\n", "O"]
 
         # POSCAR is not written by default (single-point calcs use user-supplied relaxed structures)
-        assert not os.path.exists(f"{ZrO2_ncl_folder}/POSCAR")
+        assert not os.path.exists(f"{ZrO2_soc_folder}/POSCAR")
         # KPOINTS is still written by default
-        assert os.path.exists(f"{ZrO2_ncl_folder}/KPOINTS")
+        assert os.path.exists(f"{ZrO2_soc_folder}/KPOINTS")
 
         # molecule entry should have KPAR=1 and gamma-only kpoints
-        O2_ncl_folder = "CompetingPhases/O2_mmm_EaH_0/vasp_ncl"
-        assert os.path.exists(O2_ncl_folder)
-        o2_dict_set = dict_sets["CompetingPhases/O2_mmm_EaH_0/vasp_ncl"]
+        O2_soc_folder = "CompetingPhases/O2_mmm_EaH_0/SinglePoint"
+        assert os.path.exists(O2_soc_folder)
+        o2_dict_set = dict_sets["CompetingPhases/O2_mmm_EaH_0/SinglePoint"]
         assert o2_dict_set.kpoints.kpts[0] == (1, 1, 1)
         assert o2_dict_set.incar["KPAR"] == 1
-        assert not os.path.exists(f"{O2_ncl_folder}/POSCAR")
+        assert not os.path.exists(f"{O2_soc_folder}/POSCAR")
 
-        # test without SOC -> SinglePoint subfolder
+        # test without SOC
         if_present_rm("CompetingPhases")
         _dict_sets_no_soc = cp.write_singlepoint_files(soc=False, potcar_spec=True)
         ZrO2_sp_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint/"
         assert os.path.exists(ZrO2_sp_folder)
-        assert not os.path.exists("CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl")
         with open(f"{ZrO2_sp_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any("NSW = 0" in line for line in contents)
@@ -1254,15 +1252,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert os.path.isdir("CompetingPhases/ZrO2_P2_1c_EaH_0/relax_v2")
         assert os.path.isfile("CompetingPhases/ZrO2_P2_1c_EaH_0/relax_v2/INCAR")
 
-        # singlepoint: custom subfolder overrides default (vasp_ncl for SOC)
+        # singlepoint: custom subfolder overrides default (SinglePoint)
         sp_sets = cp.get_singlepoint_sets(subfolder="my_sp")
         assert all("my_sp" in key for key in sp_sets)
-        assert all("vasp_ncl" not in key for key in sp_sets)
-
-        # singlepoint soc=False: custom subfolder overrides default (SinglePoint)
-        sp_sets_nosoc = cp.get_singlepoint_sets(soc=False, subfolder="sp_nosoc")
-        assert all("sp_nosoc" in key for key in sp_sets_nosoc)
-        assert all("SinglePoint" not in key for key in sp_sets_nosoc)
+        assert all("SinglePoint" not in key for key in sp_sets)
 
         # write_singlepoint_files: custom subfolder
         if_present_rm("CompetingPhases")
@@ -1339,12 +1332,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
         """
         Test SOC default logic based on atomic numbers.
         """
-        # ZrO2: Zr Z=40 >= 31, SOC should default True -> vasp_ncl
+        # ZrO2: Zr Z=40 >= 31, SOC should default True
         cp_heavy = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         dict_sets = cp_heavy.get_singlepoint_sets()
-        assert all("vasp_ncl" in key for key in dict_sets)
+        assert all(ds.incar["LSORBIT"] is True for ds in dict_sets.values())
 
-        # MgO: Mg Z=12, O Z=8, both < 31, SOC should default False -> SinglePoint
+        # MgO: Mg Z=12, O Z=8, both < 31, SOC should default False
         cp_light = chemical_potentials.CompetingPhases("MgO", energy_above_hull=0, api_key=api_key)
         dict_sets = cp_light.get_singlepoint_sets()
         assert all("SinglePoint" in key for key in dict_sets)
@@ -1929,9 +1922,9 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         assert all(
             not any(f"/{name}/" in f"/{key}/" for name in intrinsic_folder_names) for key in sp_dict_sets
         )
-        # La_ZrO2 has Zr (Z=40), so SOC defaults on -> vasp_ncl
+        # La_ZrO2 has Zr (Z=40), so SOC defaults on
         for name in extrinsic_folder_names:
-            assert os.path.isdir(f"CompetingPhases/{name}/vasp_ncl")
+            assert os.path.isdir(f"CompetingPhases/{name}/SinglePoint")
         for name in intrinsic_folder_names:
             assert not os.path.exists(f"CompetingPhases/{name}")
         for ds in sp_dict_sets.values():
@@ -1943,7 +1936,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         Test SOC default considers extrinsic species atomic numbers.
         """
         # MgO (Mg Z=12, O Z=8) with Cd dopant (Z=48): max Z across all
-        # species is 48 >= 31, so SOC should default to True (vasp_ncl)
+        # species is 48 >= 31, so SOC should default to True
         cp = chemical_potentials.CompetingPhases(
             "MgO", extrinsic="Cd", energy_above_hull=0, api_key=api_key
         )
@@ -1952,7 +1945,6 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         dict_sets = result[0]
         stdout = result[1]
         assert "Spin-orbit coupling (SOC) is being used by default" in stdout
-        assert all("vasp_ncl" in key for key in dict_sets)
         for ds in dict_sets.values():
             assert ds.incar["LSORBIT"] is True
 

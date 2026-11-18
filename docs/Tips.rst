@@ -183,10 +183,10 @@ particularly for metals, which are often the most expensive competing phases -- 
 
 - **Pre-screen polymorphs without SOC:** While spin-orbit coupling (SOC) can be important for accurate
   `absolute` energies in heavy-element systems (as discussed in |Guidelines Perspective|, Box 1), 
-  `relative` energies of polymorphs `of the same composition/oxidation states`` are usually reliable 
-  without SOC. Thus for systems with many candidate polymorphs, you can cheaply pre-screen with non-SOC 
-  calculations, and then only perform the (expensive) SOC calculations on the ground-state polymorph of 
-  each competing phase.
+  `relative` energies of polymorphs `of the same composition/oxidation states` are usually reliable 
+  without SOC. Thus for systems with many candidate polymorphs, you can cheaply pre-screen with non-SOC
+  energies from the relaxations, and then only perform the (expensive) SOC single-point calculations on
+  the ground-state polymorph of each candidate competing phase.
 
 - **Smearing:** Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and ``2``) are the ``doped`` default 
   settings for insulators and metals for geometry relaxations (and `k`-point convergence testing), but 
