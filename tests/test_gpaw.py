@@ -1215,7 +1215,7 @@ def test_gpaw_competing_phase_example_inputs(tmp_path):
     assert all((p / "singlepoint.py").exists() and (p / "structure.cif").exists() for p in folders)
     cells = {p.name: read(p / "structure.cif") for p in folders}
     assert len(cells["MgO_Fm-3m_EaH_0"]) == 2  # primitive cell of the host
-    # Niggli-reduced (e.g. the skewed Mg_Fm-3m_EaH_0 POSCAR), so GPAW doesn't warn about skewed cells:
+    # Niggli-reduced (e.g. the skewed Mg_R-3m_EaH_0.003 POSCAR), so GPAW doesn't warn about skewed cells:
     assert all(45 < angle < 135 for atoms in cells.values() for angle in atoms.cell.angles())
 
 

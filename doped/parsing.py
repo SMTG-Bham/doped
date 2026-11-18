@@ -1467,10 +1467,14 @@ def _get_calculation_folders_for_parsing(
         if _BULK_FOLDER_PATTERN in str(g).lower()
         or (bulk_path and str(g).lower() == str(bulk_path).lower())
     ]
+    # update candidate defect folders, based on bulk folder(s) and subfolder (for subfolder ".", only those
+    # with outputs directly inside, skipping folders of nested outputs, e.g. competing phases):
+    output_folders = set(calc_files_df["folder_path"])
     defect_folders = [
-        d  # update candidate defect calculation folders, based on bulk calculation folder(s) and subfolder
+        d
         for d in possible_defect_folders
-        if d not in possible_bulk_folders and (subfolder == "." or (out_root / d / subfolder).is_dir())
+        if d not in possible_bulk_folders
+        and (out_root / d in output_folders if subfolder == "." else (out_root / d / subfolder).is_dir())
     ]
 
     if bulk_path is not None and not _io_utils._get_calc_files_df(Path(bulk_path), calc_output_mask).empty:
