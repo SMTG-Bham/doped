@@ -1085,8 +1085,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         for i in os.listdir("V2O5_test"):
             if os.path.isdir(f"V2O5_test/{i}") and i.startswith("v_O"):
                 shutil.move(f"V2O5_test/{i}", f"V2O5_test/unrecognised_{i[-1]}")
+        # folders with only nested calculation outputs alongside (e.g. competing phases) are skipped:
+        shutil.copytree("V2O5_test/V2O5_bulk", "V2O5_test/CompetingPhases/V2O5")
 
         dp, w = _create_dp_and_capture_warnings("V2O5_test", dielectric=[4.186, 19.33, 17.49])
+        assert not any("Parsing failed" in str(warning.message) for warning in w)
         assert any(
             "The following parsed defect entries were found to be duplicates" in str(warning.message)
             for warning in w
