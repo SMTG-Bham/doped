@@ -114,10 +114,6 @@ def _ignore_pmg_warnings():
     warnings.filterwarnings("ignore", message="WARNING! Discarding")  # entry not in mixing state data
     warnings.filterwarnings("ignore", message="Failed to guess oxidation states")  # MP2020 corrections
 
-    # ignore deprecation warning due to old mixing scheme import in served Materials Project entries:
-    # (to be removed in v2027.1)
-    warnings.filterwarnings("ignore", message="MaterialsProjectDFTMixingScheme has been moved")
-
 
 _ignore_pmg_warnings()
 

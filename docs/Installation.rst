@@ -73,12 +73,6 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
       ``doped`` from the Materials Project, which can change the chemical potential limits, as GNoME
       materials are often stable (on the convex hull).
 
-      .. TODO: Remove the following once an mp-api release fixing this is out and required by doped
-
-      Note that ``mp-api`` 0.47.0 raises a ``KeyError`` for queries of chemical systems which include GNoME
-      materials (~19% of chemical systems) with API keys without GNoME access. Until this is fixed in
-      ``mp-api``, it can be avoided by opting in to the GNoME terms as above.
-
    .. tip::
 
       To debug or verify that your ``pymatgen`` config file is correctly located and parsed, you can run 
