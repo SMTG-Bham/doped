@@ -456,8 +456,8 @@ def get_kumagai_correction(
             charges for the defect (e.g. for the constituents of a defect
             complex), used in place of the default single point charge (total
             defect charge at ``DefectEntry.defect_supercell_site`` /
-            ``defect_coords``. The charges must sum to the defect charge state.
-            The point charges are unwrapped to a single (minimum image)
+            ``defect_coords``). The charges must sum to the defect charge
+            state. The point charges are unwrapped to a single (minimum image)
             configuration, and the potential sampling region is then defined by
             the distance to the nearest point charge (so
             ``defect_region_radius`` applies around each). Default is ``None``
@@ -467,8 +467,8 @@ def get_kumagai_correction(
             are used for sampling the electrostatic potential far from the
             defect (to obtain the potential alignment). If ``None`` (default),
             uses half the largest distance between parallel cell faces (as in
-            ``pydefect``). The radius is reduced as necessary (with a warning)
-            to ensure at least 3 sites in the sampling region.
+            ``pydefect``), reduced as necessary (with a warning) to ensure at
+            least 3 sites in the sampling region.
         excluded_indices (list):
             List of site indices (in the defect supercell) to exclude from
             the site potential sampling in the correction calculation/plot.
@@ -556,9 +556,7 @@ def get_kumagai_correction(
                 f"defect charge state ({charge:+.3f})."
             )
         charge_coords = np.array(
-            _get_unwrapped_complex_frac_coords(
-                lattice, np.array([fc for _q, fc in point_charges], dtype=float)
-            )
+            _get_unwrapped_complex_frac_coords(lattice, [fc for _q, fc in point_charges])
         )  # unwrap to a single (minimum image) configuration, i.e. the isolated complex geometry
         half_min_image_dist = _get_min_image_distance_from_matrix(lattice.matrix) / 2
         for i, j in combinations(range(len(site_charges)), 2):
@@ -613,9 +611,10 @@ def get_kumagai_correction(
             phase = np.cos(G @ cart_coord)
             return np.sum(np.exp(-gEg / (4 * self.mod_ewald_param**2)) / gEg * phase) / self.volume
 
+        # (multi-site) PC correction: -E_latt·Σqᵢ² - Σ_{i<j} qᵢqⱼ[φ_per(r_ij) - φ_iso(r_ij)]
         Ewald.ewald_real = ewald_real
         Ewald.ewald_rec = ewald_rec
-        point_charge_correction = (
+        point_charge_correction = (  # -E_latt·Σqᵢ²
             -ewald.lattice_energy * sum(q**2 for q in site_charges) if any(site_charges) else 0.0
         )
         for i, j in combinations(range(len(site_charges)), 2):  # multiple charges: pair interactions
@@ -624,21 +623,33 @@ def get_kumagai_correction(
             isolated_pot = 1 / (4 * np.pi * np.linalg.norm(np.dot(rel_ij, ewald.lattice)))  # eps-scaled
             point_charge_correction -= (
                 site_charges[i] * site_charges[j] * (ewald.atomic_site_potential(rel_ij) - isolated_pot)
-            )
+            )  # qᵢqⱼ[φ_per(r_ij) - φ_iso(r_ij)]
 
-        if defect_region_radius is None:
-            defect_region_radius = get_half_max_face_distance(lattice)
         site_distances = np.array([site.distance for site in sites])
         if not site_distances.size:
             raise ValueError("No matched atomic sites are available for eFNV potential sampling.")
-        min_sampled = min(3, len(site_distances))  # ensure >= 3 sampled sites (e.g. for slabs with vacuum)
-        if np.count_nonzero(site_distances > defect_region_radius) < min_sampled:
-            # reduce to just below the 3rd-furthest site distance (with tolerance for equidistant sites):
-            defect_region_radius = np.sort(site_distances)[-min_sampled] - 1e-3
+        if defect_region_radius is None:
+            defect_region_radius = get_half_max_face_distance(lattice)
+            min_sampled = min(3, len(site_distances))  # ensure >= 3 sampled sites (e.g. slabs with vacuum)
+            if np.count_nonzero(site_distances > defect_region_radius) < min_sampled:
+                # reduce to just below the 3rd-furthest site distance (with tolerance for equal distances):
+                defect_region_radius = np.sort(site_distances)[-min_sampled] - 1e-3
+                warnings.warn(
+                    f"Fewer than {min_sampled} atomic sites lie outside the default eFNV defect region "
+                    f"radius, so it has been reduced to {defect_region_radius:.2f} Å to include at least "
+                    f"{min_sampled} sites in the potential sampling region."
+                )
+        elif (num_sampled := np.count_nonzero(site_distances > defect_region_radius)) == 0:
+            raise ValueError(
+                f"No atomic sites lie outside the supplied eFNV `defect_region_radius` "
+                f"({defect_region_radius:.2f} Å), so the potential alignment cannot be computed. Use a "
+                f"smaller `defect_region_radius`, or the default (None)."
+            )
+        elif num_sampled < 3:
             warnings.warn(
-                f"Fewer than {min_sampled} atomic sites lie outside the eFNV defect region radius, so "
-                f"it has been reduced to {defect_region_radius:.2f} Å to include at least {min_sampled} "
-                "sites in the potential sampling region."
+                f"Only {num_sampled} atomic site{'s lie' if num_sampled > 1 else ' lies'} outside the "
+                f"supplied eFNV `defect_region_radius` ({defect_region_radius:.2f} Å), so the potential "
+                f"alignment may be unreliable."
             )
 
         for site, rel_coord in zip(sites, rel_coords, strict=False):

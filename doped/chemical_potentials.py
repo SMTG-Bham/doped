@@ -14,6 +14,7 @@ from bisect import bisect_right
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from functools import cache, partial
+from numbers import Real
 from pathlib import Path
 from re import sub
 from types import ModuleType
@@ -28,6 +29,7 @@ from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
 from monty.serialization import dumpfn, loadfn
 from mp_api.client.mprester import DEFAULT_THERMOTYPE_CRITERIA, MPRester, MPRestError
+from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import Composition, Element, Lattice, Structure
@@ -38,6 +40,7 @@ from pymatgen.core.entries import (
     ManualEnergyAdjustment,
 )
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
+from pymatgen.util.coord import pbc_diff
 from pymatgen.util.string import latexify, latexify_spacegroup
 from pymatgen.util.typing import PathLike
 from scipy.spatial import ConvexHull, Delaunay
@@ -56,7 +59,7 @@ from doped.utils.plotting import (
     doped_plot_style,
     get_colormap,
 )
-from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
+from doped.utils.symmetry import _custom_round, _round_floats, get_clean_structure, get_primitive_structure
 
 # globally ignore:
 _ignore_pmg_warnings()
@@ -96,6 +99,7 @@ MPRESTER_SUMMARY_DATA = (
     "material_id",  # required so we can map docs back to entries via MPID
     "band_gap",
     "total_magnetization",
+    "total_magnetization_normalized_formula_units",  # MP cells can differ, so used to set ``NUPDOWN``
     "theoretical",
     "database_IDs",  # dict, possibly with an "icsd" key with list of ICSD entry codes
 )
@@ -136,6 +140,113 @@ def _attach_summary_data_to_entries(
             if doc := docs_by_mpid.get(entry.data.get("material_id")):
                 # drop ``material_id`` (already in the entry data):
                 entry.data["summary"] = {k: v for k, v in doc.items() if k != "material_id"}
+
+
+def _get_magnetic_ordering(magmoms: Iterable[float | None]) -> str:
+    """
+    Get the (coarse) magnetic ordering of a set of collinear site moments;
+    ``"NM"`` (non-magnetic), ``"FM"`` (ferromagnetic) or ``"AFM/FiM"`` (anti-
+    or ferri-magnetic), considering only moments greater than 0.5 μB (so that
+    small induced moments, which can differ between functionals, are ignored).
+    """
+    signs = {magmom > 0 for magmom in magmoms if magmom is not None and abs(magmom) > 0.5}
+    return ("NM", "FM", "AFM/FiM")[len(signs)]
+
+
+def _attach_r2SCAN_magnetic_data_to_entries(entries: list[ComputedEntry], mpr: MPRester) -> None:
+    r"""
+    Attach magnetic data of Materials Project (MP) r2SCAN calculations to their
+    ``entries``, in-place.
+
+    The structures of many (older) MP r2SCAN calculations lack ``magmom`` site
+    properties (unlike those of GGA(+U) calculations; an MP data issue, see
+    https://github.com/materialsproject/emmet/issues/1546), so these are added
+    from the per-site moments in the calculation task docs
+    (``output.outcar["magnetization"]``), when the task output structure
+    matches the entry structure (same sites in the same order). This is skipped
+    (no task docs queried) if no ``magmom``\s are missing, and so can be
+    removed once fixed in the MP data. The (coarse) magnetic orderings (see
+    :func:`_get_magnetic_ordering`) of the r2SCAN and (if available) GGA(+U)
+    calculations of each material are also added to
+    ``entry.data["magnetic_orderings"]``, as these can differ (e.g. due to
+    ferromagnetic initial moments in the r2SCAN calculations).
+    """
+    r2SCAN_entries = [
+        entry
+        for entry in entries
+        if entry.parameters.get("run_type") == "r2SCAN" and hasattr(entry, "structure")
+    ]
+    if task_ids := [  # (empty lists are treated as "no filter" by mp-api, returning the entire database)
+        str(entry.data["task_id"])
+        for entry in r2SCAN_entries
+        if "magmom" not in entry.structure.site_properties and entry.data.get("task_id")
+    ]:
+        task_outputs = {
+            str(doc.task_id): doc.output
+            for doc in mpr.materials.tasks.search(
+                task_ids=task_ids, fields=["task_id", "output.outcar", "output.structure"]
+            )
+        }
+        for entry in r2SCAN_entries:
+            output = task_outputs.get(str(entry.data.get("task_id")))
+            if output is None or output.structure is None:
+                continue
+            magnetization = (output.outcar or {}).get("magnetization") or []
+            task_structure, structure = output.structure, entry.structure
+            if (
+                len(magnetization) == len(structure)
+                and [site.species_string for site in task_structure]
+                == [site.species_string for site in structure]
+                and np.allclose(task_structure.lattice.matrix, structure.lattice.matrix, atol=1e-3)
+                and np.allclose(pbc_diff(task_structure.frac_coords, structure.frac_coords), 0, atol=1e-3)
+            ):  # calculation task matches entry
+                structure.add_site_property("magmom", [site["tot"] for site in magnetization])
+
+    gga_orderings = {}  # material ID: {run type: magnetic ordering} of the GGA(+U) calculation
+    if material_ids := [str(mpid) for entry in r2SCAN_entries if (mpid := entry.data.get("material_id"))]:
+        for doc in mpr.materials.thermo.search(
+            material_ids=material_ids, thermo_types=["GGA_GGA+U"], fields=["material_id", "entries"]
+        ):
+            doc_entries = doc.entries or {}
+            run_type = "GGA+U" if "GGA+U" in doc_entries else "GGA"
+            gga_structure = getattr(doc_entries.get(run_type), "structure", None)
+            if gga_structure is not None and "magmom" in gga_structure.site_properties:
+                gga_orderings[str(doc.material_id)] = {
+                    run_type: _get_magnetic_ordering(gga_structure.site_properties["magmom"])
+                }
+
+    for entry in r2SCAN_entries:
+        if "magmom" in entry.structure.site_properties:
+            entry.data["magnetic_orderings"] = {
+                "r2SCAN": _get_magnetic_ordering(entry.structure.site_properties["magmom"]),
+                **gga_orderings.get(str(entry.data.get("material_id")), {}),
+            }
+
+
+def _warn_if_r2SCAN_magnetic_orderings_differ(entries: list[ComputedEntry]) -> None:
+    """
+    Warn if the magnetic orderings of the Materials Project r2SCAN and GGA(+U)
+    calculations differ for any of ``entries`` (from
+    ``entry.data["magnetic_orderings"]``; see
+    :func:`_attach_r2SCAN_magnetic_data_to_entries`).
+    """
+    if differing := [
+        f"{entry.data.get('doped_name', entry.name)} ({entry.data['material_id']}; "
+        + ", ".join(f"{run_type}: {ordering}" for run_type, ordering in orderings.items())
+        + ")"
+        for entry in entries
+        if len(set((orderings := entry.data.get("magnetic_orderings", {})).values())) > 1
+    ]:
+        warnings.warn(
+            f"The magnetic orderings of the Materials Project (MP) r2SCAN and GGA(+U) calculations differ "
+            f"for the following competing phases: {', '.join(differing)}.\nThe r2SCAN results determine "
+            f"the MP energies (and thus which competing phases are selected) and the spin polarisation "
+            f"settings (e.g. ``MAGMOM``) used here, but may not be the magnetic ground state (e.g. if "
+            f"initialised ferromagnetically), so it is recommended to check the magnetic ordering of "
+            f"these phases (e.g. comparing the energies of both orderings; the GGA(+U) structures with "
+            f"magnetic moments can be obtained with ``get_entries(mpid, "
+            f"additional_criteria={{'thermo_types': ['GGA_GGA+U']}})``)."
+        )
 
 
 def _sanitise_entry_data_keys(entries: list[ComputedEntry]) -> None:
@@ -373,6 +484,12 @@ def get_entries_in_chemsys(
     one corrected energy per material on a single mixed phase diagram (hull).
     See ``**kwargs`` below for querying other thermo types.
 
+    Many (older) Materials Project r2SCAN structures lack ``magmom`` site
+    properties, so these are added from the per-site magnetic moments in their
+    calculation task docs, and the (coarse) magnetic orderings of the r2SCAN
+    and (if available) GGA(+U) calculations of r2SCAN materials are added to
+    ``entry.data["magnetic_orderings"]``.
+
     The output entries list is sorted by energy above hull, then by the number
     of elements in the formula, then by the position of elements in the
     periodic table (main group elements, then transition metals, sorted by
@@ -427,6 +544,7 @@ def get_entries_in_chemsys(
         MP_full_pd_entries = mpr.get_entries_in_chemsys(elements=chemsys, **kwargs)
         _sanitise_entry_data_keys(MP_full_pd_entries)  # Element keys in mixed thermo doc entry data
         _attach_summary_data_to_entries(MP_full_pd_entries, mpr)
+        _attach_r2SCAN_magnetic_data_to_entries(MP_full_pd_entries, mpr)
 
     temp_phase_diagram = PhaseDiagram(MP_full_pd_entries)
     for entry in MP_full_pd_entries:
@@ -463,6 +581,10 @@ def get_entries(
     Convenience function to get a list of |ComputedStructureEntry|\s for an
     input single composition/formula, chemical system, MPID or full criteria,
     using ``MPRester.get_entries()``.
+
+    As in :func:`get_entries_in_chemsys`, missing ``magmom`` site properties
+    of Materials Project r2SCAN structures are added from their calculation
+    task docs, along with ``entry.data["magnetic_orderings"]``.
 
     The output entries list is sorted by energy above hull, then by the number
     of elements in the formula, then by the position of elements in the
@@ -512,6 +634,7 @@ def get_entries(
         )
         _sanitise_entry_data_keys(entries)  # Element keys in mixed thermo doc entry data
         _attach_summary_data_to_entries(entries, mpr)
+        _attach_r2SCAN_magnetic_data_to_entries(entries, mpr)
 
     # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
     entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=bulk_composition))
@@ -905,6 +1028,104 @@ def _nominal_structure_for_input_writing(composition: Composition) -> Structure:
     )
 
 
+def _get_cleaned_magmoms(structure: Structure, tol: float = 0.1) -> NDArray:
+    """
+    Get the (collinear) ``magmom`` site properties of ``structure`` with
+    numerical noise removed, so that this noise (common in Materials Project
+    structures) is not mistaken for magnetic ordering.
+
+    Moments with magnitudes below ``tol`` (in μB) are set to zero, then the
+    moments of each species are clustered (splitting the sorted moments
+    wherever consecutive values differ by more than ``tol``), with each cluster
+    set to its mean (rounded to 2 decimal places). All moments are then flipped
+    if their sum is negative (an equivalent magnetic state), to match the sign
+    of the (absolute) Materials Project total magnetizations.
+
+    Args:
+        structure (|Structure|):
+            |Structure| with ``magmom`` site properties.
+        tol (float):
+            Noise tolerance for the moments, in μB. Default is 0.1.
+
+    Returns:
+        NDArray: The cleaned moments, in site order.
+    """
+    magmoms = np.array([float(magmom or 0) for magmom in structure.site_properties["magmom"]])
+    magmoms[np.abs(magmoms) < tol] = 0
+    species = np.array([site.species_string for site in structure])
+    for species_string in np.unique(species):
+        indices = np.flatnonzero(species == species_string)
+        indices = indices[np.argsort(magmoms[indices])]
+        for cluster in np.split(indices, np.flatnonzero(np.diff(magmoms[indices]) > tol) + 1):
+            magmoms[cluster] = round(magmoms[cluster].mean(), 2) + 0.0  # + 0.0 to avoid -0.0
+
+    return 0.0 - magmoms if magmoms.sum() < -tol else magmoms  # (0.0 - to avoid -0.0)
+
+
+def _get_competing_phase_structure(structure: Structure) -> Structure:
+    r"""
+    Get the structure to use for calculations of a (crystalline) competing
+    phase; the smallest cell which retains its magnetic ordering, cleaned with
+    :func:`~doped.utils.symmetry.get_clean_structure` (standardised lattice
+    orientation and site ordering) and Niggli-reduced if very skewed.
+
+    If ``structure`` has (collinear) ``magmom`` site properties, the primitive
+    cell compatible with its (noise-cleaned) magnetic moments is used, with
+    these cleaned moments set as its ``magmom`` site properties. Otherwise its
+    magnetic ordering is unknown, so the input cell (which may be a magnetic
+    supercell) is kept (without ``magmom``\s) if it has non-collinear
+    ``magmom``\s or contains any `d`/`f`-block elements, else the primitive
+    structure is used.
+
+    The standardised cells from ``get_clean_structure()`` are not necessarily
+    Niggli-reduced; e.g. the ``a = b = c`` setting of rhombohedral lattices is
+    used, which keeps Γ-centred `k`-point meshes symmetric (and so reduces the
+    number of irreducible `k`-points), but for very skewed cells gives
+    inefficiently large FFT grids (which scale with the product of lattice
+    vector lengths) and warnings from GPAW. Thus the cell is Niggli-reduced if
+    any lattice angles are outside 40-140° (matching the GPAW warning
+    criterion).
+
+    Args:
+        structure (|Structure|):
+            |Structure| of the competing phase.
+
+    Returns:
+        |Structure|: The |Structure| to use for calculations.
+    """
+    magmoms = structure.site_properties.get("magmom")
+    bare_structure = Structure(structure.lattice, structure.species_and_occu, structure.frac_coords)
+    if magmoms is None or not all(magmom is None or isinstance(magmom, Real) for magmom in magmoms):
+        # no (collinear) magmoms, so keep the cell (without magmoms) if it could be a magnetic supercell:
+        if magmoms is not None or any(el.block in {"d", "f"} for el in structure.composition.elements):
+            cell = get_clean_structure(bare_structure)
+        else:
+            cell = get_primitive_structure(bare_structure)
+
+    else:
+        magmoms = _get_cleaned_magmoms(structure).tolist()
+        species_strings = [site.species_string for site in structure]
+        species_magmoms = dict(zip(species_strings, magmoms, strict=True))
+        if magmoms == [species_magmoms[species_string] for species_string in species_strings]:
+            # moments are uniform for each species (e.g. non- or ferro-magnetic), so the magnetic primitive
+            # cell is the structural primitive cell:
+            cell = get_primitive_structure(bare_structure)
+            cell.add_site_property("magmom", [species_magmoms[site.species_string] for site in cell])
+
+        else:  # get the primitive cell compatible with the magnetic ordering (which ``pymatgen``'s
+            # primitive cell search respects with ``use_site_props=True``), with the tolerance (0.01 Å) of
+            # ``doped``'s ``get_primitive_structure()``:
+            bare_structure.add_site_property("magmom", magmoms)
+            cell = get_clean_structure(
+                bare_structure.get_primitive_structure(tolerance=0.01, use_site_props=True)
+            )
+
+    assert isinstance(cell, Structure)  # return_T = False
+    if all(40 < angle < 140 for angle in cell.lattice.angles):  # not very skewed, keep (see docstring)
+        return cell
+    return get_clean_structure(cell.get_reduced_structure())
+
+
 def _get_competing_phase_folder_name(
     entry: ComputedStructureEntry | ComputedEntry,
     regenerate: bool = False,
@@ -1114,6 +1335,21 @@ class CompetingPhases(_EntriesMixin, MSONable):
         GGA/GGA+U-only energetics in many such cases, but can still be
         inaccurate under various circumstances.
 
+        Calculation inputs are generated for the primitive cells of the
+        competing phases which retain their magnetic ordering (according to the
+        Materials Project magnetic moments, after removing numerical noise), in
+        standardised form (Niggli-reduced if very skewed), with spin
+        polarisation settings set accordingly. Magnetic moments missing from
+        (older) Materials Project r2SCAN structures are taken from their
+        calculation task docs, and when no magnetic moments are available, the
+        Materials Project cell is used for phases containing `d`/`f`-block
+        elements, as it may be a magnetic supercell. Warnings are given if the
+        magnetic orderings of the Materials Project r2SCAN and GGA(+U)
+        calculations differ for any competing phases, when using r2SCAN data,
+        or if a host |Structure| without ``magmom`` site properties is supplied
+        for a magnetic host (as any non-ferromagnetic ordering is then not
+        retained).
+
         Args:
             composition (str, |Composition|, |Structure|):
                 Composition of the host material (e.g. ``'LiFePO4'``, or
@@ -1121,8 +1357,10 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
                 Alternatively a ``pymatgen`` |Structure| object for the
                 host material can be supplied (recommended), in which case
-                the primitive structure will be used as the only host
-                composition phase, reducing the number of calculations.
+                the primitive structure (retaining any magnetic ordering, if
+                ``magmom`` site properties are present) will be used as the
+                only host composition phase, reducing the number of
+                calculations.
             energy_above_hull (float):
                 Maximum energy above hull (in eV/atom) of Materials Project
                 entries to be considered as competing phases. This is an
@@ -1296,7 +1534,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
         self._get_entries_kwargs = kwargs
 
         if isinstance(composition, Structure):
-            primitive_structure = get_primitive_structure(composition)
+            primitive_structure = (  # retaining any magnetic ordering
+                _get_competing_phase_structure(composition)
+                if "magmom" in composition.site_properties
+                else get_primitive_structure(composition)
+            )
             self.bulk_structure = (  # use primitive structure if input is not primitive
                 primitive_structure if len(primitive_structure) < len(composition) else composition
             )
@@ -1423,12 +1665,30 @@ class CompetingPhases(_EntriesMixin, MSONable):
                 entry for entry in candidate_bulk_entries if entry[1] != float("inf")
             ]:
                 manual_bulk_entry = min(matching_bulk_entries, key=lambda x: x[1])[0]  # lowest RMS
-                manual_bulk_entry._structure = self.bulk_structure
 
-            if manual_bulk_entry is None:  # take the lowest energy bulk entry
+            mp_bulk_entry = self.MP_bulk_computed_entry if manual_bulk_entry is None else manual_bulk_entry
+            if "magmom" not in self.bulk_structure.site_properties and hasattr(mp_bulk_entry, "structure"):
+                mp_magmoms = mp_bulk_entry.structure.site_properties.get("magmom", [])
+                if (mp_ordering := _get_magnetic_ordering(mp_magmoms)) != "NM":
+                    warnings.warn(
+                        f"The input host structure has no ``magmom`` site properties, but the Materials "
+                        f"Project (MP) host entry ({mp_bulk_entry.data['material_id']}) is magnetic "
+                        f"({mp_ordering}). Without these, its primitive structure is used, with spin "
+                        f"polarisation only set from the MP total magnetization (giving ferromagnetic "
+                        f"initial moments in ``VASP`` by default), so any other magnetic ordering of the "
+                        f"host is not retained. To set the magnetic ordering, add ``magmom`` site "
+                        f"properties to  the host structure (in a cell which can accommodate the "
+                        f"ordering), e.g. with ``structure.add_site_property('magmom', magmoms)``."
+                    )
+
+            if manual_bulk_entry is not None:
+                manual_bulk_entry._structure = self.bulk_structure
+            else:  # take the lowest energy bulk entry
                 manual_bulk_entry_dict = self.MP_bulk_computed_entry.as_dict()
                 manual_bulk_entry_dict["structure"] = self.bulk_structure.as_dict()
                 manual_bulk_entry = ComputedStructureEntry.from_dict(manual_bulk_entry_dict)
+            if "magmom" in self.bulk_structure.site_properties:  # input magnetic ordering used, not MP's
+                manual_bulk_entry.data.pop("magnetic_orderings", None)
 
             formatted_entries = [  # remove bulk entries from formatted_entries and add the new bulk entry
                 entry
@@ -1455,8 +1715,9 @@ class CompetingPhases(_EntriesMixin, MSONable):
         self.entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=self.composition))
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
-        if not self.extrinsic:  # extrinsic path emits its own warning after extrinsic entries added
+        if not self.extrinsic:  # extrinsic path emits its own warnings after extrinsic entries added
             _warn_if_many_polymorphs_per_composition(self.entries)
+            _warn_if_r2SCAN_magnetic_orderings_differ(self.entries)
 
         if MP_doc_dicts:
             self.MP_doc_dicts = get_MP_summary_dicts(entries=self.entries, api_key=self.api_key)
@@ -1578,6 +1839,7 @@ class CompetingPhases(_EntriesMixin, MSONable):
         )
 
         _warn_if_many_polymorphs_per_composition(self.entries)
+        _warn_if_r2SCAN_magnetic_orderings_differ(self.entries)
 
         if MP_doc_dicts:
             self.intrinsic_MP_doc_dicts = copy.deepcopy(self.MP_doc_dicts)
@@ -1623,7 +1885,8 @@ class CompetingPhases(_EntriesMixin, MSONable):
         """
         Yield ``(entry, category, structure, folder_name)`` tuples for all
         entries in ``self.entries``, where ``category`` is one of ``"non-
-        metals"``, ``"metals"`` or ``"molecules"``, and ``folder_name`` is the
+        metals"``, ``"metals"`` or ``"molecules"``, ``structure`` is the
+        |Structure| to use for calculations, and ``folder_name`` is the
         ``doped`` output folder name for the entry.
 
         When no structure exists in the entry (e.g. MP-missing bulk represented
@@ -1639,7 +1902,11 @@ class CompetingPhases(_EntriesMixin, MSONable):
         for entry_list, category in categorised_entries:
             for entry in entry_list:
                 if hasattr(entry, "structure"):
-                    structure = entry.structure
+                    structure = (
+                        entry.structure
+                        if category == "molecules"
+                        else _get_competing_phase_structure(entry.structure)
+                    )
                 else:
                     warnings.warn(
                         f"No structure is available for '{entry.name}'. This is likely because the phase "
@@ -3394,7 +3661,7 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
         subfolder_suffix = ""  # for the skipped folders warning
         if resolved_subfolder != ".":  # actual subfolder found
             filtered = calc_files_df[
-                calc_files_df["folder_path"].apply(lambda p: p.name == resolved_subfolder)
+                calc_files_df["folder_path"].apply(lambda p: p.name.lower() == resolved_subfolder.lower())
             ]
             if not filtered.empty:
                 calc_files_df = filtered

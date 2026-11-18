@@ -180,29 +180,24 @@ def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 1
     )
 
 
-_MAX_COMPLEX_ARRANGEMENTS = 200000  # TODO necessary or not?
-
-
 def _get_unwrapped_complex_frac_coords(
     bulk_supercell: Structure | Lattice,
     sites: Sequence[PeriodicSite] | Sequence[np.ndarray] | np.ndarray,
-    boundary_tol: float = 1.0,
 ) -> list[np.ndarray]:
     """
-    Unwrap a set of (defect complex) sites or fractional coordinates as defined
-    under periodic boundary conditions to their representative set of
-    fractional coordinates in a single most compact Euclidean space
+    Unwrap the sites (or fractional coordinates) of a defect complex in a
+    periodic supercell to a single compact cluster, by choosing the periodic
+    image of each constituent such that the complex is one contiguous
     configuration.
 
-    The unwrapping is unambiguous and well-defined if there exists an
-    unwrapping in which every constituent sits in the Wigner-Seitz cell of
-    every other constituent in the complex, i.e. every constituent in the
-    complex has the same closest periodic images for every other constituent.
-
-    If this is not possible, a warning is emitted, and the unwrapping is chosen
-    which maximises the complex minimum image distance (distance between any
-    constituent and a periodic image of any other constituent in the same
-    complex), followed by the variance of the constituent positions.
+    This is unambiguous if every pair of constituents can be separated by its
+    minimum image vector, i.e. every constituent lies within the Wigner-Seitz
+    cell centred on every other constituent. If not (typically when the
+    supercell is too small for the complex), a warning is emitted, and the
+    unwrapping which maximises the complex minimum image distance (the shortest
+    distance from any constituent to any constituent of a periodic image of the
+    complex) is chosen, with ties broken by minimising the variance of the
+    constituent positions.
 
     Args:
         bulk_supercell (|Structure| | |Lattice|):
@@ -212,10 +207,6 @@ def _get_unwrapped_complex_frac_coords(
             Constituent periodic sites to unwrap, defined in the
             ``bulk_supercell`` frame; either as |PeriodicSite| objects or
             fractional coordinates.
-        boundary_tol (float):
-            Distance (in Å) from a Wigner-Seitz cell boundary within which to
-            warn about unwrapping potentially becoming ambiguous after
-            relaxation. Default is 1.0 Å.
 
     Returns:
         list[np.ndarray]:
@@ -230,145 +221,105 @@ def _get_unwrapped_complex_frac_coords(
     if n_sites < 2:
         return list(frac_coords)
 
-    # definitions:
-    # Define g(r) as the solution to the (punctured) closest vector problem (CVP) for lattice L' = L\{0},
-    # such that the closest min image distance (CMID) is min over i,j of g(r_ij) for intracomplex vectors
-    # r_ij. Then decompose r=l+u, where u is in the WS cell and l is in L. Then g(r) = g(u+l) = |u| if l==0
-    # else g(u). So for any pair of constituents i,j with intervector r_ij, the separation is either |u_ij|
-    # (r_ij in WS, 'reduced') or g(u_ij) (r_ij outside WS, not reduced). Note g(u_ij) >= |u_ij|
-
-    # u_ij is the pbc shortest vector from contituent i to j
+    # u_ij is the shortest vector from constituent i to any periodic image of constituent j (the 'minimum
+    # image' of j, with u_ij in the Wigner-Seitz cell). The complex minimum image distance (CMID) is the
+    # shortest distance from any constituent to a constituent of a neighbouring periodic copy of the
+    # complex (or the host minimum image distance d_min, if smaller); i.e. the minimum over all pairs of
+    # constituents (i, j) of the distance from i to the nearest copy of j outside the complex, which is:
+    # - if j is unwrapped to its minimum image relative to i (a 'reduced' pair): the next-nearest image
+    #   distance min_{l != 0} |u_ij - l| (l: lattice vectors), as the nearest image is in the complex
+    # - otherwise: |u_ij|, as the nearest image of j to i is then in a neighbouring copy of the complex
+    #   (only needed if no all-reduced unwrapping exists; i.e. 3+ constituents in a too-small supercell;
+    #   warning given about ambiguous/ill-defined complex definition in such cases)
     u = np.asarray(pbc_shortest_vectors(lattice, frac_coords, frac_coords))  # (n, n, 3)
-    g_outWS = np.linalg.norm(u, axis=-1)  # |u_ij|, i.e. g(r) if r inside WS cell
-
-    # require antisymmetry for u_ij on WS cell boundary
+    min_image_dists = np.linalg.norm(u, axis=-1)
     lower = np.tril_indices(n_sites, -1)
-    u[lower] = -u[lower[::-1]]
-
-    # w_ij is the corresponding integer image translation for u_ij
+    u[lower] = -u[lower[::-1]]  # ensure u_ij = -u_ji, for separations on the WS cell boundary
+    # integer image translation of j for its minimum image relative to i:
     w = np.rint(lattice.get_fractional_coords(u) - (frac_coords - frac_coords[:, None])).astype(int)
 
-    # get perpendicular distances to WS boundary and g(u_ij) bounds:
-    # (perpendicular distance d to WS boundary is min{|l|/2 * (1 - 2l.r/l^2) | l in L'}
-    # which is >= l/2*(1-2r/l) = l/2 - r. so with an initial guess d <= d_min/2 + r with d_min being the
-    # point min image distance then we only need to check l <= d_min + 4r, and for g(u_ij) minimising
-    # |l| <= r + |r - l| <= 2r + d_min also within bound):
+    # the minimising l for the next-nearest image distance has |l| <= |u| + |u - l| <= 2|u| + d_min:
     d_min = _get_min_image_distance_from_matrix(lattice.matrix)
-    *_, lattice_ints = lattice.get_points_in_sphere(  # 1.01 factor for rounding issue
-        np.array([[0, 0, 0]]), [0, 0, 0], r=(d_min + 4 * g_outWS.max()) * 1.01, zip_results=False
+    *_, lattice_ints = lattice.get_points_in_sphere(  # 1.01 factor for rounding issues
+        np.array([[0, 0, 0]]), [0, 0, 0], r=(d_min + 2 * min_image_dists.max()) * 1.01, zip_results=False
     )
     lattice_ints = np.array(lattice_ints)
     lattice_vecs = lattice_ints[np.any(lattice_ints != 0, axis=1)] @ lattice.matrix
-    l_norms = np.linalg.norm(lattice_vecs, axis=1)
+    next_image_dists = np.linalg.norm(u[:, :, None, :] - lattice_vecs, axis=-1).min(axis=2)
 
-    # get g(u_ij), i.e. g(r) if r inside WS cell
-    g_inWS = np.linalg.norm(u[:, :, None, :] - lattice_vecs, axis=-1).min(axis=2)
-
-    # perpendicular distances to WS boundary of u_ij for proximity warning
-    ws_dists = ((l_norms**2 / 2 - u @ lattice_vecs.T) / l_norms).min(axis=2)
-
-    # note unwrapping based on anchors is not always optimal, for a complex without
-    # an unambiguous totally reduced unwrapping - consider eg the tetramer in a 2D square cell
-    # (0.2, 0.0), (0.2, 0.2), (0.6, 0.6), (0.8, 0.6) for which the best anchor has CMID
-    # 0.2, but there exists an unwrapping with CMID 0.4sqrt(2)=0.6 (although here spans are
-    # 0.8 for the anchor based and 0.85 for the cmid optimal)
-
-    # we just want to reduce pairs to maximise CMID subject to the constraint that the
-    # graph of vectors between constituents must remain conservative, therefore
-    # start from lowest remaining |u_ij| pair, and reduce if possible. if i is already connected
-    # to j, the relative image t_j - t_i is already determined, so group constituents as they become
-    # connected. with sorting by increasing |u_ij| and then decreasing g(u_ij), we are guaranteed
-    # to get a cmid optimal complex, although not necessarily unique
+    # Reduce pairs in order of increasing |u_ij| (then decreasing next-nearest image distance), grouping
+    # constituents as their relative images become fixed (Kruskal-like), which gives a CMID-optimal
+    # unwrapping (not necessarily unique). Note that simply unwrapping relative to one 'anchor' constituent
+    # is not CMID-optimal in general.
     translations = np.zeros((n_sites, 3), dtype=int)
     group = np.arange(n_sites)
-    reduced = np.zeros(g_outWS.shape, dtype=bool)
-    for i, j in sorted(combinations(range(n_sites), 2), key=lambda ij: (g_outWS[ij], -g_inWS[ij], ij)):
+    reduced = np.zeros((n_sites, n_sites), dtype=bool)
+    for i, j in sorted(
+        combinations(range(n_sites), 2), key=lambda ij: (min_image_dists[ij], -next_image_dists[ij], ij)
+    ):
         shift = w[i, j] - (translations[j] - translations[i])
-        if group[i] != group[j]:  # relative image not yet determined
+        if group[i] != group[j]:  # relative image not yet fixed; merge j's group into i's
             merging = group == group[j]
             translations[merging] += shift
             group[merging] = group[i]
-        elif shift.any():  # image already determined and not minimum image
+        elif shift.any():  # relative image already fixed, and not the minimum image
             continue
-        # (else: image determined and is minimum)
         reduced[i, j] = reduced[j, i] = True
 
     intersite = ~np.eye(n_sites, dtype=bool)
-
-    # if the unwrapping is not totally reduced, the cmid-optimal unwrapping is generally not
-    # unique, so we search for an unwrapping with optimal cmid and also smallest variance. do this
-    # by the above algorithm but only connecting up the constituents that determine the cmid, then
-    # leave the relative offsets of the connected groups as free variables and minimise variance over
-    # these
     if not reduced[intersite].all():
-        # get groupings of constituents that actually determine cmid
-        cmid = min(d_min, g_inWS[reduced].min(), g_outWS[intersite & ~reduced].min(initial=np.inf))
+        # CMID-optimal unwrapping is then generally not unique; pairs separated by less than the CMID must
+        # be reduced, so group constituents connected by these, and choose the relative images of these
+        # groups which minimise the variance of the constituent positions:
+        cmid = min(  # use ``initial`` as may have no (un)reduced pairs; e.g. exact Wigner-Seitz cell ties
+            d_min,
+            next_image_dists[reduced].min(initial=np.inf),
+            min_image_dists[intersite & ~reduced].min(initial=np.inf),
+        )
         block = np.arange(n_sites)
-        for i, j in zip(*np.nonzero(np.triu(g_outWS < cmid - 1e-8, 1)), strict=True):
+        for i, j in zip(*np.nonzero(np.triu(min_image_dists < cmid - 1e-8, 1)), strict=True):
             block[block == block[j]] = block[i]
-        groups = [block == label for label in np.unique(block)]  # bool of group membership
-        n_blocks = len(groups)  # = K
+        groups = [block == label for label in np.unique(block)]
 
-        if n_blocks > 1:  # else optimum is unique
-            # bound for offsetting groups:
-            # |r_i - r_j|^2 <= 2*variance (calling variance n* actual variance) ie
-            # span <= sqrt(2*variance): only search for better variance in span <= sqrt(2*initial
-            # variance), ie for group centroids c_m and c_n and integer lattice translation offset
-            # l for optimal variance, |c_m + l - c_n|^2 <= 2*variance and so l <= 2*sqrt(2*variance)
+        if len(groups) > 1:
+            # spread (n * variance) bounds pair separations, |r_i - r_j|^2 <= 2 * spread, so for the group
+            # centroids c_m & c_n, a lowering offset l has |c_m + l - c_n| <= sqrt(2 * spread) & thus
+            # |l| <= 2 * sqrt(2 * spread):
             cart = lattice.get_cartesian_coords(frac_coords + translations)
             spread = float(((cart - cart.mean(axis=0)) ** 2).sum())
-            *_, shift_ints = lattice.get_points_in_sphere(  # 1.01 factor for rounding issue
+            *_, shift_ints = lattice.get_points_in_sphere(  # 1.01 factor for rounding issues
                 np.array([[0, 0, 0]]), [0, 0, 0], r=2 * (2 * spread) ** 0.5 * 1.01, zip_results=False
             )
-            shifts = np.array(shift_ints, dtype=int)  # (n_lat, 3) = (M, 3)
-            shift_carts = shifts @ lattice.matrix
-            sizes = np.array([grp.sum() for grp in groups])
-            centroids = np.array([cart[grp].mean(axis=0) for grp in groups])
-
-            if len(shifts) ** (n_blocks - 1) <= _MAX_COMPLEX_ARRANGEMENTS:
-                # all possible arrangements shift indices (M^(K-1), K-1) = (N, K-1)
-                arrangements = np.array(list(product(range(len(shifts)), repeat=n_blocks - 1)))
-                block_shifts = np.zeros((len(arrangements), n_blocks, 3))
-                block_shifts[:, 1:] = shift_carts[arrangements]
-                block_centroids = centroids + block_shifts  # (N, K, 3)
-
-                # var = sum over blocks k of (var(k) + n_k*|c_k - c_tot|^2), and var(k) bits
-                # fixed so calculate n_k*|c_k - c_tot|^2
-                centres = np.average(block_centroids, axis=1, weights=sizes)  # cplx centroids
-                sq_dists = ((block_centroids - centres[:, None]) ** 2).sum(axis=-1)  # (N, K)
-                spreads = (sizes * sq_dists).sum(axis=1)  # (N, )
-
+            shifts = np.array(shift_ints, dtype=int)  # (M, 3)
+            _MAX_COMPLEX_ARRANGEMENTS = 200000  # max group arrangements to search when minimising variance
+            if len(shifts) ** (len(groups) - 1) <= _MAX_COMPLEX_ARRANGEMENTS:  # else keep above unwrapping
+                arrangements = np.array(list(product(range(len(shifts)), repeat=len(groups) - 1)))
+                sizes = np.array([grp.sum() for grp in groups])
+                centroids = np.array([cart[grp].mean(axis=0) for grp in groups])
+                block_centroids = np.repeat(centroids[None], len(arrangements), axis=0)  # (N, K, 3)
+                block_centroids[:, 1:] += (shifts @ lattice.matrix)[arrangements]
+                # spread = sum over groups k of (spread(k) + n_k * |c_k - c|^2), with spread(k) fixed:
+                centres = np.average(block_centroids, axis=1, weights=sizes)  # (N, 3)
+                spreads = (sizes * ((block_centroids - centres[:, None]) ** 2).sum(axis=-1)).sum(axis=1)
                 for grp, index in zip(groups[1:], arrangements[spreads.argmin()], strict=True):
                     translations[grp] += shifts[index]
-                # TODO determinism for ties in variance - plus maybe symmetry analysis for these ties?
-
-            else:
-                raise RuntimeError(
-                    "There was a problem unwrapping this complex - it is likely too large or not "
-                    "well-defined in this supercell?"
-                )  # TODO
-
-            reduced = np.all(translations - translations[:, None] == w, axis=-1) & intersite
+                reduced = np.all(translations - translations[:, None] == w, axis=-1) & intersite
 
     unwrapped_fc = list(frac_coords + translations)
-    cmid = min(d_min, g_inWS[reduced].min(), g_outWS[intersite & ~reduced].min(initial=np.inf))
-    margin = float(ws_dists[reduced].min())  # WS boundary margin of the reduced separations
-
     if not reduced[intersite].all():  # no unambiguous unwrapping exists
+        cmid = min(  # use ``initial`` as may have no (un)reduced pairs; e.g. exact Wigner-Seitz cell ties
+            d_min,
+            next_image_dists[reduced].min(initial=np.inf),
+            min_image_dists[intersite & ~reduced].min(initial=np.inf),
+        )
         cart_coords = lattice.get_cartesian_coords(unwrapped_fc)
         span = np.linalg.norm(cart_coords[:, None] - cart_coords, axis=-1).max()
         warnings.warn(
             f"A defect complex separation is not a minimum image of the supercell (complex span: "
             f"{span:.2f} Å, complex minimum image distance: {cmid:.2f} Å), so the unwrapping of this "
             f"complex may be ambiguous - the supercell is likely too small for this complex. "
-            f"The unwrapping which maximises the complex minimum image distance, and then the variance of "
-            f"the constituent positions, has been chosen - although this may not be unique."
-        )
-    elif margin < boundary_tol:  # a reduced separation could take a different image eg if relaxed?
-        warnings.warn(
-            f"A defect complex separation lies just {margin:.2f} Å from a Wigner-Seitz cell boundary of "
-            f"the supercell, so the unwrapped complex may be ambiguous; displacements of "
-            f"{margin / 2:.2f} Å (e.g. from relaxation) could give a different unwrapping."
+            f"The unwrapping which maximises the complex minimum image distance, and then minimises the "
+            f"variance of the constituent positions, has been chosen - although this may not be unique."
         )
 
     return unwrapped_fc

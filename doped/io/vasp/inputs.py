@@ -2970,7 +2970,7 @@ def get_kpoint_convergence_sets(
 
         min_k, max_k, step_k = kpoints_by_metallicity[category]
         incar_settings = copy.deepcopy(base_incar_settings or {})
-        _set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
+        _set_spin_polarisation(incar_settings, user_incar_settings or {}, entry, structure)
         if category == "metals":
             _set_default_metal_smearing(incar_settings, user_incar_settings or {})
 
@@ -3133,7 +3133,7 @@ def get_relaxation_sets(
             incar_settings["ISIF"] = 2  # don't change the volume
             incar_settings["KPAR"] = 1  # don't use k-point parallelization, gamma only
 
-        _set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
+        _set_spin_polarisation(incar_settings, user_incar_settings or {}, entry, structure)
         if category == "metals":
             _set_default_metal_smearing(incar_settings, user_incar_settings or {})
 
@@ -3165,7 +3165,7 @@ def get_singlepoint_sets(
     user_potcar_settings: dict | None = None,
     extrinsic_only: bool = False,
     output_path: PathLike = "CompetingPhases",
-    subfolder: PathLike | None = None,
+    subfolder: PathLike = "SinglePoint",
 ) -> dict[str, DopedDictSet]:
     r"""
     Generates ``DopedDictSet``\s for single-point (static) energy calculations
@@ -3178,20 +3178,19 @@ def get_singlepoint_sets(
     accurate total energies with tight convergence settings.
 
     If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
-    ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
-    default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
-    explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
-    where the max atomic number across all species (host and extrinsic) is
-    Z >= 31 (heavier than Zn), matching the convention in
-    :mod:`doped.vasp`.
+    ``LSORBIT = True`` for ``VASP``). If ``soc`` is not explicitly set
+    (i.e. is ``None``), it defaults to ``True`` for systems where the max
+    atomic number across all species (host and extrinsic) is Z >= 31
+    (heavier than Zn), matching the convention in :mod:`doped.vasp`.
 
     Inclusion of SOC is crucial for accurate formation energies and
     chemical potentials in heavy-element systems, as discussed in
     |Guidelines Perspective|. However, non-SOC energies can generally be
     reliably used to determine `relative` energies of polymorphs, of the
     same composition/oxidation states, to good accuracy, which can be
-    useful for pre-screening (e.g. then only performing more expensive SOC
-    calculations on the ground-state polymorph of each potential competing
+    useful for pre-screening (e.g. with energies from the non-SOC
+    relaxations, then only performing more expensive SOC single-point
+    calculations on the ground-state polymorph of each candidate competing
     phase). Moreover, one typically turns off symmetry for SOC calculations
     (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
     crystal symmetries due to spin-space coupling. However, one generally
@@ -3259,8 +3258,7 @@ def get_singlepoint_sets(
             (when ``soc = None``; default), SOC is enabled when the max
             atomic number across all species (host and extrinsic) is Z >=
             31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
-            calculations, and the default ``subfolder`` name is set to
-            ``"vasp_ncl"`` when ``soc`` is ``True``.
+            calculations.
         user_incar_settings (dict):
             Override the default INCAR settings e.g.
             ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
@@ -3288,12 +3286,10 @@ def get_singlepoint_sets(
             Default is ``"CompetingPhases"``.
         subfolder (PathLike):
             Output folder structure is
-            ``<output_path>/<competing_phase_dir>/<subfolder>`` where
-            ``subfolder`` = 'SinglePoint' by default if ``soc`` is
-            ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
-            to write input files directly to
-            ``<output_path>/<competing_phase_dir>``, with no subfolders
-            created.
+            ``<output_path>/<competing_phase_dir>/<subfolder>``.
+            Default is ``"SinglePoint"``. Set to ``"."`` to write input
+            files directly to ``<output_path>/<competing_phase_dir>``, with
+            no subfolders created.
 
     Returns:
         dict[str, DopedDictSet]:
@@ -3325,9 +3321,6 @@ def get_singlepoint_sets(
         sp_incar_settings["LSORBIT"] = True
     # user settings take precedence:
     _handle_EDIFF_and_update_incar_settings(sp_incar_settings, user_incar_settings)
-
-    if subfolder is None:
-        subfolder = "vasp_ncl" if soc else "SinglePoint"
 
     # reuse relaxation set generation with the singlepoint INCAR overrides
     return get_relaxation_sets(
@@ -3373,22 +3366,49 @@ def _set_spin_polarisation(
     incar_settings: dict,
     user_incar_settings: dict,
     entry: ComputedEntry,
+    structure: Structure,
 ) -> None:
-    """
-    If the entry has a non-zero total magnetization (greater than the default
-    tolerance of 0.1), set ``ISPIN`` to 2 (allowing spin polarisation) and
-    ``NUPDOWN`` equal to the integer-rounded total magnetization.
+    r"""
+    Set the spin polarisation settings for the calculation of ``entry`` with
+    ``structure`` (from ``_iter_entries_with_categories()``, which can be a
+    smaller cell than that of the Materials Project calculation).
+
+    If ``structure`` has non-zero ``magmom`` site properties or the entry
+    has a total magnetization (scaled to ``structure``) greater than
+    0.1 μB, ``ISPIN`` is set to 2 (allowing spin polarisation), with
+    ``MAGMOM`` initialised from any non-zero ``magmom`` site properties,
+    and ``NUPDOWN`` set to the integer-rounded total magnetization for
+    non-metals (but not metals, which can have fractional magnetizations),
+    if consistent with any ``magmom`` site properties.
 
     Otherwise ``ISPIN`` is not set, so spin polarisation is not allowed (as
     typically desired for non-magnetic phases, for efficiency).
 
     See the :ref:`Tips:Magnetization` tips section.
     """
-    magnetization = entry.data.get("summary", {}).get("total_magnetization")
-    if magnetization is not None and magnetization > 0.1:  # account for magnetic moment
-        incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
-        if "NUPDOWN" not in incar_settings and int(magnetization) > 0:
-            incar_settings["NUPDOWN"] = int(magnetization)
+    summary = entry.data.get("summary", {})
+    magnetization = summary.get("total_magnetization")  # of the Materials Project calculation cell
+    if (per_fu := summary.get("total_magnetization_normalized_formula_units")) is not None:
+        magnetization = per_fu * structure.composition.get_reduced_composition_and_factor()[1]
+    elif magnetization is not None and hasattr(entry, "structure"):
+        magnetization *= len(structure) / len(entry.structure)  # scale to the calculation cell
+
+    magmoms = structure.site_properties.get("magmom", [])
+    has_magmoms = bool(np.any(magmoms))
+    if not has_magmoms and (magnetization is None or magnetization <= 0.1):
+        return  # ISPIN not set, so no spin polarisation
+
+    incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
+    if has_magmoms and _parse_incar_value("ISPIN", incar_settings["ISPIN"]) == 2:
+        incar_settings.setdefault("MAGMOM", {})  # {}: initialise from the ``magmom`` site properties
+    nupdown = round(magnetization or 0)
+    if has_magmoms and abs(nupdown - sum(magmoms)) > max(1, 0.3 * nupdown):
+        # MP magnetization inconsistent with the site moments (e.g. for user-supplied host structures
+        # with different magnetic ordering; tolerance for the site-projected moments, which can
+        # differ by up to ~30% from the integrated total magnetization), so don't constrain it:
+        nupdown = 0
+    if "NUPDOWN" not in incar_settings and summary.get("band_gap") != 0 and nupdown > 0:
+        incar_settings["NUPDOWN"] = nupdown
 
     # otherwise ISPIN not set, so no spin polarisation
 
@@ -3645,7 +3665,7 @@ def write_singlepoint_files(
     user_potcar_settings: dict | None = None,
     extrinsic_only: bool = False,
     output_path: PathLike = "CompetingPhases",
-    subfolder: PathLike | None = None,
+    subfolder: PathLike = "SinglePoint",
     poscar: bool = False,
     **kwargs,
 ) -> dict[str, DopedDictSet]:
@@ -3660,20 +3680,19 @@ def write_singlepoint_files(
     accurate total energies with tight convergence settings.
 
     If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
-    ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
-    default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
-    explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
-    where the max atomic number across all species (host and extrinsic) is
-    Z >= 31 (heavier than Zn), matching the convention in
-    :mod:`doped.vasp`.
+    ``LSORBIT = True`` for ``VASP``). If ``soc`` is not explicitly set
+    (i.e. is ``None``), it defaults to ``True`` for systems where the max
+    atomic number across all species (host and extrinsic) is Z >= 31
+    (heavier than Zn), matching the convention in :mod:`doped.vasp`.
 
     Inclusion of SOC is crucial for accurate formation energies and
     chemical potentials in heavy-element systems, as discussed in
     |Guidelines Perspective|. However, non-SOC energies can generally be
     reliably used to determine `relative` energies of polymorphs, of the
     same composition/oxidation states, to good accuracy, which can be
-    useful for pre-screening (e.g. then only performing more expensive SOC
-    calculations on the ground-state polymorph of each potential competing
+    useful for pre-screening (e.g. with energies from the non-SOC
+    relaxations, then only performing more expensive SOC single-point
+    calculations on the ground-state polymorph of each candidate competing
     phase). Moreover, one typically turns off symmetry for SOC calculations
     (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
     crystal symmetries due to spin-space coupling. However, one generally
@@ -3741,8 +3760,7 @@ def write_singlepoint_files(
             (when ``soc = None``; default), SOC is enabled when the max
             atomic number across all species (host and extrinsic) is Z >=
             31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
-            calculations, and the default ``subfolder`` name is set to
-            ``"vasp_ncl"`` when ``soc`` is ``True``.
+            calculations.
         user_incar_settings (dict):
             Override the default INCAR settings e.g.
             ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
@@ -3770,12 +3788,10 @@ def write_singlepoint_files(
             Default is ``"CompetingPhases"``.
         subfolder (PathLike):
             Output folder structure is
-            ``<output_path>/<competing_phase_dir>/<subfolder>`` where
-            ``subfolder`` = 'SinglePoint' by default if ``soc`` is
-            ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
-            to write input files directly to
-            ``<output_path>/<competing_phase_dir>``, with no subfolders
-            created.
+            ``<output_path>/<competing_phase_dir>/<subfolder>``.
+            Default is ``"SinglePoint"``. Set to ``"."`` to write input
+            files directly to ``<output_path>/<competing_phase_dir>``, with
+            no subfolders created.
         poscar (bool):
             Whether to write ``POSCAR`` files. Defaults to ``False``, as
             single-point (static) calculations are intended to be run on

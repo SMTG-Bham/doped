@@ -589,7 +589,7 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
                 (
                     "parsing Mg_i_Td_+2",
                     "first coordination shell distance ~1.79",
-                    "Fewer than 3 atomic sites lie outside the eFNV defect region radius",
+                    "Fewer than 3 atomic sites lie outside the default eFNV defect region radius",
                 ),
                 ("'v_O_0'", "'v_Mg_0'", "'v_Mg_-2'", "each encountered", "shell distance ~2.10"),
                 ("'v_O_0'", "'v_Mg_0'", "'v_Mg_-2'", "'Mg_i_Td_+2'", "each", "more than 10% of the 8"),
@@ -654,7 +654,9 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
     @custom_mpl_image_compare("GPAW_MgO_Mg_i_Td_+2_eFNV_plot.png")
     def test_efnv_plot_interstitial(self):
         fig, warnings = self._correction_plot("Mg_i_Td_+2")
-        _check_warnings(warnings, [("Fewer than 3 atomic sites lie outside the eFNV defect region",)])
+        _check_warnings(
+            warnings, [("Fewer than 3 atomic sites lie outside the default eFNV defect region",)]
+        )
         return fig
 
     @custom_mpl_image_compare("GPAW_MgO_v_Mg_-2_FNV_plot.png")

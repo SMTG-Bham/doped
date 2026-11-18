@@ -18,11 +18,13 @@ import pytest
 from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.io.vasp.outputs import Outcar
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
 
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
 from doped.parsing import DefectParser, DefectsParser
+from doped.utils.supercells import _get_unwrapped_complex_frac_coords
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -227,9 +229,10 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
 
     def test_get_kumagai_correction_slab_defect_region_radius(self):
         """
-        Test that the eFNV defect region radius (default or user-supplied) is
-        reduced when fewer than 3 atomic sites lie outside it (e.g. slab
-        supercells with vacuum).
+        Test that the default eFNV defect region radius is reduced when fewer
+        than 3 atomic sites lie outside it (e.g. slab supercells with vacuum),
+        while a user-supplied radius is used as given (with a warning if fewer
+        than 3 sites lie outside it, or an error if none do).
         """
         slab = Structure(  # 4x4 square C monolayer (2 Å spacing), with 20 Å c-axis -> vacuum
             Lattice.from_parameters(8.0, 8.0, 20.0, 90, 90, 90),
@@ -251,16 +254,40 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
             },
         )
 
-        # default radius (half the 20 Å c-axis) exceeds all (in-plane) site distances, and only 1 site
-        # (at 5.66 Å) lies outside a 5 Å radius, so both are reduced to just below the 4 next-furthest
-        # sites (at 4.47 Å), giving 5 sampled sites:
-        for kwargs in [{}, {"defect_region_radius": 5}]:
-            with pytest.warns(UserWarning, match="reduced to 4.47 Å to include at least 3 sites"):
+        # default radius (half the 20 Å c-axis) exceeds all (in-plane) site distances, so is reduced to
+        # just below the 4 next-furthest sites (at 4.47 Å), giving 5 sampled sites, whereas a user-supplied
+        # 5 Å radius is used as given, with only 1 site (at 5.66 Å) outside it:
+        for kwargs, message, num_sampled, correction_energy in [
+            ({}, "reduced to 4.47 Å to include at least 3 sites", 5, 2.6496062676),
+            ({"defect_region_radius": 5}, "Only 1 atomic site lies outside the supplied", 1, 2.5472823613),
+        ]:
+            with pytest.warns(UserWarning, match=message):
                 efnv_corr = get_kumagai_correction(slab_entry, [10, 10, 1], verbose=False, **kwargs)
             efnv_corr_obj = efnv_corr.metadata["pydefect_ExtendedFnvCorrection"]
             sampled = [s for s in efnv_corr_obj.sites if s.distance > efnv_corr_obj.defect_region_radius]
-            assert len(sampled) == 5
-            assert np.isfinite(efnv_corr.correction_energy)
+            assert len(sampled) == num_sampled
+            assert np.isclose(efnv_corr_obj.point_charge_correction, -1.2461289533, atol=1e-8)
+            assert np.isclose(efnv_corr.correction_energy, correction_energy, atol=1e-8)
+
+        with pytest.raises(ValueError, match="No atomic sites lie outside the supplied"):
+            get_kumagai_correction(slab_entry, [10, 10, 1], verbose=False, defect_region_radius=6)
+
+    def test_unwrapped_complex_frac_coords_half_lattice_vector_separations(self):
+        """
+        Test that complexes with 3+ sites separated by exactly half lattice
+        vectors (so that all pairs are Wigner-Seitz cell boundary ties) are
+        unwrapped with a warning, rather than raising an error.
+        """
+        for frac_coords in [
+            [[0, 0, 0], [0.5, 0, 0], [0, 0.5, 0]],
+            [[0, 0, 0], [0.5, 0, 0], [0, 0.5, 0], [0.5, 0.5, 0]],
+        ]:
+            with pytest.warns(UserWarning, match="not a minimum image of the supercell"):
+                unwrapped_frac_coords = _get_unwrapped_complex_frac_coords(
+                    Lattice.cubic(10), np.array(frac_coords, dtype=float)
+                )
+            shifts = np.array(unwrapped_frac_coords) - frac_coords
+            assert np.allclose(shifts, np.round(shifts))  # same sites, modulo lattice vectors
 
 
 class CorrectionsPlottingTestCase(unittest.TestCase):
@@ -477,6 +504,27 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         )  # correction now applied to DefectEntry when using DefectEntry.get_kumagai_correction()
         return fig
 
+    def test_kumagai_correction_w_outcar_objects(self):
+        """
+        Test that ``Outcar`` objects can be used as the
+        ``defect_site_potentials`` and ``bulk_site_potentials`` inputs, giving
+        the same result as their file paths.
+        """
+        outcar_paths = {
+            "defect_site_potentials": f"{self.CdTe_example_dir}/Int_Te_3_2/vasp_ncl/OUTCAR.gz",
+            "bulk_site_potentials": f"{self.CdTe_bulk_data_dir}/OUTCAR.gz",
+        }
+        corr_from_paths = get_kumagai_correction(self.Te_i_2_ent, verbose=False, **outcar_paths)
+        corr_from_objs = get_kumagai_correction(
+            self.Te_i_2_ent, verbose=False, **{k: Outcar(path) for k, path in outcar_paths.items()}
+        )
+        assert np.isclose(corr_from_objs.correction_energy, corr_from_paths.correction_energy, atol=1e-8)
+        assert np.isclose(
+            corr_from_objs.correction_energy,
+            self.Te_i_2_ent.corrections["kumagai_charge_correction"],
+            atol=1e-6,
+        )
+
     @custom_mpl_image_compare("Te_i_+2_eFNV_plot.png")
     def test_plot_kumagai_Te_i_2(self):
         """
@@ -485,3 +533,18 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         mpl.pyplot.clf()
         return self.Te_i_2_ent.get_kumagai_correction(plot=True)[1]
+
+    @custom_mpl_image_compare("Te_i_+2_eFNV_plot_multiple_point_charges.png")
+    def test_plot_kumagai_Te_i_2_multiple_point_charges(self):
+        """
+        Test eFNV correction plotting with Te_i^+2 modelled as multiple point
+        charges, split over the Te trimer (with one Te across the cell
+        boundary, so also testing the unwrapping of the point charges).
+        """
+        mpl.pyplot.clf()
+        struct = self.Te_i_2_ent.defect_supercell
+        point_charges = [(2 / 3, struct[i].frac_coords) for i in [64, 63, 53]]  # Te_i & its 2 Te NNs
+        corr, fig = get_kumagai_correction(self.Te_i_2_ent, point_charges=point_charges, plot=True)
+        assert np.isclose(corr.correction_energy, 0.910851106265789, atol=1e-5)  # 0.904 eV for single PC
+        assert corr.metadata["point_charges"] == [(q, list(fc)) for q, fc in point_charges]
+        return fig
