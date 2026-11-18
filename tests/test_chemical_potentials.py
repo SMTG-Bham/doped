@@ -20,6 +20,7 @@ from mp_api.client.core.exceptions import MPRestWarning
 from pymatgen.analysis.phase_diagram import PhaseDiagram
 from pymatgen.core.composition import Composition
 from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
+from pymatgen.core.lattice import Lattice
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import Potcar
@@ -36,12 +37,14 @@ from test_utils import (
     if_present_rm,
     module_path,
     plot_chempot_heatmap_and_test_no_warnings,
+    requires_api_key,
     vasp_data_dir,
 )
 
 from doped import chemical_potentials
-from doped.io.vasp.inputs import DopedDictSet
+from doped.io.vasp.inputs import DopedDictSet, _set_spin_polarisation
 from doped.io.vasp.outputs import _find_calc_outputs, _get_calc_files_df, get_competing_phase_entry
+from doped.utils import warn_once
 from doped.utils.symmetry import get_primitive_structure
 
 
@@ -93,6 +96,7 @@ def _check_entries_dict_behaviour(obj):
         _ = obj["Missing_Key"]
 
 
+@requires_api_key
 class CompetingPhasesTestCase(unittest.TestCase):
     def setUp(self):
         self.cdte = Structure.from_file(os.path.join(EXAMPLE_DIR, "CdTe/relaxed_primitive_POSCAR"))
@@ -259,14 +263,14 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def test_init_YTOS(self):
         # 151 phases on Y-Ti-O-S MP (mixed) phase diagram
         cp = chemical_potentials.CompetingPhases("Y2Ti2S2O5", energy_above_hull=0.1, api_key=api_key)
-        assert len(cp.entries) == 114
+        assert len(cp.entries) == 113
         self.check_O2_entry(cp, energy_per_atom=-4.947961005)  # consistent across served MP hulls
 
         cp = chemical_potentials.CompetingPhases(
             "Y2Ti2S2O5", energy_above_hull=0.1, full_phase_diagram=True, api_key=api_key
         )
-        # 151 phases on Y-Ti-O-S MP full phase diagram, 4 extra O2 phases removed
-        assert len(cp.entries) == 147
+        # 151 phases on Y-Ti-O-S MP full phase diagram, 6 extra O2 phases removed
+        assert len(cp.entries) == 145
         self.check_O2_entry(cp, energy_per_atom=-4.947961005)  # consistent across served MP hulls
         self._check_cp_json_roundtrip(cp)
 
@@ -482,7 +486,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
             "Cd_P6_3/mmc_EaH_0.022",
             "Cd_R-3m_EaH_0.024",
             "Cd_Fm-3m_EaH_0.037",
-            "Te_Pm-3m_EaH_0.047",
             "Te_Pmc2_1_EaH_0.049",
         ]
 
@@ -670,12 +673,15 @@ class CompetingPhasesTestCase(unittest.TestCase):
                     assert os.path.isfile(os.path.join(k_dir, "KPOINTS"))
                     assert os.path.isfile(os.path.join(k_dir, "POSCAR"))
 
+            # counts with GNoMe data access (as for the CI API key; see ``test_utils``), which includes the
+            # GNoMe Cu3SiSe4 phase on the Cu-Se-Si hull (MP database v2026.09.28; 29/8/26 without access):
+            assert "Cu3SiSe4" in [entry.name for entry in cp.entries]
             if kwargs.get("full_phase_diagram"):
-                assert len(cp.entries) == 29
+                assert len(cp.entries) == 30
             elif kwargs.get("energy_above_hull") == 0.0:
-                assert len(cp.entries) == 8
+                assert len(cp.entries) == 6
             else:
-                assert len(cp.entries) == 26
+                assert len(cp.entries) == 23
 
             # check naming of fake entry
             assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
@@ -688,10 +694,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets_no_write = cp.get_kpoint_convergence_sets()
         assert dict_sets_no_write
         assert not os.path.exists("CompetingPhases")
-        no_write_key = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2"
+        no_write_key = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,2,1"
         assert no_write_key in dict_sets_no_write
         no_write_dict_set = dict_sets_no_write[no_write_key]
-        assert no_write_dict_set.kpoints.kpts[0] == (1, 2, 2)
+        assert no_write_dict_set.kpoints.kpts[0] == (2, 2, 1)
         assert no_write_dict_set.potcar_symbols[0] == "Zr_sv"
         assert "GGA" not in no_write_dict_set.incar  # VASP default (PBE) used
         assert no_write_dict_set.incar["NSW"] == 0
@@ -706,17 +712,17 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert not os.path.exists("CompetingPhases/O2_Pmmm_EaH_0")
 
         # test if it writes out the files correctly
-        Zro2_EaH_0pt009_folder = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2/"
+        Zro2_EaH_0pt009_folder = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,2,1/"
         assert os.path.exists(Zro2_EaH_0pt009_folder)
-        assert "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2" in dict_sets
-        dict_set = dict_sets["CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k1,2,2"]
-        assert dict_set.kpoints.kpts[0] == (1, 2, 2)
+        assert "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,2,1" in dict_sets
+        dict_set = dict_sets["CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,2,1"]
+        assert dict_set.kpoints.kpts[0] == (2, 2, 1)
         assert dict_set.potcar_symbols[0] == "Zr_sv"
         assert "GGA" not in dict_set.incar  # VASP default (PBE) used
         assert dict_set.incar["NSW"] == 0
         with open(f"{Zro2_EaH_0pt009_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
-            assert contents[3] == "1 2 2\n"
+            assert contents[3] == "2 2 1\n"
 
         with open(f"{Zro2_EaH_0pt009_folder}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
@@ -905,6 +911,98 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert not os.path.exists("CompetingPhases")
 
+    def test_magnetic_competing_phases(self):
+        # magnetism-aware primitive cells and spin settings, with real (noisy) Materials Project magmoms;
+        # FeO has antiferromagnetic polymorphs with magnetic cells larger than their structural primitives
+        cp = chemical_potentials.CompetingPhases("FeO", api_key=api_key)
+        dict_sets = cp.get_relaxation_sets()
+        afm_supercells = {}  # name: structure
+        for entry in cp.entries:
+            folder = chemical_potentials._get_competing_phase_folder_name(entry)
+            dict_set = dict_sets[f"CompetingPhases/{folder}/Relax"]
+            structure, incar = dict_set.structure, dict_set.incar
+            if entry.data.get("molecule"):  # O2 molecule-in-a-box unchanged
+                assert structure == entry.structure
+                assert incar["ISPIN"] == 2
+                assert incar["NUPDOWN"] == 2
+                continue
+
+            assert all(40 < angle < 140 for angle in structure.lattice.angles)  # (Niggli-reduced if not)
+            if not any(magmoms := structure.site_properties.get("magmom", [])):
+                continue
+            assert incar["ISPIN"] == 2
+            assert incar["MAGMOM"] == magmoms  # (cleaned) site moments
+            mag_per_fu = entry.data["summary"]["total_magnetization_normalized_formula_units"]
+            if entry.data["summary"]["band_gap"] > 0 and mag_per_fu > 0.5:  # magnetic non-metal
+                # NUPDOWN from MP magnetization (consistent with site moments), for the calculation cell:
+                n_fu = structure.composition.get_reduced_composition_and_factor()[1]
+                assert incar["NUPDOWN"] == round(mag_per_fu * n_fu)
+            if len(structure) > len(get_primitive_structure(entry.structure)):
+                assert min(magmoms) < 0 < max(magmoms)  # antiferromagnetic ordering retained
+                afm_supercells.setdefault(entry.name, structure)
+
+        assert "FeO" in afm_supercells
+        fe_dict_set = dict_sets["CompetingPhases/Fe_Im-3m_EaH_0/Relax"]  # bcc Fe, 2-atom cell on MP
+        assert len(fe_dict_set.structure) == 1
+        assert "NUPDOWN" not in fe_dict_set.incar  # metal
+
+        # host Structure input; magnetic ordering retained if ``magmom``s are given, otherwise a warning:
+        afm_feo = afm_supercells["FeO"]
+        for host in [afm_feo, Structure(afm_feo.lattice, afm_feo.species, afm_feo.frac_coords)]:
+            host_cp, _stdout, w = _run_func_and_capture_stdout_warnings(
+                chemical_potentials.CompetingPhases, host, api_key=api_key
+            )
+            magmom_warnings = [warning for warning in w if "has no ``magmom``" in str(warning.message)]
+            assert len(magmom_warnings) == ("magmom" not in host.site_properties)
+            if "magmom" in host.site_properties:
+                host_entry = next(entry for entry in host_cp.entries if entry.name == "FeO")
+                folder = chemical_potentials._get_competing_phase_folder_name(host_entry)
+                host_dict_set = host_cp.get_relaxation_sets()[f"CompetingPhases/{folder}/Relax"]
+                assert len(host_dict_set.structure) == len(afm_feo)
+                assert host_dict_set.incar["ISPIN"] == 2
+                assert sorted(host_dict_set.incar["MAGMOM"]) == sorted(afm_feo.site_properties["magmom"])
+
+    def test_r2SCAN_magnetic_competing_phases(self):
+        # (older) Materials Project r2SCAN structures lack ``magmom``s, which are then taken from their
+        # calculation task docs; e.g. AFM CoO (r2SCAN in the mixed thermo data):
+        cp = chemical_potentials.CompetingPhases("CoO", api_key=api_key)
+        r2SCAN_entries = [
+            entry
+            for entry in cp.entries
+            if entry.parameters.get("run_type") == "r2SCAN" and not entry.data.get("molecule")
+        ]
+        assert r2SCAN_entries
+        assert all("magmom" in entry.structure.site_properties for entry in r2SCAN_entries)
+        host_entry = next(entry for entry in cp.entries if entry.name == "CoO")  # lowest energy
+        assert host_entry.parameters["run_type"] == "r2SCAN"
+        assert host_entry.data["magnetic_orderings"] == {"r2SCAN": "AFM/FiM", "GGA+U": "AFM/FiM"}
+        folder = chemical_potentials._get_competing_phase_folder_name(host_entry)
+        host_incar = cp.get_relaxation_sets()[f"CompetingPhases/{folder}/Relax"].incar
+        assert host_incar["ISPIN"] == 2
+        assert min(host_incar["MAGMOM"]) < -2 < 2 < max(host_incar["MAGMOM"])  # AFM ordering retained
+
+        # warning when the MP r2SCAN and GGA(+U) orderings differ, e.g. NiO (FM r2SCAN, AFM GGA+U):
+        nio_cp, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhases, "NiO", api_key=api_key
+        )
+        nio_ordering_info = "NiO_Fm-3m_EaH_0 (mp-19009; r2SCAN: FM, GGA+U: AFM/FiM)"
+        assert any(nio_ordering_info in str(warning.message) for warning in w)
+
+        # and likewise for a host Structure without ``magmom``s (for which the MP spin settings are then
+        # used), along with the host ``magmom`` warning:
+        nio = next(entry.structure for entry in nio_cp.entries if entry.name == "NiO")
+        _cp, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhases,
+            Structure(nio.lattice, nio.species, nio.frac_coords),
+            api_key=api_key,
+        )
+        assert any(nio_ordering_info in str(warning.message) for warning in w)
+        assert any("has no ``magmom``" in str(warning.message) for warning in w)
+
+        # the r2SCAN ordering is recorded on its own for materials with no MP GGA(+U) calculation:
+        vo2_entry = chemical_potentials.get_entries("mp-2739064", api_key=api_key)[0]
+        assert vo2_entry.data["magnetic_orderings"]["r2SCAN"] == "FM"
+
     def test_get_singlepoint_sets(self):
         r"""
         Test ``get_singlepoint_sets`` returns correct ``DopedDictSet``\s
@@ -918,9 +1016,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert not os.path.exists("CompetingPhases")
 
-        # check SOC defaults on for ZrO2 (Zr Z=40 >= 31) -> vasp_ncl subfolder
-        assert all("vasp_ncl" in key for key in dict_sets)
-        sample_key = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl"
+        # check SOC defaults on for ZrO2 (Zr Z=40 >= 31):
+        assert all("SinglePoint" in key for key in dict_sets)
+        sample_key = "CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint"
         assert sample_key in dict_sets
         ds = dict_sets[sample_key]
         assert ds.incar["LSORBIT"] is True
@@ -931,19 +1029,94 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert "ISIF" not in ds.incar  # not a relaxation
         assert ds.incar["AEXX"] == 0.25  # HSE06 by default
 
-        # explicitly disable SOC -> SinglePoint subfolder, no LSORBIT
+        # explicitly disable SOC -> no LSORBIT
         dict_sets_no_soc = cp.get_singlepoint_sets(soc=False)
         assert all("SinglePoint" in key for key in dict_sets_no_soc)
-        assert all("vasp_ncl" not in key for key in dict_sets_no_soc)
         sample_ds = dict_sets_no_soc["CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint"]
         assert "LSORBIT" not in sample_ds.incar
         assert sample_ds.incar["NSW"] == 0
 
         # explicitly enable SOC
         dict_sets_soc = cp.get_singlepoint_sets(soc=True)
-        assert all("vasp_ncl" in key for key in dict_sets_soc)
+        assert all("SinglePoint" in key for key in dict_sets_soc)
         for ds in dict_sets_soc.values():
             assert ds.incar["LSORBIT"] is True
+
+    def test_user_ediff_settings(self):
+        """
+        A user ``EDIFF`` or ``EDIFF_PER_ATOM`` setting should replace the
+        default ``EDIFF``/``EDIFF_PER_ATOM`` for the convergence, relaxation
+        and singlepoint sets (previously a user ``EDIFF`` was ignored for the
+        convergence sets, and a user ``EDIFF_PER_ATOM`` gave spurious warnings
+        for singlepoints), with ``EDIFF`` used if both are set (as in
+        ``pymatgen``), with a warning (once).
+        """
+        cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
+        for get_sets in [cp.get_kpoint_convergence_sets, cp.get_relaxation_sets, cp.get_singlepoint_sets]:
+            for user_incar_settings in [{"EDIFF": 1e-7}, {"EDIFF_PER_ATOM": 1e-7}]:
+                with warnings.catch_warnings(record=True) as w:
+                    dict_sets = get_sets(user_incar_settings=user_incar_settings)
+                    for dict_set in dict_sets.values():
+                        expected_ediff = (  # scaled EDIFF_PER_ATOM rounded to 1 significant figure
+                            user_incar_settings.get("EDIFF")
+                            or float(f"{1e-7 * len(dict_set.structure):.1g}")
+                        )
+                        assert dict_set.incar["EDIFF"] == expected_ediff
+                assert not any("EDIFF" in str(warning.message) for warning in w)
+
+            warn_once.cache_clear()  # warned once per process
+            with warnings.catch_warnings(record=True) as w:
+                dict_sets = get_sets(user_incar_settings={"EDIFF": 1e-7, "EDIFF_PER_ATOM": 1e-6})
+                assert all(dict_set.incar["EDIFF"] == 1e-7 for dict_set in dict_sets.values())
+            assert sum("EDIFF_PER_ATOM and EDIFF both" in str(warning.message) for warning in w) == 1
+
+    def test_user_kspacing_ismear_lhfcalc_sets(self):
+        """
+        A user ``KSPACING`` setting should be used in place of
+        ``kpoints_(non)metals`` for the relaxation and singlepoint sets (except
+        for the Γ-only molecules; previously ignored), and be ignored with a
+        warning for the k-point convergence sets.
+
+        Tetrahedron smearing should
+        be reverted to 2 (metals) or 0 (otherwise) for k-point meshes too
+        sparse for it (< 4 k-points), including for the convergence sets
+        (previously reverted to 0 for all by ``pymatgen``), and string
+        ``LHFCALC`` values should be parsed as in ``VASP`` (e.g. ``.FALSE.``).
+        """
+        cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
+        for get_sets in [cp.get_relaxation_sets, cp.get_singlepoint_sets]:
+            for name, dict_set in get_sets(user_incar_settings={"KSPACING": 0.3}).items():
+                if "O2_mmm" in name:  # molecule-in-a-box, Γ-only
+                    assert dict_set.kpoints.kpts == [(1, 1, 1)]
+                    assert "KSPACING" not in dict_set.incar
+                else:
+                    assert dict_set.kpoints is None  # mesh generated by ``VASP`` from ``KSPACING``
+                    assert dict_set.incar["KSPACING"] == 0.3
+
+        get_folder_name = chemical_potentials._get_competing_phase_folder_name
+        metal_folders = [f"/{get_folder_name(entry)}/" for entry in cp.metallic_entries]
+        with warnings.catch_warnings(record=True) as w:
+            dict_sets = cp.get_kpoint_convergence_sets(  # sparse to dense meshes, for all ISMEAR cases
+                kpoints_metals=(0.1, 100.0, 5.0),
+                kpoints_nonmetals=(0.1, 50.0, 5.0),
+                user_incar_settings={"KSPACING": 0.3, "ISMEAR": "-5"},
+            )
+            ismears = {}
+            for name, dict_set in dict_sets.items():
+                assert "KSPACING" not in dict_set.incar
+                is_metal = any(folder in name for folder in metal_folders)
+                ismears[name] = dict_set.incar["ISMEAR"]
+                if np.prod(dict_set.kpoints.kpts[0]) < 4:
+                    assert ismears[name] == (2 if is_metal else 0)
+                else:
+                    assert ismears[name] == -5
+        assert set(ismears.values()) == {-5, 0, 2}  # all cases tested
+        assert any("KSPACING in user_incar_settings is ignored for k-point" in str(i.message) for i in w)
+        assert not any("tetrahedron" in str(i.message) for i in w)  # no ``pymatgen`` ISMEAR = 0 revert
+
+        for dict_set in cp.get_relaxation_sets(user_incar_settings={"LHFCALC": ".FALSE."}).values():
+            assert dict_set.incar["LHFCALC"] is False
+            assert "HFSCREEN" not in dict_set.incar
 
     def test_write_singlepoint_files(self):
         """
@@ -952,14 +1125,14 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         if_present_rm("CompetingPhases")
 
-        # ZrO2 defaults to SOC (Zr Z=40), so subfolder is vasp_ncl
+        # ZrO2 defaults to SOC (Zr Z=40)
         dict_sets = cp.write_singlepoint_files(potcar_spec=True)
         assert len(dict_sets) == len(cp)
         assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
 
-        ZrO2_ncl_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl/"
-        assert os.path.exists(ZrO2_ncl_folder)
-        dict_set = dict_sets["CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl"]
+        ZrO2_soc_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint/"
+        assert os.path.exists(ZrO2_soc_folder)
+        dict_set = dict_sets["CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint"]
         assert dict_set.incar["LSORBIT"] is True
         assert dict_set.incar["NSW"] == 0
         assert dict_set.incar["ISMEAR"] == -5  # tetrahedron smearing for single-point energies
@@ -967,7 +1140,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert sum(ds.incar["ISMEAR"] == -5 for ds in dict_sets.values()) == len(cp) - len(
             cp.molecular_entries
         )
-        assert dict_sets["CompetingPhases/O2_mmm_EaH_0/vasp_ncl"].incar["ISMEAR"] == 0
+        assert dict_sets["CompetingPhases/O2_mmm_EaH_0/SinglePoint"].incar["ISMEAR"] == 0
 
         # k-mesh too sparse for tetrahedron smearing -> Methfessel-Paxton for metals, Gaussian otherwise
         # (handled before ``pymatgen``'s blanket ISMEAR = 0 revert, so no warning):
@@ -978,7 +1151,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert not any(ds.incar["ISMEAR"] == -5 for ds in sparse_sets.values())
         assert not any("tetrahedron" in str(ww.message) for ww in w)
 
-        with open(f"{ZrO2_ncl_folder}/INCAR", encoding="utf-8") as file:
+        with open(f"{ZrO2_soc_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any("NSW = 0" in line for line in contents)
             assert any("LSORBIT = True" in line for line in contents)
@@ -987,29 +1160,28 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert not any("EDIFFG" in line for line in contents)  # removed
             assert not any("POTIM" in line for line in contents)  # removed
 
-        with open(f"{ZrO2_ncl_folder}/POTCAR.spec", encoding="utf-8") as file:
+        with open(f"{ZrO2_soc_folder}/POTCAR.spec", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents == ["Zr_sv\n", "O"]
 
         # POSCAR is not written by default (single-point calcs use user-supplied relaxed structures)
-        assert not os.path.exists(f"{ZrO2_ncl_folder}/POSCAR")
+        assert not os.path.exists(f"{ZrO2_soc_folder}/POSCAR")
         # KPOINTS is still written by default
-        assert os.path.exists(f"{ZrO2_ncl_folder}/KPOINTS")
+        assert os.path.exists(f"{ZrO2_soc_folder}/KPOINTS")
 
         # molecule entry should have KPAR=1 and gamma-only kpoints
-        O2_ncl_folder = "CompetingPhases/O2_mmm_EaH_0/vasp_ncl"
-        assert os.path.exists(O2_ncl_folder)
-        o2_dict_set = dict_sets["CompetingPhases/O2_mmm_EaH_0/vasp_ncl"]
+        O2_soc_folder = "CompetingPhases/O2_mmm_EaH_0/SinglePoint"
+        assert os.path.exists(O2_soc_folder)
+        o2_dict_set = dict_sets["CompetingPhases/O2_mmm_EaH_0/SinglePoint"]
         assert o2_dict_set.kpoints.kpts[0] == (1, 1, 1)
         assert o2_dict_set.incar["KPAR"] == 1
-        assert not os.path.exists(f"{O2_ncl_folder}/POSCAR")
+        assert not os.path.exists(f"{O2_soc_folder}/POSCAR")
 
-        # test without SOC -> SinglePoint subfolder
+        # test without SOC
         if_present_rm("CompetingPhases")
         _dict_sets_no_soc = cp.write_singlepoint_files(soc=False, potcar_spec=True)
         ZrO2_sp_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint/"
         assert os.path.exists(ZrO2_sp_folder)
-        assert not os.path.exists("CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl")
         with open(f"{ZrO2_sp_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any("NSW = 0" in line for line in contents)
@@ -1083,15 +1255,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert os.path.isdir("CompetingPhases/ZrO2_P2_1c_EaH_0/relax_v2")
         assert os.path.isfile("CompetingPhases/ZrO2_P2_1c_EaH_0/relax_v2/INCAR")
 
-        # singlepoint: custom subfolder overrides default (vasp_ncl for SOC)
+        # singlepoint: custom subfolder overrides default (SinglePoint)
         sp_sets = cp.get_singlepoint_sets(subfolder="my_sp")
         assert all("my_sp" in key for key in sp_sets)
-        assert all("vasp_ncl" not in key for key in sp_sets)
-
-        # singlepoint soc=False: custom subfolder overrides default (SinglePoint)
-        sp_sets_nosoc = cp.get_singlepoint_sets(soc=False, subfolder="sp_nosoc")
-        assert all("sp_nosoc" in key for key in sp_sets_nosoc)
-        assert all("SinglePoint" not in key for key in sp_sets_nosoc)
+        assert all("SinglePoint" not in key for key in sp_sets)
 
         # write_singlepoint_files: custom subfolder
         if_present_rm("CompetingPhases")
@@ -1110,9 +1277,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             chemical_potentials.CompetingPhases, "ZrO2", energy_above_hull=0.03, api_key=api_key
         )
         assert not stdout
-        # only the expected ``mp-api`` notices (updated default thermo type criteria & mixing scheme energy
-        # scale reconstruction) and the ``doped`` many-polymorphs info warning (7 ZrO2 entries on the mixed
-        # hull within EaH = 0.03 eV/atom) are emitted:
+        # only ``mp-api`` notices and the ``doped`` many-polymorphs info warning (7 ZrO2 entries on the
+        # mixed hull within EaH = 0.03 eV/atom) are emitted:
         assert all(
             issubclass(warning.category, MPRestWarning)
             or "have more than 5 entries to consider" in str(warning.message)
@@ -1169,12 +1335,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
         """
         Test SOC default logic based on atomic numbers.
         """
-        # ZrO2: Zr Z=40 >= 31, SOC should default True -> vasp_ncl
+        # ZrO2: Zr Z=40 >= 31, SOC should default True
         cp_heavy = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         dict_sets = cp_heavy.get_singlepoint_sets()
-        assert all("vasp_ncl" in key for key in dict_sets)
+        assert all(ds.incar["LSORBIT"] is True for ds in dict_sets.values())
 
-        # MgO: Mg Z=12, O Z=8, both < 31, SOC should default False -> SinglePoint
+        # MgO: Mg Z=12, O Z=8, both < 31, SOC should default False
         cp_light = chemical_potentials.CompetingPhases("MgO", energy_above_hull=0, api_key=api_key)
         dict_sets = cp_light.get_singlepoint_sets()
         assert all("SinglePoint" in key for key in dict_sets)
@@ -1212,6 +1378,15 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 cp_struct_input = chemical_potentials.CompetingPhases(struct, api_key=api_key)
 
             _check_structure_input(cp, cp_struct_input, struct, name, w + w2, api_key)
+
+        # non-collinear ``magmom``s (ignored, as the magnetic ordering is unknown), for a host not on MP:
+        vector_magmoms = [[0, 0, 1.0]] * len(self.cu2sise4)
+        cp = chemical_potentials.CompetingPhases(
+            self.cu2sise4.copy(site_properties={"magmom": vector_magmoms}), api_key=api_key
+        )
+        host_entry = next(entry for entry in cp.entries if entry.name == "Cu2SiSe4")
+        folder = chemical_potentials._get_competing_phase_folder_name(host_entry)
+        assert "MAGMOM" not in cp.get_relaxation_sets()[f"CompetingPhases/{folder}/Relax"].incar
 
     def test_init_get_entries_kwargs_passthrough(self):
         """
@@ -1265,8 +1440,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def test_init_additional_criteria_filtering(self):
         """
         Under the (default) mixed thermo type, ``additional_criteria`` beyond
-        ``thermo_types`` are applied by ``mp-api`` (>= 0.46.6) as a post-hoc
-        (MP-side) filter on the common-energy-scale chemical system entries.
+        ``thermo_types`` are applied by ``mp-api`` (>= 0.47) as a post-hoc (MP-
+        side) filter on the common-energy-scale chemical system entries.
         """
         with warnings.catch_warnings(record=True) as w:
             entries = chemical_potentials.get_entries_in_chemsys(
@@ -1353,15 +1528,20 @@ def _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrin
         warning
         for warning in w
         if warning.category is UserWarning
-        # expected informational warning for polymorph-rich systems (e.g. Na2FePO4F: many Na / FePO4 /
-        # Fe3O4 polymorphs); tested separately in ``test_many_polymorphs_warning_Sb2S3``:
+        # expected informational warnings for polymorph-rich systems (e.g. Na2FePO4F: many Na / FePO4 /
+        # Fe3O4 polymorphs) and differing MP r2SCAN/GGA(+U) magnetic orderings (e.g. Fe2O3); tested
+        # separately in ``test_many_polymorphs_warning_Sb2S3`` & ``test_r2SCAN_magnetic_competing_phases``:
         and "have more than 5 entries to consider" not in str(warning.message)
+        and "magnetic orderings of the Materials Project" not in str(warning.message)
     ]
     if "Cu2SiSe4" in name:
         assert len(user_warnings) == 2
         assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4" in str(
             user_warnings[0].message
         )
+    elif "Na2FePO4F" in name:  # magnetic host, with input structure lacking ``magmom``s
+        assert len(user_warnings) == 1
+        assert "input host structure has no ``magmom`` site properties" in str(user_warnings[0].message)
     else:
         assert not user_warnings
 
@@ -1419,6 +1599,157 @@ class PruneToExpectedPolymorphsTestCase(unittest.TestCase):
         )
 
 
+class CompetingPhaseStructureTestCase(unittest.TestCase):
+    """
+    Offline tests for the magnetism-aware primitive cells
+    (``_get_competing_phase_structure``) and corresponding spin polarisation
+    settings (``doped.io.vasp.inputs._set_spin_polarisation``) used for
+    competing phase calculation inputs (live behaviour is tested in
+    ``CompetingPhasesTestCase.test_magnetic_competing_phases``).
+    """
+
+    def setUp(self):
+        # conventional (8-atom) rocksalt FeO cell, with AFM-I ordering (alternating (001) Fe planes) or
+        # ferromagnetic ordering, with numerical noise in the moments (as in Materials Project structures):
+        self.feo = Structure.from_spacegroup(
+            "Fm-3m", Lattice.cubic(4.3), ["Fe", "O"], [[0, 0, 0], [0.5] * 3]
+        )
+        self.afm_feo = self.feo.copy(
+            site_properties={
+                "magmom": [
+                    (3.73 if np.isclose(site.frac_coords[2], 0) else -3.731)
+                    if site.specie.symbol == "Fe"
+                    # noise on O, not matching the AFM ordering:
+                    else 0.01 * (-1) ** i
+                    for i, site in enumerate(self.feo)
+                ]
+            }
+        )
+        self.fm_feo = self.feo.copy(
+            site_properties={"magmom": [3.73, 3.731, 3.729, 3.73, 0.02, -0.01, 0.0, 0.01]}
+        )
+
+    def test_competing_phase_structure(self):
+        afm_cell = chemical_potentials._get_competing_phase_structure(self.afm_feo)
+        assert len(afm_cell) == 4  # AFM-I cell retained (structural primitive = 2 atoms)
+        assert sorted(afm_cell.site_properties["magmom"]) == [-3.73, 0.0, 0.0, 3.73]  # cleaned
+        assert np.allclose(afm_cell.lattice.abc, [4.3 / np.sqrt(2), 4.3 / np.sqrt(2), 4.3])
+
+        fm_cell = chemical_potentials._get_competing_phase_structure(self.fm_feo)
+        assert len(fm_cell) == 2  # magnetic primitive = structural primitive
+        assert fm_cell.site_properties["magmom"] == [3.73, 0.0]  # Fe, O
+        assert all(type(magmom) is float for magmom in fm_cell.site_properties["magmom"])
+        # moments are flipped (equivalent state) if their sum is negative, matching the (absolute) MP total
+        # magnetizations:
+        negative_fm_feo = self.fm_feo.copy(site_properties={"magmom": [-3.73] * 4 + [0.0] * 4})
+        negative_fm_cell = chemical_potentials._get_competing_phase_structure(negative_fm_feo)
+        assert negative_fm_cell.site_properties["magmom"] == [3.73, 0.0]
+
+        # without (collinear) magmoms, magnetic ordering is unknown, so the cell is kept (without magmoms)
+        # for d/f-block compositions or non-collinear (vector) magmoms:
+        assert len(chemical_potentials._get_competing_phase_structure(self.feo)) == 8
+        vector_magmoms = [[0, 0, magmom] for magmom in self.afm_feo.site_properties["magmom"]]
+        vector_cell = chemical_potentials._get_competing_phase_structure(
+            self.afm_feo.copy(site_properties={"magmom": vector_magmoms})
+        )
+        assert len(vector_cell) == 8
+        assert "magmom" not in vector_cell.site_properties
+        mgo = Structure.from_spacegroup("Fm-3m", Lattice.cubic(4.21), ["Mg", "O"], [[0, 0, 0], [0.5] * 3])
+        assert len(chemical_potentials._get_competing_phase_structure(mgo)) == 2
+
+        # Niggli reduction for very skewed cells: Sm-type (9R) Mg (as for MP mp-1094122), for which the
+        # standardised (a = b = c) rhombohedral primitive cell is very acute:
+        mg = Structure.from_spacegroup(
+            "R-3m", Lattice.hexagonal(3.185, 23.75), ["Mg", "Mg"], [[0, 0, 0], [0, 0, 0.2222]]
+        )
+        assert np.allclose(get_primitive_structure(mg).lattice.angles, 22.6, atol=0.1)
+        for structure in [mg, mg.copy(site_properties={"magmom": [0.001 * i for i in range(len(mg))]})]:
+            mg_cell = chemical_potentials._get_competing_phase_structure(structure)
+            assert len(mg_cell) == 3
+            assert np.allclose(sorted(mg_cell.lattice.abc), [3.185, 3.185, 8.127], atol=1e-3)
+
+        # but not for moderately skewed cells, e.g. A7 Bi, where the symmetric (a = b = c) rhombohedral
+        # setting (not Niggli-reduced) keeps the k-point mesh symmetric:
+        bi = Structure.from_spacegroup("R-3m", Lattice.hexagonal(4.546, 11.862), ["Bi"], [[0, 0, 0.2339]])
+        bi_cell = chemical_potentials._get_competing_phase_structure(bi)
+        assert len(bi_cell) == 2
+        assert np.allclose(bi_cell.lattice.abc, 4.746, atol=1e-3)
+        assert np.allclose(bi_cell.lattice.angles, 57.23, atol=1e-2)
+
+    def test_get_magnetic_ordering(self):
+        # coarse orderings from the signs of moments > 0.5 μB (smaller, e.g. induced, moments ignored):
+        get_ordering = chemical_potentials._get_magnetic_ordering
+        assert get_ordering([0.4, -0.3, 0, None]) == "NM"
+        assert get_ordering([1.7, 1.7, -0.3, 0]) == "FM"
+        assert get_ordering([-4.2, -4.2]) == "FM"
+        assert get_ordering(self.afm_feo.site_properties["magmom"]) == "AFM/FiM"
+        assert get_ordering([-4.2, 3.7, 4.0]) == "AFM/FiM"  # ferrimagnetic
+
+    def test_set_spin_polarisation(self):
+        def spin_settings(structure, total_mag, band_gap=1.0, per_fu=True, **user_incar_settings):
+            # spin settings for an entry of ``structure`` with total magnetization ``total_mag``:
+            summary = {"band_gap": band_gap, "total_magnetization": total_mag}
+            if per_fu:  # as in Materials Project summary docs
+                n_fu = structure.composition.get_reduced_composition_and_factor()[1]
+                summary["total_magnetization_normalized_formula_units"] = total_mag / n_fu
+            entry = ComputedStructureEntry(structure, -1, data={"summary": summary})
+            incar_settings = user_incar_settings.copy()
+            _set_spin_polarisation(
+                incar_settings,
+                user_incar_settings,
+                entry,
+                chemical_potentials._get_competing_phase_structure(structure),
+            )
+            return incar_settings
+
+        # AFM: no net magnetization, but spin polarisation & MAGMOMs needed for the magnetic ordering
+        assert spin_settings(self.afm_feo, 0) == {"ISPIN": 2, "MAGMOM": {}}
+        dict_set = DopedDictSet(  # MAGMOMs are taken from the (cleaned) site magmoms
+            chemical_potentials._get_competing_phase_structure(self.afm_feo),
+            user_incar_settings={"ISPIN": 2, "MAGMOM": {}},
+            user_kpoints_settings={"reciprocal_density": 64},
+        )
+        assert dict_set.incar["MAGMOM"] == dict_set.structure.site_properties["magmom"]
+        assert sorted(dict_set.incar["MAGMOM"]) == [-3.73, 0, 0, 3.73]
+        assert spin_settings(self.afm_feo, 0, ISPIN=1) == {"ISPIN": 1}  # no MAGMOM if ISPIN = 1 set
+
+        # non-collinear (SOC) calculations: collinear moments along z:
+        assert spin_settings(self.afm_feo, 0, LSORBIT=True) == {"ISPIN": 2, "LSORBIT": True, "MAGMOM": {}}
+        soc_dict_set = DopedDictSet(
+            dict_set.structure,
+            user_incar_settings={"ISPIN": 2, "MAGMOM": {}, "LSORBIT": True},
+            user_kpoints_settings={"reciprocal_density": 64},
+        )
+        magmoms = dict_set.structure.site_properties["magmom"]
+        assert soc_dict_set.incar["MAGMOM"] == [[0, 0, magmom] for magmom in magmoms]
+
+        # NUPDOWN = rounded (not truncated) total magnetization, scaled to the (2-atom) calculation cell,
+        # using the per formula unit magnetization if present, else the number of atoms:
+        assert spin_settings(self.fm_feo, 15.996) == {"ISPIN": 2, "MAGMOM": {}, "NUPDOWN": 4}
+        assert spin_settings(self.fm_feo, 15.996, per_fu=False) == {"ISPIN": 2, "MAGMOM": {}, "NUPDOWN": 4}
+        assert spin_settings(self.fm_feo, 15.996, band_gap=0) == {"ISPIN": 2, "MAGMOM": {}}  # metal
+        user_settings = {"NUPDOWN": 2, "MAGMOM": {"Fe": 5}}
+        assert spin_settings(self.fm_feo, 15.996, **user_settings) == {"ISPIN": 2, **user_settings}
+
+        # NUPDOWN not set if inconsistent with the site moments (e.g. AFM user host matched to an FM MP
+        # entry):
+        assert spin_settings(self.afm_feo, 15.996) == {"ISPIN": 2, "MAGMOM": {}}
+        # but set for ferrimagnets with negative summed site moments (flipped, so consistent with the MP
+        # total magnetization, which is the absolute value):
+        fim_magmoms = [m - 1 if m < -1 else m for m in self.afm_feo.site_properties["magmom"]]  # (Fe down)
+        fim_feo = self.afm_feo.copy(site_properties={"magmom": fim_magmoms})
+        fim_cell = chemical_potentials._get_competing_phase_structure(fim_feo)
+        assert sorted(fim_cell.site_properties["magmom"]) == [-3.73, 0.0, 0.0, 4.73]
+        assert spin_settings(fim_feo, 2.0) == {"ISPIN": 2, "MAGMOM": {}, "NUPDOWN": 1}  # (4-atom cell)
+
+        # no spin polarisation for non-magnetic phases, but set from the magnetization if no magmoms (e.g.
+        # MP r2SCAN structures):
+        assert spin_settings(self.feo.copy(site_properties={"magmom": [0.01] * 8}), 0.05) == {}
+        assert spin_settings(self.feo, 0.05) == {}
+        assert spin_settings(self.feo, 15.996) == {"ISPIN": 2, "NUPDOWN": 16}  # (MP cell kept)
+
+
+@requires_api_key
 class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tearDown as above
     def setUp(self):
         CompetingPhasesTestCase.setUp(self)
@@ -1594,9 +1925,9 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         assert all(
             not any(f"/{name}/" in f"/{key}/" for name in intrinsic_folder_names) for key in sp_dict_sets
         )
-        # La_ZrO2 has Zr (Z=40), so SOC defaults on -> vasp_ncl
+        # La_ZrO2 has Zr (Z=40), so SOC defaults on
         for name in extrinsic_folder_names:
-            assert os.path.isdir(f"CompetingPhases/{name}/vasp_ncl")
+            assert os.path.isdir(f"CompetingPhases/{name}/SinglePoint")
         for name in intrinsic_folder_names:
             assert not os.path.exists(f"CompetingPhases/{name}")
         for ds in sp_dict_sets.values():
@@ -1608,7 +1939,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         Test SOC default considers extrinsic species atomic numbers.
         """
         # MgO (Mg Z=12, O Z=8) with Cd dopant (Z=48): max Z across all
-        # species is 48 >= 31, so SOC should default to True (vasp_ncl)
+        # species is 48 >= 31, so SOC should default to True
         cp = chemical_potentials.CompetingPhases(
             "MgO", extrinsic="Cd", energy_above_hull=0, api_key=api_key
         )
@@ -1617,7 +1948,6 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         dict_sets = result[0]
         stdout = result[1]
         assert "Spin-orbit coupling (SOC) is being used by default" in stdout
-        assert all("vasp_ncl" in key for key in dict_sets)
         for ds in dict_sets.values():
             assert ds.incar["LSORBIT"] is True
 
@@ -2606,6 +2936,26 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             calc_df, folders, subfolder = _find_calc_outputs(tmp_dir)  # auto subfolder detection
             assert subfolder == "vasp_ncl"
 
+    def test_capitalised_relax_singlepoint_subfolders(self):
+        """
+        ``CompetingPhases`` writes ``Relax``/``SinglePoint`` subfolders by
+        default; auto-detection should return the on-disk (capitalised) name
+        and parse only the ``SinglePoint`` outputs, rather than falling back to
+        parsing both outputs for each phase.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            for phase in ["ZrO2_EaH_0.0", "Zr_EaH_0.0", "O2_EaH_0.0"]:
+                for sub in ["Relax", "SinglePoint"]:
+                    os.makedirs(os.path.join(tmp_dir, phase, sub))
+                    vasprun_path = os.path.join(self.ZrO2_path, phase, "vasp_std", "vasprun.xml.gz")
+                    shutil.copy2(vasprun_path, os.path.join(tmp_dir, phase, sub))
+
+            assert _find_calc_outputs(tmp_dir)[2] == "SinglePoint"  # on-disk name, not lower-cased
+            for subfolder in [None, "singlepoint"]:  # auto-detected and explicit (case-insensitive)
+                cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder=subfolder)
+                assert len(cpa.calc_output_paths) == 3  # 6 if falling back to all outputs
+                assert all("SinglePoint" in path for path in cpa.calc_output_paths)
+
     def test_latex_table(self):
         cpa = self.ZrO2_cpa
 
@@ -3134,13 +3484,6 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     def setUpClass(cls):
         cls.chempots = loadfn(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_chempots.json"))
         cls.grid = chemical_potentials.ChemicalPotentialGrid(cls.chempots)
-        cls.na2fepo4f_cp = chemical_potentials.CompetingPhases("Na2FePO4F", api_key=api_key)
-        na2fepo4f_doped_chempots = chemical_potentials.get_doped_chempots_from_entries(
-            cls.na2fepo4f_cp.entries, "Na2FePO4F"
-        )
-        cls.na2fepo4f_grid = chemical_potentials.ChemicalPotentialGrid(
-            na2fepo4f_doped_chempots,
-        )
         cls.cpa_folder = os.path.join(data_dir, "ChemPotAnalyzers")
         cls.AgSbTe2_cpa = loadfn(os.path.join(cls.cpa_folder, "AgSbTe2_partial_cpa.json"))
         cls.LiPS4_cpa = loadfn(os.path.join(cls.cpa_folder, "LiPS4_cpa.json"))
@@ -3153,6 +3496,17 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         cls.ZrO2_path = os.path.join(EXAMPLE_DIR, "ZrO2_CompetingPhases")
         cls.ZrO2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", cls.ZrO2_path)
         # Note we also have Cs2SnBr6 competing phase energies csv in JOSS data folder if needed for tests
+
+        if not api_key:  # live MP queries below, only used by tests marked with ``requires_api_key``
+            return
+
+        cls.na2fepo4f_cp = chemical_potentials.CompetingPhases("Na2FePO4F", api_key=api_key)
+        na2fepo4f_doped_chempots = chemical_potentials.get_doped_chempots_from_entries(
+            cls.na2fepo4f_cp.entries, "Na2FePO4F"
+        )
+        cls.na2fepo4f_grid = chemical_potentials.ChemicalPotentialGrid(
+            na2fepo4f_doped_chempots,
+        )
 
         # CuSe2 + Ge: the four `single_extrinsic_phase_limits` modes give visibly different chempots and
         # heatmaps; cache the two ``CompetingPhases`` queries so the four tests below share them rather
@@ -3440,6 +3794,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         )
 
     @custom_mpl_image_compare(filename="CdTe_Cs_extrinsic_chempot_heatmap.png")
+    @requires_api_key
     def test_CdTe_Cs_extrinsic_chempot_heatmap(self):
         """
         Test heatmap plotting for a binary host with an extrinsic species (CdTe
@@ -3455,6 +3810,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_K_fixed.png")
+    @requires_api_key
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap(self):
         """
         Test heatmap plotting for a ternary host with two extrinsic species
@@ -3476,6 +3832,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"K": -2.0})
 
     @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap.png")
+    @requires_api_key
     def test_CuSe2_Ge_extrinsic_chempot_heatmap(self):
         """
         CuSe2 + Ge with the default (``single_extrinsic_phase_limits=False``
@@ -3488,6 +3845,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic.png")
+    @requires_api_key
     def test_CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic(self):
         """
         CuSe2 + Ge with default ``CompetingPhases``, then parsing with
@@ -3502,6 +3860,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic.png")
+    @requires_api_key
     def test_CuSe2_Ge_extrinsic_chempot_heatmap_cp_single(self):
         """
         CuSe2 + Ge with ``single_extrinsic_phase_limits=True`` at both
@@ -3519,6 +3878,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic.png")
+    @requires_api_key
     def test_CuSe2_Ge_extrinsic_chempot_heatmap_cp_single_cpa_default(self):
         """
         CuSe2 + Ge with ``single_extrinsic_phase_limits=True`` at
@@ -3533,6 +3893,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa)
 
     @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_default.png")
+    @requires_api_key
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap_default(self):
         """
         BaSnO3 + K, In with default ``CompetingPhases`` (no codoping) and
@@ -3544,6 +3905,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"In": -1})
 
     @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_cpa_single.png")
+    @requires_api_key
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap_cpa_single(self):
         """
         BaSnO3 + K, In with default ``CompetingPhases`` (no codoping) and
@@ -3564,6 +3926,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"In": -1})
 
     @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_codoping.png")
+    @requires_api_key
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap_codoping(self):
         """
         BaSnO3 + K, In with ``codoping=True`` at ``CompetingPhases`` (adds
@@ -3579,6 +3942,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"In": -1})
 
     @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_cpa_single.png")
+    @requires_api_key
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap_codoping_cpa_single(self):
         """
         BaSnO3 + K, In with ``codoping=True`` at ``CompetingPhases`` and
@@ -3600,6 +3964,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"In": -1})
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_heatmap.png")
+    @requires_api_key
     def test_5D_fixed_elements_heatmap(self):
         na2fepo4f_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             "Na2FePO4F", entries=self.na2fepo4f_cp.entries
@@ -3609,6 +3974,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         )
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_heatmap_no_bordering.png")
+    @requires_api_key
     def test_no_bordering_heatmap(self):
         na2fepo4f_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             "Na2FePO4F", entries=self.na2fepo4f_cp.entries
@@ -3618,6 +3984,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         )
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid.png")
+    @requires_api_key
     def test_Na2FePO4F_chempot_grid(self):
         """
         Test |ChemicalPotentialGrid| generation and plotting for a complex
@@ -3631,6 +3998,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return _plot_Na2FePO4F_chempot_grid(grid_df, atol=0.01)
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid_cartesian.png")
+    @requires_api_key
     def test_Na2FePO4F_chempot_grid_cartesian(self):
         """
         Test |ChemicalPotentialGrid| generation and plotting for a complex
@@ -3930,6 +4298,7 @@ class TestGetXRichPoorLimit(unittest.TestCase):
         assert "deprecated" in str(w[0].message)
 
 
+@requires_api_key
 class TestSb2Si2Te6Chempots(unittest.TestCase):
     """
     Build a hypothetical ``Sb2Si2Te6`` chempots dict (via the MP Sb-Si-Te

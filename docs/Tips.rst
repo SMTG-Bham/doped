@@ -183,10 +183,10 @@ particularly for metals, which are often the most expensive competing phases -- 
 
 - **Pre-screen polymorphs without SOC:** While spin-orbit coupling (SOC) can be important for accurate
   `absolute` energies in heavy-element systems (as discussed in |Guidelines Perspective|, Box 1), 
-  `relative` energies of polymorphs `of the same composition/oxidation states`` are usually reliable 
-  without SOC. Thus for systems with many candidate polymorphs, you can cheaply pre-screen with non-SOC 
-  calculations, and then only perform the (expensive) SOC calculations on the ground-state polymorph of 
-  each competing phase.
+  `relative` energies of polymorphs `of the same composition/oxidation states` are usually reliable 
+  without SOC. Thus for systems with many candidate polymorphs, you can cheaply pre-screen with non-SOC
+  energies from the relaxations, and then only perform the (expensive) SOC single-point calculations on
+  the ground-state polymorph of each candidate competing phase.
 
 - **Smearing:** Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and ``2``) are the ``doped`` default 
   settings for insulators and metals for geometry relaxations (and `k`-point convergence testing), but 
@@ -737,11 +737,17 @@ old YouTube defects tutorial). This tag can be set using the ``user_incar_settin
 
 .. note::
 
-    For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` will
-    automatically set ``ISPIN=2`` (allowing spin polarisation) and ``NUPDOWN`` according to the
-    magnetization output from the ``Materials Project`` calculation of the competing phase, but ``MAGMOM``
-    (and possibly ``ISPIN``/``NUPDOWN``) may also need to be set to induce a specific spin configuration in
-    certain cases.
+    For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` uses
+    the primitive cell which retains the magnetic ordering of the ``Materials Project`` calculation of the
+    competing phase, and automatically sets ``ISPIN=2`` (allowing spin polarisation), ``MAGMOM`` (initial
+    site moments) and (for non-metals) ``NUPDOWN`` (total cell magnetisation) accordingly. However, these
+    may need to be adjusted to induce a specific spin configuration in certain cases -- e.g. if the
+    ``Materials Project`` magnetic ordering is not the ground state (``doped`` warns if the orderings of
+    the ``Materials Project`` r2SCAN and GGA(+U) calculations differ, common for antiferromagnets), or for
+    host structures supplied to ``CompetingPhases`` without ``magmom`` site properties (for which only
+    ``ISPIN``/``NUPDOWN`` are set, from the ``Materials Project`` total magnetization, so initial moments
+    are ferromagnetic (the ``VASP`` default), with a warning if the ``Materials Project`` host is
+    magnetic).
 
 When parsing defect calculations, ``doped`` will automatically extract the total magnetization from the
 ``VASP`` output files, in order to determine the spin multiplicity. This value is stored in

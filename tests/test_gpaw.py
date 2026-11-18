@@ -589,7 +589,7 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
                 (
                     "parsing Mg_i_Td_+2",
                     "first coordination shell distance ~1.79",
-                    "Fewer than 3 atomic sites lie outside the eFNV defect region radius",
+                    "Fewer than 3 atomic sites lie outside the default eFNV defect region radius",
                 ),
                 ("'v_O_0'", "'v_Mg_0'", "'v_Mg_-2'", "each encountered", "shell distance ~2.10"),
                 ("'v_O_0'", "'v_Mg_0'", "'v_Mg_-2'", "'Mg_i_Td_+2'", "each", "more than 10% of the 8"),
@@ -654,7 +654,9 @@ class GPAWMgOEndToEndTest(unittest.TestCase):
     @custom_mpl_image_compare("GPAW_MgO_Mg_i_Td_+2_eFNV_plot.png")
     def test_efnv_plot_interstitial(self):
         fig, warnings = self._correction_plot("Mg_i_Td_+2")
-        _check_warnings(warnings, [("Fewer than 3 atomic sites lie outside the eFNV defect region",)])
+        _check_warnings(
+            warnings, [("Fewer than 3 atomic sites lie outside the default eFNV defect region",)]
+        )
         return fig
 
     @custom_mpl_image_compare("GPAW_MgO_v_Mg_-2_FNV_plot.png")
@@ -1210,12 +1212,12 @@ def test_gpaw_competing_phase_example_inputs(tmp_path):
     with contextlib.chdir(tmp_path):
         write_inputs({"mode": {"name": "pw", "ecut": 300}, "xc": "PBE"}, host)
     folders = list((tmp_path / "CompetingPhases_GPAW").iterdir())
-    assert len(folders) == 5
+    assert len(folders) == 4
     assert {p.name.split("_")[0] for p in folders} == {"MgO", "Mg", "O2"}
     assert all((p / "singlepoint.py").exists() and (p / "structure.cif").exists() for p in folders)
     cells = {p.name: read(p / "structure.cif") for p in folders}
     assert len(cells["MgO_Fm-3m_EaH_0"]) == 2  # primitive cell of the host
-    # Niggli-reduced (e.g. the skewed Mg_Fm-3m_EaH_0 POSCAR), so GPAW doesn't warn about skewed cells:
+    # no skewed cells (GPAW warns these may give wrong results; none of the example phases is skewed):
     assert all(45 < angle < 135 for atoms in cells.values() for angle in atoms.cell.angles())
 
 

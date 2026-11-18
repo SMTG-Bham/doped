@@ -199,6 +199,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         cls.CdTe_EXAMPLE_DIR = os.path.abspath(os.path.join(EXAMPLE_DIR, "CdTe"))
         cls.v_Cd_example_dir = os.path.join(cls.CdTe_EXAMPLE_DIR, "v_Cd_example_data")
         cls.moved_v_Cd_example_dirs = []
+        # remove parsing cache left by other tests (e.g. ``test_corrections.py``)
+        if_present_rm(os.path.join(cls.v_Cd_example_dir, "CdTe_defect_dict.json.gz"))
 
         try:
             for i in os.listdir(cls.v_Cd_example_dir):
@@ -1085,8 +1087,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         for i in os.listdir("V2O5_test"):
             if os.path.isdir(f"V2O5_test/{i}") and i.startswith("v_O"):
                 shutil.move(f"V2O5_test/{i}", f"V2O5_test/unrecognised_{i[-1]}")
+        # folders with only nested calculation outputs alongside (e.g. competing phases) are skipped:
+        shutil.copytree("V2O5_test/V2O5_bulk", "V2O5_test/CompetingPhases/V2O5")
 
         dp, w = _create_dp_and_capture_warnings("V2O5_test", dielectric=[4.186, 19.33, 17.49])
+        assert not any("Parsing failed" in str(warning.message) for warning in w)
         assert any(
             "The following parsed defect entries were found to be duplicates" in str(warning.message)
             for warning in w
@@ -3443,6 +3448,30 @@ class DefectsParsingTestCase(unittest.TestCase):
                 assert len(ops) < 24, f"{offset_magnitude} Å: expected lowered symmetry, got {symbol}"
                 assert symbol == "C3v"
                 assert len(ops) == 6
+
+    def test_local_point_symmetry_rigidly_offset_vacancy(self):
+        """
+        Test that the point symmetry of a (symmetric) vacancy is correctly
+        determined when the defect supercell is rigidly offset from the bulk
+        supercell (e.g. from a small drift during relaxation), including for
+        tight ``symprec`` values.
+        """
+        from doped.utils.symmetry import local_point_symmetry
+
+        bulk = (
+            Structure.from_spacegroup(
+                "F-43m", np.eye(3) * 6.55, ["Cd", "Te"], [[0, 0, 0], [0.25, 0.25, 0.25]]
+            )
+            * 2
+        )
+        direction = np.array([0.6, 0.3, 0.74]) / np.linalg.norm([0.6, 0.3, 0.74])
+        for offset in [0, 0.01, 0.03, 0.06]:
+            defect = bulk.copy()
+            defect.remove_sites([0])
+            defect.translate_sites(range(len(defect)), offset * direction, frac_coords=False)
+            for symprec in [0.01, 0.03, 0.1]:
+                print(f"Testing offset = {offset} Å, symprec = {symprec}")
+                assert local_point_symmetry(defect, bulk, symprec=symprec)[0] == "Td"
 
     def test_local_symmetry_symprec_monotonicity(self):
         """
