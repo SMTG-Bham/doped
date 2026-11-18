@@ -57,7 +57,12 @@ pytest.importorskip("pymatgen.io.espresso")
 
 from doped.chemical_potentials import CompetingPhasesAnalyzer
 from doped.io import get_calculation_outputs
-from doped.io.espresso.inputs import DopedDictSetQE, _competing_phase_system_settings, _get_atomic_species
+from doped.io.espresso.inputs import (
+    DefectRelaxSetQE,
+    DopedDictSetQE,
+    _competing_phase_system_settings,
+    _get_atomic_species,
+)
 from doped.io.espresso.outputs import (
     _FALLBACK_SMEARING_WIDTH,
     BOHR_TO_ANGSTROM,
@@ -415,7 +420,8 @@ def _parse_pw_in(path: str) -> dict:
 class EspressoInputsTestCase(unittest.TestCase):
     """
     Writing espresso ``pw.in`` files: spin polarisation (with atomic species
-    split by magnetic moment) and ``K_POINTS`` cards.
+    split by magnetic moment), ``K_POINTS`` cards and defect calculation
+    defaults.
     """
 
     def setUp(self):
@@ -512,6 +518,36 @@ class EspressoInputsTestCase(unittest.TestCase):
         written = self._write_competing_phase(o2, 2, kpoints=None)  # triplet O2 molecule
         assert written["k_points"].split()[:2] == ["K_POINTS", "{gamma}"]
         assert written["system"]["tot_magnetization"] == "2"
+
+    def test_defect_relax_set_defaults(self):
+        bulk = (
+            Structure.from_spacegroup("Fm-3m", Lattice.cubic(4.21), ["Mg", "O"], [[0] * 3, [0.5] * 3]) * 2
+        )
+        defect = bulk.copy()
+        defect.remove_sites([len(defect) - 1])  # v_O; odd number of electrons in the +1 charge state
+        for soc in [False, True]:
+            relax_set = DefectRelaxSetQE(defect, charge_state=1, soc=soc, bulk_supercell=bulk)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                written = relax_set.write_all(
+                    os.path.join(self.tmpdir, f"v_O_{soc}"), gamma=True, bulk=True
+                )
+            parsed = {
+                (stage, kind): _parse_pw_in(path)
+                for stage, paths in written.items()
+                for kind, path in paths.items()
+            }
+            assert ("espresso_ncl", "defect") in parsed if soc else ("espresso_std", "defect") in parsed
+            for (stage, kind), pw_in in parsed.items():
+                system = pw_in["system"]
+                assert system["occupations"] == "'smearing'"
+                assert float(system["degauss"]) == pytest.approx(0.05 / Ry_to_eV, abs=1e-5)
+                if stage == "espresso_ncl":
+                    assert system["noncolin"] == ".true."
+                else:  # only ``espresso_ncl`` is SOC; collinear, with the spin state set by the parity
+                    assert "noncolin" not in system
+                    assert system["tot_magnetization"] == ("0" if kind == "bulk" else "1")
+            assert parsed["espresso_gamma", "defect"]["k_points"].split()[:2] == ["K_POINTS", "{gamma}"]
 
 
 class EspressoOutputsLabelsTestCase(unittest.TestCase):

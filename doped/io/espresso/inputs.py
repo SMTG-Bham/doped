@@ -17,6 +17,7 @@ from monty.json import MSONable
 from monty.serialization import loadfn
 from pymatgen.core import Composition
 from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
+from pymatgen.core.units import Ry_to_eV
 from pymatgen.io.espresso.inputs.pwin import (
     AtomicPositionsCard,
     AtomicSpeciesCard,
@@ -371,7 +372,10 @@ class DopedDictSetQE(MSONable):
             starting_magnetization (float):
                 If not ``None``, set ``&SYSTEM.starting_magnetization`` for
                 every species (and ``nspin=2``), seeding a spin-polarised
-                calculation. Default ``None``.
+                calculation. Gaussian smearing is then used if neither
+                ``occupations`` nor ``tot_magnetization`` are set (as
+                ``pw.x`` requires ``tot_magnetization`` for spin-polarised
+                calculations with fixed occupations). Default ``None``.
             user_control_settings (dict):
                 ``&CONTROL`` overrides merged on top of the YAML defaults.
             user_system_settings (dict):
@@ -433,6 +437,10 @@ class DopedDictSetQE(MSONable):
         _set_ecutrho(namelists["system"])
         if self.starting_magnetization is not None:
             namelists["system"]["starting_magnetization"] = self.starting_magnetization
+            if not namelists["system"].get("noncolin") and "tot_magnetization" not in namelists["system"]:
+                # ``pw.x`` requires ``tot_magnetization`` for spin-polarised calculations with fixed
+                # occupations (its default), so use Gaussian smearing (unless ``occupations`` is set):
+                _set_default_metal_smearing(namelists["system"])
 
         return namelists
 
@@ -712,8 +720,12 @@ class DefectDictSetQE(DopedDictSetQE):
 
     Extends :class:`DopedDictSetQE` with the defect-specific settings: the
     supercell charge state (espresso's ``tot_charge``), a fixed-cell ``relax``
-    by default (the defect supercell keeps the bulk supercell volume) and a
-    spin-polarised starting point.
+    by default (the defect supercell keeps the bulk supercell volume), a
+    spin-polarised starting point, and (as for VASP defect calculations)
+    Gaussian smearing (``degauss`` = 0.05 eV) with the spin state set by the
+    electron-count parity (``tot_magnetization`` = 0 or 1 for an even or odd
+    number of electrons; like ``NUPDOWN`` with VASP) for collinear
+    spin-polarised calculations, unless set in ``user_system_settings``.
     """
 
     def __init__(
@@ -749,10 +761,28 @@ class DefectDictSetQE(DopedDictSetQE):
                 etc.).
         """
         self.charge_state = charge_state
-        # ``tot_charge`` is merged into the ``&SYSTEM`` overrides (rather than set afterwards) so that
-        # it is applied with the other user settings in ``_build_qe_base_settings``:
+        # ``tot_charge`` and the defect defaults are merged into the ``&SYSTEM`` overrides (rather than set
+        # afterwards) so that they are applied with the other user settings in ``_build_qe_base_settings``:
+        user_system_settings = kwargs.pop("user_system_settings", None) or {}
+        # Gaussian smearing (as ``ISMEAR = 0``, ``SIGMA = 0.05`` eV for VASP defect calculations), and
+        # the spin state set by the electron-count parity for collinear spin-polarised calculations (as
+        # ``NUPDOWN`` = 0/1 for VASP); user settings take precedence:
+        defect_system_settings: dict = {"occupations": "smearing", "smearing": "gaussian"}
+        if str(user_system_settings.get("occupations", "smearing")).lower() == "smearing":
+            defect_system_settings["degauss"] = round(0.05 / Ry_to_eV, 5)
+        if (
+            starting_magnetization is not None
+            and not (kwargs.get("soc") or user_system_settings.get("noncolin"))
+            and int(user_system_settings.get("nspin", 2)) == 2
+        ):
+            # ponytail: parity from sum(Z) (frozen cores are closed-shell); wrong for f-in-core
+            # pseudopotentials, read the UPF ``z_valence`` values if these are needed
+            defect_system_settings["tot_magnetization"] = (
+                sum(structure.atomic_numbers) - charge_state
+            ) % 2
         user_system_settings = {
-            **(kwargs.pop("user_system_settings", None) or {}),
+            **defect_system_settings,
+            **user_system_settings,
             "tot_charge": charge_state,
         }
         super().__init__(
@@ -799,7 +829,9 @@ class DefectRelaxSetQE(MSONable):
                 Charge state of the defect. If ``None`` (default), taken from
                 ``defect_entry.charge_state``.
             soc (bool):
-                Whether to include spin-orbit coupling. If ``None`` (default),
+                Whether to include the spin-orbit coupling (``espresso_ncl``)
+                calculations (the other stages are collinear, as for
+                ``vasp_std``/``vasp_gam`` with VASP). If ``None`` (default),
                 set to ``True`` if the defect supercell contains an element
                 with atomic number >= 31 (Ga and heavier).
             bulk_supercell (Structure):
@@ -852,8 +884,7 @@ class DefectRelaxSetQE(MSONable):
                 ``calculation``, ``soc``, ``use_hse``), applied on top of the
                 ``dict_set_kwargs`` given when this set was initialised.
         """
-        kwargs: dict = {**self.dict_set_kwargs}
-        kwargs.setdefault("soc", self.soc)
+        kwargs: dict = {**self.dict_set_kwargs}  # (``soc`` only for the ``espresso_ncl`` stages)
         if bulk:
             kwargs["calculation"] = "scf"  # single-point, on the already-relaxed bulk supercell
         kwargs.update(overrides)
