@@ -32,11 +32,12 @@ corrections, using the MgO example data in ``examples/MgO_qe``.
 #  - The whole anisotropic Sb2Si2Te6 set (``v_Sb_-3``, with a tensor dielectric, and with/without SOC):
 #    the same four groups again. Needs ``examples/Sb2Si2Te6_qe`` (194 MB raw, ~50 MB gzipped); note
 #    three ``examples/Sb2Si2Te6/*.json`` files differ between that branch and this one.
-#  - Competing phases and DOS: ``examples/MgO_qe/Competing_phases`` and ``examples/MgO_qe/DOS`` are
-#    added here but nothing exercises them yet; a ``CompetingPhasesAnalyzer``/``FermiSolver`` backend
-#    for espresso is separate work (see the tracking issue).
+#  - DOS: ``examples/MgO_qe/DOS`` is added here but nothing exercises it yet (``FermiSolver`` with
+#    espresso; see the tracking issue). ``examples/MgO_qe/Competing_phases`` is parsed in
+#    ``EspressoCompetingPhasesTestCase`` below.
 
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -44,15 +45,19 @@ import warnings
 
 import numpy as np
 import pytest
+from monty.serialization import loadfn
 from pymatgen.core import Lattice, Structure
 from pymatgen.core.units import Ry_to_eV, bohr_to_angstrom
+from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import VolumetricData
 
 # the espresso backend needs the optional ``pymatgen-io-espresso`` dependency; skip (rather than fail
 # collection of) this module without it:
 pytest.importorskip("pymatgen.io.espresso")
 
+from doped.chemical_potentials import CompetingPhasesAnalyzer
 from doped.io import get_calculation_outputs
+from doped.io.espresso.inputs import DopedDictSetQE, _competing_phase_system_settings, _get_atomic_species
 from doped.io.espresso.outputs import (
     _FALLBACK_SMEARING_WIDTH,
     BOHR_TO_ANGSTROM,
@@ -60,6 +65,7 @@ from doped.io.espresso.outputs import (
     PAW_COMPENSATION_RADII,
     check_run_compatibility,
     get_atomic_site_potentials,
+    get_competing_phase_entry,
     get_espresso_run,
 )
 from doped.io.utils import _warn_calculation_mismatches
@@ -362,3 +368,196 @@ class SitePotentialSmearingTestCase(unittest.TestCase):
             mixed,
             get_atomic_site_potentials(volumetric_data, beta={"Cd": 0.4, "Mg": 0.3})["site_potentials"],
         )
+
+
+def _parse_pw_in(path: str) -> dict:
+    """
+    Parse the ``&SYSTEM`` settings, ``ATOMIC_SPECIES`` labels, site labels and
+    ``K_POINTS`` card of a written ``pw.in``, asserting that it satisfies the
+    ``pw.x`` input rules (from ``PW/src/input.f90``) for spin polarisation,
+    k-points and atomic species.
+    """
+    with open(path) as f:
+        text = f.read()
+
+    def group(pattern: str, flags: int = 0) -> str:
+        match = re.search(pattern, text, flags)
+        assert match is not None, pattern
+        return match.group(1)
+
+    system_text = group(r"&SYSTEM(.*?)\n\s*/", re.S | re.I)
+    system = dict(re.findall(r"^\s*(\S+)\s*=\s*(\S+)", system_text, re.M))
+    species = group(r"ATOMIC_SPECIES.*?\n((?:[ \t]*\S+[ \t]+[\d.]+[ \t]+\S+\n)+)")
+    species_labels = [line.split()[0] for line in species.splitlines()]
+    positions = group(r"ATOMIC_POSITIONS.*?\n((?:[ \t]*\S+(?:[ \t]+-?[\d.]+){3}\n)+)")
+    site_labels = [line.split()[0] for line in positions.splitlines()]
+    k_points = group(r"(K_POINTS.*\n.*)")
+
+    assert int(system["ntyp"]) == len(species_labels)
+    assert all(len(label) <= 3 for label in species_labels)
+    assert set(site_labels) == set(species_labels)
+    seeds = [float(v) for k, v in system.items() if k.startswith("starting_magnetization(")]
+    if system.get("noncolin") == ".true.":  # "gamma_only and noncolin not allowed"
+        assert "nspin" not in system
+        assert "tot_magnetization" not in system
+        assert "gamma" not in k_points
+    if "tot_magnetization" in system:  # "tot_magnetization requires nspin=2"
+        assert system.get("nspin") == "2"
+    if system.get("nspin") == "2":
+        if system.get("occupations", "'fixed'") == "'fixed'":  # "fixed occupations and lsda need..."
+            assert float(system["tot_magnetization"]).is_integer()
+        elif "tot_magnetization" not in system:  # some starting_magnetization must be set
+            assert any(seeds)
+
+    return {"system": system, "species": species_labels, "sites": site_labels, "k_points": k_points}
+
+
+class EspressoInputsTestCase(unittest.TestCase):
+    """
+    Writing espresso ``pw.in`` files: spin polarisation (with atomic species
+    split by magnetic moment) and ``K_POINTS`` cards.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmpdir)
+        self.afm = Structure(
+            Lattice.cubic(4.3),
+            ["Fe", "Fe", "O", "O"],
+            [[0, 0, 0], [0.5, 0.5, 0], [0.5, 0, 0], [0, 0.5, 0]],
+        )
+        self.afm.add_site_property("magmom", [4.0, -4.0, 0.0, 0.0])
+        self.fm = self.afm.copy(site_properties={"magmom": [4.0, 4.0, 0.0, 0.0]})
+
+    def _write(self, dict_set: DopedDictSetQE, name: str = "pw") -> dict:
+        with warnings.catch_warnings():  # missing pseudopotential files warning not under test here
+            warnings.simplefilter("ignore")
+            dict_set.write_input(os.path.join(self.tmpdir, name))
+        return _parse_pw_in(os.path.join(self.tmpdir, name, "pw.in"))
+
+    def _write_competing_phase(
+        self, structure, magnetization, is_metal=False, soc=False, kpoints=(2, 2, 2)
+    ):
+        entry = ComputedStructureEntry(
+            structure, -1, data={"summary": {"total_magnetization": magnetization}}
+        )
+        system_settings = _competing_phase_system_settings(entry, {}, soc, structure, is_metal)
+        return self._write(
+            DopedDictSetQE(
+                structure,
+                kpoints=list(kpoints) if kpoints else None,
+                is_metal=is_metal,
+                soc=soc,
+                user_system_settings=system_settings,
+            )
+        )
+
+    def test_competing_phase_spin_settings(self):
+        afm = self._write_competing_phase(self.afm, 0)  # insulator, so fixed occupations
+        assert afm["system"]["tot_magnetization"] == "0"
+        assert afm["species"] == ["O", "Fe", "Fe1"]  # Fe split into species by moment sign
+        assert afm["sites"] == ["Fe", "Fe1", "O", "O"]
+        assert [afm["system"][f"starting_magnetization({i})"] for i in (1, 2, 3)] == ["0.0", "4.0", "-4.0"]
+
+        fm = self._write_competing_phase(self.fm, 8)
+        assert fm["system"]["tot_magnetization"] == "8"
+        assert fm["species"] == ["O", "Fe"]  # no seeds needed with a fixed (non-negative) magnetization
+        assert not any(key.startswith("starting_magnetization") for key in fm["system"])
+
+        # MP magnetization inconsistent with the site moments; sum of site moments used:
+        assert self._write_competing_phase(self.fm, 0)["system"]["tot_magnetization"] == "8"
+
+        afm_metal = self._write_competing_phase(self.afm, 0, is_metal=True)
+        assert "tot_magnetization" not in afm_metal["system"]  # free magnetization with smearing
+        assert afm_metal["system"]["occupations"] == "'smearing'"
+        assert afm_metal["species"] == ["O", "Fe", "Fe1"]
+
+        fm_metal = self._write_competing_phase(
+            self.afm.copy(site_properties={"magmom": [0] * 4}), 2.4, True
+        )
+        assert fm_metal["species"] == ["O", "Fe"]  # no site moments; mean moment seeded on all species
+        assert fm_metal["system"]["starting_magnetization(1)"] == "0.6"
+
+        afm_soc = self._write_competing_phase(self.afm, 0, soc=True, kpoints=None)
+        assert afm_soc["system"]["noncolin"] == ".true."
+        assert afm_soc["species"] == ["O", "Fe", "Fe1"]
+        assert afm_soc["k_points"].split() == ["K_POINTS", "{automatic}", "1", "1", "1", "0", "0", "0"]
+
+        non_magnetic = self._write_competing_phase(self.afm.copy(site_properties={"magmom": [0] * 4}), 0)
+        assert "nspin" not in non_magnetic["system"]
+        assert non_magnetic["species"] == ["O", "Fe"]
+
+    def test_species_split_by_moment(self):
+        ligand = self.afm.copy(site_properties={"magmom": [4.0, -4.0, 0.3, -0.3]})
+        written = self._write_competing_phase(ligand, 0)
+        assert written["species"] == ["O", "O1", "Fe", "Fe1"]
+        # raw moments in μB as seeds (QE >= 7.3 interprets all as μB when any is >= 1):
+        assert [written["system"][f"starting_magnetization({i})"] for i in (1, 2, 3, 4)] == [
+            "0.3",
+            "-0.3",
+            "4.0",
+            "-4.0",
+        ]
+
+        # moments of the same sign within 0.5 μB are grouped:
+        labels, species = _get_atomic_species(self.afm, magmoms=[4.0, 3.6, 0.0, 0.0])
+        assert labels == ["Fe", "Fe", "O", "O"]
+        assert species == [("O", "O", 0.0), ("Fe", "Fe", 4.0)]
+        chain = Structure(Lattice.cubic(30), ["Fe"] * 11, [[i / 11, 0, 0] for i in range(11)])
+        with pytest.raises(ValueError, match="at most 3 characters"):
+            _get_atomic_species(chain, magmoms=list(range(1, 12)))  # 11 distinct moments -> "Fe10" label
+
+    def test_gamma_only_kpoints(self):
+        o2 = Structure(Lattice.cubic(15), ["O", "O"], [[0, 0, 0], [0.08, 0, 0]])
+        written = self._write_competing_phase(o2, 2, kpoints=None)  # triplet O2 molecule
+        assert written["k_points"].split()[:2] == ["K_POINTS", "{gamma}"]
+        assert written["system"]["tot_magnetization"] == "2"
+
+
+class EspressoOutputsLabelsTestCase(unittest.TestCase):
+    """
+    Numbered espresso species labels (e.g. ``Mg``/``Mg1``) are parsed as
+    elements.
+    """
+
+    def test_numbered_species_labels(self):
+        src = os.path.join(
+            os.path.dirname(__file__),
+            "../examples/MgO_qe/Competing_phases/MgO_Fm-3m_EaH_0/espresso_std/espresso.xml",
+        )
+        with open(src) as f:
+            text = (
+                f.read()
+                .replace('<atom name="Mg"', '<atom name="Mg1"')
+                .replace('<species name="Mg"', '<species name="Mg1"')
+            )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "espresso.xml")
+            with open(path, "w") as f:
+                f.write(text)
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                run = get_espresso_run(path)
+                entry = get_competing_phase_entry(path)
+        assert not any("Species labels contain numbers" in str(warning.message) for warning in w)
+        assert run.atomic_symbols == ["Mg", "O"]
+        for structure in [
+            run.initial_structure,
+            run.final_structure,
+            *(s["structure"] for s in run.ionic_steps),
+        ]:
+            assert {str(species) for species in structure.species} == {"Mg", "O"}
+        assert entry.data["elements"] == ["Mg", "O"]
+        assert entry.composition.reduced_formula == "MgO"
+
+
+class EspressoCompetingPhasesTestCase(unittest.TestCase):
+    """
+    Parsing the MgO espresso competing phase calculations.
+    """
+
+    def test_mgo_competing_phases(self):
+        base = os.path.join(os.path.dirname(__file__), "../examples/MgO_qe/Competing_phases")
+        cpa = CompetingPhasesAnalyzer("MgO", base, calculator="espresso")
+        assert sorted(entry.name for entry in cpa.entries) == ["Mg", "Mg", "MgO", "O2"]  # hcp & dhcp Mg
+        assert cpa.chempots == loadfn(os.path.join(base, "MgO_chempots_QE.json"))

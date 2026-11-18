@@ -22,6 +22,7 @@ import contextlib
 import copy
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
 from monty.json import MSONable
@@ -34,7 +35,71 @@ from doped.core import DefectEntry
 from doped.utils import _doped_obj_properties_methods, _signed_charge, get_mp_context, pool_manager
 
 if TYPE_CHECKING:
+    from pymatgen.core.entries import ComputedEntry
+
     from doped.generation import DefectsGenerator
+
+
+def _get_competing_phase_magnetization(entry: "ComputedEntry", structure: Structure) -> float | None:
+    """
+    Get the total magnetization (in μB) of the Materials Project calculation of
+    the competing phase ``entry``, scaled to the calculation cell ``structure``
+    (which can be smaller, e.g. the magnetism-aware primitive cell from
+    ``CompetingPhases._iter_entries_with_categories()``), using the per formula
+    unit magnetization if available, else the number of atoms.
+
+    Args:
+        entry (ComputedEntry):
+            The competing phase entry, with Materials Project
+            ``entry.data["summary"]`` data.
+        structure (Structure):
+            The structure to be used for the calculation.
+
+    Returns:
+        float or None:
+            The total magnetization of ``structure``, or ``None`` if no
+            magnetization data is available.
+    """
+    summary = entry.data.get("summary", {})
+    if (per_fu := summary.get("total_magnetization_normalized_formula_units")) is not None:
+        return per_fu * structure.composition.get_reduced_composition_and_factor()[1]
+    magnetization = summary.get("total_magnetization")  # of the Materials Project calculation cell
+    if magnetization is not None and hasattr(entry, "structure"):
+        magnetization *= len(structure) / len(entry.structure)  # scale to the calculation cell
+    return magnetization
+
+
+def _get_constrained_total_magnetization(
+    magnetization: float | None, magmoms: Sequence[float]
+) -> int | None:
+    """
+    Get the integer-rounded total magnetization (in μB) to constrain in a
+    competing phase calculation (``NUPDOWN`` with VASP, ``tot_magnetization``
+    with espresso), or ``None`` if it is inconsistent with the ``magmom`` site
+    properties (e.g. for user-supplied host structures with a different
+    magnetic ordering).
+
+    The consistency tolerance (``max(1, 0.3 * total)``) accounts for the
+    site-projected moments, which can differ by up to ~30% from the integrated
+    total magnetization.
+
+    Args:
+        magnetization (float or None):
+            The total magnetization of the calculation cell (from
+            :func:`_get_competing_phase_magnetization`).
+        magmoms (Sequence[float]):
+            The ``magmom`` site properties of the calculation cell (empty if
+            none).
+
+    Returns:
+        int or None:
+            The total magnetization to constrain, or ``None`` if inconsistent
+            with ``magmoms``.
+    """
+    total = round(magnetization or 0)
+    if any(magmoms) and abs(total - sum(magmoms)) > max(1, 0.3 * total):
+        return None
+    return total
 
 
 def _get_bulk_folder_name(bulk_supercell: Structure) -> str:

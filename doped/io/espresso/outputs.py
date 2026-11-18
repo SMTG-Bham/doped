@@ -21,13 +21,28 @@ from pymatgen.util.typing import PathLike
 from scipy.ndimage import map_coordinates
 
 from doped.io import utils as _io_utils
-from doped.io.espresso.inputs import SUBFOLDER_PRIORITY  # noqa: F401  (re-exported backend constant)
+from doped.io.espresso.inputs import SUBFOLDER_PRIORITY as _INPUT_SUBFOLDER_PRIORITY
 from doped.io.outputs import CalculationOutputs
 from doped.io.utils import _multiple_files_warning, find_archived_fname
 from doped.io.vasp.outputs import (  # ``LOCPOT``/|Vasprun| helpers, reused for the shared code paths
     get_locpot,
     get_magnetization_from_vasprun,
 )
+
+SUBFOLDER_PRIORITY: list[str] = [
+    *_INPUT_SUBFOLDER_PRIORITY[:2],
+    "singlepoint",
+    *_INPUT_SUBFOLDER_PRIORITY[2:],
+]
+"""
+The priority order of calculation subfolder names when auto-detecting which
+subfolder to parse: the ``pw.x`` subfolders written by
+:class:`~doped.io.espresso.inputs.DefectRelaxSetQE` / ``DefectsSet`` (in
+decreasing order of accuracy), with the competing phase single-point
+(``SinglePoint``) calculations prioritised over the (``espresso_std``)
+relaxations.
+"""
+
 
 BOHR_TO_ANGSTROM = 0.529177
 
@@ -177,6 +192,8 @@ def get_espresso_run(espressorun_path: PathLike, **kwargs) -> PWxml:
     warnings.filterwarnings(
         "ignore", category=UnknownPotcarWarning
     )  # Ignore unknown POTCAR warnings when loading vasprun.xml
+    # numbered species labels (e.g. from splitting species by magnetic moment) are handled below:
+    warnings.filterwarnings("ignore", message="Species labels contain numbers")
     # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
     warnings.filterwarnings(
         "ignore", message="No POTCAR file with matching TITEL fields"
@@ -199,6 +216,16 @@ def get_espresso_run(espressorun_path: PathLike, **kwargs) -> PWxml:
         for _attr in ("atomic_states", "kpoints_opt_props", "projected_magnetization"):
             if not hasattr(vasprun, _attr):
                 setattr(vasprun, _attr, None)
+
+        # numbered species labels (e.g. ``Fe``/``Fe1`` from splitting species by magnetic moment) are
+        # parsed by ``PWxml`` as oxidation-state-decorated ``Species`` (``Fe``/``Fe+``), so remove these:
+        for structure in (
+            vasprun.initial_structure,
+            vasprun.final_structure,
+            *(step["structure"] for step in vasprun.ionic_steps),
+        ):
+            structure.remove_oxidation_states()
+        vasprun.atomic_symbols = [site.species_string for site in vasprun.initial_structure]
 
     except ExpatError as exc:
         raise ExpatError(
@@ -1683,7 +1710,7 @@ def get_fermi_dos_from_espresso_dos(
         dos = EspressoDos.from_fildos(dos)
 
     if bulk_pwxml is not None and not isinstance(bulk_pwxml, PWxml):
-        bulk_pwxml = PWxml(find_archived_fname(str(bulk_pwxml)))  # resolves ``.xml`` -> ``.xml.gz``
+        bulk_pwxml = get_espresso_run(bulk_pwxml)
 
     if structure is None and isinstance(bulk_pwxml, PWxml):
         structure = bulk_pwxml.final_structure

@@ -34,7 +34,11 @@ from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry, _get_defect_supercell
 from doped.generation import _custom_formatwarning
-from doped.io.inputs import DefectsSetBase
+from doped.io.inputs import (
+    DefectsSetBase,
+    _get_competing_phase_magnetization,
+    _get_constrained_total_magnetization,
+)
 from doped.utils import _ignore_pmg_warnings
 from doped.utils.efficiency import Element, Structure
 
@@ -176,11 +180,8 @@ def _build_qe_base_settings(
 
     base["system"]["ibrav"] = 0
     base["system"]["nat"] = len(structure)
-    # TODO: Input files for multi-oxidation states (as in ``doped/qe.py``); ``ntyp`` here counts
-    # distinct ``Species`` while ``write_qe_pw_input`` strips oxidation states and writes one
-    # ``ATOMIC_SPECIES`` line per element, so a structure with multiple oxidation states of the same
-    # element (e.g. Fe(2+)/Fe(3+)) gives ``ntyp`` greater than the number of written species, which
-    # espresso rejects.
+    # (provisional; reset to the number of written ``ATOMIC_SPECIES`` labels in ``write_qe_pw_input``,
+    # which strips oxidation states and may split elements into species by magnetic moment)
     base["system"]["ntyp"] = len(set(structure.species))
 
     if is_metal:
@@ -193,6 +194,104 @@ def _build_qe_base_settings(
     _set_ecutrho(base["system"])
 
     return base
+
+
+class _KPointsCard(KPointsCard):
+    """
+    ``pymatgen-io-espresso`` ``KPointsCard`` which can also write the Γ-only
+    ``K_POINTS gamma`` card (for which the upstream ``get_body`` leaves the
+    card body unset, raising an ``UnboundLocalError``).
+    """
+
+    def get_body(self, indent: str) -> str:  # ponytail: drop once fixed in pymatgen-io-espresso
+        return "" if self.option == "gamma" else super().get_body(indent)
+
+
+def _get_seed_magmoms(structure: Structure, system_settings: dict) -> list[float] | None:
+    """
+    Get the ``magmom`` site properties of ``structure`` to use as per-site
+    ``starting_magnetization`` seeds (splitting sites into separate atomic
+    species by magnetic moment), if the calculation is spin-polarised
+    (``nspin=2`` or ``noncolin``) and ``structure`` has non-zero collinear
+    (scalar) ``magmom`` site properties.
+
+    If the total magnetization is fixed (``tot_magnetization``) and all
+    moments are non-negative (ferromagnetic), seeds are not needed (and
+    espresso advises against them, ``INPUT_PW`` NOTE 2), so ``None`` is
+    returned. Seeds are needed to break the symmetry between sublattices for
+    antiferro-/ferrimagnetic orderings however (as noted in ``INPUT_PW``).
+    """
+    magmoms = structure.site_properties.get("magmom")
+    if magmoms is None or not all(isinstance(m, int | float | np.number) for m in magmoms):
+        return None  # no (collinear) site moments
+    if not np.any(magmoms) or not (
+        system_settings.get("noncolin") or int(system_settings.get("nspin", 1)) == 2
+    ):
+        return None
+    if "tot_magnetization" in system_settings and min(magmoms) >= 0:
+        return None
+    return [float(m) for m in magmoms]
+
+
+def _get_atomic_species(
+    structure: Structure, magmoms: list[float] | None = None, tol: float = 0.5
+) -> tuple[list[str], list[tuple[str, str, float | None]]]:
+    """
+    Get the espresso atomic species label for each site in ``structure`` and
+    the corresponding (ordered) ``ATOMIC_SPECIES`` list.
+
+    If ``magmoms`` (per-site magnetic moments in μB) are given, sites of the
+    same element are split into separate atomic species by magnetic moment
+    (as espresso sets ``starting_magnetization`` per species, so this is
+    required for e.g. antiferromagnetic orderings), grouping moments with the
+    same sign and within ``tol`` μB of the largest (as in AiiDA's
+    ``create_magnetic_configuration``), and labelling them ``X``, ``X1``,
+    ``X2``... (as in ASE).
+
+    Args:
+        structure (Structure):
+            The structure (without oxidation states).
+        magmoms (list[float] or None):
+            Per-site magnetic moments (in μB) to split species by, or
+            ``None`` (default) for one species per element.
+        tol (float):
+            Tolerance (in μB) for grouping moments into one species. Default
+            is 0.5 μB.
+
+    Returns:
+        tuple[list[str], list[tuple[str, str, float | None]]]:
+            The species label of each site, and the ordered list of
+            ``(label, element, starting_magnetization)`` for each species
+            (``starting_magnetization`` is ``None`` if ``magmoms`` is
+            ``None``).
+    """
+    site_labels: list[str] = [""] * len(structure)
+    species: list[tuple[str, str, float | None]] = []
+    site_elements = [site.specie.symbol for site in structure]
+    for element in sorted(set(site_elements), key=lambda el: Element(el).Z):
+        indices = [i for i, el in enumerate(site_elements) if el == element]
+        groups: list[tuple[float, list[int]]] = []  # (representative moment, site indices)
+        for i in sorted(indices, key=lambda i: -abs(magmoms[i]) if magmoms is not None else 0):
+            moment = magmoms[i] if magmoms is not None else 0.0
+            group = next(
+                (g for g in groups if np.sign(g[0]) == np.sign(moment) and abs(g[0] - moment) <= tol), None
+            )
+            if group is None:
+                groups.append((moment, [i]))
+            else:
+                group[1].append(i)
+        for n, (moment, group_indices) in enumerate(groups):
+            label = element if n == 0 else f"{element}{n}"
+            if len(label) > 3:  # espresso species labels have max 3 characters
+                raise ValueError(
+                    f"Too many distinct magnetic moments ({len(groups)}) for {element} sites to label as "
+                    f"separate espresso atomic species (labels can have at most 3 characters)!"
+                )
+            species.append((label, element, None if magmoms is None else round(moment, 3) + 0.0))
+            for i in group_indices:
+                site_labels[i] = label
+
+    return site_labels, species
 
 
 class DopedDictSetQE(MSONable):
@@ -474,23 +573,37 @@ class DopedDictSetQE(MSONable):
             )
             structure = structure.copy()
             structure.remove_oxidation_states()
-        unique_species = sorted({str(el) for el in structure.species}, key=lambda s: Element(s).Z)
-        resolved_pseudos = {sp: QE_PSEUDO_LIBRARY.get(sp, f"{sp}.upf") for sp in unique_species}
+        input_system_settings = namelist_settings.get("system") or {}
+        user_starting_magnetization = input_system_settings.get(
+            "starting_magnetization"
+        ) is not None or any(key.startswith("starting_magnetization(") for key in input_system_settings)
+        site_labels, species = _get_atomic_species(
+            structure,
+            magmoms=(
+                None
+                if user_starting_magnetization
+                else _get_seed_magmoms(structure, input_system_settings)
+            ),
+        )
+        elements = sorted({element for _label, element, _seed in species}, key=lambda el: Element(el).Z)
+        resolved_pseudos = {el: QE_PSEUDO_LIBRARY.get(el, f"{el}.upf") for el in elements}
         resolved_pseudos.update(pseudo_map or {})
         # this is a ``staticmethod`` so it re-resolves the pseudopotentials rather than using the
         # ``pseudopotentials`` property; check here too, as this is the path that actually writes files:
         DopedDictSetQE._warn_if_pseudos_missing(
             (namelist_settings.get("control") or {}).get("pseudo_dir", DEFAULT_PSEUDO_DIR),
-            tuple(resolved_pseudos[sp] for sp in unique_species),
+            tuple(resolved_pseudos[el] for el in elements),
         )
 
-        input_system_settings = namelist_settings.get("system") or {}
-        if input_system_settings.get("starting_magnetization") is not None or any(
-            key.startswith("starting_magnetization(") for key in input_system_settings
+        namelist_settings = {nl: dict(settings) for nl, settings in namelist_settings.items()}
+        system_settings = namelist_settings.setdefault("system", {})
+        system_settings["ntyp"] = len(species)  # (number of written ``ATOMIC_SPECIES`` labels)
+        if any(seed is not None for _label, _element, seed in species):  # per-species moment seeds
+            system_settings["starting_magnetization"] = [seed or 0.0 for _label, _element, seed in species]
+        if system_settings.get("starting_magnetization") is not None or any(
+            key.startswith("starting_magnetization(") for key in system_settings
         ):
-            namelist_settings = {nl: dict(settings) for nl, settings in namelist_settings.items()}
-            system_settings = namelist_settings["system"]
-            _set_starting_magnetization(system_settings, len(unique_species))
+            _set_starting_magnetization(system_settings, len(species))
             if not system_settings.get("noncolin"):  # nspin is not allowed with noncolinear (SOC) calcs
                 system_settings.setdefault("nspin", 2)
 
@@ -519,15 +632,19 @@ class DopedDictSetQE(MSONable):
                 continue
             namelists[nl_name] = nl_cls(namelist_settings[nl_name])
 
-        if kpoints is None:
-            k_points_card = KPointsCard("gamma", [], [], [], [], [])
+        if kpoints is None and system_settings.get("noncolin"):
+            # Γ-point only, but ``pw.x`` doesn't allow the ``K_POINTS gamma`` (``gamma_only``) tricks
+            # with noncolinear calculations ('gamma_only and noncolin not allowed'):
+            k_points_card = _KPointsCard("automatic", [1, 1, 1], [0, 0, 0], [], [], [])
+        elif kpoints is None:
+            k_points_card = _KPointsCard("gamma", [], [], [], [], [])
         else:
             kx, ky, kz = kpoints
-            k_points_card = KPointsCard("automatic", [kx, ky, kz], list(kpoints_shift), [], [], [])
+            k_points_card = _KPointsCard("automatic", [kx, ky, kz], list(kpoints_shift), [], [], [])
 
         atomic_positions_card = AtomicPositionsCard(
             "angstrom",
-            [site.species_string for site in structure],
+            site_labels,
             np.array([site.coords for site in structure]),
             None,
         )
@@ -536,9 +653,9 @@ class DopedDictSetQE(MSONable):
         cards = {
             "atomic_species": AtomicSpeciesCard(
                 None,
-                unique_species,
-                [float(Element(sp).atomic_mass) for sp in unique_species],
-                [resolved_pseudos[sp] for sp in unique_species],
+                [label for label, _element, _seed in species],
+                [float(Element(element).atomic_mass) for _label, element, _seed in species],
+                [resolved_pseudos[element] for _label, element, _seed in species],
             ),
             "atomic_positions": atomic_positions_card,
             "k_points": k_points_card,
@@ -765,9 +882,9 @@ class DefectRelaxSetQE(MSONable):
     @property
     def espresso_gamma(self) -> DefectDictSetQE:
         """
-        :class:`DefectDictSetQE` for a Γ-point-only (``K_POINTS gamma``) fixed-
-        cell (``relax``) calculation of the defect supercell in its charge
-        state, spin-polarised.
+        :class:`DefectDictSetQE` for a Γ-only (``K_POINTS gamma``) fixed-cell
+        (``relax``) calculation of the defect supercell in its charge state,
+        spin-polarised.
 
         Any ``kpoints``/``kpoint_density`` settings given when initialising this
         set are overridden, so this is always Γ-only. Usually only needed for
@@ -1536,20 +1653,25 @@ def _default_qe_competing_phases_path(composition: str | Composition) -> str:
 
 
 def _competing_phase_system_settings(
-    entry: ComputedEntry | ComputedStructureEntry, user_system_settings: dict | None, soc: bool
+    entry: ComputedEntry | ComputedStructureEntry,
+    user_system_settings: dict | None,
+    soc: bool,
+    structure: Structure,
+    is_metal: bool,
 ) -> dict:
     """
-    ``&SYSTEM`` namelist overrides for one competing phase: the user settings,
-    plus spin polarisation for magnetic phases (via
-    :func:`_set_spin_polarisation`, which seeds ``starting_magnetization``
-    rather than ``nspin``/``tot_magnetization`` for noncolinear (``soc``)
-    calculations, hence the ``noncolin``/``lspinorb`` flags are set here too).
+    ``&SYSTEM`` namelist overrides for the calculation of one competing phase
+    (``entry``, with ``structure``): the user settings, plus spin polarisation
+    for magnetic phases (via :func:`_set_spin_polarisation`, which depends on
+    whether the calculation is noncolinear (``soc``; hence the
+    ``noncolin``/``lspinorb`` flags are set here too) and on the occupations
+    (fixed for non-metals by default, i.e. ``is_metal = False``).
     """
     system_settings = copy.deepcopy(user_system_settings or {})
     if soc:  # spin-orbit coupling: noncolinear magnetisation with fully-relativistic pseudos
         system_settings.setdefault("noncolin", True)
         system_settings.setdefault("lspinorb", True)
-    _set_spin_polarisation(system_settings, user_system_settings or {}, entry)
+    _set_spin_polarisation(system_settings, user_system_settings or {}, entry, structure, is_metal)
 
     return system_settings
 
@@ -1579,9 +1701,11 @@ def get_kpoint_convergence_sets(
     fixed for all competing-phase, bulk and defect calculations.
 
     Automatically sets Gaussian smearing (``occupations = 'smearing'``) for
-    metallic phases, and spin polarisation (``nspin = 2`` and
-    ``tot_magnetization``, or ``starting_magnetization`` if ``soc``) for
-    magnetic phases.
+    metallic phases, and spin polarisation for magnetic phases (``nspin = 2``,
+    with ``tot_magnetization`` for non-metals, and ``starting_magnetization``
+    seeds from any ``magmom`` site properties, splitting sites into separate
+    atomic species by magnetic moment; or only ``starting_magnetization`` if
+    ``soc``).
 
     Args:
         competing_phases (CompetingPhases):
@@ -1661,7 +1785,9 @@ def get_kpoint_convergence_sets(
             "is_metal": category == "metals",  # only metallic phases get Gaussian smearing
             "soc": soc,
             "user_control_settings": user_control_settings,
-            "user_system_settings": _competing_phase_system_settings(entry, user_system_settings, soc),
+            "user_system_settings": _competing_phase_system_settings(
+                entry, user_system_settings, soc, structure, is_metal=category == "metals"
+            ),
             "user_electron_settings": user_electron_settings,
         }
         min_k, max_k, step_k = kpoints_by_metallicity[category]
@@ -1951,7 +2077,9 @@ def get_relaxation_sets(
     dict_sets: dict[str, DopedDictSetQE] = {}
 
     for entry, category, structure, folder_name in competing_phases._iter_entries_with_categories():
-        system_settings = _competing_phase_system_settings(entry, user_system_settings, soc)
+        system_settings = _competing_phase_system_settings(
+            entry, user_system_settings, soc, structure, is_metal=category == "metals"
+        )
         if category == "molecules":  # Γ-only sampling for molecules-in-a-box
             calculation, kgrid = molecule_calculation, None
         else:
@@ -2118,7 +2246,7 @@ def get_singlepoint_sets(
     user_system_settings: dict | None = None,
     user_control_settings: dict | None = None,
     user_electron_settings: dict | None = None,
-    subfolder: PathLike | None = None,
+    subfolder: PathLike = "SinglePoint",
 ) -> dict[str, DopedDictSetQE]:
     r"""
     Generates a dictionary of :class:`DopedDictSetQE`\s for single-point
@@ -2138,14 +2266,12 @@ def get_singlepoint_sets(
     applies (see there).
 
     If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
-    ``noncolin`` and ``lspinorb`` in ``&SYSTEM``) and the output subfolder
-    name will default to ``"espresso_ncl"`` (if not set otherwise). If
-    ``soc`` is not explicitly set (i.e. is ``None``), it defaults to
-    ``True`` for systems where the max atomic number across all species
-    (host and extrinsic) is Z >= 31 (heavier than Zn). Note that SOC
-    calculations in espresso require fully-relativistic pseudopotentials, so
-    ``pseudo_map`` should then point at these (the :data:`QE_PSEUDO_LIBRARY`
-    defaults are scalar-relativistic).
+    ``noncolin`` and ``lspinorb`` in ``&SYSTEM``). If ``soc`` is not explicitly
+    set (i.e. is ``None``), it defaults to ``True`` for systems where the max
+    atomic number across all species (host and extrinsic) is Z >= 31 (heavier
+    than Zn). Note that SOC calculations in espresso require fully-relativistic
+    pseudopotentials, so ``pseudo_map`` should then point at these (the
+    :data:`QE_PSEUDO_LIBRARY` defaults are scalar-relativistic).
 
     For metals, the tetrahedron method (``occupations = 'tetrahedra'``) is
     used by default (as in :func:`get_relaxation_sets`; override via
@@ -2202,9 +2328,8 @@ def get_singlepoint_sets(
             and extrinsic) is Z >= 31. Magnetic phases are then seeded via
             ``starting_magnetization`` instead of
             ``nspin``/``tot_magnetization`` (which espresso does not allow
-            for noncolinear calculations), and the default ``subfolder``
-            name is set to ``"espresso_ncl"``. Should be consistent with
-            the defect supercell calculations.
+            for noncolinear calculations). Should be consistent with the
+            defect supercell calculations.
         kpoints_shift (tuple):
             ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
             ``K_POINTS automatic`` card, e.g. ``(1, 1, 1)`` for a
@@ -2218,14 +2343,11 @@ def get_singlepoint_sets(
         user_electron_settings (dict or None):
             Override default ``&ELECTRONS`` namelist settings (e.g. a
             tighter ``{"conv_thr": 1e-10}``).
-        subfolder (PathLike or None):
+        subfolder (PathLike):
             Output folder structure is
-            ``<output_path>/<competing_phase_dir>/<subfolder>`` where
-            ``subfolder`` = ``"espresso_gamma"`` by default if ``soc`` is
-            ``False``, or ``"espresso_ncl"`` if ``soc`` is ``True``. Set to
-            ``"."`` to write input files directly to
-            ``<output_path>/<competing_phase_dir>``, with no subfolders
-            created.
+            ``<output_path>/<competing_phase_dir>/<subfolder>``. Default is
+            ``"SinglePoint"``. Set to ``"."`` to write input files directly to
+            ``<output_path>/<competing_phase_dir>``, with no subfolders created.
 
     Returns:
         dict[str, DopedDictSetQE]:
@@ -2244,9 +2366,6 @@ def get_singlepoint_sets(
                 "calculations, as the heaviest element present (across intrinsic and extrinsic species) "
                 "has an atomic number Z >= 31"
             )
-
-    if subfolder is None:
-        subfolder = "espresso_ncl" if soc else "espresso_gamma"
 
     # single-point (``scf``) calculations for all phases; user ``&CONTROL`` settings take precedence:
     sp_control_settings = {"calculation": "scf", **(user_control_settings or {})}
@@ -2282,17 +2401,16 @@ def write_singlepoint_files(
     user_system_settings: dict | None = None,
     user_control_settings: dict | None = None,
     user_electron_settings: dict | None = None,
-    subfolder: PathLike | None = None,
+    subfolder: PathLike = "SinglePoint",
     **kwargs,
 ) -> dict[str, DopedDictSetQE]:
     r"""
     Generates and writes espresso ``pw.in`` input files for single-point
     (``scf``) energy calculations of the competing phases, to
-    ``<output_path>/<phase>/<subfolder>/pw.in`` (``espresso_gamma`` subfolder
-    by default, or ``espresso_ncl`` if ``soc``), using the default settings by
-    default (i.e. the functional implied by your chosen pseudopotentials), or
-    HSE06 hybrid DFT if ``use_hse=True``; note that semi-local (GGA) defaults
-    are used here.
+    ``<output_path>/<phase>/<subfolder>/pw.in`` (``SinglePoint`` subfolder by
+    default), using the default settings by default (i.e. the functional
+    implied by your chosen pseudopotentials), or HSE06 hybrid DFT if
+    ``use_hse=True``; note that semi-local (GGA) defaults are used here.
 
     If ``soc`` is not explicitly set, SOC is enabled when the max atomic number
     across all species (host and extrinsic) is Z >= 31 (requiring fully-relativistic
@@ -2340,9 +2458,8 @@ def write_singlepoint_files(
             for every phase (requires fully-relativistic pseudopotentials;
             see ``pseudo_map``). If not set (``soc = None``; default), SOC
             is enabled when the max atomic number across all species (host
-            and extrinsic) is Z >= 31, and the default ``subfolder`` name
-            is then set to ``"espresso_ncl"``. Should be consistent with
-            the defect supercell calculations.
+            and extrinsic) is Z >= 31. Should be consistent with the defect
+            supercell calculations.
         kpoints_shift (tuple):
             ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
             ``K_POINTS automatic`` card, e.g. ``(1, 1, 1)`` for a
@@ -2356,14 +2473,11 @@ def write_singlepoint_files(
         user_electron_settings (dict or None):
             Override default ``&ELECTRONS`` namelist settings (e.g. a
             tighter ``{"conv_thr": 1e-10}``).
-        subfolder (PathLike or None):
+        subfolder (PathLike):
             Output folder structure is
-            ``<output_path>/<competing_phase_dir>/<subfolder>`` where
-            ``subfolder`` = ``"espresso_gamma"`` by default if ``soc`` is
-            ``False``, or ``"espresso_ncl"`` if ``soc`` is ``True``. Set to
-            ``"."`` to write input files directly to
-            ``<output_path>/<competing_phase_dir>``, with no subfolders
-            created.
+            ``<output_path>/<competing_phase_dir>/<subfolder>``. Default is
+            ``"SinglePoint"``. Set to ``"."`` to write input files directly to
+            ``<output_path>/<competing_phase_dir>``, with no subfolders created.
         **kwargs:
             Additional keyword arguments for :func:`write_input_sets` /
             :meth:`DopedDictSetQE.write_input` (e.g. ``filename``).
@@ -2395,23 +2509,58 @@ def _set_spin_polarisation(
     system_settings: dict,
     user_system_settings: dict,
     entry: ComputedEntry | ComputedStructureEntry,
+    structure: Structure,
+    is_metal: bool,
 ) -> None:
+    r"""
+    Set the spin polarisation settings in the espresso ``&SYSTEM`` namelist for
+    the calculation of ``entry`` with ``structure`` (from
+    ``_iter_entries_with_categories()``, which can be a smaller cell than that
+    of the Materials Project calculation); the espresso analogue of
+    :func:`doped.io.vasp.inputs._set_spin_polarisation`.
+
+    If ``structure`` has non-zero ``magmom`` site properties or the entry has
+    a total magnetization (scaled to ``structure``) greater than 0.1 μB, the
+    calculation is spin-polarised:
+
+    - Collinear calculations: ``nspin = 2``. With fixed occupations
+      (non-metals and molecules by default), ``pw.x`` requires
+      ``tot_magnetization``, which is set to the integer-rounded total
+      magnetization (or to the rounded sum of the ``magmom`` site properties
+      if the Materials Project magnetization is inconsistent with them, e.g.
+      0 for antiferromagnets). Otherwise (metals, with smearing or tetrahedra
+      occupations) the total magnetization is unconstrained, and ``pw.x``
+      requires a non-zero ``starting_magnetization``.
+    - Noncolinear (``soc``) calculations: ``nspin``/``tot_magnetization`` are
+      not allowed by ``pw.x``, so only ``starting_magnetization`` is used.
+
+    Any ``magmom`` site properties are used as per-site
+    ``starting_magnetization`` seeds when writing the ``pw.in`` (with sites
+    split into separate atomic species by magnetic moment; see
+    :meth:`DopedDictSetQE.write_qe_pw_input`), so a uniform
+    ``starting_magnetization`` is only set here (if needed) when there are no
+    ``magmom`` site properties.
     """
-    Set ``nspin = 2`` and ``tot_magnetization`` in the espresso ``&SYSTEM``
-    namelist if the entry has a total magnetization greater than the default
-    tolerance of 0.1.
-    """
-    magnetization = entry.data.get("summary", {}).get("total_magnetization")
-    if magnetization is not None and magnetization > 0.1:  # account for magnetic moment
+    magnetization = _get_competing_phase_magnetization(entry, structure)
+    magmoms = structure.site_properties.get("magmom", [])
+    has_magmoms = bool(np.any(magmoms))
+    if not has_magmoms and (magnetization is None or magnetization <= 0.1):
+        return  # ``nspin`` not set, so no spin polarisation
+
+    occupations = str(system_settings.get("occupations", "smearing" if is_metal else "fixed")).lower()
+    if system_settings.get("noncolin") or occupations != "fixed":  # magnetization not fixed, so seed it
+        if not has_magmoms:  # (else per-site seeds from the ``magmom`` site properties are written)
+            seed = round((magnetization or 0) / len(structure), 3)  # mean moment per atom (μB)
+            system_settings.setdefault("starting_magnetization", seed or DEFAULT_STARTING_MAGNETIZATION)
         if system_settings.get("noncolin"):
-            # noncolinear (SOC) calculations: ``nspin``/``tot_magnetization`` are LSDA-only
-            # (not allowed by espresso with ``noncolin``), so seed the magnetisation via
-            # ``starting_magnetization`` instead (expanded per-species on writing):
-            system_settings.setdefault("starting_magnetization", 0.1)
-            return
-        system_settings["nspin"] = user_system_settings.get("nspin", 2)
-        if "tot_magnetization" not in system_settings and int(magnetization) > 0:
-            system_settings["tot_magnetization"] = int(magnetization)
+            return  # ``nspin``/``tot_magnetization`` not allowed for noncolinear calculations
+
+    system_settings["nspin"] = user_system_settings.get("nspin", 2)
+    if int(system_settings["nspin"]) == 2 and occupations == "fixed":  # ``pw.x`` needs tot_magnetization
+        tot_magnetization = _get_constrained_total_magnetization(magnetization, magmoms)
+        if tot_magnetization is None:  # MP magnetization inconsistent with the site moments
+            tot_magnetization = round(sum(magmoms))
+        system_settings.setdefault("tot_magnetization", tot_magnetization)
 
 
 def _set_default_metal_smearing(system_settings: dict) -> None:
