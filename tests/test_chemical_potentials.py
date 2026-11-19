@@ -1211,9 +1211,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert ds_custom.incar["ALGO"] == "Normal"
         assert ds_custom.incar["NSW"] == 0  # singlepoint settings still applied
 
-        # ``poscar=True`` explicitly writes POSCAR files
+        # ``positions=True`` explicitly writes POSCAR files
         if_present_rm("CompetingPhases")
-        cp.write_singlepoint_files(soc=False, potcar_spec=True, poscar=True)
+        cp.write_singlepoint_files(soc=False, potcar_spec=True, positions=True)
         assert os.path.isfile(f"{ZrO2_sp_folder}/POSCAR")
         assert os.path.isfile(f"{ZrO2_sp_folder}/INCAR")
         assert os.path.isfile(f"{ZrO2_sp_folder}/KPOINTS")
