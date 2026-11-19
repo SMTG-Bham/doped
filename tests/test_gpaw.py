@@ -31,6 +31,7 @@ from test_utils import (
 )
 
 from doped.chemical_potentials import CompetingPhasesAnalyzer
+from doped.core import _get_defect_supercell
 from doped.generation import DefectsGenerator
 from doped.io import get_calculation_outputs
 from doped.io.gpaw.inputs import DefectDictSet, DefectsSet, default_gpaw_settings
@@ -165,6 +166,21 @@ class GPAWTest(unittest.TestCase):
         ).write_files(output_path=self.output_dir, processes=1)
         bulk_structure = Structure.from_file(os.path.join(self.output_dir, "Cu_bulk", "structure.cif"))
         assert bulk_structure.matches(defect_gen.bulk_supercell)
+        # defect structures rattled by default, but not the bulk (above):
+        name, entry = next(iter(defect_gen.defect_entries.items()))
+        unrattled = _get_defect_supercell(entry)
+        rattled = Structure.from_file(os.path.join(self.output_dir, name, "structure.cif"))
+        assert [site.specie.symbol for site in rattled] == [site.specie.symbol for site in unrattled]
+        assert np.allclose(rattled.lattice.parameters, unrattled.lattice.parameters, atol=1e-5)
+        assert 0 < np.mean([a.distance(b) for a, b in zip(rattled, unrattled, strict=True)]) < 0.5
+        # ... unless ``rattle=False``, and never for single-points:
+        for kwargs in ({"rattle": False}, {"calculation_type": "singlepoint", "rattle": True}):
+            write_kwargs = {"rattle": kwargs.pop("rattle")}
+            folder = os.path.join(self.output_dir, "unrattled")
+            DefectDictSet(unrattled, **kwargs).write_input(folder, **write_kwargs)
+            written = Structure.from_file(os.path.join(folder, "structure.cif"))
+            displacements = (written.frac_coords - unrattled.frac_coords + 0.5) % 1 - 0.5
+            assert np.allclose(displacements, 0, atol=1e-6)
 
         # one (doped-named) folder per defect, plus the neutral bulk reference (static, regardless of the
         # defects' ``calculation_type``), with the settings forwarded and per-element moments expanded for
@@ -441,7 +457,7 @@ def _gpaw_defect_workflow(tmp_path: Path, supercell: Structure, names: tuple[str
         DefectsGenerator, supercell, generate_supercell=False
     )
     defects_set = DefectsSet([defect_gen[name] for name in names], gpaw_settings=gpaw_settings)
-    defects_set.write_files(tmp_path)
+    defects_set.write_files(tmp_path, rattle=False)  # (unperturbed structures, for the expected results)
     stored = DefectsSet.from_json(tmp_path / defects_set.json_name).gpaw_settings
     assert stored == gpaw_settings | {k: gpaw_settings[k].todict() for k in ("mode", "eigensolver")}
 

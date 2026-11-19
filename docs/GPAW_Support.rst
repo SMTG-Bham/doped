@@ -60,7 +60,9 @@ settings tuned for defect relaxations in
 from a |DefectsGenerator| (or a dictionary/list of |DefectEntry| objects), with
 ``structure.cif`` and a ``relax.py`` GPAW script in a ``<defect name>/`` folder
 for each, and a static ``singlepoint.py`` reference calculation for the bulk
-supercell in ``{formula}_bulk/`` (e.g. ``MgO_bulk/``):
+supercell in ``{formula}_bulk/`` (e.g. ``MgO_bulk/``). The defect structures
+are rattled by default (``rattle=True`` in ``write_files()``), to break symmetry
+if |ShakeNBreak| structure-searching is being skipped:
 
 .. code-block:: python
 

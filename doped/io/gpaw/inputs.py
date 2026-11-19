@@ -146,9 +146,45 @@ class DefectDictSet:
         output_path: str,
         filename: str | None = None,
         make_dir_if_not_present: bool = True,
+        rattle: bool = False,
+        stdev: float | None = None,
+        d_min: float | None = None,
     ):
         """
         Writes the input files (structure and script) to a directory.
+
+        Args:
+            output_path (str):
+                Directory to write the input files to.
+            filename (str):
+                Name of the GPAW script. Default (``None``) is
+                ``"<calculation_type>.py"``; i.e. ``relax.py`` or
+                ``singlepoint.py``.
+            make_dir_if_not_present (bool):
+                Whether to create the directory (and the whole path) if it is
+                not present. Default is ``True``.
+            rattle (bool):
+                For relaxations, apply random displacements to all atomic
+                positions in the written structure using the |ShakeNBreak|
+                algorithm; i.e. with the displacement distances randomly drawn
+                from a Gaussian distribution of standard deviation equal to
+                10% of the nearest neighbour distance and using a Monte Carlo
+                algorithm to penalise displacements that bring atoms closer
+                than 80% of the nearest neighbour distance. This is intended
+                to be used as a fallback option for breaking symmetry to
+                partially aid location of global minimum defect geometries, if
+                |ShakeNBreak| structure-searching is being skipped. However,
+                rattling still only finds the ground-state structure for <~30%
+                of known cases of energy-lowering reconstructions relative to
+                an unperturbed defect structure. Default is ``False``.
+            stdev (float):
+                Standard deviation (in Å) of the Gaussian distribution for the
+                ``rattle`` displacements. Default (``None``) is 10% of the
+                nearest neighbour distance.
+            d_min (float):
+                Minimum interatomic distance (in Å) for the ``rattle``
+                displacements. Default (``None``) is 80% of the nearest
+                neighbour distance.
         """
         # Generate the Python script first, so that invalid settings raise before anything is written
         structure_filename = "structure.cif"
@@ -170,8 +206,18 @@ class DefectDictSet:
                 f"{structure_filename}."
             )
 
+        structure = self.structure
+        if rattle and self.calculation_type == "relax":
+            try:
+                from shakenbreak.distortions import rattle as SnB_rattle
+            except ImportError as e:
+                raise ImportError(
+                    "ShakeNBreak must be installed (pip install shakenbreak) to use the rattle option!"
+                ) from e
+            structure = SnB_rattle(structure, stdev=stdev, d_min=d_min)
+
         # Write structure to a file
-        writer = CifWriter(self.structure)  # no symprec arg -- reduces supercells to primitives
+        writer = CifWriter(structure)  # no symprec arg -- reduces supercells to primitives
         writer.write_file(os.path.join(output_path, structure_filename))
 
         with open(os.path.join(output_path, filename), "w") as f:
@@ -341,6 +387,7 @@ class DefectsSet(DefectsSetBase):
     def write_files(  # type: ignore[override]  # narrows the base signature's ``bulk`` (to a bool)
         self,
         output_path: PathLike = ".",
+        rattle: bool = True,
         bulk: bool = True,
         processes: int | None = None,
         **kwargs,
@@ -353,6 +400,12 @@ class DefectsSet(DefectsSetBase):
             output_path (PathLike):
                 Folder in which to create the defect calculation folders.
                 Default is the current directory (".").
+            rattle (bool):
+                Whether to apply random displacements to all atomic positions
+                in the written defect structures (for relaxations), using the
+                |ShakeNBreak| algorithm (see :meth:`DefectDictSet.write_input`).
+                Default is ``True``. The reference bulk supercell is never
+                rattled.
             bulk (bool):
                 Whether to also write inputs for the (singlepoint) reference
                 bulk supercell calculation, to ``{formula}_bulk``. Default is
@@ -362,9 +415,13 @@ class DefectsSet(DefectsSetBase):
                 Default (``None``) sets this automatically.
             **kwargs:
                 Additional keyword arguments for
-                :meth:`DefectDictSet.write_input`.
+                :meth:`DefectDictSet.write_input`, such as ``stdev`` and
+                ``d_min`` to control the magnitude of the ``rattle``
+                displacements.
         """
-        super().write_files(output_path=output_path, bulk=False, processes=processes, **kwargs)
+        super().write_files(
+            output_path=output_path, bulk=False, processes=processes, rattle=rattle, **kwargs
+        )
         if bulk:  # write the neutral bulk reference once, with the same settings
             bulk_supercell = _get_bulk_supercell(next(iter(self.defect_entries.values())))
             DefectDictSet(

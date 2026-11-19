@@ -120,7 +120,8 @@ Default Settings
        default, as structures are expected to be taken from
        structure-searching (e.g. with |ShakeNBreak|) or the preceding
        calculation stage
-     - ``structure.cif`` files are always written (unperturbed)
+     - ``structure.cif`` files are always written, rattled by default for
+       defect relaxations
    * - Pseudopotentials
      - PBE ``POTCAR``\s, as chosen in |PotcarSet.yaml|
      - ``GPAW`` default PAW datasets
