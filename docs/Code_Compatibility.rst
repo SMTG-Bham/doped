@@ -18,9 +18,10 @@ Python Package Compatibility
 Energy Calculator (DFT/ML) Compatibility
 ----------------------------------------
 The vast majority of the code in :code:`doped` is agnostic to the underlying energy calculator / electronic
-structure (e.g. DFT/ML) code used to calculate the raw energies of defect supercells. However, as
-demonstrated in the tutorials, direct I/O support is currently provided for the ``VASP`` DFT code, while
-structure files for essentially all QM/DFT/ML codes can be easily generated using the
+structure (e.g. DFT/ML) code used to calculate the raw energies of defect supercells. Direct I/O support
+is currently provided for the codes listed on the :doc:`Supported_Codes` page (which summarises the
+differences in functionality and default settings between them), with ``VASP`` (as used in the tutorials)
+being the default. Structure files for essentially all other QM/DFT/ML codes can be easily generated using the
 :meth:`~pymatgen.core.structure.IStructure.to()` method for ``pymatgen`` 
 |Structure|\s or `ase I/O methods <https://wiki.fysik.dtu.dk/ase/ase/io/io.html#ase.io.write>`__, with the
 |Structure| objects used for crystal structures in ``doped``.

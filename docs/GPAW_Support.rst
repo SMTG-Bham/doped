@@ -27,7 +27,9 @@ above.
 .. note::
 
     GPAW support is **experimental**. See the tracking issue for the features
-    that are not yet wired up for GPAW outputs.
+    that are not yet wired up for GPAW outputs, and the :doc:`Supported_Codes`
+    page for a summary of the differences in functionality and default
+    settings to the other supported codes.
 
 Workflow
 --------
