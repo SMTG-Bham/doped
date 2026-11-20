@@ -265,9 +265,11 @@ class CalculationOutputs(MSONable):
         ``None``.
 
         Args:
-            *attrs (str): Names of required ``CalculationOutputs`` attributes.
-            task (str): Description of the analysis requiring them, for the
-                error message.
+            *attrs (str):
+                Names of required ``CalculationOutputs`` attributes.
+            task (str):
+                Description of the analysis requiring them, for the error
+                message.
         """
         if missing := [attr for attr in attrs if getattr(self, attr) is None]:
             calc = f" {self.calculator}" if self.calculator else ""

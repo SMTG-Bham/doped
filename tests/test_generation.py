@@ -3793,7 +3793,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
             with tempfile.TemporaryDirectory() as tmp_dir:  # write rattled POSCARs:
                 DefectsSet({name: mgo_defect_gen[name] for name in defect_names}).write_files(
-                    output_path=tmp_dir, poscar=True
+                    output_path=tmp_dir, positions=True
                 )
                 poscar_paths = [
                     os.path.join(dirpath, "POSCAR")

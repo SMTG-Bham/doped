@@ -7,11 +7,12 @@ import copy
 import json
 import os
 import warnings
-from functools import lru_cache
+from collections.abc import Callable
+from functools import lru_cache, wraps
 from importlib import resources
 from math import ceil
 from numbers import Real
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from monty.io import zopen
@@ -195,6 +196,17 @@ def _parse_incar_value(key: str, value):
     return Incar.proc_val(key, value.split("#")[0].strip()) if isinstance(value, str) else value
 
 
+def _is_singlepoint(dict_set: "DopedDictSet") -> bool:
+    """
+    Whether ``dict_set`` is for a single-point (static) calculation, rather
+    than a relaxation; i.e. ``NSW <= 1`` (``NSW = 0`` being the ``VASP``
+    default) or ``IBRION = -1``, from its ``INCAR`` settings.
+    """
+    incar_settings = dict_set.config_dict.get("INCAR", {}) | dict_set.user_incar_settings
+    nsw, ibrion = (_parse_incar_value(key, incar_settings.get(key, 0)) for key in ("NSW", "IBRION"))
+    return (nsw or 0) <= 1 or ibrion == -1
+
+
 def _is_hybrid(user_incar_settings: dict | None) -> bool:
     """
     Whether hybrid DFT is used; i.e. unless ``LHFCALC`` is set to ``False`` (or
@@ -224,6 +236,32 @@ def _use_user_nupdown(user_incar_settings: dict, nelect: float) -> bool:
         f"https://doped.readthedocs.io/en/latest/Tips.html#magnetization)."
     )
     return False
+
+
+def _deprecated_poscar_kwarg[F: Callable[..., Any]](func: F) -> F:
+    """
+    Decorator for the ``VASP`` input-writing functions, to accept the
+    ``poscar`` keyword argument -- renamed to ``positions`` in ``doped`` v4.0,
+    for consistency between calculator backends -- with a
+    ``DeprecationWarning``.
+
+    TODO: Remove in v4.1 or later.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if "poscar" in kwargs:  # TODO: Remove this deprecated alias in v4.1
+            warnings.warn(
+                "The `poscar` argument has been renamed to `positions` (for consistency between "
+                "calculator backends) in doped v4.0; `poscar` is deprecated and will be removed in a "
+                "future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            kwargs.setdefault("positions", kwargs.pop("poscar"))
+        return func(*args, **kwargs)
+
+    return cast("F", wrapper)
 
 
 class DopedDictSet(VaspInputSet):
@@ -511,10 +549,11 @@ class DopedDictSet(VaspInputSet):
         neutral_nelect = super().nelect
         return neutral_nelect - self.charge_state
 
+    @_deprecated_poscar_kwarg
     def write_input(
         self,
         output_path: PathLike,
-        poscar: bool = True,
+        positions: bool = True,
         rattle: bool = False,
         make_dir_if_not_present: bool = True,
         include_cif: bool = False,
@@ -535,26 +574,23 @@ class DopedDictSet(VaspInputSet):
         Args:
             output_path (PathLike):
                 Directory to output the ``VASP`` input files.
-            poscar (bool):
+            positions (bool):
                 If True, write the ``POSCAR`` to the generated folder as well.
                 If ``rattle=True``, this will be a rattled structure, otherwise
                 the unperturbed defect structure. (default: True)
             rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                nearest neighbour distance and using a Monte Carlo algorithm to
+                If writing ``POSCAR`` for a `relaxation` (not single-point),
+                apply random displacements to all atomic positions in the
+                structure using the |ShakeNBreak| rattling algorithm; i.e. with
+                the displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the nearest
+                neighbour distance and using a Monte Carlo algorithm to
                 penalise displacements that bring atoms closer than 80% of the
-                nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum (defect)
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed (defect) structure.
-                (default: False)
+                nearest neighbour distance. ``stdev`` and ``d_min`` can also be
+                given as input kwargs. This is intended to partially aid
+                location of lower-energy broken-symmetry structures, but is far
+                less effective than |ShakeNBreak| or more comprehensive energy
+                landscape exploration strategies. Default is ``False``.
             make_dir_if_not_present (bool):
                 Set to ``True`` if you want the directory (and the whole path)
                 to be created if it is not present. (default: True)
@@ -590,9 +626,9 @@ class DopedDictSet(VaspInputSet):
                 Whether to write ``KPOINTS`` file to the generated folder.
                 Default is ``True``.
         """
-        potcars = True if potcar_spec else self._check_user_potcars(poscar=poscar, snb=snb)
+        potcars = True if potcar_spec else self._check_user_potcars(positions=positions, snb=snb)
 
-        if poscar and rattle:
+        if positions and rattle and not _is_singlepoint(self):  # (single-points are never rattled)
             try:
                 from shakenbreak.distortions import rattle as SnB_rattle
             except ImportError as e:
@@ -601,7 +637,7 @@ class DopedDictSet(VaspInputSet):
                 ) from e
             self.structure: Structure = SnB_rattle(self.structure, stdev=stdev, d_min=d_min)
 
-        if poscar and potcars and kpoints:  # write everything, use VaspInputSet.write_input()
+        if positions and potcars and kpoints:  # write everything, use VaspInputSet.write_input()
             try:
                 super().write_input(
                     output_path,
@@ -626,7 +662,7 @@ class DopedDictSet(VaspInputSet):
             os.makedirs(output_path, exist_ok=True)
 
             # if not POTCARs and charge_state not 0, then skip INCAR write attempt (POSCARs and KPOINTS
-            # will be written (if ``poscar``/``kpoints`` are ``True``), and user already warned):
+            # will be written (if ``positions``/``kpoints`` are ``True``), and user already warned):
             if potcars or self.charge_state == 0:
                 self.incar.write_file(f"{output_path}/INCAR")
 
@@ -640,17 +676,17 @@ class DopedDictSet(VaspInputSet):
             if kpoints and (doped_kpoints := self.kpoints) is not None:  # ``None`` if ``KSPACING`` set
                 doped_kpoints.write_file(f"{output_path}/KPOINTS")
 
-            if poscar:
+            if positions:
                 self.poscar.write_file(f"{output_path}/POSCAR")
 
-    def _check_user_potcars(self, poscar: bool = False, snb: bool = False) -> bool:
+    def _check_user_potcars(self, positions: bool = False, snb: bool = False) -> bool:
         r"""
         Check and warn the user if ``POTCAR``\s are not set up with
         ``pymatgen``.
         """
         potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
         if not potcars:
-            if poscar:
+            if positions:
                 if self.charge_state != 0:
                     warnings.warn(  # snb -> ShakeNBreak hidden flag (POSCARs aren't unperturbed for it)
                         f"{_potcar_setup_warning}, so only {'' if snb else '(unperturbed) '}`POSCAR` and "
@@ -1587,7 +1623,9 @@ class DefectRelaxSet(MSONable):
 
         return f"{defect_dir}/{subfolder}" if subfolder is not None else defect_dir
 
-    def _write_vasp_xxx_files(self, defect_dir, subfolder, poscar, rattle, vasp_xxx_attribute, **kwargs):
+    def _write_vasp_xxx_files(
+        self, defect_dir, subfolder, positions, rattle, vasp_xxx_attribute, **kwargs
+    ):
         output_path = self._get_output_path(defect_dir, subfolder)
 
         stdev, d_min = kwargs.pop("stdev", None), kwargs.pop("d_min", None)  # user-specified, if given
@@ -1611,7 +1649,7 @@ class DefectRelaxSet(MSONable):
 
         vasp_xxx_attribute.write_input(
             output_path,
-            poscar,
+            positions,
             rattle=rattle,
             stdev=stdev,
             d_min=d_min,
@@ -1638,17 +1676,18 @@ class DefectRelaxSet(MSONable):
         self._write_vasp_xxx_files(
             f"{output_path}/{_get_bulk_folder_name(bulk_supercell)}",
             subfolder,
-            poscar=True,
+            positions=True,
             rattle=False,
             vasp_xxx_attribute=vasp_xxx_attribute,
             **kwargs,
         )
 
+    @_deprecated_poscar_kwarg
     def write_gam(
         self,
         defect_dir: PathLike | None = None,
         subfolder: PathLike | None = "vasp_gam",
-        poscar: bool = True,
+        positions: bool = True,
         rattle: bool = True,
         bulk: bool = False,
         **kwargs,
@@ -1696,7 +1735,7 @@ class DefectRelaxSet(MSONable):
                 ``subfolder`` = 'vasp_gam' by default. Setting ``subfolder`` to
                 ``None`` will write the ``vasp_gam`` input files directly to
                 the ``<defect_dir>`` folder, with no subfolders created.
-            poscar (bool):
+            positions (bool):
                 If ``True`` (default), writes the defect ``POSCAR`` to the
                 generated folder as well. Typically not recommended, as the
                 recommended workflow is to initially perform ``vasp_gam``
@@ -1709,21 +1748,18 @@ class DefectRelaxSet(MSONable):
                 ``write_groundstate_structure`` (Python API)).
                 (default: True)
             rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR`` for a `relaxation` (not single-point),
+                apply random displacements to all atomic positions in the
+                structure using the |ShakeNBreak| rattling algorithm; i.e. with
+                the displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             bulk (bool):
                 If ``True``, the input files for a single-point calculation of
                 the bulk supercell are also written to
@@ -1739,7 +1775,7 @@ class DefectRelaxSet(MSONable):
         self._write_vasp_xxx_files(
             defect_dir,
             subfolder,
-            poscar=poscar,
+            positions=positions,
             rattle=rattle,
             vasp_xxx_attribute=self.vasp_gam,
             **kwargs,
@@ -1747,11 +1783,12 @@ class DefectRelaxSet(MSONable):
         if bulk:
             self._write_bulk_files(defect_dir, subfolder, self.bulk_vasp_gam, **kwargs)
 
+    @_deprecated_poscar_kwarg
     def write_std(
         self,
         defect_dir: PathLike | None = None,
         subfolder: PathLike | None = "vasp_std",
-        poscar: bool = False,
+        positions: bool = False,
         rattle: bool = True,
         bulk: bool = False,
         **kwargs,
@@ -1767,9 +1804,9 @@ class DefectRelaxSet(MSONable):
         (via ``snb-groundstate -d vasp_std``) if using GGA, or, if not
         following the recommended structure-searching workflow, from the
         ``CONTCAR``\s of ``vasp_gam`` calculations. If ``POSCAR`` files are
-        desired, set ``poscar=True``. If ``bulk`` is ``True``, the input files
-        for a single-point calculation of the bulk supercell are also written
-        to "{formula}_bulk/{subfolder}".
+        desired, set ``positions=True``. If ``bulk`` is ``True``, the input
+        files for a single-point calculation of the bulk supercell are also
+        written to "{formula}_bulk/{subfolder}".
 
         Returns None and a warning if the input kpoint settings correspond to a
         Γ-only kpoint mesh (in which case ``vasp_gam`` should be used).
@@ -1807,7 +1844,7 @@ class DefectRelaxSet(MSONable):
                 ``subfolder`` = 'vasp_std' by default. Setting ``subfolder`` to
                 ``None`` will write the ``vasp_std`` input files directly to
                 the ``<defect_dir>`` folder, with no subfolders created.
-            poscar (bool):
+            positions (bool):
                 If ``True``, writes the defect ``POSCAR`` to the generated
                 folder as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
@@ -1820,21 +1857,18 @@ class DefectRelaxSet(MSONable):
                 ``write_groundstate_structure`` (Python API)).
                 (default: False)
             rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR`` for a `relaxation` (not single-point),
+                apply random displacements to all atomic positions in the
+                structure using the |ShakeNBreak| rattling algorithm; i.e. with
+                the displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             bulk (bool):
                 If ``True``, the input files for a single-point calculation of
                 the bulk supercell are also written to
@@ -1853,7 +1887,7 @@ class DefectRelaxSet(MSONable):
         self._write_vasp_xxx_files(
             defect_dir,
             subfolder,
-            poscar=poscar,
+            positions=positions,
             rattle=rattle,
             vasp_xxx_attribute=self.vasp_std,
             **kwargs,
@@ -1861,11 +1895,12 @@ class DefectRelaxSet(MSONable):
         if bulk:
             self._write_bulk_files(defect_dir, subfolder, self.bulk_vasp_std, **kwargs)
 
+    @_deprecated_poscar_kwarg
     def write_nkred_std(
         self,
         defect_dir: PathLike | None = None,
         subfolder: PathLike | None = "vasp_nkred_std",
-        poscar: bool = False,
+        positions: bool = False,
         rattle: bool = True,
         bulk: bool = False,
         **kwargs,
@@ -1883,9 +1918,9 @@ class DefectRelaxSet(MSONable):
         calculations (e.g. via ``snb-groundstate -d vasp_nkred_std``) or, if
         not following the recommended structure-searching workflow, from the
         ``CONTCAR``\s of ``vasp_gam`` calculations. If ``POSCAR`` files are
-        desired, set ``poscar=True``. If ``bulk`` is ``True``, the input files
-        for a single-point calculation of the bulk supercell are also written
-        to ``"{formula}_bulk/{subfolder}"``.
+        desired, set ``positions=True``. If ``bulk`` is ``True``, the input
+        files for a single-point calculation of the bulk supercell are also
+        written to ``"{formula}_bulk/{subfolder}"``.
 
         Returns None and a warning if the input kpoint settings correspond to a
         Γ-only kpoint mesh (in which case ``vasp_gam`` should be used) or for
@@ -1926,7 +1961,7 @@ class DefectRelaxSet(MSONable):
                 ``subfolder`` to ``None`` will write the ``vasp_nkred_std``
                 input files directly to the ``<defect_dir>`` folder, with no
                 subfolders created.
-            poscar (bool):
+            positions (bool):
                 If ``True``, writes the defect ``POSCAR`` to the generated
                 folder as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
@@ -1939,21 +1974,18 @@ class DefectRelaxSet(MSONable):
                 ``write_groundstate_structure`` (Python API)).
                 (default: False)
             rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR`` for a `relaxation` (not single-point),
+                apply random displacements to all atomic positions in the
+                structure using the |ShakeNBreak| rattling algorithm; i.e. with
+                the displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             bulk (bool):
                 If ``True``, the input files for a single-point calculation of
                 the bulk supercell are also written to
@@ -1977,7 +2009,7 @@ class DefectRelaxSet(MSONable):
         self._write_vasp_xxx_files(
             defect_dir,
             subfolder,
-            poscar=poscar,
+            positions=positions,
             rattle=rattle,
             vasp_xxx_attribute=self.vasp_nkred_std,
             **kwargs,
@@ -1985,12 +2017,12 @@ class DefectRelaxSet(MSONable):
         if bulk:
             self._write_bulk_files(defect_dir, subfolder, self.bulk_vasp_nkred_std, **kwargs)
 
+    @_deprecated_poscar_kwarg
     def write_ncl(
         self,
         defect_dir: PathLike | None = None,
         subfolder: PathLike | None = "vasp_ncl",
-        poscar: bool = False,
-        rattle: bool = True,
+        positions: bool = False,
         bulk: bool = False,
         **kwargs,
     ):
@@ -2005,7 +2037,7 @@ class DefectRelaxSet(MSONable):
         directly from |ShakeNBreak| calculations (via
         ``snb-groundstate -d vasp_ncl``) if only Γ-point reciprocal space
         sampling is required. If ``POSCAR`` files are desired, set
-        ``poscar=True``.
+        ``positions=True``.
 
         If ``DefectRelaxSet.soc`` is False, then this returns ``None`` and a
         warning. If the ``soc`` parameter is not set when initializing
@@ -2048,7 +2080,7 @@ class DefectRelaxSet(MSONable):
                 ``subfolder`` = 'vasp_ncl' by default. Setting ``subfolder`` to
                 ``None`` will write the ``vasp_ncl`` input files directly to
                 the ``<defect_dir>`` folder, with no subfolders created.
-            poscar (bool):
+            positions (bool):
                 If ``True``, writes the defect ``POSCAR`` to the generated
                 folder as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
@@ -2061,32 +2093,16 @@ class DefectRelaxSet(MSONable):
                 ``write_groundstate_structure`` (Python API)), first with
                 ``NKRED`` if using hybrid DFT, then without, then use the
                 ``vasp_std`` ``CONTCAR``\s as the input structures for final
-                ``vasp_ncl`` single-point calculations.
-                (default: False)
-            rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                ``vasp_ncl`` single-point calculations. If ``True``, the
+                unperturbed defect structure is written (not rattled). Default
+                is ``False``.
             bulk (bool):
                 If ``True``, the input files for a single-point calculation of
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
                 Keyword arguments to pass to ``DefectDictSet.write_input()``,
-                such as ``stdev`` and ``d_min`` to control the magnitude of
-                ``rattle`` displacements, or ``potcar_spec``.
+                such as ``potcar_spec``.
         """
         if self.vasp_ncl is None:
             warnings.warn(
@@ -2102,18 +2118,19 @@ class DefectRelaxSet(MSONable):
         self._write_vasp_xxx_files(
             defect_dir,
             subfolder,
-            poscar=poscar,
-            rattle=rattle,
+            positions=positions,
+            rattle=False,  # single-point calculation
             vasp_xxx_attribute=self.vasp_ncl,
             **kwargs,
         )
         if bulk:
             self._write_bulk_files(defect_dir, subfolder, self.bulk_vasp_ncl, **kwargs)
 
+    @_deprecated_poscar_kwarg
     def write_all(
         self,
         defect_dir: PathLike | None = None,
-        poscar: bool = False,
+        positions: bool = False,
         rattle: bool = True,
         vasp_gam: bool | None = None,
         bulk: bool | str = False,
@@ -2162,7 +2179,7 @@ class DefectRelaxSet(MSONable):
         ``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s should be
         used as the ``vasp_ncl`` ``POSCAR``\s. If ``POSCAR`` files are desired
         for the ``vasp_(nkred_)std`` (and ``vasp_ncl``) folders, set
-        ``poscar=True``.
+        ``positions=True``.
 
         Input files for the single-point (static) bulk supercell reference
         calculation are also written to ``"{formula}_bulk/{subfolder}"`` if
@@ -2204,7 +2221,7 @@ class DefectRelaxSet(MSONable):
                 Output folder structure is ``<defect_dir>/<subfolder>`` where
                 ``subfolder`` is the name of the corresponding VASP program to
                 run (e.g. ``vasp_std``).
-            poscar (bool):
+            positions (bool):
                 If ``True``, writes the defect ``POSCAR`` to the generated
                 folders as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
@@ -2218,21 +2235,19 @@ class DefectRelaxSet(MSONable):
                 ``NKRED`` if using hybrid DFT, then without ``NKRED``.
                 (default: False)
             rattle (bool):
-                If writing ``POSCAR``\s, apply random displacements to all
-                atomic positions in the structures using the |ShakeNBreak|
-                algorithm; i.e. with the displacement distances randomly drawn
-                from a Gaussian distribution of standard deviation equal to 10%
-                of the bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR``\s for `relaxations` (i.e. not for the
+                ``vasp_ncl`` single-point calculations), apply random
+                displacements to all atomic positions in the structures using
+                the |ShakeNBreak| rattling algorithm; i.e. with the
+                displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             vasp_gam (bool | None):
                 If ``True``, writes the ``vasp_gam`` input files, with defect
                 ``POSCAR``. Not recommended, as the recommended workflow is to
@@ -2293,7 +2308,7 @@ class DefectRelaxSet(MSONable):
                 self.write_gam(  # if vasp_std is None and vasp_gam not set to ``False``, write vasp_gam
                     defect_dir=defect_dir,
                     bulk=any("vasp_gam" in vasp_type for vasp_type in bulk_vasp),
-                    poscar=poscar or vasp_gam is True,  # unperturbed poscar
+                    positions=positions or vasp_gam is True,  # unperturbed positions
                     rattle=rattle,
                     # only if `vasp_gam` explicitly set to True
                     **kwargs,
@@ -2302,7 +2317,7 @@ class DefectRelaxSet(MSONable):
             if self.vasp_std is not None:  # k-point mesh
                 self.write_std(
                     defect_dir=defect_dir,
-                    poscar=poscar,
+                    positions=positions,
                     rattle=rattle,
                     bulk=any("vasp_std" in vasp_type for vasp_type in bulk_vasp),
                     **kwargs,
@@ -2311,17 +2326,16 @@ class DefectRelaxSet(MSONable):
             if self.vasp_nkred_std is not None:  # k-point mesh and not GGA
                 self.write_nkred_std(
                     defect_dir=defect_dir,
-                    poscar=poscar,
+                    positions=positions,
                     rattle=rattle,
                     bulk=any("vasp_nkred_std" in vasp_type for vasp_type in bulk_vasp),
                     **kwargs,
                 )
 
         if self.soc:  # SOC
-            self.write_ncl(
+            self.write_ncl(  # (single-point, so never rattled)
                 defect_dir=defect_dir,
-                poscar=poscar,
-                rattle=rattle,
+                positions=positions,
                 bulk=any("vasp_ncl" in vasp_type for vasp_type in bulk_vasp),
                 **kwargs,
             )
@@ -2616,7 +2630,7 @@ class DefectsSet(DefectsSetBase):
         kwargs = dict(write_kwargs)
         defect_relax_set.write_all(
             defect_dir=os.path.join(output_path, defect_species),
-            poscar=kwargs.pop("poscar", False),
+            positions=kwargs.pop("positions", False),
             rattle=kwargs.pop("rattle", True),
             vasp_gam=kwargs.pop("vasp_gam", None),
             bulk=bulk,
@@ -2630,21 +2644,21 @@ class DefectsSet(DefectsSetBase):
 
         If ``POTCAR``\s are not set up, the ``INCAR``\s for charged defects
         cannot be written (``NELECT`` cannot be determined), so these are skipped
-        (with a warning), unless ``poscar = True`` in which case only their
+        (with a warning), unless ``positions = True`` in which case only their
         ``POSCAR`` and ``KPOINTS`` files are written.
         """
         defect_sets = self.defect_sets
-        poscar = write_kwargs.get("poscar", False)
+        positions = write_kwargs.get("positions", False)
         if not any("VASP_PSP_DIR" in i for i in SETTINGS) and (  # no `NELECT` for charged defects
             charged := [name for name, drs in defect_sets.items() if drs.charge_state != 0]
         ):
-            if not poscar:
+            if not positions:
                 defect_sets = {k: v for k, v in defect_sets.items() if k not in charged}
                 if not defect_sets:  # only charged defects, so nothing writable
                     raise ValueError(
                         f"{_potcar_setup_warning}, so no input files will be generated (all defects in "
-                        f"this `DefectsSet` are charged). Set `poscar=True` to write their `POSCAR` and "
-                        f"`KPOINTS` files."
+                        f"this `DefectsSet` are charged). Set `positions=True` to write their `POSCAR` "
+                        f"and `KPOINTS` files."
                     )
 
             warnings.warn(
@@ -2652,18 +2666,19 @@ class DefectsSet(DefectsSetBase):
                 + (
                     "cannot be written; only `POSCAR` and `KPOINTS` files will be generated for these "
                     "folders."
-                    if poscar
-                    else "cannot be written; these folders will be skipped (set `poscar=True` to write "
+                    if positions
+                    else "cannot be written; these folders will be skipped (set `positions=True` to write "
                     "their `POSCAR` and `KPOINTS` files)."
                 )
             )
 
         return defect_sets
 
+    @_deprecated_poscar_kwarg
     def write_files(  # type: ignore[override]  # deliberately extends the base signature
         self,
         output_path: PathLike = ".",
-        poscar: bool = False,
+        positions: bool = False,
         rattle: bool = True,
         vasp_gam: bool | None = None,
         bulk: bool | str = True,
@@ -2717,7 +2732,7 @@ class DefectsSet(DefectsSetBase):
         ``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s should be
         used as the ``vasp_ncl`` ``POSCAR``\s. If ``POSCAR`` files are desired
         for the ``vasp_(nkred_)std`` (and ``vasp_ncl``) folders, set
-        ``poscar=True``.
+        ``positions=True``.
 
         Input files for the single-point (static) bulk supercell reference
         calculation are also written to ``"{formula}_bulk/{subfolder}"`` if
@@ -2760,7 +2775,7 @@ class DefectsSet(DefectsSetBase):
                 ``self.defect_sets`` (same as ``self.defect_entries`` keys, see
                 |DefectsSet| docstring) and ``subfolder`` is the name of the
                 corresponding VASP program to run (e.g. ``vasp_std``).
-            poscar (bool):
+            positions (bool):
                 If ``True``, writes the defect ``POSCAR`` to the generated
                 folders as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
@@ -2774,21 +2789,19 @@ class DefectsSet(DefectsSetBase):
                 ``NKRED`` if using hybrid DFT, then without ``NKRED``.
                 (default: False)
             rattle (bool):
-                If writing ``POSCAR``\s, apply random displacements to all
-                atomic positions in the structures using the |ShakeNBreak|
-                algorithm; i.e. with the displacement distances randomly drawn
-                from a Gaussian distribution of standard deviation equal to 10%
-                of the bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR``\s for `relaxations` (i.e. not for the
+                ``vasp_ncl`` single-point calculations), apply random
+                displacements to all atomic positions in the structures using
+                the |ShakeNBreak| rattling algorithm; i.e. with the
+                displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             vasp_gam (bool | None):
                 If ``True``, writes the ``vasp_gam`` input files, with defect
                 ``POSCAR``\s. Not recommended, as the recommended workflow is
@@ -2831,7 +2844,7 @@ class DefectsSet(DefectsSetBase):
             output_path=output_path,
             bulk=bulk,
             processes=processes,
-            poscar=poscar,
+            positions=positions,
             rattle=rattle,
             vasp_gam=vasp_gam,
             relax_set_json=relax_set_json,
@@ -3341,22 +3354,23 @@ def get_singlepoint_sets(
     )
 
 
+@_deprecated_poscar_kwarg
 def write_input_sets(
-    input_sets: dict[str, DopedDictSet], poscar: bool = True, **kwargs
+    input_sets: dict[str, DopedDictSet], positions: bool = True, **kwargs
 ) -> dict[str, DopedDictSet]:
     r"""
     Write a dictionary of ``DopedDictSet``\s to their corresponding output
     folders, warning if any already exist.
 
-    ``POSCAR`` writing is controlled by the ``poscar`` argument (default
+    ``POSCAR`` writing is controlled by the ``positions`` argument (default
     ``True``). ``POSCAR``/``KPOINTS`` are always skipped for nominal
-    (placeholder) structures, regardless of ``poscar``.
+    (placeholder) structures, regardless of ``positions``.
     """
     for fname, input_set in input_sets.items():
         write_kwargs = copy.deepcopy(kwargs)
-        write_kwargs["poscar"] = poscar
+        write_kwargs["positions"] = positions
         if input_set.structure.properties.get("_is_nominal_structure", False):
-            write_kwargs.update({"poscar": False, "kpoints": False})
+            write_kwargs.update({"positions": False, "kpoints": False})
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
@@ -3649,6 +3663,7 @@ def write_relaxation_files(
     return write_input_sets(input_sets, **kwargs)
 
 
+@_deprecated_poscar_kwarg
 def write_singlepoint_files(
     competing_phases: "CompetingPhases",
     kpoints_metals: float = 200.0,
@@ -3660,7 +3675,7 @@ def write_singlepoint_files(
     extrinsic_only: bool = False,
     output_path: PathLike = "CompetingPhases",
     subfolder: PathLike = "SinglePoint",
-    poscar: bool = False,
+    positions: bool = False,
     **kwargs,
 ) -> dict[str, DopedDictSet]:
     r"""
@@ -3786,7 +3801,7 @@ def write_singlepoint_files(
             Default is ``"SinglePoint"``. Set to ``"."`` to write input
             files directly to ``<output_path>/<competing_phase_dir>``, with
             no subfolders created.
-        poscar (bool):
+        positions (bool):
             Whether to write ``POSCAR`` files. Defaults to ``False``, as
             single-point (static) calculations are intended to be run on
             `relaxed` structures (e.g. from relaxations with
@@ -3812,4 +3827,4 @@ def write_singlepoint_files(
         output_path=output_path,
         subfolder=subfolder,
     )
-    return write_input_sets(input_sets, poscar=poscar, **kwargs)
+    return write_input_sets(input_sets, positions=positions, **kwargs)

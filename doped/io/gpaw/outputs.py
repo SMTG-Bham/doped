@@ -909,11 +909,14 @@ def get_planar_averaged_potentials(
     ``doped`` only calls this when they were not parsed up-front.
 
     Args:
-        path (PathLike): Path to the calculation directory or ``.gpw`` file.
-        dir_type (str): The type of directory being parsed (``"bulk"`` or
-            ``"defect"``), for informative errors. Default is ``"bulk"``.
-        quiet (bool): Accepted for backend-protocol compatibility and
-            otherwise unused (nothing is printed here). Default is ``False``.
+        path (PathLike):
+            Path to the calculation directory or ``.gpw`` file.
+        dir_type (str):
+            The type of directory being parsed (``"bulk"`` or ``"defect"``),
+            for informative errors. Default is ``"bulk"``.
+        quiet (bool):
+            Accepted for backend-protocol compatibility and otherwise unused
+            (nothing is printed here). Default is ``False``.
 
     Returns:
         dict[str, np.ndarray]: The planar-averaged potentials, keyed by axis.
