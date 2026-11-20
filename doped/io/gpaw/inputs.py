@@ -164,19 +164,17 @@ class DefectDictSet:
                 Whether to create the directory (and the whole path) if it is
                 not present. Default is ``True``.
             rattle (bool):
-                For relaxations, apply random displacements to all atomic
-                positions in the written structure using the |ShakeNBreak|
-                algorithm; i.e. with the displacement distances randomly drawn
-                from a Gaussian distribution of standard deviation equal to
-                10% of the nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the nearest neighbour distance. This is intended
-                to be used as a fallback option for breaking symmetry to
-                partially aid location of global minimum defect geometries, if
-                |ShakeNBreak| structure-searching is being skipped. However,
-                rattling still only finds the ground-state structure for <~30%
-                of known cases of energy-lowering reconstructions relative to
-                an unperturbed defect structure. Default is ``False``.
+                For a `relaxation` (not single-point), apply random
+                displacements to all atomic positions in the written structure
+                using the |ShakeNBreak| rattling algorithm; i.e. with the
+                displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the nearest
+                neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                nearest neighbour distance. This is intended to partially aid
+                location of lower-energy broken-symmetry structures, but is far
+                less effective than |ShakeNBreak| or more comprehensive energy
+                landscape exploration strategies. Default is ``False``.
             stdev (float):
                 Standard deviation (in Å) of the Gaussian distribution for the
                 ``rattle`` displacements. Default (``None``) is 10% of the
@@ -403,9 +401,9 @@ class DefectsSet(DefectsSetBase):
             rattle (bool):
                 Whether to apply random displacements to all atomic positions
                 in the written defect structures (for relaxations), using the
-                |ShakeNBreak| algorithm (see :meth:`DefectDictSet.write_input`).
-                Default is ``True``. The reference bulk supercell is never
-                rattled.
+                |ShakeNBreak| rattling algorithm (see
+                :meth:`DefectDictSet.write_input`). Default is ``True``. The
+                reference bulk supercell is never rattled.
             bulk (bool):
                 Whether to also write inputs for the (singlepoint) reference
                 bulk supercell calculation, to ``{formula}_bulk``. Default is

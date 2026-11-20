@@ -1290,6 +1290,24 @@ class DefectRelaxSetTest(unittest.TestCase):
             drs.write_gam("test_dir", potcar_spec=True, rattle=False)
             unperturbed = Structure.from_file("test_dir/vasp_gam/POSCAR")
 
+            # single-point calculations are never rattled (a ``rattle`` keyword is ignored):
+            drs.write_ncl("test_dir", potcar_spec=True, positions=True, rattle=True)
+            assert Structure.from_file("test_dir/vasp_ncl/POSCAR") == unperturbed
+            # ...i.e. with ``NSW <= 1`` or ``IBRION = -1`` (regardless of ``NSW``):
+            for incar_settings, singlepoint in [
+                ({"NSW": 0}, True),
+                ({"NSW": 1}, True),
+                ({"IBRION": -1}, True),
+                ({"NSW": 2}, False),
+                ({"IBRION": 1}, False),
+            ]:
+                single_drs = DefectRelaxSet(
+                    self.CdTe_defect_gen["v_Cd_0"], user_incar_settings=incar_settings
+                )
+                single_drs.write_gam("test_dir", potcar_spec=True)  # positions & rattle True by default
+                written = Structure.from_file("test_dir/vasp_gam/POSCAR")
+                assert (written == unperturbed) == singlepoint, incar_settings
+
         def _mean_disp(structure):
             return np.mean(np.linalg.norm(structure.cart_coords - unperturbed.cart_coords, axis=1))
 
@@ -2323,12 +2341,17 @@ class DefectsSetTest(unittest.TestCase):
                 print(f"RMS dist after rattling: {rms_dist}")  # for debugging
                 assert rms_dist[0] > 0.1  # after rattling
 
-                for other_vasp_dir in ["vasp_gam", "vasp_nkred_std", "vasp_ncl"]:
+                for other_vasp_dir in ["vasp_gam", "vasp_nkred_std"]:
                     print(f"Checking {other_vasp_dir}")
                     other_generated_struct = Structure.from_file(
                         f"{defect_entry_name}/{other_vasp_dir}/POSCAR"
                     )
                     assert other_generated_struct == generated_struct
+
+                # single-point calculations (``vasp_ncl``) are never rattled:
+                ncl_struct = Structure.from_file(f"{defect_entry_name}/vasp_ncl/POSCAR")
+                assert ncl_struct == reference_struct
+                assert ncl_struct != generated_struct
 
                 for other_dir in os.listdir():
                     if other_dir.startswith(defect_entry_name.rsplit("_", 1)[0]):

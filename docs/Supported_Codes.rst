@@ -117,9 +117,9 @@ Default Settings
    * - Input structures
      - ``POSCAR`` files are only written when requested (``positions=True``,
        or ``vasp_gam=True`` for the ``vasp_gam`` folders), then rattled by
-       default, as structures are expected to be taken from
-       structure-searching (e.g. with |ShakeNBreak|) or the preceding
-       calculation stage
+       default for relaxations (not for single-point calculations), as
+       structures are expected to be taken from structure-searching (e.g.
+       with |ShakeNBreak|) or the preceding calculation stage
      - ``structure.cif`` files are always written, rattled by default for
        defect relaxations
    * - Pseudopotentials

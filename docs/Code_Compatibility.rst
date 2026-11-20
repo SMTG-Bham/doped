@@ -26,10 +26,8 @@ being the default. Structure files for essentially all other QM/DFT/ML codes can
 |Structure|\s or `ase I/O methods <https://wiki.fysik.dtu.dk/ase/ase/io/io.html#ase.io.write>`__, with the
 |Structure| objects used for crystal structures in ``doped``.
 
-Direct I/O capabilities for other codes is a goal (such as ``Quantum Espresso``, ``CP2K`` and/or
-``FHI-aims``), accompanied by an update publication, so please get in touch with the developers if you
-would be interested in contributing to this effort! Input file generation and structure/energy parsing
-should be straightforward with the ``doped``/``pymatgen``/``ase`` APIs, while finite-size charge
-corrections would be the main challenge for parsing & computing.
+Direct I/O capabilities for other codes is a goal (such as ``CP2K``), accompanied by an update publication, so please
+get in touch with the developers if you would be interested in contributing to this effort!
+See the :doc:`Adding_Calculators` page for how to add support for another code.
 
 Please let us know if you have any issues with compatibility!

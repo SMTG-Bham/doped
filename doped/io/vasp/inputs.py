@@ -191,6 +191,17 @@ def _parse_incar_value(key: str, value):
     return Incar.proc_val(key, value.split("#")[0].strip()) if isinstance(value, str) else value
 
 
+def _is_singlepoint(dict_set: "DopedDictSet") -> bool:
+    """
+    Whether ``dict_set`` is for a single-point (static) calculation, rather
+    than a relaxation; i.e. ``NSW <= 1`` (``NSW = 0`` being the ``VASP``
+    default) or ``IBRION = -1``, from its ``INCAR`` settings.
+    """
+    incar_settings = dict_set.config_dict.get("INCAR", {}) | dict_set.user_incar_settings
+    nsw, ibrion = (_parse_incar_value(key, incar_settings.get(key, 0)) for key in ("NSW", "IBRION"))
+    return (nsw or 0) <= 1 or ibrion == -1
+
+
 def _is_hybrid(user_incar_settings: dict | None) -> bool:
     """
     Whether hybrid DFT is used; i.e. unless ``LHFCALC`` is set to ``False`` (or
@@ -563,21 +574,18 @@ class DopedDictSet(VaspInputSet):
                 If ``rattle=True``, this will be a rattled structure, otherwise
                 the unperturbed defect structure. (default: True)
             rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                nearest neighbour distance and using a Monte Carlo algorithm to
+                If writing ``POSCAR`` for a `relaxation` (not single-point),
+                apply random displacements to all atomic positions in the
+                structure using the |ShakeNBreak| rattling algorithm; i.e. with
+                the displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the nearest
+                neighbour distance and using a Monte Carlo algorithm to
                 penalise displacements that bring atoms closer than 80% of the
-                nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum (defect)
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed (defect) structure.
-                (default: False)
+                nearest neighbour distance. ``stdev`` and ``d_min`` can also be
+                given as input kwargs. This is intended to partially aid
+                location of lower-energy broken-symmetry structures, but is far
+                less effective than |ShakeNBreak| or more comprehensive energy
+                landscape exploration strategies. Default is ``False``.
             make_dir_if_not_present (bool):
                 Set to ``True`` if you want the directory (and the whole path)
                 to be created if it is not present. (default: True)
@@ -615,7 +623,7 @@ class DopedDictSet(VaspInputSet):
         """
         potcars = True if potcar_spec else self._check_user_potcars(positions=positions, snb=snb)
 
-        if positions and rattle:
+        if positions and rattle and not _is_singlepoint(self):  # (single-points are never rattled)
             try:
                 from shakenbreak.distortions import rattle as SnB_rattle
             except ImportError as e:
@@ -1735,21 +1743,18 @@ class DefectRelaxSet(MSONable):
                 ``write_groundstate_structure`` (Python API)).
                 (default: True)
             rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR`` for a `relaxation` (not single-point),
+                apply random displacements to all atomic positions in the
+                structure using the |ShakeNBreak| rattling algorithm; i.e. with
+                the displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             bulk (bool):
                 If ``True``, the input files for a single-point calculation of
                 the bulk supercell are also written to
@@ -1847,21 +1852,18 @@ class DefectRelaxSet(MSONable):
                 ``write_groundstate_structure`` (Python API)).
                 (default: False)
             rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR`` for a `relaxation` (not single-point),
+                apply random displacements to all atomic positions in the
+                structure using the |ShakeNBreak| rattling algorithm; i.e. with
+                the displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             bulk (bool):
                 If ``True``, the input files for a single-point calculation of
                 the bulk supercell are also written to
@@ -1967,21 +1969,18 @@ class DefectRelaxSet(MSONable):
                 ``write_groundstate_structure`` (Python API)).
                 (default: False)
             rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR`` for a `relaxation` (not single-point),
+                apply random displacements to all atomic positions in the
+                structure using the |ShakeNBreak| rattling algorithm; i.e. with
+                the displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             bulk (bool):
                 If ``True``, the input files for a single-point calculation of
                 the bulk supercell are also written to
@@ -2019,7 +2018,6 @@ class DefectRelaxSet(MSONable):
         defect_dir: PathLike | None = None,
         subfolder: PathLike | None = "vasp_ncl",
         positions: bool = False,
-        rattle: bool = True,
         bulk: bool = False,
         **kwargs,
     ):
@@ -2090,32 +2088,16 @@ class DefectRelaxSet(MSONable):
                 ``write_groundstate_structure`` (Python API)), first with
                 ``NKRED`` if using hybrid DFT, then without, then use the
                 ``vasp_std`` ``CONTCAR``\s as the input structures for final
-                ``vasp_ncl`` single-point calculations.
-                (default: False)
-            rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                ``vasp_ncl`` single-point calculations. If ``True``, the
+                unperturbed defect structure is written (not rattled). Default
+                is ``False``.
             bulk (bool):
                 If ``True``, the input files for a single-point calculation of
                 the bulk supercell are also written to
                 "{formula}_bulk/{subfolder}". (Default: False)
             **kwargs:
                 Keyword arguments to pass to ``DefectDictSet.write_input()``,
-                such as ``stdev`` and ``d_min`` to control the magnitude of
-                ``rattle`` displacements, or ``potcar_spec``.
+                such as ``potcar_spec``.
         """
         if self.vasp_ncl is None:
             warnings.warn(
@@ -2132,7 +2114,7 @@ class DefectRelaxSet(MSONable):
             defect_dir,
             subfolder,
             positions=positions,
-            rattle=rattle,
+            rattle=False,  # single-point calculation
             vasp_xxx_attribute=self.vasp_ncl,
             **kwargs,
         )
@@ -2248,21 +2230,19 @@ class DefectRelaxSet(MSONable):
                 ``NKRED`` if using hybrid DFT, then without ``NKRED``.
                 (default: False)
             rattle (bool):
-                If writing ``POSCAR``\s, apply random displacements to all
-                atomic positions in the structures using the |ShakeNBreak|
-                algorithm; i.e. with the displacement distances randomly drawn
-                from a Gaussian distribution of standard deviation equal to 10%
-                of the bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR``\s for `relaxations` (i.e. not for the
+                ``vasp_ncl`` single-point calculations), apply random
+                displacements to all atomic positions in the structures using
+                the |ShakeNBreak| rattling algorithm; i.e. with the
+                displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             vasp_gam (bool | None):
                 If ``True``, writes the ``vasp_gam`` input files, with defect
                 ``POSCAR``. Not recommended, as the recommended workflow is to
@@ -2348,10 +2328,9 @@ class DefectRelaxSet(MSONable):
                 )
 
         if self.soc:  # SOC
-            self.write_ncl(
+            self.write_ncl(  # (single-point, so never rattled)
                 defect_dir=defect_dir,
                 positions=positions,
-                rattle=rattle,
                 bulk=any("vasp_ncl" in vasp_type for vasp_type in bulk_vasp),
                 **kwargs,
             )
@@ -2805,21 +2784,19 @@ class DefectsSet(DefectsSetBase):
                 ``NKRED`` if using hybrid DFT, then without ``NKRED``.
                 (default: False)
             rattle (bool):
-                If writing ``POSCAR``\s, apply random displacements to all
-                atomic positions in the structures using the |ShakeNBreak|
-                algorithm; i.e. with the displacement distances randomly drawn
-                from a Gaussian distribution of standard deviation equal to 10%
-                of the bulk nearest neighbour distance and using a Monte Carlo
-                algorithm to penalise displacements that bring atoms closer
-                than 80% of the bulk nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: True)
+                If writing ``POSCAR``\s for `relaxations` (i.e. not for the
+                ``vasp_ncl`` single-point calculations), apply random
+                displacements to all atomic positions in the structures using
+                the |ShakeNBreak| rattling algorithm; i.e. with the
+                displacement distances randomly drawn from a Gaussian
+                distribution of standard deviation equal to 10% of the bulk
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                bulk nearest neighbour distance. ``stdev`` and ``d_min`` can
+                also be given as input kwargs. This is intended to partially
+                aid location of lower-energy broken-symmetry structures, but is
+                far less effective than |ShakeNBreak| or more comprehensive
+                energy landscape exploration strategies. Default is ``True``.
             vasp_gam (bool | None):
                 If ``True``, writes the ``vasp_gam`` input files, with defect
                 ``POSCAR``\s. Not recommended, as the recommended workflow is
