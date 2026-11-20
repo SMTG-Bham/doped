@@ -25,6 +25,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
+import numpy as np
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.structure import Structure
@@ -97,7 +98,7 @@ def _get_constrained_total_magnetization(
             with ``magmoms``.
     """
     total = round(magnetization or 0)
-    if any(magmoms) and abs(total - sum(magmoms)) > max(1, 0.3 * total):
+    if np.any(magmoms) and abs(total - sum(magmoms)) > max(1, 0.3 * total):
         return None
     return total
 

@@ -3406,8 +3406,6 @@ def _set_spin_polarisation(
     if "NUPDOWN" not in incar_settings and summary.get("band_gap") != 0 and nupdown > 0:
         incar_settings["NUPDOWN"] = nupdown
 
-    # otherwise ISPIN not set, so no spin polarisation
-
 
 def _set_default_metal_smearing(incar_settings: dict, user_incar_settings: dict) -> None:
     """

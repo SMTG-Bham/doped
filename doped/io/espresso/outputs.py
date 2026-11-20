@@ -21,7 +21,6 @@ from pymatgen.util.typing import PathLike
 from scipy.ndimage import map_coordinates
 
 from doped.io import utils as _io_utils
-from doped.io.espresso.inputs import SUBFOLDER_PRIORITY as _INPUT_SUBFOLDER_PRIORITY
 from doped.io.outputs import CalculationOutputs
 from doped.io.utils import _multiple_files_warning, find_archived_fname
 from doped.io.vasp.outputs import (  # ``LOCPOT``/|Vasprun| helpers, reused for the shared code paths
@@ -29,18 +28,16 @@ from doped.io.vasp.outputs import (  # ``LOCPOT``/|Vasprun| helpers, reused for 
     get_magnetization_from_vasprun,
 )
 
-SUBFOLDER_PRIORITY: list[str] = [
-    *_INPUT_SUBFOLDER_PRIORITY[:2],
-    "singlepoint",
-    *_INPUT_SUBFOLDER_PRIORITY[2:],
+SUBFOLDER_PRIORITY = [
+    "espresso_ncl",
+    "singlepoint",  # competing phase single-points, prioritised over their ``espresso_std`` relaxations
+    "espresso_std",
+    "espresso_gamma",
 ]
 """
-The priority order of calculation subfolder names when auto-detecting which
-subfolder to parse: the ``pw.x`` subfolders written by
-:class:`~doped.io.espresso.inputs.DefectRelaxSetQE` / ``DefectsSet`` (in
-decreasing order of accuracy), with the competing phase single-point
-(``SinglePoint``) calculations prioritised over the (``espresso_std``)
-relaxations.
+Priority order when auto-detecting (espresso) calculation subfolders.
+
+Part of the ``doped.io`` backend protocol.
 """
 
 
@@ -189,11 +186,11 @@ def get_espresso_run(espressorun_path: PathLike, **kwargs) -> PWxml:
       attached, as ``expat``'s own message carries only a line/column.
     """
     espressorun_path = str(espressorun_path)  # convert to string if Path object
+    # numbered species labels (e.g. from splitting species by magnetic moment) are handled below:
+    warnings.filterwarnings("ignore", message="Species labels contain numbers")
     warnings.filterwarnings(
         "ignore", category=UnknownPotcarWarning
     )  # Ignore unknown POTCAR warnings when loading vasprun.xml
-    # numbered species labels (e.g. from splitting species by magnetic moment) are handled below:
-    warnings.filterwarnings("ignore", message="Species labels contain numbers")
     # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
     warnings.filterwarnings(
         "ignore", message="No POTCAR file with matching TITEL fields"
@@ -264,14 +261,15 @@ def _parse_run_and_poss_projwfc(
     espresso analogue of ``_parse_vr_and_poss_procar`` for VASP.
 
     ``pw.x`` writes no orbital projections to its XML, so these come from a
-    separate ``projwfc.x`` ``filproj`` output -- the espresso analogue of VASP's
-    ``PROCAR``. ``PWxml`` guesses and parses a ``filproj`` itself when
-    constructed with ``parse_projected_eigen = True``, but only from a fixed set
-    of guessed filenames & directories (raising ``FileNotFoundError`` when none
-    matches), so any ``*.projwfc_up`` file in ``output_path`` is additionally
-    searched for here and parsed with ``PWxml._parse_projected_eigen``, which
-    also handles the paired ``.projwfc_down`` channel of spin-polarised
-    (``lsda``) calculations and validates the projections against the XML.
+    separate ``projwfc.x`` ``filproj`` output -- the espresso analogue of
+    VASP's ``PROCAR``. ``PWxml`` guesses and parses a ``filproj`` itself when
+    constructed with ``parse_projected_eigen = True``, but only from a fixed
+    set of guessed filenames & directories (raising ``FileNotFoundError`` when
+    none matches), so any ``*.projwfc_up`` file in ``output_path`` is
+    additionally searched for here and parsed with
+    ``PWxml._parse_projected_eigen``, which also handles the paired
+    ``.projwfc_down`` channel of spin-polarised (``lsda``) calculations and
+    validates the projections against the XML.
     """
     projwfc = None
     if output_path is None:
@@ -414,9 +412,9 @@ def _handle_infinite_band_gap(
     CBM as the lowest eigenvalue with an occupancy below ``occu_tol``, leaving
     it at its ``float("inf")`` initial value if there are no unoccupied
     eigenvalues -- giving an infinite band gap (and CBM), which can cause
-    downstream failures. This is common with espresso, where the default ``nbnd``
-    with ``occupations = 'fixed'`` is exactly ``nelec/2`` (i.e. no empty
-    bands), unlike VASP's default ``NBANDS`` which always includes some.
+    downstream failures. This is common with espresso, where the default
+    ``nbnd`` with ``occupations = 'fixed'`` is exactly ``nelec/2`` (i.e. no
+    empty bands), unlike VASP's default ``NBANDS`` which always includes some.
 
     Args:
         band_gap (float):
@@ -730,8 +728,9 @@ def get_calculation_outputs(
     structures, eigenvalue data and calculation metadata, with optional parsing
     of the ``pp.x`` cube file (``plot_num = 11``) for the planar-averaged
     electrostatic potentials (Freysoldt (FNV) charge corrections) and the
-    atomic-site potentials (Kumagai (eFNV) charge corrections).
-    The parsed ``PWxml`` object is retained in the (non-serialised) ``CalculationOutputs.raw`` dict.
+    atomic-site potentials (Kumagai (eFNV) charge corrections). The parsed
+    ``PWxml`` object is retained in the (non-serialised)
+    ``CalculationOutputs.raw`` dict.
 
 
     Args:
@@ -746,9 +745,9 @@ def get_calculation_outputs(
             Whether to also parse the atomic-site potentials from the ``pp.x``
             cube file in ``path``. Default is ``False``.
         parse_projected_eigen (bool):
-            Whether to parse orbital projections . If ``None`` (default), tries
-            to parse projections but with no warning if this fails; if ``True``,
-            warns on failure; if ``False``, skips projection parsing.
+            Whether to parse orbital projections. If ``None`` (default), tries
+            to parse projections but with no warning if this fails; if
+            ``True``, warns on failure; if ``False``, skips projection parsing.
 
             Note that ``pw.x`` writes no projections to its XML, so this
             requires a ``projwfc.x`` ``filproj`` file; without one, ``PWxml``
@@ -831,8 +830,9 @@ def calculation_outputs_from_pwxml(
     ``"pwxml"``, and the projections under ``"procar"``.
     ``raw["computed_entry"]`` is deliberately **not** set, so that
     ``CalculationOutputs.get_computed_entry()`` falls back to building a bare
-    ``ComputedStructureEntry(structure, energy)`` -- ``PWxml.get_computed_entry``
-    requires a ``generator`` attribute which ``PWxml`` does not provide.
+    ``ComputedStructureEntry(structure, energy)`` --
+    ``PWxml.get_computed_entry`` requires a ``generator`` attribute which
+    ``PWxml`` does not provide.
 
 
     Args:
@@ -940,8 +940,8 @@ def load_eigenvalue_outputs(
             ``"bulk"``.
         run_metadata (dict):
             The ``DefectEntry.calculation_metadata["run_metadata"]`` dict, to
-            re-hydrate the ``PWxml`` from its serialised ``{label}_vasprun_dict``,
-            when projections are supplied.
+            re-hydrate the ``PWxml`` from its serialised
+            ``{label}_vasprun_dict``, when projections are supplied.
 
     Returns:
         CalculationOutputs:

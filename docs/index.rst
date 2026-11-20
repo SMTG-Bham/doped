@@ -304,6 +304,7 @@ Thanks to `Chaoqun Zhang <https://github.com/Warlocat>`__ for uploading the
    :maxdepth: 1
 
    Contributing
+   Supported_Codes
    Adding_Calculators
    Code_Compatibility
    changelog_link

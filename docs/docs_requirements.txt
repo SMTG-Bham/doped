@@ -11,6 +11,8 @@ hiphive
 click
 doped
 importlib-metadata
+# for the ``doped.io.espresso`` API docs; not on PyPI (TODO: update once released):
+pymatgen-io-espresso @ git+https://github.com/Griffin-Group/pymatgen-io-espresso
 
 # required dependencies:
 filelock

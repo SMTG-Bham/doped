@@ -46,7 +46,7 @@ import warnings
 import numpy as np
 import pytest
 from monty.serialization import loadfn
-from pymatgen.core import Lattice, Structure
+from pymatgen.core import Element, Lattice, Structure
 from pymatgen.core.units import Ry_to_eV, bohr_to_angstrom
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import VolumetricData
@@ -55,13 +55,16 @@ from pymatgen.io.vasp import VolumetricData
 # collection of) this module without it:
 pytest.importorskip("pymatgen.io.espresso")
 
-from doped.chemical_potentials import CompetingPhasesAnalyzer
+from test_utils import api_key, requires_api_key
+
+from doped.chemical_potentials import CompetingPhases, CompetingPhasesAnalyzer
 from doped.io import get_calculation_outputs
 from doped.io.espresso.inputs import (
-    DefectRelaxSetQE,
-    DopedDictSetQE,
+    DefectRelaxSet,
+    DopedDictSet,
     _competing_phase_system_settings,
     _get_atomic_species,
+    _warn_if_hybrid_with_us_paw_pseudos,
 )
 from doped.io.espresso.outputs import (
     _FALLBACK_SMEARING_WIDTH,
@@ -377,7 +380,8 @@ class SitePotentialSmearingTestCase(unittest.TestCase):
 
 def _parse_pw_in(path: str) -> dict:
     """
-    Parse the ``&SYSTEM`` settings, ``ATOMIC_SPECIES`` labels, site labels and
+    Parse the ``&SYSTEM`` settings, ``ATOMIC_SPECIES`` labels, site labels
+    (``None`` if written without the ``ATOMIC_POSITIONS`` card) and
     ``K_POINTS`` card of a written ``pw.in``, asserting that it satisfies the
     ``pw.x`` input rules (from ``PW/src/input.f90``) for spin polarisation,
     k-points and atomic species.
@@ -390,31 +394,56 @@ def _parse_pw_in(path: str) -> dict:
         assert match is not None, pattern
         return match.group(1)
 
-    system_text = group(r"&SYSTEM(.*?)\n\s*/", re.S | re.I)
-    system = dict(re.findall(r"^\s*(\S+)\s*=\s*(\S+)", system_text, re.M))
+    control, system = (
+        dict(re.findall(r"^\s*(\S+)\s*=\s*(\S+)", group(rf"&{name}(.*?)\n\s*/", re.S | re.I), re.M))
+        for name in ("CONTROL", "SYSTEM")
+    )
     species = group(r"ATOMIC_SPECIES.*?\n((?:[ \t]*\S+[ \t]+[\d.]+[ \t]+\S+\n)+)")
     species_labels = [line.split()[0] for line in species.splitlines()]
-    positions = group(r"ATOMIC_POSITIONS.*?\n((?:[ \t]*\S+(?:[ \t]+-?[\d.]+){3}\n)+)")
-    site_labels = [line.split()[0] for line in positions.splitlines()]
+    positions = re.search(r"^ATOMIC_POSITIONS.*?\n((?:[ \t]*\S+(?:[ \t]+-?[\d.]+){3}\n)+)", text, re.M)
+    site_labels = [line.split()[0] for line in positions.group(1).splitlines()] if positions else None
+    coords = (
+        np.array([line.split()[1:4] for line in positions.group(1).splitlines()], dtype=float)
+        if positions
+        else None
+    )
+    cell = re.search(r"^CELL_PARAMETERS.*\n((?:.*\n){3})", text, re.M)
     k_points = group(r"(K_POINTS.*\n.*)")
+    # the structure is written (or left to be added) as a whole:
+    assert bool(re.search(r"^CELL_PARAMETERS", text, re.M)) == (site_labels is not None)
 
-    assert int(system["ntyp"]) == len(species_labels)
+    assert int(system["ntyp"]) == len(species_labels) <= 10  # ``ntypx``
     assert all(len(label) <= 3 for label in species_labels)
-    assert set(site_labels) == set(species_labels)
+    assert site_labels is None or set(site_labels) == set(species_labels)
     seeds = [float(v) for k, v in system.items() if k.startswith("starting_magnetization(")]
     if system.get("noncolin") == ".true.":  # "gamma_only and noncolin not allowed"
         assert "nspin" not in system
         assert "tot_magnetization" not in system
         assert "gamma" not in k_points
+        if "exx_fraction" in system:  # hybrid DFT: "noncolinear stress not implemented"
+            assert control.get("tstress") != ".true."
+            assert "vc-" not in control["calculation"]
     if "tot_magnetization" in system:  # "tot_magnetization requires nspin=2"
         assert system.get("nspin") == "2"
+        if site_labels:  # must match the electron-count parity (``pw.x`` only gives a 'BEWARE' message):
+            electrons = sum(Element(re.sub(r"\d", "", label)).Z for label in site_labels)
+            electrons -= float(system.get("tot_charge", 0))
+            assert (electrons - float(system["tot_magnetization"])) % 2 == 0
     if system.get("nspin") == "2":
         if system.get("occupations", "'fixed'") == "'fixed'":  # "fixed occupations and lsda need..."
             assert float(system["tot_magnetization"]).is_integer()
         elif "tot_magnetization" not in system:  # some starting_magnetization must be set
             assert any(seeds)
 
-    return {"system": system, "species": species_labels, "sites": site_labels, "k_points": k_points}
+    return {
+        "control": control,
+        "system": system,
+        "species": species_labels,
+        "sites": site_labels,
+        "coords": coords,
+        "cell": cell.group(1) if cell else None,
+        "k_points": k_points,
+    }
 
 
 class EspressoInputsTestCase(unittest.TestCase):
@@ -435,21 +464,21 @@ class EspressoInputsTestCase(unittest.TestCase):
         self.afm.add_site_property("magmom", [4.0, -4.0, 0.0, 0.0])
         self.fm = self.afm.copy(site_properties={"magmom": [4.0, 4.0, 0.0, 0.0]})
 
-    def _write(self, dict_set: DopedDictSetQE, name: str = "pw") -> dict:
+    def _write(self, dict_set: DopedDictSet, name: str = "pw") -> dict:
         with warnings.catch_warnings():  # missing pseudopotential files warning not under test here
             warnings.simplefilter("ignore")
             dict_set.write_input(os.path.join(self.tmpdir, name))
         return _parse_pw_in(os.path.join(self.tmpdir, name, "pw.in"))
 
     def _write_competing_phase(
-        self, structure, magnetization, is_metal=False, soc=False, kpoints=(2, 2, 2)
+        self, structure, magnetization, is_metal=False, soc=False, kpoints=(2, 2, 2), **user_settings
     ):
         entry = ComputedStructureEntry(
             structure, -1, data={"summary": {"total_magnetization": magnetization}}
         )
-        system_settings = _competing_phase_system_settings(entry, {}, soc, structure, is_metal)
+        system_settings = _competing_phase_system_settings(entry, user_settings, soc, structure, is_metal)
         return self._write(
-            DopedDictSetQE(
+            DopedDictSet(
                 structure,
                 kpoints=list(kpoints) if kpoints else None,
                 is_metal=is_metal,
@@ -461,17 +490,33 @@ class EspressoInputsTestCase(unittest.TestCase):
     def test_competing_phase_spin_settings(self):
         afm = self._write_competing_phase(self.afm, 0)  # insulator, so fixed occupations
         assert afm["system"]["tot_magnetization"] == "0"
+        assert "nosym" not in afm["system"]  # (symmetry only turned off for defect/bulk supercells)
+        assert float(afm["control"]["forc_conv_thr"]) == pytest.approx(
+            0.01 * bohr_to_angstrom / Ry_to_eV, rel=1e-3
+        )
         assert afm["species"] == ["O", "Fe", "Fe1"]  # Fe split into species by moment sign
         assert afm["sites"] == ["Fe", "Fe1", "O", "O"]
         assert [afm["system"][f"starting_magnetization({i})"] for i in (1, 2, 3)] == ["0.0", "4.0", "-4.0"]
 
         fm = self._write_competing_phase(self.fm, 8)
         assert fm["system"]["tot_magnetization"] == "8"
-        assert fm["species"] == ["O", "Fe"]  # no seeds needed with a fixed (non-negative) magnetization
-        assert not any(key.startswith("starting_magnetization") for key in fm["system"])
+        assert fm["species"] == ["O", "Fe"]  # (seeded too, for the same species as a SOC calculation)
+        assert [fm["system"][f"starting_magnetization({i})"] for i in (1, 2)] == ["0.0", "4.0"]
 
-        # MP magnetization inconsistent with the site moments; sum of site moments used:
-        assert self._write_competing_phase(self.fm, 0)["system"]["tot_magnetization"] == "8"
+        # same atomic species for collinear and SOC calculations (e.g. a relaxation, and a SOC single-point
+        # to which the relaxed structure is added), also with a fixed magnetization:
+        ferri = self.afm.copy(site_properties={"magmom": [4.3, 3.7, 0.0, 0.0]})
+        assert (
+            self._write_competing_phase(ferri, 8)["species"]
+            == self._write_competing_phase(ferri, 8, soc=True)["species"]
+            == ["O", "Fe", "Fe1"]
+        )
+
+        for magnetization in (0, None):  # inconsistent with the site moments / unknown; so unconstrained
+            free = self._write_competing_phase(self.fm, magnetization)["system"]
+            assert "tot_magnetization" not in free
+            assert free["occupations"] == "'smearing'"
+            assert [free[f"starting_magnetization({i})"] for i in (1, 2)] == ["0.0", "4.0"]
 
         afm_metal = self._write_competing_phase(self.afm, 0, is_metal=True)
         assert "tot_magnetization" not in afm_metal["system"]  # free magnetization with smearing
@@ -481,23 +526,35 @@ class EspressoInputsTestCase(unittest.TestCase):
         fm_metal = self._write_competing_phase(
             self.afm.copy(site_properties={"magmom": [0] * 4}), 2.4, True
         )
-        assert fm_metal["species"] == ["O", "Fe"]  # no site moments; mean moment seeded on all species
-        assert fm_metal["system"]["starting_magnetization(1)"] == "0.6"
+        assert fm_metal["species"] == ["O", "Fe"]  # no site moments; default seed on all species
+        assert fm_metal["system"]["starting_magnetization(1)"] == "0.1"
 
         afm_soc = self._write_competing_phase(self.afm, 0, soc=True, kpoints=None)
         assert afm_soc["system"]["noncolin"] == ".true."
         assert afm_soc["species"] == ["O", "Fe", "Fe1"]
         assert afm_soc["k_points"].split() == ["K_POINTS", "{automatic}", "1", "1", "1", "0", "0", "0"]
 
-        non_magnetic = self._write_competing_phase(self.afm.copy(site_properties={"magmom": [0] * 4}), 0)
+        no_magmoms = self.afm.copy(site_properties={"magmom": [0] * 4})
+        non_magnetic = self._write_competing_phase(no_magmoms, 0)
         assert "nspin" not in non_magnetic["system"]
         assert non_magnetic["species"] == ["O", "Fe"]
+
+        # user settings take precedence:
+        user_tot = self._write_competing_phase(self.fm, 0, tot_magnetization=10)["system"]
+        assert user_tot["tot_magnetization"] == "10"
+        assert user_tot.get("occupations", "'fixed'") == "'fixed'"
+        no_spin = self._write_competing_phase(self.afm, 0, is_metal=True, nspin=1)
+        assert no_spin["system"]["nspin"] == "1"
+        assert no_spin["species"] == ["O", "Fe"]
+        assert not any(key.startswith(("starting_", "tot_magnetization")) for key in no_spin["system"])
+        for is_metal in (False, True):  # ``nspin = 2`` for a non-magnetic phase; valid ``pw.in`` written
+            assert self._write_competing_phase(no_magmoms, 0, is_metal, nspin=2)["system"]["nspin"] == "2"
 
     def test_species_split_by_moment(self):
         ligand = self.afm.copy(site_properties={"magmom": [4.0, -4.0, 0.3, -0.3]})
         written = self._write_competing_phase(ligand, 0)
         assert written["species"] == ["O", "O1", "Fe", "Fe1"]
-        # raw moments in μB as seeds (QE >= 7.3 interprets all as μB when any is >= 1):
+        # moments written as-is (read as μB by ``pw.x`` >= 7.3, as some have magnitudes >= 1):
         assert [written["system"][f"starting_magnetization({i})"] for i in (1, 2, 3, 4)] == [
             "0.3",
             "-0.3",
@@ -509,9 +566,44 @@ class EspressoInputsTestCase(unittest.TestCase):
         labels, species = _get_atomic_species(self.afm, magmoms=[4.0, 3.6, 0.0, 0.0])
         assert labels == ["Fe", "Fe", "O", "O"]
         assert species == [("O", "O", 0.0), ("Fe", "Fe", 4.0)]
+        noisy = self.afm.copy(site_properties={"magmom": [4.0, -4.0, 0.05, -0.02]})
+        assert self._write_competing_phase(noisy, 0)["species"] == ["O", "Fe", "Fe1"]  # < 0.1 μB zeroed
         chain = Structure(Lattice.cubic(30), ["Fe"] * 11, [[i / 11, 0, 0] for i in range(11)])
-        with pytest.raises(ValueError, match="at most 3 characters"):
-            _get_atomic_species(chain, magmoms=list(range(1, 12)))  # 11 distinct moments -> "Fe10" label
+        with pytest.warns(UserWarning, match="only allows 10"):
+            _get_atomic_species(chain, magmoms=list(range(1, 12)))  # 11 distinct moments
+
+    def test_mixed_oxidation_states(self):
+        """
+        Sites of an element in different oxidation states (which are removed
+        when writing) are written as one atomic species -- unless split by
+        magnetic moment -- with ``ntyp`` matching the ``ATOMIC_SPECIES`` card.
+        """
+        mixed_valence = Structure(self.afm.lattice, ["Fe2+", "Fe3+", "O2-", "O2-"], self.afm.frac_coords)
+        assert len(set(mixed_valence.species)) == 3  # Fe2+, Fe3+, O2-
+        written = self._write(DopedDictSet(mixed_valence, kpoints=[2, 2, 2]))
+        assert written["species"] == ["O", "Fe"]  # (``ntyp`` consistency checked in ``_parse_pw_in``)
+        assert written["sites"] == ["Fe", "Fe", "O", "O"]
+
+        mixed_valence.add_site_property("magmom", [4.0, 2.0, 0.0, 0.0])  # different moments
+        written = self._write_competing_phase(mixed_valence, 6)
+        assert written["species"] == ["O", "Fe", "Fe1"]
+        assert written["sites"] == ["Fe", "Fe1", "O", "O"]
+
+    def test_structure_withheld(self):
+        """
+        ``positions=False``: the structure (to be added, e.g. from a previous
+        relaxation) is not written.
+        """
+        dict_set = DopedDictSet(self.fm, kpoints=[2, 2, 2], calculation="scf")
+        for positions in (True, False):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                dict_set.write_input(os.path.join(self.tmpdir, str(positions)), positions=positions)
+            path = os.path.join(self.tmpdir, str(positions), "pw.in")
+            with open(path) as f:
+                cards = re.findall(r"^(CELL_PARAMETERS|ATOMIC_POSITIONS)", f.read(), re.M)
+            assert cards == (["ATOMIC_POSITIONS", "CELL_PARAMETERS"] if positions else [])
+            assert (_parse_pw_in(path)["sites"] is None) != positions
 
     def test_gamma_only_kpoints(self):
         o2 = Structure(Lattice.cubic(15), ["O", "O"], [[0, 0, 0], [0.08, 0, 0]])
@@ -525,12 +617,14 @@ class EspressoInputsTestCase(unittest.TestCase):
         )
         defect = bulk.copy()
         defect.remove_sites([len(defect) - 1])  # v_O; odd number of electrons in the +1 charge state
-        for soc in [False, True]:
-            relax_set = DefectRelaxSetQE(defect, charge_state=1, soc=soc, bulk_supercell=bulk)
+        for soc, use_hse in [(False, False), (False, True), (True, False), (True, True)]:
+            relax_set = DefectRelaxSet(
+                defect, charge_state=1, soc=soc, bulk_supercell=bulk, use_hse=use_hse
+            )
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 written = relax_set.write_all(
-                    os.path.join(self.tmpdir, f"v_O_{soc}"), gamma=True, bulk=True
+                    os.path.join(self.tmpdir, f"v_O_{soc}_{use_hse}"), gamma=True, bulk=True
                 )
             parsed = {
                 (stage, kind): _parse_pw_in(path)
@@ -540,14 +634,132 @@ class EspressoInputsTestCase(unittest.TestCase):
             assert ("espresso_ncl", "defect") in parsed if soc else ("espresso_std", "defect") in parsed
             for (stage, kind), pw_in in parsed.items():
                 system = pw_in["system"]
+                assert system["nosym"] == ".true."  # no symmetry for defect (& bulk) supercells
+                # relaxed to forces below 0.01 eV/Å (as for VASP/GPAW):
+                force_threshold = float(pw_in["control"]["forc_conv_thr"]) * Ry_to_eV / bohr_to_angstrom
+                assert force_threshold == pytest.approx(0.01, rel=1e-3)
+                assert (system.get("input_dft") == "'HSE'") == use_hse  # same functional for all stages
+                # (costly, and restricted) exact-exchange stresses not calculated (all fixed cell here):
+                assert pw_in["control"]["tstress"] == (".false." if use_hse else ".true.")
                 assert system["occupations"] == "'smearing'"
                 assert float(system["degauss"]) == pytest.approx(0.05 / Ry_to_eV, abs=1e-5)
-                if stage == "espresso_ncl":
+                assert pw_in["species"] == ["O", "Mg"]  # same labels for all stages (for the positions)
+                if stage == "espresso_ncl":  # single-point, on the relaxed structure (to be added):
                     assert system["noncolin"] == ".true."
+                    assert pw_in["control"]["calculation"] == "'scf'"
+                    assert (pw_in["sites"] is None) == (kind == "defect")
                 else:  # only ``espresso_ncl`` is SOC; collinear, with the spin state set by the parity
                     assert "noncolin" not in system
                     assert system["tot_magnetization"] == ("0" if kind == "bulk" else "1")
+                    assert pw_in["control"]["calculation"] == ("'scf'" if kind == "bulk" else "'relax'")
+                    assert len(pw_in["sites"]) == int(system["nat"])
             assert parsed["espresso_gamma", "defect"]["k_points"].split()[:2] == ["K_POINTS", "{gamma}"]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            written = relax_set.write_all(os.path.join(self.tmpdir, "ncl"), positions=True)
+        # unperturbed structure, as single-point calculations are never rattled (unlike relaxations):
+        np.testing.assert_allclose(
+            _parse_pw_in(written["espresso_ncl"]["defect"])["coords"], defect.cart_coords, atol=1e-8
+        )
+        assert not np.allclose(
+            _parse_pw_in(written["espresso_std"]["defect"])["coords"], defect.cart_coords, atol=1e-3
+        )
+        # ...including relaxations limited to a single step (``nstep <= 1``):
+        for nstep, singlepoint in [(1, True), (2, False)]:
+            one_step = DefectRelaxSet(defect, charge_state=1, user_control_settings={"nstep": nstep})
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                written = one_step.write_std(os.path.join(self.tmpdir, f"nstep_{nstep}"))
+            coords = _parse_pw_in(written["defect"])["coords"]
+            assert np.allclose(coords, defect.cart_coords, atol=1e-8) == singlepoint
+
+        # not spin-polarised (``starting_magnetization=None``); no ``magmom`` seeds for the SOC stage
+        # either, so the same species labels as for the relaxation (for adding its relaxed positions):
+        afm_set = DefectRelaxSet(self.afm, charge_state=0, soc=True, starting_magnetization=None)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            written = afm_set.write_all(os.path.join(self.tmpdir, "afm"))
+        std, ncl = (_parse_pw_in(written[stage]["defect"]) for stage in ("espresso_std", "espresso_ncl"))
+        assert std["species"] == ncl["species"] == ["O", "Fe"]
+        assert "nspin" not in std["system"]
+        assert {v for k, v in ncl["system"].items() if k.startswith("starting_magnetization")} == {"0.0"}
+
+        # defect structures rattled by default (as for VASP), but not the bulk; else identical inputs:
+        relax_set = DefectRelaxSet(defect, charge_state=1, soc=True, bulk_supercell=bulk, use_hse=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            rattled, unrattled = (
+                {
+                    (stage, kind): _parse_pw_in(path)
+                    for stage, paths in relax_set.write_all(
+                        os.path.join(self.tmpdir, f"rattle_{rattle}"), gamma=True, bulk="all", **kwargs
+                    ).items()
+                    for kind, path in paths.items()
+                }
+                for rattle, kwargs in ((True, {}), (False, {"rattle": False}))
+            )
+        assert rattled.keys() == unrattled.keys()
+        for key, pw_in in rattled.items():
+            reference = unrattled[key]
+            assert all(
+                pw_in[k] == reference[k]
+                for k in ("control", "system", "species", "sites", "cell", "k_points")
+            )
+            if pw_in["coords"] is None:  # (``espresso_ncl``, written without the structure)
+                assert key == ("espresso_ncl", "defect")
+            elif key[1] == "bulk":
+                assert np.allclose(pw_in["coords"], reference["coords"])
+            else:  # same rattled structure for each stage
+                displacements = np.linalg.norm(pw_in["coords"] - reference["coords"], axis=1)
+                assert 0 < displacements.mean() < 0.5
+                assert np.allclose(pw_in["coords"], rattled["espresso_std", "defect"]["coords"])
+        np.testing.assert_allclose(
+            unrattled["espresso_std", "defect"]["coords"], defect.cart_coords, atol=1e-8
+        )
+
+        semi_local = DefectRelaxSet(defect, charge_state=1).espresso_std  # the default
+        assert "input_dft" not in self._write(semi_local, "semi_local")["system"]
+
+        # ``pw.x`` doesn't support hybrid DFT relaxations with the default ultrasoft/PAW pseudopotentials:
+        _warn_if_hybrid_with_us_paw_pseudos.cache_clear()
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            relax_set.espresso_std.write_input(os.path.join(self.tmpdir, "warn"))  # (``use_hse=True``)
+            semi_local.write_input(os.path.join(self.tmpdir, "no_warn"))  # (not hybrid, so no warning)
+        assert sum("does not support relaxations" in str(warning.message) for warning in w) == 1
+
+    @requires_api_key
+    def test_competing_phase_functional_defaults(self):
+        """
+        The functional of the pseudopotentials by default for the competing
+        phase calculations (as for defects), or HSE06 for the relaxations and
+        single-points with ``use_hse=True``.
+        """
+        competing_phases = CompetingPhases("MgO", calculator="espresso", api_key=api_key)
+        for func, kwargs in (
+            ("get_kpoint_convergence_sets", {}),
+            ("get_relaxation_sets", {}),
+            ("get_singlepoint_sets", {}),
+            ("get_relaxation_sets", {"use_hse": True}),
+            ("get_singlepoint_sets", {"use_hse": True}),
+        ):
+            for i, dict_set in enumerate(getattr(competing_phases, func)(**kwargs).values()):
+                written = self._write(dict_set, f"{func}_{i}_{bool(kwargs)}")  # (validated on parsing)
+                assert ("input_dft" in written["system"]) == bool(kwargs)
+
+        # single-points written without the structures by default (to be added from the relaxations):
+        for positions in (False, True):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                written = competing_phases.write_singlepoint_files(
+                    output_path=os.path.join(self.tmpdir, f"sp_{positions}"),
+                    **({"positions": True} if positions else {}),
+                )
+            for folder in written:
+                with open(os.path.join(folder, "pw.in")) as f:
+                    cards = re.findall(r"^(CELL_PARAMETERS|ATOMIC_POSITIONS)", f.read(), re.M)
+                assert len(cards) == 2 * positions
 
 
 class EspressoOutputsLabelsTestCase(unittest.TestCase):

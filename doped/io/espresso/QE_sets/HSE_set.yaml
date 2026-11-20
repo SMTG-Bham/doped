@@ -6,6 +6,7 @@
 # merged into it at runtime.
 control:
   calculation: vc-relax
+  forc_conv_thr: 3.89e-4  # Ry/Bohr; = 0.01 eV/Å (as for VASP/GPAW)
   tprnfor: true
   tstress: true
 system:
