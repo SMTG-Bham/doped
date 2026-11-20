@@ -264,6 +264,11 @@ class SerializedBackendTestCase(unittest.TestCase):
         assert np.isclose(entry.get_ediff(), reference_entry.get_ediff(), atol=1e-6)
         assert entry.degeneracy_factors["spin degeneracy"] == 1
 
+        # the calculator is passed on to ``DefectThermodynamics`` (for bulk DOS parsing) and serialised:
+        thermo = dp.get_defect_thermodynamics()
+        assert thermo.calculator == "serialized"
+        assert type(thermo).from_dict(thermo.as_dict()).calculator == "serialized"
+
 
 class DeprecationShimsTestCase(unittest.TestCase):
     def test_doped_vasp_shim(self):

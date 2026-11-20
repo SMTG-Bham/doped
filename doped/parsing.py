@@ -1351,6 +1351,7 @@ class DefectsParser:
                 "`DefectsParser.defect_dict`."
             )
 
+        kwargs.setdefault("calculator", self.calculator)
         return DefectThermodynamics(
             list(self.defect_dict.values()),
             chempots=chempots,
