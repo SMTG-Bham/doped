@@ -18,7 +18,7 @@ from math import erfc, exp
 
 import numpy as np
 
-from doped.utils.parsing import _get_bulk_supercell
+from doped.core import _get_bulk_supercell
 
 
 def get_murphy_image_charge_correction(

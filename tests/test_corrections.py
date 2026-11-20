@@ -21,9 +21,9 @@ from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.vasp.outputs import Outcar
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
 
-from doped.analysis import DefectParser, DefectsParser
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
+from doped.parsing import DefectParser, DefectsParser
 from doped.utils.supercells import _get_unwrapped_complex_frac_coords
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
@@ -52,8 +52,8 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
         }
         # load necessary parameters for defect_entry to make use of Freysoldt and Kumagai corrections
         metadata = {
-            "bulk_locpot_dict": bldata,
-            "defect_locpot_dict": dldata,
+            "bulk_planar_averaged_potentials": bldata,
+            "defect_planar_averaged_potentials": dldata,
             "defect_frac_sc_coords": struct.sites[0].frac_coords,
         }
         bulk_atomic_site_averages, defect_atomic_site_averages = [], []
@@ -506,12 +506,13 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
 
     def test_kumagai_correction_w_outcar_objects(self):
         """
-        Test that ``Outcar`` objects can be used as the ``defect_outcar`` and
-        ``bulk_outcar`` inputs, giving the same result as their file paths.
+        Test that ``Outcar`` objects can be used as the
+        ``defect_site_potentials`` and ``bulk_site_potentials`` inputs, giving
+        the same result as their file paths.
         """
         outcar_paths = {
-            "defect_outcar": f"{self.CdTe_example_dir}/Int_Te_3_2/vasp_ncl/OUTCAR.gz",
-            "bulk_outcar": f"{self.CdTe_bulk_data_dir}/OUTCAR.gz",
+            "defect_site_potentials": f"{self.CdTe_example_dir}/Int_Te_3_2/vasp_ncl/OUTCAR.gz",
+            "bulk_site_potentials": f"{self.CdTe_bulk_data_dir}/OUTCAR.gz",
         }
         corr_from_paths = get_kumagai_correction(self.Te_i_2_ent, verbose=False, **outcar_paths)
         corr_from_objs = get_kumagai_correction(

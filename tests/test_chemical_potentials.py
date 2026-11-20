@@ -24,6 +24,7 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import Potcar
+from pymatgen.io.vasp.outputs import Vasprun
 from test_utils import (
     EXAMPLE_DIR,
     _potcars_available,
@@ -37,11 +38,13 @@ from test_utils import (
     module_path,
     plot_chempot_heatmap_and_test_no_warnings,
     requires_api_key,
+    vasp_data_dir,
 )
 
 from doped import chemical_potentials
+from doped.io.vasp.inputs import DopedDictSet, _set_spin_polarisation
+from doped.io.vasp.outputs import _find_calc_outputs, _get_calc_files_df, get_competing_phase_entry
 from doped.utils import warn_once
-from doped.utils.parsing import _find_calc_outputs, _get_calc_files_df
 from doped.utils.symmetry import get_primitive_structure
 
 
@@ -701,7 +704,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         dict_sets = cp.write_kpoint_convergence_files(potcar_spec=True)
         assert dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert len(cp.metallic_entries) == 6
         assert cp.metallic_entries[0].data["summary"]["band_gap"] == 0
         assert not cp.nonmetallic_entries[0].data["molecule"]
@@ -767,7 +770,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         dict_sets = cp.write_relaxation_files(potcar_spec=True)
         assert len(dict_sets) == len(cp)  # one per entry
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert len(cp.nonmetallic_entries) == 7
         assert len(cp.metallic_entries) == 6
         # metals use Methfessel-Paxton smearing for relaxations (ISMEAR = 2), non-metals Gaussian (0):
@@ -897,7 +900,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         dict_sets = cp.get_kpoint_convergence_sets()
         assert dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert not os.path.exists("CompetingPhases")
 
     def test_get_relaxation_sets(self):
@@ -905,7 +908,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets = cp.get_relaxation_sets()
         assert dict_sets
         assert len(dict_sets) == len(cp)
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert not os.path.exists("CompetingPhases")
 
     def test_magnetic_competing_phases(self):
@@ -1010,7 +1013,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets = cp.get_singlepoint_sets()
         assert dict_sets
         assert len(dict_sets) == len(cp)
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
         assert not os.path.exists("CompetingPhases")
 
         # check SOC defaults on for ZrO2 (Zr Z=40 >= 31):
@@ -1125,7 +1128,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         # ZrO2 defaults to SOC (Zr Z=40)
         dict_sets = cp.write_singlepoint_files(potcar_spec=True)
         assert len(dict_sets) == len(cp)
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in dict_sets.values())
 
         ZrO2_soc_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint/"
         assert os.path.exists(ZrO2_soc_folder)
@@ -1208,9 +1211,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert ds_custom.incar["ALGO"] == "Normal"
         assert ds_custom.incar["NSW"] == 0  # singlepoint settings still applied
 
-        # ``poscar=True`` explicitly writes POSCAR files
+        # ``positions=True`` explicitly writes POSCAR files
         if_present_rm("CompetingPhases")
-        cp.write_singlepoint_files(soc=False, potcar_spec=True, poscar=True)
+        cp.write_singlepoint_files(soc=False, potcar_spec=True, positions=True)
         assert os.path.isfile(f"{ZrO2_sp_folder}/POSCAR")
         assert os.path.isfile(f"{ZrO2_sp_folder}/INCAR")
         assert os.path.isfile(f"{ZrO2_sp_folder}/KPOINTS")
@@ -1600,8 +1603,8 @@ class CompetingPhaseStructureTestCase(unittest.TestCase):
     """
     Offline tests for the magnetism-aware primitive cells
     (``_get_competing_phase_structure``) and corresponding spin polarisation
-    settings (``CompetingPhases._set_spin_polarisation``) used for competing
-    phase calculation inputs (live behaviour is tested in
+    settings (``doped.io.vasp.inputs._set_spin_polarisation``) used for
+    competing phase calculation inputs (live behaviour is tested in
     ``CompetingPhasesTestCase.test_magnetic_competing_phases``).
     """
 
@@ -1691,7 +1694,7 @@ class CompetingPhaseStructureTestCase(unittest.TestCase):
                 summary["total_magnetization_normalized_formula_units"] = total_mag / n_fu
             entry = ComputedStructureEntry(structure, -1, data={"summary": summary})
             incar_settings = user_incar_settings.copy()
-            chemical_potentials.CompetingPhases._set_spin_polarisation(
+            _set_spin_polarisation(
                 incar_settings,
                 user_incar_settings,
                 entry,
@@ -1701,7 +1704,7 @@ class CompetingPhaseStructureTestCase(unittest.TestCase):
 
         # AFM: no net magnetization, but spin polarisation & MAGMOMs needed for the magnetic ordering
         assert spin_settings(self.afm_feo, 0) == {"ISPIN": 2, "MAGMOM": {}}
-        dict_set = chemical_potentials.DopedDictSet(  # MAGMOMs are taken from the (cleaned) site magmoms
+        dict_set = DopedDictSet(  # MAGMOMs are taken from the (cleaned) site magmoms
             chemical_potentials._get_competing_phase_structure(self.afm_feo),
             user_incar_settings={"ISPIN": 2, "MAGMOM": {}},
             user_kpoints_settings={"reciprocal_density": 64},
@@ -1712,7 +1715,7 @@ class CompetingPhaseStructureTestCase(unittest.TestCase):
 
         # non-collinear (SOC) calculations: collinear moments along z:
         assert spin_settings(self.afm_feo, 0, LSORBIT=True) == {"ISPIN": 2, "LSORBIT": True, "MAGMOM": {}}
-        soc_dict_set = chemical_potentials.DopedDictSet(
+        soc_dict_set = DopedDictSet(
             dict_set.structure,
             user_incar_settings={"ISPIN": 2, "MAGMOM": {}, "LSORBIT": True},
             user_kpoints_settings={"reciprocal_density": 64},
@@ -1878,7 +1881,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             extrinsic_only=True,
         )
         assert conv_dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in conv_dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in conv_dict_sets.values())
         assert all(
             any(f"/{name}/" in f"/{key}/" for name in extrinsic_folder_names) for key in conv_dict_sets
         )
@@ -1896,7 +1899,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             extrinsic_only=True,
         )
         assert std_dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in std_dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in std_dict_sets.values())
         assert all(
             any(f"/{name}/" in f"/{key}/" for name in extrinsic_folder_names) for key in std_dict_sets
         )
@@ -1915,7 +1918,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             extrinsic_only=True,
         )
         assert sp_dict_sets
-        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in sp_dict_sets.values())
+        assert all(isinstance(v, DopedDictSet) for v in sp_dict_sets.values())
         assert all(
             any(f"/{name}/" in f"/{key}/" for name in extrinsic_folder_names) for key in sp_dict_sets
         )
@@ -2257,7 +2260,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         if_present_rm(
             os.path.join(
-                data_dir,
+                vasp_data_dir,
                 "Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/duplicate_for_testing_vasprun.xml.gz",
             )
         )
@@ -2733,7 +2736,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )
         lst_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries=all_paths)
         assert len(lst_cpa.elements) == 2
-        assert len(lst_cpa.vasprun_paths) == 8
+        assert len(lst_cpa.calc_output_paths) == 8
         self._compare_cpas(lst_cpa, cpa)
         self._general_cpa_check(lst_cpa)
 
@@ -2750,7 +2753,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         skip_cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
             chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", entries=entries
         )
-        assert len(skip_cpa.vasprun_paths) == 7
+        assert len(skip_cpa.calc_output_paths) == 7
         assert any(
             "vasprun.xml files could not be found in the following directories, and so they will be "
             f"skipped for parsing:\n{skipped_folder}" in str(warning.message)
@@ -2836,8 +2839,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             cpa, _stdout, w = _run_func_and_capture_stdout_warnings(
                 chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", tmp_dir, subfolder="vasp_ncl"
             )
-            assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
-            assert len(cpa.vasprun_paths) == 3
+            assert set(map(os.path.realpath, cpa.calc_output_paths)) == ncl_paths
+            assert len(cpa.calc_output_paths) == 3
             # the ignored phase folder (no ``vasp_ncl`` subfolder) is warned about:
             assert any(
                 f"vasprun.xml files could not be found in the following directories (in {tmp_dir}), and "
@@ -2853,14 +2856,14 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir)  # subfolder=None by default
-            assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
-            assert len(cpa.vasprun_paths) == 3
+            assert set(map(os.path.realpath, cpa.calc_output_paths)) == ncl_paths
+            assert len(cpa.calc_output_paths) == 3
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder=None)
-            assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
-            assert len(cpa.vasprun_paths) == 3
+            assert set(map(os.path.realpath, cpa.calc_output_paths)) == ncl_paths
+            assert len(cpa.calc_output_paths) == 3
 
     def test_subfolder_not_found_warning_and_fallback(self):
         """
@@ -2881,7 +2884,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder="vasp_ncl")
             _print_warning_info(w)
             assert any("No vasprun.xml files found in 'vasp_ncl'" in str(wn.message) for wn in w)
-            assert len(cpa.vasprun_paths) == 3
+            assert len(cpa.calc_output_paths) == 3
 
     def test_no_subfolder_flat_layout(self):
         """
@@ -2899,12 +2902,12 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )
 
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir)
-            assert len(cpa.vasprun_paths) == 3
+            assert len(cpa.calc_output_paths) == 3
 
     def test_find_calc_outputs_shared_helper(self):
         """
         Direct tests for the shared ``_find_calc_outputs`` and
-        ``_get_calc_files_df`` helpers in ``doped.utils.parsing``.
+        ``_get_calc_files_df`` helpers in ``doped.io.vasp.outputs``.
         """
         from pathlib import Path
 
@@ -2950,8 +2953,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             assert _find_calc_outputs(tmp_dir)[2] == "SinglePoint"  # on-disk name, not lower-cased
             for subfolder in [None, "singlepoint"]:  # auto-detected and explicit (case-insensitive)
                 cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder=subfolder)
-                assert len(cpa.vasprun_paths) == 3  # 6 if falling back to all outputs
-                assert all("SinglePoint" in path for path in cpa.vasprun_paths)
+                assert len(cpa.calc_output_paths) == 3  # 6 if falling back to all outputs
+                assert all("SinglePoint" in path for path in cpa.calc_output_paths)
 
     def test_latex_table(self):
         cpa = self.ZrO2_cpa
@@ -3065,7 +3068,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "chempots",
             "extrinsic_elements",
             "elements",
-            "vasprun_paths",
+            "calc_output_paths",
             "parsed_folders",
             "unstable_host",
             "bulk_entry",
@@ -3082,7 +3085,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )
             elif attr == "entries":
                 assert cleanse_entries(cpa_a.entries) == cleanse_entries(cpa_b.entries)
-            elif attr in ("vasprun_paths", "parsed_folders"):
+            elif attr in ("calc_output_paths", "parsed_folders"):
                 assert sorted(getattr(cpa_a, attr)) == sorted(getattr(cpa_b, attr))
             else:
                 assert getattr(cpa_a, attr) == getattr(cpa_b, attr)
@@ -3212,6 +3215,94 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         )
         self._general_cpa_check(MgO_cpa)
 
+    def test_competing_phase_pressures(self):
+        """
+        Test that the final pressures of VASP competing phase calculations are
+        parsed (when the stress was calculated), that large residual pressures
+        are warned about (outside asymmetric bounds, sorted by magnitude, and
+        only with ``check_compatibility=True``).
+        """
+
+        def first_ionic_step_entry(path, **data):  # real phase at its unrelaxed (MP) lattice
+            first_step = Vasprun(path, parse_dos=False, parse_eigen=False).ionic_steps[0]
+            return ComputedStructureEntry(
+                first_step["structure"],
+                first_step["electronic_steps"][-1]["e_0_energy"],  # (ionic-step value can be 0)
+                data={"pressure": float(np.trace(first_step["stress"]) / 30), **data},  # GPa
+            )
+
+        zro2_path = f"{self.ZrO2_path}/ZrO2_EaH_0.0/vasp_std/vasprun.xml.gz"
+        ytos_path = f"{EXAMPLE_DIR}/YTOS/Bulk/vasprun.xml.gz"  # (ENCUT = 0.75 x ENMAX; large Pulay stress)
+        zro2, ytos = (get_competing_phase_entry(path) for path in [zro2_path, ytos_path])
+        for entry, path in [(zro2, zro2_path), (ytos, ytos_path)]:
+            vasprun = Vasprun(path, parse_dos=False, parse_eigen=False)
+            assert entry.data["pressure"] == pytest.approx(
+                np.trace(vasprun.ionic_steps[-1]["stress"]) / 30
+            )
+        assert abs(zro2.data["pressure"]) < 0.1  # relaxed (ISIF = 3)
+        assert ytos.data["pressure"] == pytest.approx(-17.37, abs=0.01)
+
+        # no stress calculated (hybrid DFT calculation with ISIF unset, i.e. ISIF = 0), so no pressure:
+        cdte = get_competing_phase_entry(f"{vasp_data_dir}/CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
+        assert "pressure" not in cdte.data
+
+        # first ionic steps of real relaxations, at their unrelaxed lattices; ZrO2 without a folder:
+        la_path = f"{EXAMPLE_DIR}/La_ZrO2_CompetingPhases/La_EaH_0.0/vasp_std/vasprun.xml.gz"
+        la = first_ionic_step_entry(la_path, folder="La_EaH_0.0")
+        mgo = first_ionic_step_entry(
+            f"{EXAMPLE_DIR}/MgO/CompetingPhases/MgO_Fm-3m_EaH_0/vasp_std/vasprun.xml.gz", folder="MgO"
+        )
+        polymorph = first_ionic_step_entry(f"{self.ZrO2_path}/ZrO2_EaH_0.009/vasp_std/vasprun.xml.gz")
+        assert polymorph.data["pressure"] < -5
+        assert mgo.data["pressure"] == pytest.approx(-0.99, abs=0.01)  # within the bounds
+        # and just inside (MgO after a lower-cutoff relaxation, La2O3) and outside (Zr3O) the bounds:
+        mgo_tight = first_ionic_step_entry(
+            f"{EXAMPLE_DIR}/MgO/Dielectric/Ionic/Relax_tight/vasprun.xml.gz"
+        )
+        la2o3_path = f"{EXAMPLE_DIR}/La_ZrO2_CompetingPhases/La2O3_EaH_0.0/vasp_std/vasprun.xml.gz"
+        la2o3 = first_ionic_step_entry(la2o3_path)
+        zr3o_path = f"{self.ZrO2_path}/Zr3O_EaH_0.004/vasp_std/vasprun.xml.gz"
+        zr3o = first_ionic_step_entry(zr3o_path, folder="Zr3O_EaH_0.004")
+        assert mgo_tight.data["pressure"] == pytest.approx(0.97, abs=0.01)
+        assert la2o3.data["pressure"] == pytest.approx(-2.10, abs=0.01)
+        assert zr3o.data["pressure"] == pytest.approx(-3.46, abs=0.01)
+
+        _, _, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials._check_entry_pressures,
+            [mgo, mgo_tight, la, la2o3, zro2, cdte, polymorph, zr3o, ytos],
+        )
+        assert len(w) == 1
+        message = str(w[0].message)
+        min_pressure, max_pressure = chemical_potentials._PRESSURE_RANGE_GPA
+        assert message.startswith(
+            f"There are large final pressures (P < {min_pressure} GPa or P > {max_pressure} GPa) for"
+        )
+        assert message.split("(positive = compressive stress):\n")[1].splitlines() == [  # sorted by |P|
+            f"{ytos.name} ({ytos.data['folder']}): -17.37 GPa",
+            f"ZrO2: {polymorph.data['pressure']:+.2f} GPa",
+            "Zr3O (Zr3O_EaH_0.004): -3.46 GPa",
+            "La (La_EaH_0.0): +1.21 GPa",
+        ]
+
+        # pressures parsed for all phases in a real analysis, with no warnings for these relaxed phases:
+        cpa, _, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhasesAnalyzer, "ZrO2", self.ZrO2_path
+        )
+        assert not w
+        assert all(abs(entry.data["pressure"]) < 0.1 for entry in cpa.entries)
+
+        # but warned about in the analysis for the polymorph at its unrelaxed lattice (with checks on):
+        entries = [e for e in cpa.entries if "ZrO2_EaH_0.009" not in e.data["folder"]] + [polymorph]
+        for check_compatibility in [True, False]:
+            _, _, w = _run_func_and_capture_stdout_warnings(
+                chemical_potentials.CompetingPhasesAnalyzer,
+                "ZrO2",
+                entries=entries,
+                check_compatibility=check_compatibility,
+            )
+            expected = [f"ZrO2: {polymorph.data['pressure']:+.2f} GPa"] if check_compatibility else []
+            assert [str(x.message).split("(positive = compressive stress):\n")[1] for x in w] == expected
+
     def test_mismatching_potcar_warnings(self):
         """
         Test warnings for mismatching POTCAR settings.
@@ -3274,22 +3365,22 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         for many warnings/issues to be handled).
         """
         shutil.copyfile(
-            f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/vasprun.xml.gz",
-            f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/duplicate_for_testing_vasprun.xml.gz",
+            f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/vasprun.xml.gz",
+            f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/duplicate_for_testing_vasprun.xml.gz",
         )
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer(
-                "Cs2AgBiBr6", f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases"
+                "Cs2AgBiBr6", f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases"
             )
         _print_warning_info(w)  # for debugging
         for expected_warning in [
             (
                 f"Multiple `vasprun.xml` files found in competing phase directory: "
-                f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0"
+                f"{vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0"
             ),
             (
-                f"vasprun.xml file at {data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
-                f" is corrupted/incomplete. Attempting to continue parsing but may fail!"
+                f"vasprun.xml file at {vasp_data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/"
+                f"vasprun.xml.gz is corrupted/incomplete. Attempting to continue parsing but may fail!"
             ),
             (
                 "There are mismatching INCAR tags for (some of) your competing phases calculations which "
@@ -3323,8 +3414,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             ),
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
             (
-                "In general, the same POTCAR settings should be used in all final calculations for these "
-                "tags which can affect energies!"
+                "In general, the same POTCAR settings should be used for all calculations for accurate "
+                "results!"
             ),
             (
                 "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull "

@@ -3494,7 +3494,7 @@
             "calculation_metadata": {
                 "band_gap": 1.4734000000000007,
                 "bulk site symmetry": "Cs",
-                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
+                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/bulk",
                 "bulk_site": {
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
@@ -3625,7 +3625,7 @@
                     ],
                     "dtype": "float64"
                 },
-                "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_1",
+                "defect_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/defect/O_1",
                 "defect_site_index": 0,
                 "defect_site_potentials": {
                     "@class": "array",
@@ -40608,7 +40608,7 @@
             "calculation_metadata": {
                 "band_gap": 1.4734000000000007,
                 "bulk site symmetry": "Cs",
-                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
+                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/bulk",
                 "bulk_site": {
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
@@ -40739,7 +40739,7 @@
                     ],
                     "dtype": "float64"
                 },
-                "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_2",
+                "defect_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/defect/O_2",
                 "defect_site_index": 0,
                 "defect_site_potentials": {
                     "@class": "array",
@@ -77782,7 +77782,7 @@
             "calculation_metadata": {
                 "band_gap": 1.4734000000000007,
                 "bulk site symmetry": "Cs",
-                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
+                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/bulk",
                 "bulk_site": {
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
@@ -77913,7 +77913,7 @@
                     ],
                     "dtype": "float64"
                 },
-                "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_-1",
+                "defect_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/defect/O_-1",
                 "defect_site_index": 0,
                 "defect_site_potentials": {
                     "@class": "array",
@@ -114896,7 +114896,7 @@
             "calculation_metadata": {
                 "band_gap": 1.4734000000000007,
                 "bulk site symmetry": "Cs",
-                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
+                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/bulk",
                 "bulk_site": {
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
@@ -115027,7 +115027,7 @@
                     ],
                     "dtype": "float64"
                 },
-                "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_-2",
+                "defect_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/defect/O_-2",
                 "defect_site_index": 0,
                 "defect_site_potentials": {
                     "@class": "array",
@@ -152005,7 +152005,7 @@
             "calculation_metadata": {
                 "band_gap": 1.4734000000000007,
                 "bulk site symmetry": "Cs",
-                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/bulk",
+                "bulk_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/bulk",
                 "bulk_site": {
                     "@class": "PeriodicSite",
                     "@module": "pymatgen.core.sites",
@@ -152069,7 +152069,7 @@
                     ],
                     "dtype": "float64"
                 },
-                "defect_path": "/Users/kavanase/Packages/doped/tests/data/Sb2Se3/defect/O_0",
+                "defect_path": "/Users/kavanase/Packages/doped/tests/data/vasp/Sb2Se3/defect/O_0",
                 "defect_site_index": 0,
                 "dielectric": {
                     "@class": "array",

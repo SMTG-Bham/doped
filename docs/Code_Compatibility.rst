@@ -18,17 +18,16 @@ Python Package Compatibility
 Energy Calculator (DFT/ML) Compatibility
 ----------------------------------------
 The vast majority of the code in :code:`doped` is agnostic to the underlying energy calculator / electronic
-structure (e.g. DFT/ML) code used to calculate the raw energies of defect supercells. However, as
-demonstrated in the tutorials, direct I/O support is currently provided for the ``VASP`` DFT code, while
-structure files for essentially all QM/DFT/ML codes can be easily generated using the
+structure (e.g. DFT/ML) code used to calculate the raw energies of defect supercells. Direct I/O support
+is currently provided for the codes listed on the :doc:`Supported_Codes` page (which summarises the
+differences in functionality and default settings between them), with ``VASP`` (as used in the tutorials)
+being the default. Structure files for essentially all other QM/DFT/ML codes can be easily generated using the
 :meth:`~pymatgen.core.structure.IStructure.to()` method for ``pymatgen`` 
 |Structure|\s or `ase I/O methods <https://wiki.fysik.dtu.dk/ase/ase/io/io.html#ase.io.write>`__, with the
 |Structure| objects used for crystal structures in ``doped``.
 
-Direct I/O capabilities for other codes is a goal (such as ``Quantum Espresso``, ``CP2K`` and/or
-``FHI-aims``), accompanied by an update publication, so please get in touch with the developers if you
-would be interested in contributing to this effort! Input file generation and structure/energy parsing
-should be straightforward with the ``doped``/``pymatgen``/``ase`` APIs, while finite-size charge
-corrections would be the main challenge for parsing & computing.
+Direct I/O capabilities for other codes is a goal (such as ``CP2K``), accompanied by an update publication, so please
+get in touch with the developers if you would be interested in contributing to this effort!
+See the :doc:`Adding_Calculators` page for how to add support for another code.
 
 Please let us know if you have any issues with compatibility!
