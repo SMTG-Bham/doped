@@ -1290,8 +1290,8 @@ class DefectRelaxSetTest(unittest.TestCase):
             drs.write_gam("test_dir", potcar_spec=True, rattle=False)
             unperturbed = Structure.from_file("test_dir/vasp_gam/POSCAR")
 
-            # single-point calculations are never rattled (a ``rattle`` keyword is ignored):
-            drs.write_ncl("test_dir", potcar_spec=True, positions=True, rattle=True)
+            # single-point calculations are never rattled:
+            drs.write_ncl("test_dir", potcar_spec=True, positions=True)
             assert Structure.from_file("test_dir/vasp_ncl/POSCAR") == unperturbed
             # ...i.e. with ``NSW <= 1`` or ``IBRION = -1`` (regardless of ``NSW``):
             for incar_settings, singlepoint in [

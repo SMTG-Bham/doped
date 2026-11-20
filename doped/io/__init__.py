@@ -76,10 +76,13 @@ def get_calculation_outputs(path: PathLike, calculator: str = "vasp", **kwargs) 
     parser for the given ``calculator``.
 
     Args:
-        path (PathLike): Path to the calculation directory.
-        calculator (str): Name of the calculator used (matching a
-            ``doped.io.<calculator>`` subpackage). Default: "vasp".
-        **kwargs: Additional keyword arguments to pass to the calculator's
+        path (PathLike):
+            Path to the calculation directory.
+        calculator (str):
+            Name of the calculator used (matching a ``doped.io.<calculator>``
+            subpackage). Default: "vasp".
+        **kwargs:
+            Additional keyword arguments to pass to the calculator's
             ``get_calculation_outputs()`` function.
 
     Returns:
