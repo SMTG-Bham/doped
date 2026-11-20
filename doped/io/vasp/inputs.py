@@ -33,7 +33,12 @@ from doped.core import (
     _get_defect_supercell_frac_coords,
 )
 from doped.generation import DefectsGenerator, _custom_formatwarning, get_defect_name_from_entry
-from doped.io.inputs import DefectsSetBase, _get_bulk_folder_name
+from doped.io.inputs import (
+    DefectsSetBase,
+    _get_bulk_folder_name,
+    _get_competing_phase_magnetization,
+    _get_constrained_total_magnetization,
+)
 from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, _signed_charge, warn_once
 
 if TYPE_CHECKING:
@@ -3401,12 +3406,7 @@ def _set_spin_polarisation(
     See the :ref:`Tips:Magnetization` tips section.
     """
     summary = entry.data.get("summary", {})
-    magnetization = summary.get("total_magnetization")  # of the Materials Project calculation cell
-    if (per_fu := summary.get("total_magnetization_normalized_formula_units")) is not None:
-        magnetization = per_fu * structure.composition.get_reduced_composition_and_factor()[1]
-    elif magnetization is not None and hasattr(entry, "structure"):
-        magnetization *= len(structure) / len(entry.structure)  # scale to the calculation cell
-
+    magnetization = _get_competing_phase_magnetization(entry, structure)
     magmoms = structure.site_properties.get("magmom", [])
     has_magmoms = bool(np.any(magmoms))
     if not has_magmoms and (magnetization is None or magnetization <= 0.1):
@@ -3415,12 +3415,8 @@ def _set_spin_polarisation(
     incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
     if has_magmoms and _parse_incar_value("ISPIN", incar_settings["ISPIN"]) == 2:
         incar_settings.setdefault("MAGMOM", {})  # {}: initialise from the ``magmom`` site properties
-    nupdown = round(magnetization or 0)
-    if has_magmoms and abs(nupdown - sum(magmoms)) > max(1, 0.3 * nupdown):
-        # MP magnetization inconsistent with the site moments (e.g. for user-supplied host structures
-        # with different magnetic ordering; tolerance for the site-projected moments, which can
-        # differ by up to ~30% from the integrated total magnetization), so don't constrain it:
-        nupdown = 0
+    # (``None`` if the MP magnetization is inconsistent with the site moments, so don't constrain it):
+    nupdown = _get_constrained_total_magnetization(magnetization, magmoms) or 0
     if "NUPDOWN" not in incar_settings and summary.get("band_gap") != 0 and nupdown > 0:
         incar_settings["NUPDOWN"] = nupdown
 
