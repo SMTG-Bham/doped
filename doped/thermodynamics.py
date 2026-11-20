@@ -884,6 +884,7 @@ class DefectThermodynamics(MSONable):
         check_compatibility: bool = True,
         bulk_dos: FermiDos | None = None,
         skip_dos_check: bool = False,
+        calculator: str = "vasp",
     ):
         r"""
         Create a |DefectThermodynamics| object, which can be used to analyse
@@ -1002,6 +1003,12 @@ class DefectThermodynamics(MSONable):
                 the defect entries VBM by >0.05 eV. Should only be used when
                 the reason for this difference is known/acceptable. Default is
                 ``False`` (don't skip check).
+            calculator (str):
+                Name of the calculator used for the bulk DOS calculation
+                (matching a ``doped.io.<calculator>`` parsing backend), used
+                when ``bulk_dos`` is given as a path or calculator-native
+                object needing parsing. Not needed if ``bulk_dos`` is supplied
+                as a ``FermiDos``. Default: "vasp".
 
         Key Attributes:
             vbm (float):
@@ -1021,6 +1028,10 @@ class DefectThermodynamics(MSONable):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
                 the reason for this difference is known/acceptable.
+            calculator (str):
+                Name of the calculator used for the bulk DOS calculation, used
+                to parse ``bulk_dos`` inputs which are paths / calculator-native
+                objects.
             clustered_defect_entries (dict[int, set[|DefectEntry|]]):
                 Dictionary of defect entries clustered according to the
                 ``dist_tol`` distance tolerance (between symmetry-equivalent
@@ -1103,6 +1114,7 @@ class DefectThermodynamics(MSONable):
         self.defect_entries = defect_entries
 
         self.skip_dos_check = skip_dos_check
+        self.calculator = calculator
         self.bulk_dos = bulk_dos  # use setter method, needs to be after setting VBM
 
         bulk_entry = next(iter(self.defect_entries.values())).bulk_entry
@@ -1160,6 +1172,7 @@ class DefectThermodynamics(MSONable):
             "bulk_formula": self.bulk_formula,
             "bulk_dos": self.bulk_dos,
             "skip_dos_check": self.skip_dos_check,
+            "calculator": self.calculator,
         }
 
     @classmethod
@@ -1208,6 +1221,7 @@ class DefectThermodynamics(MSONable):
                     else d.get("bulk_dos")
                 ),
                 skip_dos_check=d.get("skip_dos_check", False),
+                calculator=d.get("calculator", "vasp"),
             )
 
     def to_json(self, filename: PathLike | None = None):
@@ -4077,10 +4091,12 @@ class DefectThermodynamics(MSONable):
         self,
         bulk_dos: PathLike | FermiDos | Any = None,
         skip_dos_check: bool = False,
-        calculator: str = "vasp",
+        calculator: str | None = None,
     ) -> FermiDos | None:
         if bulk_dos is None:
             return None
+
+        calculator_name: str = calculator or getattr(self, "calculator", None) or "vasp"
 
         if isinstance(bulk_dos, FermiDos):
             if skip_dos_check:  # skip the (~ms-scale) VBM/gap re-determination
@@ -4092,7 +4108,7 @@ class DefectThermodynamics(MSONable):
             fdos_band_gap = fdos.get_gap(tol=1e-4, abs_tol=True)  # rounds the DOS outputs to 4 dp
 
         else:  # path to (or already-parsed) DOS calculation outputs; parse with calculator backend:
-            fdos, fdos_vbm, fdos_band_gap = get_backend(calculator).get_fermi_dos(bulk_dos)
+            fdos, fdos_vbm, fdos_band_gap = get_backend(calculator_name).get_fermi_dos(bulk_dos)
 
         if (
             fdos
