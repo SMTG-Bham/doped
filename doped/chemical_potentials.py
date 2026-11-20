@@ -3614,10 +3614,17 @@ class CompetingPhasesAnalyzer(_EntriesMixin, MSONable):
 
         Directories without one are skipped, with a warning if ``verbose``.
         """
-        output_file = self._backend.CALC_OUTPUT_MASK[0]
+        calc_output_mask = self._backend.CALC_OUTPUT_MASK
+        output_file = calc_output_mask[0]
         skipped_folders = []
         for entry_path in path_list:
-            if str(output_file) in str(entry_path) and not os.path.basename(entry_path).startswith("."):
+            # ``os.path.isdir`` guard because mask entries can be loose (e.g. espresso's ``.xml``), and
+            # so match the path of a *directory* which merely contains a calculation output:
+            if (
+                not os.path.isdir(entry_path)
+                and any(pattern in str(entry_path) for pattern in calc_output_mask)
+                and not os.path.basename(entry_path).startswith(".")
+            ):
                 self.calc_output_paths.append(str(entry_path))
                 continue
 
