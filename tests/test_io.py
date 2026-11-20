@@ -1,8 +1,9 @@
 """
 Tests for the ``doped.io`` calculator input/output framework.
 
-This includes ``CalculationOutputs``, calculator dispatch, and the deprecation
-shims for pre-``doped.io`` import paths.
+This includes ``CalculationOutputs``, calculator dispatch, the ``serialized``
+backend, and the deprecation shims for pre-``doped.io`` import paths. Tests
+for espresso site-potential sampling are in ``test_espresso.py``.
 """
 
 import os

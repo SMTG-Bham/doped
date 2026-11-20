@@ -52,6 +52,13 @@ jobs:
           # released; change to the matching ShakeNBreak release just before the doped release:
           uv pip install --system --no-deps "shakenbreak @ git+https://github.com/SMTG-Bham/ShakeNBreak@IO_refactor"
           uv pip install --system -e ".[tests]"
+          # ``pymatgen-io-espresso`` (for ``doped.io.espresso``) is not on PyPI, so is installed from GitHub;
+          # ``--no-deps`` as it requires the umbrella ``pymatgen`` package rather than ``pymatgen-core``, so
+          # its other dependencies are installed separately (TODO: switch to the ``espresso`` extra once it
+          # is released on PyPI):
+          uv pip install --system --no-deps "pymatgen-io-espresso @ git+https://github.com/Griffin-Group/pymatgen-io-espresso"
+          uv pip install --system xmltodict f90nml
+          python -c "import pymatgen.io.espresso.outputs"  # fail here; the espresso tests skip without it
 
       - name: Test
         shell: bash

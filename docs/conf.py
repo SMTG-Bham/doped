@@ -138,6 +138,7 @@ nitpick_ignore_regex = [  # note: these are full-match (i.e. ``re.fullmatch``) p
     ("py:class", r"doped\.[\w.]*\._\w+"),  # private ``doped`` helper classes shown as bases (e.g. mixins)
     # packages with no (Python-domain) Sphinx inventories to link against:
     ("py:.*", r"(monty|tqdm|sympy|pydefect|vise|plotly|dscribe)\..*"),
+    ("py:.*", r"pymatgen\.io\.espresso\..*"),
 ]
 
 # ``pymatgen-analysis-defects`` API docs are built with ``pdoc``, which publishes no Sphinx inventory, so

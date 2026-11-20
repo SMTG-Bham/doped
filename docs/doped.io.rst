@@ -77,3 +77,19 @@ doped.io.gpaw.outputs module
    :members:
    :undoc-members:
    :show-inheritance:
+
+doped.io.espresso.inputs module
+-----------------------------------
+
+.. automodule:: doped.io.espresso.inputs
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+doped.io.espresso.outputs module
+------------------------------------
+
+.. automodule:: doped.io.espresso.outputs
+   :members:
+   :undoc-members:
+   :show-inheritance:

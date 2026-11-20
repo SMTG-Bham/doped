@@ -75,6 +75,12 @@ analysis = [
     "nonrad",
     #"CarrierCapture.jl"
 ]
+espresso = [
+    # Quantum ESPRESSO (``pw.x``/``pp.x``/``dos.x``) I/O, for ``doped.io.espresso``. ``pymatgen-io-espresso``
+    # is not yet on PyPI, so this extra cannot currently be resolved; install it from GitHub instead, with
+    # ``pip install git+https://github.com/Griffin-Group/pymatgen-io-espresso`` (TODO: pin a PyPI release):
+    "pymatgen-io-espresso",
+]
 
 [tool.setuptools.packages.find]
 exclude = ["examples*", "*testing", "tests*", "docs*"]
@@ -83,6 +89,7 @@ exclude = ["examples*", "*testing", "tests*", "docs*"]
 "doped" = ["py.typed"]
 "doped.io.vasp.VASP_sets" = ["*.yaml"]
 "doped.io.gpaw.GPAW_sets" = ["*.yaml"]
+"doped.io.espresso.QE_sets" = ["*.yaml", "*.json"]
 "doped.utils" = ["*.dat", "*.mplstyle"]
 
 [tool.ruff]

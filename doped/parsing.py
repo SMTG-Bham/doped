@@ -3,6 +3,7 @@ Code to parse defect supercell calculations, and identify the defects therein.
 """
 
 import contextlib
+import inspect
 import os
 import warnings
 from collections.abc import Iterable
@@ -938,6 +939,13 @@ class DefectsParser:
                 controlling shallow defect charge correction error warnings
                 (see ``error_tolerance`` description) with
                 ``shallow_charge_stability_tolerance``.
+                Calculator-specific potential-parsing options are also
+                forwarded to the ``doped.io`` backend where it accepts them,
+                and ignored otherwise -- currently ``beta``, the Gaussian
+                broadening width in Å used when sampling atomic-site potentials
+                from a volumetric file, either as a single value or a
+                ``{element symbol: width}`` dict. Defaults to per-element
+                widths from the PAW compensation-charge radii.
                 Note that ``bulk_symprec`` can be supplied as the ``symprec``
                 value to use for determining equivalent sites (and thus defect
                 multiplicities / bulk site symmetries), while an input
@@ -1020,7 +1028,12 @@ class DefectsParser:
                 self.bulk_corrections_data["bulk_site_potentials"] = (
                     self.bulk_outputs.site_potentials
                     if self.bulk_outputs.site_potentials is not None
-                    else self._backend.get_site_potentials(outputs=self.bulk_outputs, **bulk_corr_kwargs)
+                    else self._backend.get_site_potentials(
+                        outputs=self.bulk_outputs,
+                        **bulk_corr_kwargs,
+                        # calculator-specific options (e.g. espresso's ``beta``), if given:
+                        **_backend_potential_kwargs(self._backend.get_site_potentials, self.kwargs),
+                    )
                 )
 
         self.defect_dict = {}
@@ -1351,6 +1364,7 @@ class DefectsParser:
                 "`DefectsParser.defect_dict`."
             )
 
+        kwargs.setdefault("calculator", self.calculator)
         return DefectThermodynamics(
             list(self.defect_dict.values()),
             chempots=chempots,
@@ -1740,6 +1754,57 @@ def _get_total_energies(computed_entry=None):
     entry, for cross-checking parsed output files.
     """
     return [computed_entry.energy] if computed_entry else []
+
+
+_BACKEND_POTENTIAL_KWARGS = ("beta",)
+"""
+Names of calculator-specific keyword arguments which |DefectsParser| /
+|DefectParser| forward from their ``**kwargs`` to the ``doped.io`` backend's
+potential-parsing functions (``get_site_potentials()`` /
+``get_planar_averaged_potentials()``).
+
+Currently just ``beta``, the Gaussian broadening width used when sampling
+atomic site potentials from a volumetric file (``pp.x`` ``.cube`` with
+espresso). Only those a given backend actually accepts are passed on (see
+:func:`_backend_potential_kwargs`), so these remain optional for any backend
+and no backend needs to know about options it does not use.
+"""
+
+
+def _backend_potential_kwargs(backend_func, kwargs: dict) -> dict:
+    """
+    Select the calculator-specific potential-parsing keyword arguments (see
+    :data:`_BACKEND_POTENTIAL_KWARGS`) from ``kwargs`` which ``backend_func``
+    accepts.
+
+    Keeps the calculator-agnostic parsing code free of calculator-specific
+    parameters, while still letting the user set them: an option is forwarded
+    only to backends whose signature takes it (or which accept ``**kwargs``),
+    and silently dropped for backends where it is meaningless (e.g. ``beta``
+    with VASP, whose site potentials come from ``OUTCAR`` core levels and need
+    no broadening).
+
+    Args:
+        backend_func (Callable):
+            The backend function about to be called.
+        kwargs (dict):
+            The parser's ``kwargs`` dict, possibly containing some of
+            :data:`_BACKEND_POTENTIAL_KWARGS`.
+
+    Returns:
+        dict: The subset of ``kwargs`` to forward to ``backend_func``.
+    """
+    try:
+        parameters = inspect.signature(backend_func).parameters
+    except (TypeError, ValueError):  # un-introspectable callable; forward nothing
+        return {}
+
+    if any(param.kind is inspect.Parameter.VAR_KEYWORD for param in parameters.values()):
+        accepted = set(_BACKEND_POTENTIAL_KWARGS)  # ``**kwargs``; tolerates any of them
+    else:
+        accepted = {name for name in _BACKEND_POTENTIAL_KWARGS if name in parameters}
+
+    return {name: value for name, value in kwargs.items() if name in accepted}
 
 
 def _name_parsed_defect_entries(
@@ -2228,6 +2293,13 @@ class DefectParser:
                 ``use_MP``, ``mpid``, ``api_key``, ``oxi_state``,
                 ``multiplicity``, ``angle_tolerance``, ``user_charges`` etc
                 (see their docstrings).
+                Calculator-specific potential-parsing options are also
+                forwarded to the ``doped.io`` backend where it accepts them,
+                and ignored otherwise -- currently ``beta``, the Gaussian
+                broadening width in Å used when sampling atomic-site potentials
+                from a volumetric file, either as a single value or a
+                ``{element symbol: width}`` dict. Defaults to per-element
+                widths from the PAW compensation-charge radii.
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
@@ -2376,6 +2448,13 @@ class DefectParser:
                 ``use_MP``, ``mpid``, ``api_key``, ``oxi_state``,
                 ``multiplicity``, ``angle_tolerance``, ``user_charges`` etc
                 (see their docstrings).
+                Calculator-specific potential-parsing options are also
+                forwarded to the ``doped.io`` backend where it accepts them,
+                and ignored otherwise -- currently ``beta``, the Gaussian
+                broadening width in Å used when sampling atomic-site potentials
+                from a volumetric file, either as a single value or a
+                ``{element symbol: width}`` dict. Defaults to per-element
+                widths from the PAW compensation-charge radii.
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
@@ -2701,6 +2780,11 @@ class DefectParser:
         if bulk_site_potentials is None and self.bulk_outputs is not None:
             bulk_site_potentials = self.bulk_outputs.site_potentials  # already parsed
 
+        backend_kwargs = _backend_potential_kwargs(  # e.g. espresso's ``beta``, if given; getattr as
+            getattr(self._backend, "get_site_potentials", None),  # optional backend hook (e.g. serialized)
+            self.kwargs,
+        )
+
         if bulk_site_potentials is None:
             bulk_site_potentials = self._backend.get_site_potentials(
                 self.defect_entry.calculation_metadata["bulk_path"],
@@ -2711,6 +2795,7 @@ class DefectParser:
                     if self.bulk_outputs is not None
                     else _get_total_energies(self.defect_entry.bulk_entry)
                 ),
+                **backend_kwargs,
             )
 
         if self.defect_outputs is not None and self.defect_outputs.site_potentials is not None:
@@ -2725,6 +2810,7 @@ class DefectParser:
                     if self.defect_outputs is not None
                     else _get_total_energies(self.defect_entry.sc_entry)
                 ),
+                **backend_kwargs,
             )
 
         self.defect_entry.calculation_metadata.update(
