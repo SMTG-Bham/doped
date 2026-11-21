@@ -194,12 +194,9 @@ def _get_multi_site_freysoldt_correction(
     This generalises the ``pymatgen-analysis-defects``
     ``get_freysoldt_correction`` function, with the same output format and
     treatment of anisotropic dielectric screening, and reproduces it for a
-    single charge at the origin. For other positions it differs slightly, as
-    the model charges are placed at their exact coordinates here, rather than
-    on the next grid plane. The potential alignment along each axis is sampled
-    furthest from all charges (half a cell from the grid plane nearest the
-    middle of the charges, i.e. opposite the largest gap between them along
-    that axis).
+    single charge. The potential alignment along each axis is sampled furthest
+    from all charges (half a cell from the grid plane nearest the middle of the
+    charges, i.e. opposite the largest gap between them along that axis).
 
     Args:
         site_charges (np.ndarray):
@@ -310,22 +307,15 @@ def _get_multi_site_freysoldt_correction(
         # (for q = 0) then sampling half a cell from it:
         sorted_coords = np.sort(charge_coords[:, axis] % 1)
         gaps = np.diff([*sorted_coords, sorted_coords[0] + 1])
-        shift = -round((sorted_coords[np.argmax(gaps)] + gaps.max() / 2 - 0.5) * n)
-        kwargs = {
-            "axis_grid": np.arange(n) / n * lattice.abc[axis], "lattice": lattice, "q": 0,
-            "defect_frac_coords": np.zeros(3), "axis": axis, "dielectric": eps, "q_model": q_model,
-        }  # fmt: skip
+        shift = -int(np.floor((sorted_coords[np.argmax(gaps)] + gaps.max() / 2 - 0.5) * n + 0.5))
+        defect_avg, bulk_avg, model_pot = (
+            np.roll(avg, shift) for avg in (defect_avgs[axis], bulk_avgs[axis], model_pot)
+        )
         alignment_corrs[axis], plot_data[axis] = freysoldt.perform_pot_corr(
-            pureavg=np.roll(bulk_avgs[axis], shift),
-            defavg=np.roll(defect_avgs[axis] - model_pot, shift),
-            **kwargs,
-        )
-        _, model_plot_data = freysoldt.perform_pot_corr(
-            pureavg=np.zeros(n), defavg=np.roll(model_pot, shift), **kwargs
-        )
-        pot_plot_data = plot_data[axis]["pot_plot_data"]  # add the model potential, shifted likewise:
-        pot_plot_data["Vr"] = model_plot_data["pot_plot_data"]["dft_diff"]
-        pot_plot_data["dft_diff"] = pot_plot_data["short_range"] + pot_plot_data["Vr"]
+            np.arange(n) / n * lattice.abc[axis], pureavg=bulk_avg, defavg=defect_avg - model_pot,
+            lattice=lattice, q=0, defect_frac_coords=[0, 0, 0], axis=axis, dielectric=eps, q_model=q_model,
+        )  # fmt: skip
+        plot_data[axis]["pot_plot_data"].update({"Vr": model_pot, "dft_diff": defect_avg - bulk_avg})
 
     mean_alignment = np.mean(list(alignment_corrs.values()))
     pot_corr = mean_alignment * total_charge
@@ -881,30 +871,26 @@ def get_kumagai_correction(
         site_distances = np.array([site.distance for site in sites])
         if defect_region_radius is None:
             defect_region_radius = get_half_max_face_distance(lattice)
-            num_sampled = np.count_nonzero(site_distances > defect_region_radius)
             # ensure a minimum number of _inequivalent_ sites in the sampling region, as the default radius
             # can leave just a few (often equivalent) sites for e.g. elongated supercells, extended
             # (multi-site) defects or slabs with vacuum, giving a noisy potential alignment and unreliable
-            # error estimate. Target is 8 groups, or a quarter of all groups for small/high-symmetry cells,
-            # with a minimum of 3 sites:
+            # error estimate. The 8 furthest groups (or a quarter of all groups, for small/high-symmetry
+            # cells) and the 3 furthest sites must be sampled:
             groups = _get_equivalent_site_groups(
                 [site.specie for site in sites], site_distances, [site.potential for site in sites]
             )
-            order = np.argsort(-site_distances, kind="stable")  # furthest first
-            _unique, first_idx = np.unique(groups[order], return_index=True)
-            is_new_group = np.zeros(len(order), dtype=bool)
-            is_new_group[first_idx] = True
-            cumulative_groups = np.cumsum(is_new_group)  # number of groups in the N furthest sites
-            min_groups = min(MIN_EFNV_SAMPLED_GROUPS, int(np.ceil(len(_unique) / 4)))
-            num_required = min(max(int(np.searchsorted(cumulative_groups, min_groups)) + 1, 3), len(order))
-            if num_sampled < num_required:  # reduce to just below the distance of the last required site:
-                defect_region_radius = site_distances[order][num_required - 1] - 1e-3
-                if num_sampled < (min_sampled := min(3, len(order))):  # unusual; e.g. slabs with vacuum
+            group_distances = np.sort([site_distances[groups == g].max() for g in np.unique(groups)])
+            min_groups = min(MIN_EFNV_SAMPLED_GROUPS, int(np.ceil(len(group_distances) / 4)))
+            furthest_sites = np.sort(site_distances)[-3:]
+            min_distance = min([*group_distances[-min_groups:], *furthest_sites], default=np.inf)
+            if min_distance <= defect_region_radius:  # reduce to just below it:
+                if furthest_sites[0] <= defect_region_radius:  # unusual; e.g. slabs with vacuum
                     warnings.warn(
-                        f"Fewer than {min_sampled} atomic sites lie outside the default eFNV defect "
-                        f"region radius, so it has been reduced to {defect_region_radius:.2f} Å to "
-                        f"include at least {min_sampled} sites in the potential sampling region."
+                        f"Fewer than {len(furthest_sites)} atomic sites lie outside the default eFNV "
+                        f"defect region radius, so it has been reduced to {min_distance - 1e-3:.2f} Å to "
+                        f"include at least {len(furthest_sites)} sites in the potential sampling region."
                     )
+                defect_region_radius = min_distance - 1e-3  # (with tolerance for equal distances)
 
         elif (num_sampled := np.count_nonzero(site_distances > defect_region_radius)) == 0:
             raise ValueError(
