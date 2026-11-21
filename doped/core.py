@@ -20,6 +20,10 @@ from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
+from doped._oxi_states import (
+    _guess_and_set_struct_oxi_states_icsd_prob,
+    _guess_and_set_struct_oxi_states_icsd_prob_process,
+)
 from doped.utils import (
     _doped_obj_properties_methods,
     _signed_charge,
@@ -1909,56 +1913,6 @@ def _guess_and_set_struct_oxi_states(structure: Structure) -> Structure | bool:
     return False  # if oxi states could not be guessed
 
 
-def _guess_and_set_struct_oxi_states_icsd_prob(
-    structure: Structure, try_without_max_sites: bool = False
-) -> Structure | bool:
-    """
-    Tries to guess (and set) the oxidation states of the input structure, using
-    the ``pymatgen``-tabulated ICSD oxidation state probabilities.
-
-    Args:
-        structure (|Structure|):
-            The structure for which to guess the oxidation states.
-        try_without_max_sites (bool):
-            Whether to try to guess the oxidation states
-            without using the ``max_sites=-1`` argument (``True``)(which
-            attempts to use the reduced composition for guessing oxi states) or
-            not (``False``; default).
-
-    Returns:
-        Structure:
-            The structure with oxidation states guessed and set, or ``False``
-            if oxidation states could not be guessed.
-    """
-    structure = structure.copy()  # don't modify original structure
-    if try_without_max_sites:
-        with contextlib.suppress(Exception):
-            structure.add_oxidation_state_by_guess()
-            # check all oxidation states are whole numbers:
-            if all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
-                return structure
-
-    # else try to use the reduced cell since oxidation state assignment scales poorly with system size:
-    try:  # retry with broader guesses if oxi states are all zero or not whole numbers:
-        for kwargs in ({"max_sites": -1}, {"max_sites": -1, "all_oxi_states": True}, {}):
-            structure.add_oxidation_state_by_guess(**kwargs)
-            if not all(specie.oxi_state == 0 for specie in structure.species) and all(
-                np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species
-            ):
-                break
-        if not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
-            return False  # non-integer (e.g. mixed-valence average) oxidation states from every guess
-    except Exception:
-        structure.add_oxidation_state_by_guess()
-
-    if all(hasattr(site.specie, "oxi_state") for site in structure.sites) and all(
-        isinstance(site.specie.oxi_state, int | float) for site in structure.sites
-    ):
-        return structure
-
-    return False
-
-
 def guess_and_set_struct_oxi_states(structure: Structure, try_without_max_sites: bool = False):
     """
     Tries to guess (and set) the oxidation states of the input structure, first
@@ -2129,21 +2083,6 @@ def most_common_oxi(element_symbol: str) -> int:
     return next(iter(get_oxi_probabilities(element_symbol).keys()))
 
 
-def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_without_max_sites=False):
-    """
-    Implements the ``_guess_and_set_struct_oxi_states_icsd_prob`` function
-    above, but also putting the results into the supplied ``multiprocessing``
-    queue object (for use with timeouts via ``Process``).
-
-    For internal ``doped`` usage.
-    """
-    try:
-        structure_with_oxi = _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites)
-    except Exception:  # e.g. unknown elements; must put a result, else ``queue.get()`` hangs
-        structure_with_oxi = False
-    queue.put(structure_with_oxi or False)
-
-
 def _guess_and_set_oxi_states_with_timeout_icsd_prob(
     structure,
     timeout_1: float = 10,
@@ -2177,32 +2116,25 @@ def _guess_and_set_oxi_states_with_timeout_icsd_prob(
     """
     queue = _mp.SimpleQueue()
 
-    guess_oxi_process_wout_max_sites = _mp.Process(
-        target=_guess_and_set_struct_oxi_states_icsd_prob_process, args=(structure, queue, True)
-    )  # try without max sites first, if fails, try with max sites
-    guess_oxi_process_wout_max_sites.start()
-    guess_oxi_process_wout_max_sites.join(timeout=timeout_1)
-
-    if guess_oxi_process_wout_max_sites.is_alive():  # still running, revert to using max sites
-        guess_oxi_process_wout_max_sites.terminate()
-        guess_oxi_process_wout_max_sites.join()
-
+    # try without max sites first, if that times out, try with max sites:
+    for try_without_max_sites, timeout in ((True, timeout_1), (False, timeout_2)):
+        started = _mp.Event()
         guess_oxi_process = _mp.Process(
             target=_guess_and_set_struct_oxi_states_icsd_prob_process,
-            args=(structure, queue, False),
+            args=(structure, queue, try_without_max_sites, started),
         )
         guess_oxi_process.start()
-        guess_oxi_process.join(timeout=timeout_2)  # wait for pymatgen to guess oxi states,
-        # otherwise revert to all Defect oxi states being set to 0
+        # the timeouts are for the oxi state guessing itself, so first wait (up to 60 s) for the process to
+        # start up, which can be slow if run from a script importing ``doped`` (as it is then re-imported):
+        started.wait(60)
+        guess_oxi_process.join(timeout=timeout)  # wait for pymatgen to guess oxi states
+        if not guess_oxi_process.is_alive():
+            return queue.get()  # apply oxi states to structure
 
-        if guess_oxi_process.is_alive():
-            guess_oxi_process.terminate()
-            guess_oxi_process.join()
+        guess_oxi_process.terminate()  # still running
+        guess_oxi_process.join()
 
-            return False
-
-    # apply oxi states to structure:
-    return queue.get()
+    return False  # otherwise revert to all Defect oxi states being set to 0
 
 
 def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites=True) -> float:
