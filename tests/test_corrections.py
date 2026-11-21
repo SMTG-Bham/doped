@@ -559,6 +559,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         from doped.corrections import (
             MIN_EFNV_SAMPLED_GROUPS,
             _get_equivalent_site_groups,
+            get_efnv_alignment_error,
             get_efnv_sampled_group_means,
         )
 
@@ -574,10 +575,16 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             [s.distance for s in efnv_corr_obj.sites],
             [s.potential for s in efnv_corr_obj.sites],
         )
-        group_means = get_efnv_sampled_group_means(efnv_corr_obj)
+        group_means, multiplicities = get_efnv_sampled_group_means(efnv_corr_obj)
         assert len(group_means) >= min(MIN_EFNV_SAMPLED_GROUPS, int(np.ceil(len(set(all_groups)) / 4)))
         sampled = [s for s in efnv_corr_obj.sites if s.distance > efnv_corr_obj.defect_region_radius]
         assert len(group_means) <= len(sampled)
+        assert multiplicities.sum() == len(sampled)
+        assert (
+            np.isclose(  # alignment (mean over sampled sites) = multiplicity-weighted mean of group means
+                np.average(group_means, weights=multiplicities), np.mean([s.diff_pot for s in sampled])
+            )
+        )
 
         # a user-specified radius is not adjusted:
         corr = get_kumagai_correction(
@@ -586,8 +593,23 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         assert corr.metadata["pydefect_ExtendedFnvCorrection"].defect_region_radius == 8.5
 
         _corr, corr_error = self.F_O_1_entry.get_kumagai_correction(return_correction_error=True)
-        group_means = get_efnv_sampled_group_means(efnv_corr_obj)  # same (default) settings
-        assert np.isclose(corr_error, sem(group_means) * abs(self.F_O_1_entry.charge_state))
+        alignment_error = get_efnv_alignment_error(efnv_corr_obj)  # same (default) settings
+        assert np.isclose(corr_error, alignment_error * abs(self.F_O_1_entry.charge_state))
+        assert alignment_error > sem([s.diff_pot for s in sampled])  # equivalent sites are not independent
+
+        from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
+
+        def get_error(*sites):  # ``sites`` as (species, distance, potential)
+            potential_sites = [PotentialSite(*site, pc_potential=0.0) for site in sites]
+            return get_efnv_alignment_error(ExtendedFnvCorrection(1, 0.0, 1.0, potential_sites, (0, 0, 0)))
+
+        # 3 equivalent sites and 1 other; weighted mean 0.125 V and variance 0.001875 V², n_eff = 1.6:
+        assert np.isclose(get_error(*[("Ga", 3.0, 0.1)] * 3, ("O", 4.0, 0.2)), np.sqrt(0.001875 / 0.6))
+        pots = [0.1, 0.13, 0.08, 0.2]  # no equivalent sites -> usual standard error of the mean:
+        assert np.isclose(get_error(*[("Ga", 2.0 + i, pot) for i, pot in enumerate(pots)]), sem(pots))
+        pots = [0.1, 0.1004, 0.1002]  # all equivalent -> standard error of the mean over these sites:
+        assert np.isclose(get_error(*[("Ga", 2.0, pot) for pot in pots]), sem(pots))
+        assert np.isnan(get_error(("Ga", 2.0, 0.1)))  # single sampled site
 
     @custom_mpl_image_compare("F_O_+1_eFNV_plot.png")
     def test_plot_kumagai(self):

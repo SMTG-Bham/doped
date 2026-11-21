@@ -623,32 +623,76 @@ def _get_equivalent_site_groups(
     return np.array([labels.setdefault(key, len(labels)) for key in keys], dtype=int)
 
 
-def get_efnv_sampled_group_means(efnv_correction) -> np.ndarray:
+def get_efnv_sampled_group_means(efnv_correction) -> tuple[np.ndarray, np.ndarray]:
     """
-    Get the mean sampled potential difference (``diff_pot``; in V) of each
-    group of equivalent sites in the sampling region of a ``pydefect``
-    ``ExtendedFnvCorrection`` object (see ``_get_equivalent_site_groups``).
+    Get the mean sampled potential difference (``diff_pot``; in V) and
+    multiplicity (number of sites) of each group of equivalent sites in the
+    sampling region of a ``pydefect`` ``ExtendedFnvCorrection`` object (see
+    ``_get_equivalent_site_groups``).
 
     The scatter of these values gives the sampling noise in the eFNV potential
-    alignment, which is used to estimate a lower bound on the error in the
-    charge correction (itself a lower bound on the remnant finite-size error).
+    alignment (see ``get_efnv_alignment_error``), which is used to estimate a
+    lower bound on the error in the charge correction (itself a lower bound on
+    the remnant finite-size error).
 
     Args:
         efnv_correction (ExtendedFnvCorrection):
             ``pydefect`` ``ExtendedFnvCorrection`` object.
 
     Returns:
-        np.ndarray:
-            Mean ``diff_pot`` (in V) for each group of equivalent sites.
+        tuple[np.ndarray, np.ndarray]:
+            Mean ``diff_pot`` (in V) and multiplicity for each group of
+            equivalent sites.
     """
     sampled = [s for s in efnv_correction.sites if s.distance > efnv_correction.defect_region_radius]
     if not sampled:
-        return np.array([])
+        return np.array([]), np.array([], dtype=int)
     groups = _get_equivalent_site_groups(
         [s.specie for s in sampled], [s.distance for s in sampled], [s.potential for s in sampled]
     )
     diff_pots = np.array([s.diff_pot for s in sampled])
-    return np.array([diff_pots[groups == g].mean() for g in np.unique(groups)])
+    unique_groups, multiplicities = np.unique(groups, return_counts=True)
+    return np.array([diff_pots[groups == g].mean() for g in unique_groups]), multiplicities
+
+
+def get_efnv_alignment_error(efnv_correction) -> float:
+    """
+    Estimate the sampling error (in V) in the eFNV potential alignment of a
+    ``pydefect`` ``ExtendedFnvCorrection`` object, as the standard error of the
+    mean sampled potential difference (``diff_pot``).
+
+    Equivalent sites (see ``_get_equivalent_site_groups``) are not independent
+    samples of the far-field potential, so the standard error is evaluated over
+    the groups of equivalent sites, weighted by their multiplicities ``w`` (as
+    the alignment is the mean over all sampled sites); the weighted standard
+    deviation of the group means, divided by ``sqrt(n_eff - 1)`` where
+    ``n_eff = sum(w)^2 / sum(w^2)`` is the effective sample size. This reduces
+    to the usual standard error of the mean when no sites are equivalent, which
+    is also used if all sampled sites are equivalent.
+
+    Multiplied by the defect charge, this gives a lower bound on the error in
+    the charge correction (itself a lower bound on the remnant finite-size
+    error).
+
+    Args:
+        efnv_correction (ExtendedFnvCorrection):
+            ``pydefect`` ``ExtendedFnvCorrection`` object.
+
+    Returns:
+        float:
+            Estimated sampling error in the potential alignment (in V); ``nan``
+            if fewer than two sites are sampled.
+    """
+    means, weights = get_efnv_sampled_group_means(efnv_correction)
+    if len(means) < 2:  # all sampled sites are equivalent, so can only use the scatter between them
+        sites = efnv_correction.sites
+        means = np.array([s.diff_pot for s in sites if s.distance > efnv_correction.defect_region_radius])
+        weights = np.ones(len(means))
+    if len(means) < 2:
+        return np.nan
+    n_eff = weights.sum() ** 2 / np.sum(weights**2)
+    variance = np.average((means - np.average(means, weights=weights)) ** 2, weights=weights)
+    return float(np.sqrt(variance / (n_eff - 1)))
 
 
 def get_kumagai_correction(

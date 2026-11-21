@@ -740,7 +740,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 for i in [
                     "Estimated error in the Kumagai (eFNV) charge correction for certain defects",
                     "greater than the `error_tolerance` (= 0.025 eV):",
-                    "Int_Te_3_2: 0.183 eV",
+                    "Int_Te_3_2: 0.205 eV",
                     "You may want to check the accuracy",
                 ]
             )
@@ -804,10 +804,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             "charge correction for certain defects is greater than the `error_tolerance` (= 1.00e-03 eV):",
             "v_Cd_-2: 1.08e-02 eV",
             # "v_Cd_-1: 8.46e-03 eV",  # now not printed because not stable charge states
-            "Int_Te_3_1: 3.97e-03 eV",
-            "Te_Cd_+1: 3.17e-03 eV",
+            "Int_Te_3_1: 4.16e-03 eV",
+            "Te_Cd_+1: 4.24e-03 eV",
             # "Int_Te_3_Unperturbed_1: 4.91e-03 eV",  # now not printed because not stable charge states
-            "Int_Te_3_2: 1.56e-02 eV",
+            "Int_Te_3_2: 1.64e-02 eV",
             "You may want to check the accuracy of the corrections by",
             "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
             "(using `defect_entry.get_kumagai_correction()` with `plot=True`)",
@@ -941,9 +941,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
             dielectric=self.Sb2Se3_dielectric,
         )
-        assert len(w) == 1  # only the charge correction error warning (28 meV, above 25 meV tolerance), as
+        assert len(w) == 1  # only the charge correction error warning (29 meV, above 25 meV tolerance), as
         # O_Se_-2 is the only parsed charge state here (so taken to be stable in the gap):
-        assert "O_Se_Cs_Sb2.65_-2: 0.028 eV" in str(w[0].message)
+        assert "O_Se_Cs_Sb2.65_-2: 0.029 eV" in str(w[0].message)
         check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
         assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.81760, atol=1e-3)
@@ -1566,10 +1566,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                     "energy), used for" in str(warn.message)
                     for warn in w
                 )
-            # no charge correction warning by default, as charge correction error is only 6.60 meV here:
+            # no charge correction warning by default, as charge correction error is only 6.72 meV here:
             assert any("Estimated error" in str(warn.message) for warn in w) == correction_warning
             assert (
-                any("sub_1_O_on_Se_1: 6.60e-03 eV" in str(warn.message) for warn in w)
+                any("sub_1_O_on_Se_1: 6.72e-03 eV" in str(warn.message) for warn in w)
                 == correction_warning
             )
             assert len(dp.defect_dict) == 2
@@ -1595,7 +1595,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         assert np.isclose(
             dp.defect_dict["sub_1_O_on_Se_1"].corrections_metadata["kumagai_charge_correction_error"],
-            0.00660,
+            0.00672,
             atol=1e-4,
         )
 
@@ -1807,7 +1807,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             assert (
                 f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-                f"{parsed_int_Te_2_fake_aniso.name} is 0.183 eV (i.e. which is greater than the "
+                f"{parsed_int_Te_2_fake_aniso.name} is 0.205 eV (i.e. which is greater than the "
                 f"`error_tolerance`: 0.025 eV). You may want to check the accuracy of the correction "
                 f"by plotting the site potential differences (using "
                 f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
@@ -2613,7 +2613,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             ).defect_entry
         assert (
             f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-            f"{int_F_minus1_ent.name} is 5.83e-03 eV (i.e. which is greater than the `error_tolerance`: "
+            f"{int_F_minus1_ent.name} is 5.84e-03 eV (i.e. which is greater than the `error_tolerance`: "
             f"1.00e-03 eV). You may want to check the accuracy of the correction by plotting the site "
             f"potential differences (using `defect_entry.get_kumagai_correction()` with "
             f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("

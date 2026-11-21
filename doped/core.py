@@ -18,7 +18,6 @@ from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
-from scipy.stats import sem
 
 from doped._oxi_states import (
     _guess_and_set_struct_oxi_states_icsd_prob,
@@ -545,10 +544,12 @@ class DefectEntry(thermo.DefectEntry):
         see example on doped docs ``Tips`` page.
 
         The correction error is estimated from the sampling noise in the
-        potential alignment; the standard error of the mean of the sampled
-        (inequivalent) site potential differences, multiplied by the defect
-        charge. This is a lower bound on the error in the charge correction,
-        which is itself a lower bound on the remnant finite-size error.
+        potential alignment; the (multiplicity-weighted) standard error of the
+        mean of the sampled (inequivalent) site potential differences,
+        multiplied by the defect charge (see
+        :func:`~doped.corrections.get_efnv_alignment_error`). This is a lower
+        bound on the error in the charge correction, which is itself a lower
+        bound on the remnant finite-size error.
 
         If this correction is used, please cite the Kumagai & Oba (eFNV) paper:
         10.1103/PhysRevB.89.195205 and the ``pydefect`` paper: "Insights into
@@ -609,11 +610,11 @@ class DefectEntry(thermo.DefectEntry):
                 Filename to save the Kumagai site potential plots to.
                 If None, plots are not saved.
             return_correction_error (bool):
-                If True, also returns the standard error of the mean of the
-                sampled (inequivalent) site potential differences times the
-                defect charge; a lower bound on the error in the charge
-                correction (itself a lower bound on the remnant finite-size
-                error), based on sampling noise. Default is False.
+                If True, also returns the (multiplicity-weighted) standard
+                error of the mean of the sampled (inequivalent) site potential
+                differences times the defect charge; a lower bound on the error
+                in the charge correction (itself a lower bound on the remnant
+                finite-size error), based on sampling noise. Default is False.
             error_tolerance (float):
                 If the estimated error in the charge correction (a lower bound,
                 from the sampling noise in the potential alignment) is greater
@@ -635,7 +636,7 @@ class DefectEntry(thermo.DefectEntry):
             ``True``, and the estimated charge correction error if
             ``return_correction_error`` is ``True``.
         """
-        from doped.corrections import get_kumagai_correction
+        from doped.corrections import get_efnv_alignment_error, get_kumagai_correction
 
         if dielectric is None:
             dielectric = self.calculation_metadata.get("dielectric")
@@ -662,20 +663,11 @@ class DefectEntry(thermo.DefectEntry):
         self._check_if_multiple_finite_size_corrections()
         self.corrections_metadata.update({"kumagai_charge_correction": correction.metadata.copy()})
 
-        # check accuracy of correction:
-        efnv_corr_obj = correction.metadata["pydefect_ExtendedFnvCorrection"]
-        sampled_pot_diff_array = np.array(
-            [s.diff_pot for s in efnv_corr_obj.sites if s.distance > efnv_corr_obj.defect_region_radius]
-        )
-
-        # correction energy error can be estimated from standard error of the mean, taken over the
-        # _inequivalent_ sampled sites (as equivalent sites are not independent samples):
-        from doped.corrections import get_efnv_sampled_group_means
-
-        group_means = get_efnv_sampled_group_means(efnv_corr_obj)
-        correction_error = sem(group_means if len(group_means) > 1 else sampled_pot_diff_array) * abs(
-            self.charge_state
-        )
+        # check accuracy of correction; error estimated from the (multiplicity-weighted) standard error of
+        # the mean, taken over the _inequivalent_ sampled sites (as equivalent sites are not independent):
+        correction_error = get_efnv_alignment_error(
+            correction.metadata["pydefect_ExtendedFnvCorrection"]
+        ) * abs(self.charge_state)
         self.corrections_metadata.update({"kumagai_charge_correction_error": correction_error})
         return self._check_correction_error_and_return_output(
             efnv_correction_output,
