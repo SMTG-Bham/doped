@@ -594,6 +594,73 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
         return ax
 
 
+MIN_EFNV_SAMPLED_GROUPS = 8  # minimum number of inequivalent sites in the default eFNV sampling region
+
+
+def _get_equivalent_site_groups(
+    species, distances, potentials, dist_tol: float = 0.02, pot_tol: float = 2e-3
+) -> np.ndarray:
+    """
+    Group atomic sites which are (near-)equivalent for the eFNV potential
+    sampling.
+
+    Sites of the same species, at the same distance from the (nearest) defect
+    charge (within ``dist_tol``, in Å) and with the same site potential
+    difference (within ``pot_tol``, in V) are taken to be equivalent, and so
+    give only one `independent` sample of the far-field potential.
+
+    Args:
+        species (Sequence[str]):
+            Species (strings) of the sites.
+        distances (Sequence[float]):
+            Distances (in Å) of the sites to the (nearest) defect charge.
+        potentials (Sequence[float]):
+            Site potential differences (defect - bulk; in V).
+        dist_tol (float):
+            Distance tolerance (in Å). Default is 0.02.
+        pot_tol (float):
+            Potential tolerance (in V). Default is 2e-3.
+
+    Returns:
+        np.ndarray:
+            Integer group label for each site.
+    """
+    keys = [
+        (str(specie), round(float(d) / dist_tol), round(float(pot) / pot_tol))
+        for specie, d, pot in zip(species, distances, potentials, strict=True)
+    ]
+    labels: dict = {}
+    return np.array([labels.setdefault(key, len(labels)) for key in keys], dtype=int)
+
+
+def get_efnv_sampled_group_means(efnv_correction) -> np.ndarray:
+    """
+    Get the mean sampled potential difference (``diff_pot``; in V) of each
+    group of equivalent sites in the sampling region of a ``pydefect``
+    ``ExtendedFnvCorrection`` object (see ``_get_equivalent_site_groups``).
+
+    The scatter of these values gives the sampling noise in the eFNV potential
+    alignment, which is used to estimate a lower bound on the error in the
+    charge correction (itself a lower bound on the remnant finite-size error).
+
+    Args:
+        efnv_correction (ExtendedFnvCorrection):
+            ``pydefect`` ``ExtendedFnvCorrection`` object.
+
+    Returns:
+        np.ndarray:
+            Mean ``diff_pot`` (in V) for each group of equivalent sites.
+    """
+    sampled = [s for s in efnv_correction.sites if s.distance > efnv_correction.defect_region_radius]
+    if not sampled:
+        return np.array([])
+    groups = _get_equivalent_site_groups(
+        [s.specie for s in sampled], [s.distance for s in sampled], [s.potential for s in sampled]
+    )
+    diff_pots = np.array([s.diff_pot for s in sampled])
+    return np.array([diff_pots[groups == g].mean() for g in np.unique(groups)])
+
+
 def get_kumagai_correction(
     defect_entry,
     dielectric: float | np.ndarray | list | None = None,
@@ -673,8 +740,11 @@ def get_kumagai_correction(
             are used for sampling the electrostatic potential far from the
             defect (to obtain the potential alignment). If ``None`` (default),
             uses half the largest distance between parallel cell faces (as in
-            ``pydefect``), reduced as necessary (with a warning) to ensure at
-            least 3 sites in the sampling region.
+            ``pydefect``), reduced as necessary to include at least 8
+            inequivalent sites in the sampling region (or a quarter of all
+            inequivalent sites if fewer, with a minimum of 3 sites). Sites are
+            taken as equivalent if they have the same species, distance to the
+            (nearest) defect charge and site potential difference.
         excluded_indices (list):
             List of site indices (in the defect supercell) to exclude from
             the site potential sampling in the correction calculation/plot.
@@ -743,38 +813,18 @@ def get_kumagai_correction(
 
         If ``defect_region_radius`` is not specified, then the ``pydefect``
         default (half the largest distance between parallel cell faces) is
-        used, reduced as necessary (with a warning) to ensure at least 3 sites
-        in the sampling region.
+        used, reduced as necessary to include at least 8 inequivalent sites in
+        the sampling region (or a quarter of all inequivalent sites if fewer,
+        with a minimum of 3 sites).
         """
         if calc_results.structure.lattice != perfect_calc_results.structure.lattice:
             raise SupercellError("The lattice constants for defect and perfect models are different")
         lattice = calc_results.structure.lattice
         sites, rel_coords = [], []
 
-        point_charges = point_charges or [(charge, defect_coords)]
-        site_charges = np.array([q for q, _fc in point_charges], dtype=float)
-        if not np.isclose(site_charges.sum(), charge):
-            raise ValueError(
-                f"The sum of the supplied point charges ({site_charges.sum():+.3f}) does not match the "
-                f"defect charge state ({charge:+.3f})."
-            )
-        charge_coords = np.array(
-            _get_unwrapped_complex_frac_coords(lattice, [fc for _q, fc in point_charges])
-        )  # unwrap to a single (minimum image) configuration, i.e. the isolated complex geometry
-        half_min_image_dist = _get_min_image_distance_from_matrix(lattice.matrix) / 2
-        for i, j in combinations(range(len(site_charges)), 2):
-            pair_dist = np.linalg.norm(lattice.get_cartesian_coords(charge_coords[j] - charge_coords[i]))
-            if pair_dist < 0.1:  # pair term is finite as pair_dist -> 0, but likely an input error
-                raise ValueError(
-                    f"Point charges {i} and {j} are (near-)coincident ({pair_dist:.2f} Å apart), so "
-                    f"should likely be combined into a single point charge."
-                )
-            if pair_dist > half_min_image_dist:
-                warnings.warn(
-                    f"Point charges {i} and {j} are {pair_dist:.2f} Å apart, which is more than half the "
-                    f"minimum image distance of the supercell ({half_min_image_dist:.2f} Å), so the "
-                    f"multiple point charge model (and eFNV correction) may be unreliable."
-                )
+        site_charges, charge_coords = _check_and_unwrap_point_charges(
+            lattice, charge, point_charges or [(charge, defect_coords)]
+        )
 
         excluded_indices = [] if excluded_indices is None else [int(i) for i in excluded_indices]
 
@@ -831,15 +881,31 @@ def get_kumagai_correction(
         site_distances = np.array([site.distance for site in sites])
         if defect_region_radius is None:
             defect_region_radius = get_half_max_face_distance(lattice)
-            min_sampled = min(3, len(site_distances))  # ensure >= 3 sampled sites (e.g. slabs with vacuum)
-            if np.count_nonzero(site_distances > defect_region_radius) < min_sampled:
-                # reduce to just below the 3rd-furthest site distance (with tolerance for equal distances):
-                defect_region_radius = np.sort(site_distances)[-min_sampled] - 1e-3
-                warnings.warn(
-                    f"Fewer than {min_sampled} atomic sites lie outside the default eFNV defect region "
-                    f"radius, so it has been reduced to {defect_region_radius:.2f} Å to include at least "
-                    f"{min_sampled} sites in the potential sampling region."
-                )
+            num_sampled = np.count_nonzero(site_distances > defect_region_radius)
+            # ensure a minimum number of _inequivalent_ sites in the sampling region, as the default radius
+            # can leave just a few (often equivalent) sites for e.g. elongated supercells, extended
+            # (multi-site) defects or slabs with vacuum, giving a noisy potential alignment and unreliable
+            # error estimate. Target is 8 groups, or a quarter of all groups for small/high-symmetry cells,
+            # with a minimum of 3 sites:
+            groups = _get_equivalent_site_groups(
+                [site.specie for site in sites], site_distances, [site.potential for site in sites]
+            )
+            order = np.argsort(-site_distances, kind="stable")  # furthest first
+            _unique, first_idx = np.unique(groups[order], return_index=True)
+            is_new_group = np.zeros(len(order), dtype=bool)
+            is_new_group[first_idx] = True
+            cumulative_groups = np.cumsum(is_new_group)  # number of groups in the N furthest sites
+            min_groups = min(MIN_EFNV_SAMPLED_GROUPS, int(np.ceil(len(_unique) / 4)))
+            num_required = min(max(int(np.searchsorted(cumulative_groups, min_groups)) + 1, 3), len(order))
+            if num_sampled < num_required:  # reduce to just below the distance of the last required site:
+                defect_region_radius = site_distances[order][num_required - 1] - 1e-3
+                if num_sampled < (min_sampled := min(3, len(order))):  # unusual; e.g. slabs with vacuum
+                    warnings.warn(
+                        f"Fewer than {min_sampled} atomic sites lie outside the default eFNV defect "
+                        f"region radius, so it has been reduced to {defect_region_radius:.2f} Å to "
+                        f"include at least {min_sampled} sites in the potential sampling region."
+                    )
+
         elif (num_sampled := np.count_nonzero(site_distances > defect_region_radius)) == 0:
             raise ValueError(
                 f"No atomic sites lie outside the supplied eFNV `defect_region_radius` "
