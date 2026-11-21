@@ -491,6 +491,34 @@ def summed_dist(
     return float(sum(dist if dist is not None else float("inf") for dist, _i, _j in site_mappings))
 
 
+def _get_min_dist(
+    structure: Structure, frac_coords: ArrayLike, other_frac_coords: ArrayLike | None = None
+) -> float:
+    """
+    Get the minimum (periodic) distance in Å between two sets of fractional
+    coordinates in ``structure``; by default between ``frac_coords`` and the
+    ``structure`` sites.
+
+    Args:
+        structure (|Structure|):
+            |Structure| (lattice) in which the coordinates are defined.
+        frac_coords (ArrayLike):
+            Fractional coordinates of the first site(s).
+        other_frac_coords (ArrayLike):
+            Fractional coordinates of the second site(s). Default is ``None``,
+            in which case the ``structure`` sites are used.
+
+    Returns:
+        float:
+            Minimum distance in Å between the two sets of sites (``np.inf`` if
+            either set is empty).
+    """
+    if other_frac_coords is None:
+        other_frac_coords = structure.frac_coords
+    dists = structure.lattice.get_all_distances(frac_coords, other_frac_coords)
+    return float(np.min(dists, initial=np.inf))
+
+
 def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
     """
     Get a matrix of the distances between the input fractional coordinates in
@@ -709,7 +737,7 @@ def doped_cluster_frac_coords(
                 -group_order_from_schoenflies(
                     point_symmetry_from_site(x, structure)
                 ),  # higher order = higher symmetry
-                -np.min(lattice.get_all_distances(x, structure.frac_coords), axis=1),
+                -_get_min_dist(structure, x),
                 *_frac_coords_sort_func(x),
             )
             for x in frac_coords
@@ -719,10 +747,9 @@ def doped_cluster_frac_coords(
             frac_coords_scores.items(), key=lambda x: (x[1][1], x[1][0], *x[1][2:])
         )
 
-        if (
-            np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
-            / np.min(lattice.get_all_distances(dist_favoured_site, structure.frac_coords), axis=1)
-        ) < symm_pref_dist_factor:
+        if _get_min_dist(structure, symmetry_favoured_site) < symm_pref_dist_factor * _get_min_dist(
+            structure, dist_favoured_site
+        ):
             unique_fcoords.append(dist_favoured_site)
         else:  # prefer symmetry over distance if difference is sufficiently small
             unique_fcoords.append(symmetry_favoured_site)
@@ -1276,7 +1303,7 @@ def get_min_dist_between_equiv_sites(
     if equiv_fcoords_1 is None or equiv_fcoords_2 is None:  # no mapping between host structure(s) and
         return np.inf  # primitive
 
-    return np.min(primitive.lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
+    return _get_min_dist(primitive, equiv_fcoords_1, equiv_fcoords_2)
 
 
 def _get_symm_dataset_of_struct_with_all_equiv_sites(

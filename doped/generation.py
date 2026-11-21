@@ -48,6 +48,7 @@ from doped.utils import _signed_charge, parsing, pool_manager, supercells, symme
 from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
 from doped.utils.parsing import reorder_s2_like_s1
 from doped.utils.plotting import format_defect_name
+from doped.utils.symmetry import _get_min_dist
 
 if TYPE_CHECKING:
     from ase.atoms import Atoms
@@ -2698,6 +2699,38 @@ def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
     return stol * (structure.volume / len(structure)) ** (1 / 3)
 
 
+def _interstitial_site_preference(
+    site_mul_and_equiv_fpos: tuple[np.ndarray, int, list[np.ndarray]],
+    host_structure: Structure,
+    dist_first: bool = False,
+) -> tuple:
+    """
+    Sort key for the preference of a candidate interstitial site (lower is more
+    preferred), favouring higher symmetry (i.e. lower multiplicity), then
+    larger distances to the nearest host atom, then the fractional coordinates
+    (with ``symmetry._frac_coords_sort_func``).
+
+    Args:
+        site_mul_and_equiv_fpos (tuple[np.ndarray, int, list[np.ndarray]]):
+            ``(frac_coords, multiplicity, equiv_frac_coords)`` of the candidate
+            site, as in the output of ``get_interstitial_sites``.
+        host_structure (|Structure|): Host structure.
+        dist_first (bool):
+            If ``True``, favour larger distances to the nearest host atom
+            first, then higher symmetry. Default is ``False``.
+
+    Returns:
+        tuple: Sort key for the candidate site.
+    """
+    frac_coords, multiplicity, equiv_fpos = site_mul_and_equiv_fpos
+    # minus distance to nearest host atom (max -> min for sorting), rounded (3 dp) to avoid noise effects:
+    neg_dist = -round(_get_min_dist(host_structure, frac_coords), 3)
+    return (
+        *((neg_dist, multiplicity) if dist_first else (multiplicity, neg_dist)),
+        *symmetry._frac_coords_sort_func(min(equiv_fpos, key=symmetry._frac_coords_sort_func)),
+    )
+
+
 def get_bond_centre_sites(
     host_structure: Structure, bond_tol: float = 0.2, symprec: float = 0.01
 ) -> list[tuple[np.ndarray, int, list[np.ndarray]]]:
@@ -2749,7 +2782,7 @@ def get_bond_centre_sites(
                 (site.coords + neighbour.coords) / 2
             )
             if any(  # each bond is found from both ends, and symmetry-equivalent bonds already included
-                np.min(host_structure.lattice.get_all_distances(equiv_fpos, bond_centre)) < 0.1
+                _get_min_dist(host_structure, equiv_fpos, bond_centre) < 0.1
                 for *_, equiv_fpos in bond_centre_sites
             ):
                 continue
@@ -2803,7 +2836,8 @@ def get_interstitial_sites(
     - Determine the multiplicities and symmetry-equivalent coordinates of the
       clustered sites using ``doped`` symmetry functions.
     - Group the clustered sites by symmetry using (looser) site matching as
-      controlled by ``stol``.
+      controlled by ``stol``, with candidates grouped with the most preferred
+      (highest symmetry, then furthest from host atoms) site they match.
     - From each group, pick the site with the highest symmetry and furthest
       distance from the host atoms, if its ``min_dist`` is no more than
       no more than ``symm_pref_dist_factor`` (0.85 by default) times the largest
@@ -2940,12 +2974,10 @@ def get_interstitial_sites(
     # this now depends on symprec in `get_all_equiv_sites` (doesn't matter in most cases,
     # but e.g. changes results in Ag2Se where we have some slight differences in site coordinations)
     for i, frac_coords in enumerate(site_frac_coords_array.tolist()):
-        match_found = False
-        for equiv_fpos in list(label_equiv_fpos_dict.values()):
-            if np.min(host_structure.lattice.get_all_distances(equiv_fpos, frac_coords)) < 0.01:
-                match_found = True
-                break
-
+        match_found = any(
+            _get_min_dist(host_structure, equiv_fpos, frac_coords) < 0.01
+            for equiv_fpos in label_equiv_fpos_dict.values()
+        )
         if not match_found:  # try equiv sites:
             this_equiv_fpos = [
                 site.frac_coords
@@ -2959,118 +2991,66 @@ def get_interstitial_sites(
                 )
             ]
             for label, equiv_fpos in list(label_equiv_fpos_dict.items()):
-                if np.min(host_structure.lattice.get_all_distances(equiv_fpos, frac_coords)) < tight_dist:
+                if _get_min_dist(host_structure, equiv_fpos, frac_coords) < tight_dist:
                     label_equiv_fpos_dict[label].extend(this_equiv_fpos)
                     match_found = True
 
         if not match_found:
             label_equiv_fpos_dict[i] = this_equiv_fpos
 
-    tight_cand_site_mul_and_equiv_fpos_list = [
-        (equiv_fpos[0], len(equiv_fpos), equiv_fpos) for equiv_fpos in label_equiv_fpos_dict.values()
-    ]
+    # sorted by site preference (highest symmetry, then furthest from host atoms; as used to pick from each
+    # group below), so that preferred sites are reference sites for looser grouping below. This makes
+    # grouping independent of candidate site ordering and means candidates are only merged with nearby
+    # _preferred_ sites:
+    site_preference = partial(_interstitial_site_preference, host_structure=host_structure)
+    tight_cand_site_mul_and_equiv_fpos_list = sorted(
+        ((equiv_fpos[0], len(equiv_fpos), equiv_fpos) for equiv_fpos in label_equiv_fpos_dict.values()),
+        key=site_preference,
+    )
 
     loose_dist = get_stol_equiv_dist(
         stol,  # matches pymatgen-analysis-defects default
         host_structure,  # ~1 Å for CdTe, Sb2Si2Te6
     )
     looser_site_matched_dict: dict[int, list] = defaultdict(list)
-    for i, tight_cand_site_mul_and_equiv_fpos in enumerate(tight_cand_site_mul_and_equiv_fpos_list):
-        # should only need to compare equiv_fpos[0] with all equiv sites of other groups
-        match_found = False
-        for label, sublist in list(looser_site_matched_dict.items()):
-            if (
-                np.min(
-                    host_structure.lattice.get_all_distances(
-                        # only match to first equiv_fpos in list of matched sites, so we don't get a
-                        # chaining effect (e.g. site 1 -> 1 Å from site 2 -> 1 Å from site 3 (but 2 Å
-                        # from site 1) etc.)
-                        sublist[0][2],
-                        tight_cand_site_mul_and_equiv_fpos[0],
-                    )
-                )
-                < loose_dist  # loose tol here
-            ):
-                match_found = True
-                looser_site_matched_dict[label].append(tight_cand_site_mul_and_equiv_fpos)
-                break
-
-        if not match_found:
-            looser_site_matched_dict[i].append(tight_cand_site_mul_and_equiv_fpos)
+    for i, tight_cand in enumerate(tight_cand_site_mul_and_equiv_fpos_list):  # (site, mul, equiv_fpos)
+        # only match to the first site in each group of matched sites (the preferred site of the group,
+        # with the sorting above; comparing to all its equiv sites), so we don't get a chaining effect
+        # (e.g. site 1 -> 1 Å from site 2 -> 1 Å from site 3 (but 2 Å from site 1) etc.)
+        label = next(
+            (
+                label
+                for label, sublist in looser_site_matched_dict.items()
+                if _get_min_dist(host_structure, sublist[0][2], tight_cand[0]) < loose_dist  # loose tol
+            ),
+            i,  # no match found; new group
+        )
+        looser_site_matched_dict[label].append(tight_cand)
 
     cand_site_mul_and_equiv_fpos_list: list[tuple] = []
-    for tight_cand_site_mul_and_equiv_fpos_sublist in looser_site_matched_dict.values():
-        if len(tight_cand_site_mul_and_equiv_fpos_sublist) == 1:
-            cand_site_mul_and_equiv_fpos_list.append(tight_cand_site_mul_and_equiv_fpos_sublist[0])
-
-        else:  # pick site with the highest symmetry and furthest distance from host atoms:
-            site_scores = [
-                (
-                    cand_site_mul_and_equiv_fpos[1],  # multiplicity (lower is higher symmetry)
-                    -np.min(  # distance to nearest host atom (minus; so max -> min for sorting)
-                        host_structure.lattice.get_all_distances(
-                            cand_site_mul_and_equiv_fpos[0], host_structure.frac_coords
-                        ),
-                        axis=1,
-                    ),
-                    *symmetry._frac_coords_sort_func(
-                        min(cand_site_mul_and_equiv_fpos[2], key=symmetry._frac_coords_sort_func)
-                    ),
-                )
-                for cand_site_mul_and_equiv_fpos in tight_cand_site_mul_and_equiv_fpos_sublist
-            ]
-            symmetry_favoured_site_mul_and_equiv_fpos = tight_cand_site_mul_and_equiv_fpos_sublist[
-                site_scores.index(min(site_scores))
-            ]
-            dist_favoured_reordered_score = min(
-                [(score[1], score[0], *score[2:]) for score in site_scores]
-            )
-            dist_favoured_site_mul_and_equiv_fpos = tight_cand_site_mul_and_equiv_fpos_sublist[
-                site_scores.index(
-                    (
-                        dist_favoured_reordered_score[1],
-                        dist_favoured_reordered_score[0],
-                        *dist_favoured_reordered_score[2:],
-                    )
-                )
-            ]
-
-            cand_site_mul_and_equiv_fpos_list.append(
-                dist_favoured_site_mul_and_equiv_fpos
-                if (
-                    (
-                        np.min(
-                            host_structure.lattice.get_all_distances(
-                                symmetry_favoured_site_mul_and_equiv_fpos[0], host_structure.frac_coords
-                            ),
-                            axis=1,
-                        )
-                        / np.min(
-                            host_structure.lattice.get_all_distances(
-                                dist_favoured_site_mul_and_equiv_fpos[0], host_structure.frac_coords
-                            ),
-                            axis=1,
-                        )
-                    )
-                    < symm_pref_dist_factor
-                )
-                else symmetry_favoured_site_mul_and_equiv_fpos
-            )
+    for sublist in looser_site_matched_dict.values():
+        # pick the site with the highest symmetry and furthest distance from host atoms (the first site of
+        # the group, with the sorting above), unless its distance to host atoms is less than
+        # ``symm_pref_dist_factor`` times that of the furthest site from host atoms in the group:
+        symm_favoured = sublist[0]
+        dist_favoured = min(sublist, key=partial(site_preference, dist_first=True))
+        cand_site_mul_and_equiv_fpos_list.append(
+            dist_favoured
+            if _get_min_dist(host_structure, symm_favoured[0])
+            < symm_pref_dist_factor * _get_min_dist(host_structure, dist_favoured[0])
+            else symm_favoured
+        )
 
     # bond-centre sites are added after grouping, as they could otherwise be dropped in favour of nearby
     # (higher-symmetry, further from host atoms) candidate sites by the looser site grouping above:
     if include_bond_centres:
         cand_fpos = [fpos for *_, equiv_fpos in cand_site_mul_and_equiv_fpos_list for fpos in equiv_fpos]
-        for bond_centre_site_mul_and_equiv_fpos in get_bond_centre_sites(
-            host_structure, bond_tol=bond_tol, symprec=symprec
-        ):
-            bond_centre_fpos = bond_centre_site_mul_and_equiv_fpos[0]
-            cand_dists = host_structure.lattice.get_all_distances(cand_fpos, bond_centre_fpos)
-            if (
-                remove_collisions([bond_centre_fpos], structure=host_structure, min_dist=min_dist).size
-                and np.min(cand_dists, initial=np.inf) > tight_dist
-            ):  # not coinciding with other candidates or within min_dist of host atoms
-                cand_site_mul_and_equiv_fpos_list.append(bond_centre_site_mul_and_equiv_fpos)
+        cand_site_mul_and_equiv_fpos_list += [
+            bond_centre  # if not within min_dist of host atoms, or coinciding with other candidates:
+            for bond_centre in get_bond_centre_sites(host_structure, bond_tol=bond_tol, symprec=symprec)
+            if _get_min_dist(host_structure, bond_centre[0]) >= min_dist
+            and _get_min_dist(host_structure, cand_fpos, bond_centre[0]) > tight_dist
+        ]
 
     sorted_sites_mul_and_equiv_fpos = []
     for _cand_site, multiplicity, equiv_fpos in cand_site_mul_and_equiv_fpos_list:
