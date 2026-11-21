@@ -15,10 +15,13 @@ from unittest.mock import patch
 import matplotlib as mpl
 import numpy as np
 import pytest
+from pymatgen.analysis.defects.corrections import freysoldt
+from pymatgen.analysis.defects.utils import QModel
 from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import PeriodicSite, Structure
-from pymatgen.io.vasp.outputs import Outcar
+from pymatgen.io.vasp.inputs import Poscar
+from pymatgen.io.vasp.outputs import Locpot, Outcar
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
 
 from doped.analysis import DefectParser, DefectsParser
@@ -138,7 +141,7 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
             ]
         )
         for fnv_corr in fnv_corr_list:
-            assert np.isclose(fnv_corr.correction_energy, 7.499591576499095)
+            assert np.isclose(fnv_corr.correction_energy, 7.49969540051394)
 
     def test_get_kumagai_correction(self):
         efnv_corr_list = [get_kumagai_correction(self.defect_entry, self.dielectric)]
@@ -204,7 +207,7 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
             assert np.isclose(three_site_corr.correction_energy, 1.2856151718, atol=1e-8)
 
         for point_charges, message in [
-            ([(-1, coords), (-1, nn_v_coords)], "does not match the defect charge state"),
+            ([(-1, coords), (-1, nn_v_coords)], "does not match the total defect charge state"),
             ([(-1.5, coords), (-1.5, coords + np.array([1, 0, 0]))], "coincident"),  # periodic images
             ([(-1.5, coords), (-1.5, coords + shift / 4)], "coincident"),  # 0.05 Å apart
         ]:
@@ -212,6 +215,127 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
                 get_kumagai_correction(
                     self.defect_entry, self.dielectric, verbose=False, point_charges=point_charges
                 )
+
+    def test_multiple_point_charges_w_get_freysoldt_correction(self):
+        """
+        Test modelling the defect charge as multiple (Gaussian) charges in the
+        FNV correction, with ``point_charges``.
+        """
+        q = self.defect_entry.charge_state
+        coords = np.array(self.defect_entry.sc_defect_frac_coords)
+        lattice = self.defect_entry.sc_entry.structure.lattice
+        aniso_dielectric = np.diag([10.0, 15.0, 25.0])
+        rng = np.random.default_rng(0)
+        locpots = [
+            Locpot(Poscar(self.defect_entry.sc_entry.structure), {"total": rng.normal(size=(24, 28, 32))})
+            for _ in range(2)
+        ]
+
+        # a single charge reproduces the ``pymatgen-analysis-defects`` FNV correction (to its 6 dp rounding
+        # of the electrostatic energy), including for non-Gaussian model charges. Compared at the origin,
+        # as ``pymatgen-analysis-defects`` <= 2026.10.24 otherwise takes the next grid plane above the
+        # given coordinates as the defect position:
+        origin = np.zeros(3)
+        for dielectric, q_model in [
+            (self.dielectric, None),
+            (aniso_dielectric, QModel(beta=1.3, expnorm=0.3, gamma=2.5)),
+        ]:
+            pmg_corr = freysoldt.get_freysoldt_correction(
+                q, dielectric, *locpots, origin, q_model=q_model, energy_cutoff=1500, mad_tol=1e-6
+            )
+            for kwargs in [{"defect_frac_coords": origin}, {"point_charges": [(q, origin)]}]:
+                corr = get_freysoldt_correction(
+                    self.defect_entry, dielectric, *locpots, verbose=False, q_model=q_model, **kwargs
+                )
+                assert ("point_charges" in corr.metadata) == ("point_charges" in kwargs)
+                assert np.isclose(corr.correction_energy, pmg_corr.correction_energy, atol=1e-5)
+                for key, atol in [("electrostatic", 1e-5), ("potential", 1e-10), ("alignments", 1e-10)]:
+                    assert corr.metadata[key] == pytest.approx(pmg_corr.metadata[key], abs=atol)
+                for axis in range(3):
+                    for key, pmg_values in pmg_corr.metadata["plot_data"][axis]["pot_plot_data"].items():
+                        values = corr.metadata["plot_data"][axis]["pot_plot_data"][key]
+                        assert np.allclose(values, pmg_values, atol=1e-10)
+
+        for dielectric in [self.dielectric, aniso_dielectric]:
+            single_corr = get_freysoldt_correction(self.defect_entry, dielectric, verbose=False)
+            # splitting the charge in two, 0.2 Å apart, closely reproduces the single charge:
+            shift = np.array([0.1 / lattice.a, 0, 0])
+            split_charges = [(q / 2, coords - shift), (q / 2, coords + shift)]
+            split_corr = get_freysoldt_correction(
+                self.defect_entry, dielectric, verbose=False, point_charges=split_charges
+            )
+            assert np.isclose(split_corr.correction_energy, single_corr.correction_energy, atol=5e-3)
+            assert split_corr.metadata["point_charges"] == [(qi, list(fc)) for qi, fc in split_charges]
+
+        # three-site (split-vacancy-like) model; independent of ordering and periodic images of the input:
+        nn_coords = coords + np.array([0.2, 0.2, 0.2])
+        point_charges = [(-3, coords), (3, (coords + nn_coords) / 2), (-3, nn_coords)]
+        three_site_corrs = [
+            get_freysoldt_correction(self.defect_entry, aniso_dielectric, verbose=False, point_charges=pcs)
+            for pcs in [point_charges, [(-3, nn_coords + np.array([1, 0, -1])), *point_charges[:2]]]
+        ]
+        assert np.isclose(
+            three_site_corrs[0].correction_energy, three_site_corrs[1].correction_energy, atol=1e-6
+        )
+        assert not np.isclose(
+            three_site_corrs[0].metadata["electrostatic"],
+            get_freysoldt_correction(self.defect_entry, aniso_dielectric, verbose=False).metadata[
+                "electrostatic"
+            ],
+            atol=0.05,
+        )
+        assert np.isclose(three_site_corrs[0].metadata["electrostatic"], 0.9159909521, atol=1e-6)
+
+        # for (non-overlapping) Gaussians, the electrostatic term matches the eFNV point charge energy:
+        for dielectric in [self.dielectric, aniso_dielectric]:
+            fnv_corr, efnv_corr = (
+                func(self.defect_entry, dielectric, verbose=False, point_charges=point_charges)
+                for func in [get_freysoldt_correction, get_kumagai_correction]
+            )
+            assert np.isclose(
+                fnv_corr.metadata["electrostatic"],
+                efnv_corr.metadata["pydefect_ExtendedFnvCorrection"].point_charge_correction,
+                atol=1e-3,
+            )
+
+        # ``Locpot`` objects give the same result as dictionaries of their planar averages:
+        locpot_dicts = [{i: locpot.get_average_along_axis(i) for i in range(3)} for locpot in locpots]
+        fnv_corrs = [
+            get_freysoldt_correction(
+                self.defect_entry, aniso_dielectric, *inputs, verbose=False, point_charges=point_charges
+            )
+            for inputs in [locpots, locpot_dicts]
+        ]
+        assert np.isclose(fnv_corrs[0].correction_energy, fnv_corrs[1].correction_energy, atol=1e-8)
+
+        # translating the potentials and charges by whole grid planes does not change the correction:
+        planes = np.array([5, 9, 13])
+        shifted_dicts = [{i: np.roll(d[i], planes[i]) for i in range(3)} for d in locpot_dicts]
+        for pcs in [[(q, coords)], point_charges]:
+            shifted_pcs = [(qi, fc + planes / locpots[0].dim) for qi, fc in pcs]
+            fnv_corrs = [
+                get_freysoldt_correction(
+                    self.defect_entry, aniso_dielectric, *dicts, verbose=False, point_charges=charges
+                )
+                for dicts, charges in [(locpot_dicts, pcs), (shifted_dicts, shifted_pcs)]
+            ]
+            assert np.isclose(fnv_corrs[0].correction_energy, fnv_corrs[1].correction_energy, atol=1e-8)
+
+        _corr, fig = get_freysoldt_correction(
+            self.defect_entry, aniso_dielectric, verbose=False, point_charges=split_charges, plot=True
+        )
+        assert len(fig.axes) == 3
+        mpl.pyplot.close(fig)
+
+        with pytest.raises(ValueError, match="does not match the total defect charge state"):
+            get_freysoldt_correction(self.defect_entry, self.dielectric, point_charges=[(q + 1, coords)])
+        with pytest.raises(ValueError, match="Only Gaussian model charges"):
+            get_freysoldt_correction(
+                self.defect_entry,
+                self.dielectric,
+                point_charges=split_charges,
+                q_model=QModel(expnorm=0.5),
+            )
 
     def test_get_kumagai_correction_large_dielectric(self):
         """
@@ -425,6 +549,46 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         plt.close(fnv_fig)
         return fig
 
+    def test_kumagai_min_inequivalent_sampled_sites(self):
+        """
+        Test that the default eFNV sampling region includes a minimum number of
+        inequivalent sites, and that the error estimate uses these groups.
+        """
+        from scipy.stats import sem
+
+        from doped.corrections import (
+            MIN_EFNV_SAMPLED_GROUPS,
+            _get_equivalent_site_groups,
+            get_efnv_sampled_group_means,
+        )
+
+        groups = _get_equivalent_site_groups(
+            ["Ga", "Ga", "O", "Ga", "Ga"], [5.0, 5.001, 5.0, 5.0, 6.0], [0.1, 0.1004, 0.1, 0.11, 0.1]
+        )
+        assert groups.tolist() == [0, 0, 1, 2, 3]  # same species, distance and potential -> equivalent
+
+        corr = get_kumagai_correction(self.F_O_1_entry, dielectric=self.ytos_dielectric)
+        efnv_corr_obj = corr.metadata["pydefect_ExtendedFnvCorrection"]
+        all_groups = _get_equivalent_site_groups(
+            [s.specie for s in efnv_corr_obj.sites],
+            [s.distance for s in efnv_corr_obj.sites],
+            [s.potential for s in efnv_corr_obj.sites],
+        )
+        group_means = get_efnv_sampled_group_means(efnv_corr_obj)
+        assert len(group_means) >= min(MIN_EFNV_SAMPLED_GROUPS, int(np.ceil(len(set(all_groups)) / 4)))
+        sampled = [s for s in efnv_corr_obj.sites if s.distance > efnv_corr_obj.defect_region_radius]
+        assert len(group_means) <= len(sampled)
+
+        # a user-specified radius is not adjusted:
+        corr = get_kumagai_correction(
+            self.F_O_1_entry, dielectric=self.ytos_dielectric, defect_region_radius=8.5
+        )
+        assert corr.metadata["pydefect_ExtendedFnvCorrection"].defect_region_radius == 8.5
+
+        _corr, corr_error = self.F_O_1_entry.get_kumagai_correction(return_correction_error=True)
+        group_means = get_efnv_sampled_group_means(efnv_corr_obj)  # same (default) settings
+        assert np.isclose(corr_error, sem(group_means) * abs(self.F_O_1_entry.charge_state))
+
     @custom_mpl_image_compare("F_O_+1_eFNV_plot.png")
     def test_plot_kumagai(self):
         """
@@ -432,7 +596,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         """
         mpl.pyplot.clf()
         corr, fig = get_kumagai_correction(self.F_O_1_entry, dielectric=self.ytos_dielectric, plot=True)
-        assert np.isclose(corr.correction_energy, 0.12697319510724614)
+        assert np.isclose(corr.correction_energy, 0.12414030313392746)
         return fig
 
     @custom_mpl_image_compare("F_O_+1_eFNV_wacky_region_plot.png")
@@ -447,7 +611,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         )
         assert np.isclose(corr.correction_energy, 0.11110646242343837)
         assert np.isclose(
-            sum(self.F_O_1_entry.corrections.values()), 0.12697319510724614
+            sum(self.F_O_1_entry.corrections.values()), 0.12414030313392746
         )  # correction not applied to DefectEntry when using get_kumagai_correction directly
         assert np.isclose(
             orig_corr_error, self.F_O_1_entry.corrections_metadata["kumagai_charge_correction_error"]
@@ -485,7 +649,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         # gives only Oxygens in the correction/plot
         assert np.isclose(corr.correction_energy, 0.12224386127739299)  # different by ~4 meV to above
         assert np.isclose(
-            sum(self.F_O_1_entry.corrections.values()), 0.12697319510724614
+            sum(self.F_O_1_entry.corrections.values()), 0.12414030313392746
         )  # correction not applied to DefectEntry when using get_kumagai_correction directly
         assert np.isclose(
             orig_corr_error, self.F_O_1_entry.corrections_metadata["kumagai_charge_correction_error"]

@@ -433,7 +433,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if test_attributes:
             assert CdTe_dp.output_path == self.CdTe_EXAMPLE_DIR
             assert CdTe_dp.dielectric == 9.13
-            assert CdTe_dp.error_tolerance == 0.05
+            assert CdTe_dp.error_tolerance == 0.025
             assert CdTe_dp.bulk_path == self.CdTe_BULK_DATA_DIR  # automatically determined
             assert CdTe_dp.subfolder == "vasp_ncl"  # automatically determined
             assert CdTe_dp.bulk_band_gap_vr is None
@@ -653,7 +653,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 for i in [
                     "Estimated error in the Kumagai (eFNV) charge correction for certain defects",
                     "greater than the `error_tolerance` (= 0.010 eV):",
-                    "Int_Te_3_2: 0.012 eV",
+                    "Int_Te_3_2: 0.016 eV",
                     "You may want to check the accuracy",
                 ]
             )
@@ -739,8 +739,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 i in str(warn.message)
                 for i in [
                     "Estimated error in the Kumagai (eFNV) charge correction for certain defects",
-                    "greater than the `error_tolerance` (= 0.050 eV):",
-                    "Int_Te_3_2: 0.157 eV",
+                    "greater than the `error_tolerance` (= 0.025 eV):",
+                    "Int_Te_3_2: 0.183 eV",
                     "You may want to check the accuracy",
                 ]
             )
@@ -804,10 +804,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             "charge correction for certain defects is greater than the `error_tolerance` (= 1.00e-03 eV):",
             "v_Cd_-2: 1.08e-02 eV",
             # "v_Cd_-1: 8.46e-03 eV",  # now not printed because not stable charge states
-            "Int_Te_3_1: 3.10e-03 eV",
-            "Te_Cd_+1: 2.02e-03 eV",
+            "Int_Te_3_1: 3.97e-03 eV",
+            "Te_Cd_+1: 3.17e-03 eV",
             # "Int_Te_3_Unperturbed_1: 4.91e-03 eV",  # now not printed because not stable charge states
-            "Int_Te_3_2: 1.24e-02 eV",
+            "Int_Te_3_2: 1.56e-02 eV",
             "You may want to check the accuracy of the corrections by",
             "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
             "(using `defect_entry.get_kumagai_correction()` with `plot=True`)",
@@ -941,7 +941,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
             dielectric=self.Sb2Se3_dielectric,
         )
-        assert not w  # no warnings
+        assert len(w) == 1  # only the charge correction error warning (28 meV, above 25 meV tolerance), as
+        # O_Se_-2 is the only parsed charge state here (so taken to be stable in the gap):
+        assert "O_Se_Cs_Sb2.65_-2: 0.028 eV" in str(w[0].message)
         check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
         assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.81760, atol=1e-3)
@@ -1011,14 +1013,14 @@ class DefectsParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             correction, fig = v_Sb_minus_3_ent.get_kumagai_correction(plot=True)
         assert any(
-            "Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.067 eV (i.e. "
-            "which is greater than the `error_tolerance`: 0.050 eV)." in str(warn.message)
+            "Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.069 eV (i.e. "
+            "which is greater than the `error_tolerance`: 0.025 eV)." in str(warn.message)
             for warn in w
         )
         assert np.isclose(correction.correction_energy, 1.0785, atol=1e-3)
         assert np.isclose(
             v_Sb_minus_3_ent.corrections_metadata.get("kumagai_charge_correction_error", 0),
-            0.067,
+            0.069,
             atol=1e-3,
         )
 
@@ -1335,10 +1337,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         defect and bulk supercells.
         """
         dp, w = _create_dp_and_capture_warnings(self.ZnS_DATA_DIR, dielectric=8.9)
-        assert len(w) == 2
+        assert len(w) == 3
         assert all(
             any(i in str(warning.message) for warning in w)
             for i in [
+                "Estimated error in the Kumagai (eFNV) charge correction for certain defects",
+                "inter_26_Al_3: 0.033 eV",  # above the default 25 meV tolerance
                 "There are mismatching INCAR tags",
                 ":\n[('NKRED', 1, 2)]\nIn",
                 "Defects vac_1_Zn_0 have been detected to have dimer bonds",
@@ -1562,10 +1566,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                     "energy), used for" in str(warn.message)
                     for warn in w
                 )
-            # no charge correction warning by default, as charge correction error is only 6.36 meV here:
+            # no charge correction warning by default, as charge correction error is only 6.60 meV here:
             assert any("Estimated error" in str(warn.message) for warn in w) == correction_warning
             assert (
-                any("sub_1_O_on_Se_1: 6.36e-03 eV" in str(warn.message) for warn in w)
+                any("sub_1_O_on_Se_1: 6.60e-03 eV" in str(warn.message) for warn in w)
                 == correction_warning
             )
             assert len(dp.defect_dict) == 2
@@ -1591,7 +1595,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         assert np.isclose(
             dp.defect_dict["sub_1_O_on_Se_1"].corrections_metadata["kumagai_charge_correction_error"],
-            0.00636,
+            0.00660,
             atol=1e-4,
         )
 
@@ -1689,9 +1693,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         ).defect_entry
         assert ytos_F_O_1.charge_state == ytos_F_O_1_explicit.charge_state == 1
         assert ytos_F_O_1.get_ediff() == ytos_F_O_1_explicit.get_ediff()
-        assert np.isclose(ytos_F_O_1.get_ediff(), 0.04176070572680146, atol=1e-3)  # corrected energy
+        assert np.isclose(ytos_F_O_1.get_ediff(), 0.03898741707598674, atol=1e-3)  # corrected energy
         correction_dict = {
-            "kumagai_charge_correction": 0.12699488572686776,
+            "kumagai_charge_correction": 0.12422159707606019,
         }
         for correction_name, correction_energy in correction_dict.items():
             assert np.isclose(ytos_F_O_1.corrections[correction_name], correction_energy, atol=1e-3)
@@ -1803,8 +1807,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             assert (
                 f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-                f"{parsed_int_Te_2_fake_aniso.name} is 0.157 eV (i.e. which is greater than the "
-                f"`error_tolerance`: 0.050 eV). You may want to check the accuracy of the correction "
+                f"{parsed_int_Te_2_fake_aniso.name} is 0.183 eV (i.e. which is greater than the "
+                f"`error_tolerance`: 0.025 eV). You may want to check the accuracy of the correction "
                 f"by plotting the site potential differences (using "
                 f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
                 f"to unstable or shallow defect charge states (which can't be accurately modelled with "
@@ -2588,7 +2592,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         correction_dict = self._check_defect_entry_corrections(
-            int_F_minus1_ent, 0.7478967131628451, -0.0036182568370900017
+            int_F_minus1_ent, 0.750104631237491, -0.0014103387624441
         )
         # assert auto-determined interstitial site is correct
         assert np.isclose(
@@ -2609,7 +2613,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             ).defect_entry
         assert (
             f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-            f"{int_F_minus1_ent.name} is 2.58e-03 eV (i.e. which is greater than the `error_tolerance`: "
+            f"{int_F_minus1_ent.name} is 5.83e-03 eV (i.e. which is greater than the `error_tolerance`: "
             f"1.00e-03 eV). You may want to check the accuracy of the correction by plotting the site "
             f"potential differences (using `defect_entry.get_kumagai_correction()` with "
             f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
@@ -2630,9 +2634,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         # test returning correction error:
         corr, corr_error = int_F_minus1_ent.get_kumagai_correction(return_correction_error=True)
         assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
-        assert np.isclose(corr_error, 0.003, atol=1e-3)
+        assert np.isclose(corr_error, 0.006, atol=1e-3)
         assert np.isclose(
-            int_F_minus1_ent.corrections_metadata["kumagai_charge_correction_error"], 0.003, atol=1e-3
+            int_F_minus1_ent.corrections_metadata["kumagai_charge_correction_error"], 0.006, atol=1e-3
         )
 
         # test returning correction error with plot:
@@ -2640,9 +2644,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             return_correction_error=True, plot=True
         )
         assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
-        assert np.isclose(corr_error, 0.003, atol=1e-3)
+        assert np.isclose(corr_error, 0.006, atol=1e-3)
         assert np.isclose(
-            int_F_minus1_ent.corrections_metadata["kumagai_charge_correction_error"], 0.003, atol=1e-3
+            int_F_minus1_ent.corrections_metadata["kumagai_charge_correction_error"], 0.006, atol=1e-3
         )
 
         # test just correction returned with plot = False and return_correction_error = False:
@@ -2731,7 +2735,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         efnv_ent = parse_F_O_1(charge_state=1).defect_entry
         for entry, ediff, correction_name, correction_energy in [
             (fnv_ent, 0.01855410906115721, "freysoldt_charge_correction", fnv_corr),
-            (efnv_ent, 0.04176, "kumagai_charge_correction", 0.12699488572686776),
+            (efnv_ent, 0.03899, "kumagai_charge_correction", 0.12422),
         ]:
             assert np.isclose(entry.get_ediff(), ediff, atol=1e-3)
             assert np.isclose(entry.corrections[correction_name], correction_energy, atol=1e-3)
