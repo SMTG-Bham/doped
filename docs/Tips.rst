@@ -241,8 +241,8 @@ when parsing the intrinsic defects, the -3 charge antimony vacancy (``v_Sb-3``) 
 
 .. code-block::
 
-        Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.067 eV (i.e. which 
-        is greater than the ``error_tolerance``: 0.050 eV). You may want to check the accuracy of the 
+        Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.069 eV (i.e. which 
+        is greater than the ``error_tolerance``: 0.025 eV). You may want to check the accuracy of the 
         correction by plotting the site potential differences (using 
         ``defect_entry.get_kumagai_correction()`` with ``plot=True``). Large errors are often due to 
         unstable or shallow defect charge states (which can't be accurately modelled with the supercell 
@@ -251,10 +251,11 @@ when parsing the intrinsic defects, the -3 charge antimony vacancy (``v_Sb-3``) 
 
 .. note::
 
-    Charge correction errors are estimated by computing the standard error of the mean of the electrostatic
-    potential difference between the bulk and defect supercells, in the sampling region (far from the
-    defect site), and multiplying by the defect charge. This gives a lower bound estimate of the true
-    error in the charge correction for a given supercell.
+    Charge correction errors are estimated from the sampling noise in the potential alignment; the standard
+    error of the mean of the electrostatic potential difference between the bulk and defect supercells, in
+    the sampling region (far from the defect site), multiplied by the defect charge. This gives a lower
+    bound on the error in the charge correction for a given supercell, which is itself a lower bound on the
+    remnant finite-size error.
 
 Following the advice in the warning, we use the |DefectEntry|
 :meth:`~doped.core.DefectEntry.get_kumagai_correction()` method with ``plot=True`` to plot the site 

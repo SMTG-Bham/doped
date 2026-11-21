@@ -305,7 +305,7 @@ class DefectEntry(thermo.DefectEntry):
         correction_error,
         return_correction_error=False,
         type="FNV",
-        error_tolerance=0.05,
+        error_tolerance=0.025,
     ):
         if return_correction_error:
             if isinstance(correction_output, tuple):  # correction_output may be a tuple, so amalgamate:
@@ -314,19 +314,16 @@ class DefectEntry(thermo.DefectEntry):
 
         if (
             correction_error > error_tolerance
-        ):  # greater than 50 meV error in charge correction, warn the user
-            if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
-                error_val_string = f"{correction_error:.3f}"
-                error_tol_string = f"{error_tolerance:.3f}"
-            else:  # else give in scientific notation:
-                error_val_string = f"{correction_error:.2e}"
-                error_tol_string = f"{error_tolerance:.2e}"
+        ):  # error in charge correction is greater than the tolerance, warn the user
+            # if greater than 10 meV, round energy values to meV, else use scientific notation:
+            error_str = f"{correction_error:.3f}" if error_tolerance >= 0.01 else f"{correction_error:.2e}"
+            tol_str = f"{error_tolerance:.3f}" if error_tolerance >= 0.01 else f"{error_tolerance:.2e}"
 
             warnings.warn(
                 f"Estimated error in the {'Freysoldt (FNV)' if type == 'FNV' else 'Kumagai (eFNV)'} "
-                f"charge correction for defect {self.name} is {error_val_string} eV (i.e. which is "
-                f"greater than the `error_tolerance`: {error_tol_string} eV). You may want to check "
-                f"the accuracy of the correction by plotting the site potential differences (using "
+                f"charge correction for defect {self.name} is {error_str} eV (i.e. which is greater than "
+                f"the `error_tolerance`: {tol_str} eV). You may want to check the accuracy of the "
+                f"correction by plotting the site potential differences (using "
                 f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
                 f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
                 f"which can't be accurately modelled with the supercell approach; see "
@@ -346,7 +343,7 @@ class DefectEntry(thermo.DefectEntry):
         filename: PathLike | None = None,
         axis=None,
         return_correction_error: bool = False,
-        error_tolerance: float = 0.05,
+        error_tolerance: float = 0.025,
         style_file: PathLike | None = None,
         ax: "mpl.axes.Axes | list[mpl.axes.Axes] | np.ndarray | None" = None,
         **kwargs,
@@ -370,10 +367,12 @@ class DefectEntry(thermo.DefectEntry):
         spherical average of the dielectric tensor for the isolated energy and
         the G = 0 (alignment) term.
 
-        The charge correction error is estimated by computing the average
-        standard deviation of the planar-averaged potential difference in the
-        sampling region, and multiplying by the defect charge. This is expected
-        to be a lower bound estimate of the true charge correction error.
+        The charge correction error is estimated from the sampling noise in the
+        potential alignment; the average standard deviation of the
+        planar-averaged potential difference in the sampling region, multiplied
+        by the defect charge. This is a lower bound on the error in the charge
+        correction, which is itself a lower bound on the remnant finite-size
+        error.
 
         The defect coordinates are taken as the relaxed defect site by default
         (``DefectEntry.defect_supercell_site``) -- which is the bulk site for
@@ -424,14 +423,15 @@ class DefectEntry(thermo.DefectEntry):
                 If None, then all three axes are plotted.
             return_correction_error (bool):
                 If True, also returns the average standard deviation of the
-                planar-averaged potential difference times the defect charge
-                (which gives an estimate of the error range of the correction
-                energy). Default is False.
+                planar-averaged potential difference times the defect charge; a
+                lower bound on the error in the charge correction (itself a
+                lower bound on the remnant finite-size error), based on
+                sampling noise. Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction, based on the
-                variance of the potential in the sampling region, is greater
+                If the estimated error in the charge correction (a lower bound,
+                from the sampling noise in the potential alignment) is greater
                 than this value (in eV), then a warning is raised.
-                (default: 0.05 eV)
+                (default: 0.025 eV)
             style_file (PathLike):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
@@ -446,9 +446,11 @@ class DefectEntry(thermo.DefectEntry):
                 is not applied to user-provided ``Axes``), otherwise a single
                 ``Axes``. Default: None.
             **kwargs:
-                Additional kwargs to pass to the ``pymatgen-analysis-defects``
-                ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
-                ``mad_tol``, ``q_model``, ``defect_frac_coords``).
+                Additional kwargs to pass to
+                :func:`~doped.corrections.get_freysoldt_correction` (e.g.
+                ``point_charges`` to model the defect charge as multiple
+                Gaussian charges, such as for defect complexes, or ``q_model``,
+                ``energy_cutoff``, ``mad_tol``, ``defect_frac_coords``).
 
         Returns:
             ``utils.CorrectionResults`` (summary of the corrections applied and
@@ -512,7 +514,7 @@ class DefectEntry(thermo.DefectEntry):
         plot: bool = False,
         filename: PathLike | None = None,
         return_correction_error: bool = False,
-        error_tolerance: float = 0.05,
+        error_tolerance: float = 0.025,
         style_file: PathLike | None = None,
         **kwargs,
     ):
@@ -532,16 +534,17 @@ class DefectEntry(thermo.DefectEntry):
         this (and/or ``excluded_indices``) to ensure the best sampling of the
         plateau region away from the defect position -- ``doped`` should throw a
         warning in these cases (about the correction error being above the
-        default tolerance (50 meV)). For example, with layered materials, the
+        default tolerance (25 meV)). For example, with layered materials, the
         defect charge is often localised to one layer, so we may want to adjust
         ``defect_region_radius`` and/or ``excluded_indices`` to ensure that
         only sites in other layers are used for the sampling region (plateau) -
         see example on doped docs ``Tips`` page.
 
-        The correction error is estimated by computing the standard error of
-        the mean of the sampled site potential differences, multiplied by the
-        defect charge. This is expected to be a lower bound estimate of the
-        true charge correction error.
+        The correction error is estimated from the sampling noise in the
+        potential alignment; the standard error of the mean of the sampled
+        (inequivalent) site potential differences, multiplied by the defect
+        charge. This is a lower bound on the error in the charge correction,
+        which is itself a lower bound on the remnant finite-size error.
 
         If this correction is used, please cite the Kumagai & Oba (eFNV) paper:
         10.1103/PhysRevB.89.195205 and the ``pydefect`` paper: "Insights into
@@ -575,9 +578,10 @@ class DefectEntry(thermo.DefectEntry):
                 region are used for sampling the electrostatic potential far
                 from the defect (to obtain the potential alignment). If
                 ``None`` (default), uses half the largest distance between
-                parallel cell faces (as in ``pydefect``). The radius is reduced
-                as necessary (with a warning) to ensure at least 3 sites in the
-                sampling region.
+                parallel cell faces (as in ``pydefect``), reduced as necessary
+                to include at least 8 inequivalent sites in the sampling region
+                (or a quarter of all inequivalent sites if fewer, with a
+                minimum of 3 sites).
             excluded_indices (list):
                 List of site indices (in the defect supercell) to exclude from
                 the site potential sampling in the correction calculation/plot.
@@ -602,14 +606,15 @@ class DefectEntry(thermo.DefectEntry):
                 If None, plots are not saved.
             return_correction_error (bool):
                 If True, also returns the standard error of the mean of the
-                sampled site potential differences times the defect charge
-                (which gives an estimate of the error range of the correction
-                energy). Default is False.
+                sampled (inequivalent) site potential differences times the
+                defect charge; a lower bound on the error in the charge
+                correction (itself a lower bound on the remnant finite-size
+                error), based on sampling noise. Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction, based on the
-                variance of the potential in the sampling region, is greater
+                If the estimated error in the charge correction (a lower bound,
+                from the sampling noise in the potential alignment) is greater
                 than this value (in eV), then a warning is raised.
-                (default: 0.05 eV)
+                (default: 0.025 eV)
             style_file (PathLike):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
@@ -659,8 +664,14 @@ class DefectEntry(thermo.DefectEntry):
             [s.diff_pot for s in efnv_corr_obj.sites if s.distance > efnv_corr_obj.defect_region_radius]
         )
 
-        # correction energy error can be estimated from standard error of the mean:
-        correction_error = sem(sampled_pot_diff_array) * abs(self.charge_state)
+        # correction energy error can be estimated from standard error of the mean, taken over the
+        # _inequivalent_ sampled sites (as equivalent sites are not independent samples):
+        from doped.corrections import get_efnv_sampled_group_means
+
+        group_means = get_efnv_sampled_group_means(efnv_corr_obj)
+        correction_error = sem(group_means if len(group_means) > 1 else sampled_pot_diff_array) * abs(
+            self.charge_state
+        )
         self.corrections_metadata.update({"kumagai_charge_correction_error": correction_error})
         return self._check_correction_error_and_return_output(
             efnv_correction_output,
