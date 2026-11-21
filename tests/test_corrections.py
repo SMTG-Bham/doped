@@ -9,12 +9,15 @@ developers.
 import os
 import tempfile
 import unittest
+import warnings
+from functools import cache
 from typing import Any
 from unittest.mock import patch
 
 import matplotlib as mpl
 import numpy as np
 import pytest
+from monty.serialization import loadfn
 from pymatgen.analysis.defects.corrections import freysoldt
 from pymatgen.analysis.defects.utils import QModel
 from pymatgen.core.entries import ComputedStructureEntry
@@ -22,11 +25,18 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Locpot, Outcar
-from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
+from test_utils import (
+    EXAMPLE_DIR,
+    _run_func_and_capture_stdout_warnings,
+    custom_mpl_image_compare,
+    data_dir,
+    module_path,
+)
 
 from doped.analysis import DefectParser, DefectsParser
 from doped.core import DefectEntry, Vacancy
-from doped.corrections import get_freysoldt_correction, get_kumagai_correction
+from doped.corrections import get_efnv_alignment_error, get_freysoldt_correction, get_kumagai_correction
+from doped.utils.parsing import get_defect_type_and_site_indices
 from doped.utils.supercells import _get_unwrapped_complex_frac_coords
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
@@ -732,4 +742,306 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         corr, fig = get_kumagai_correction(self.Te_i_2_ent, point_charges=point_charges, plot=True)
         assert np.isclose(corr.correction_energy, 0.910851106265789, atol=1e-5)  # 0.904 eV for single PC
         assert corr.metadata["point_charges"] == [(q, list(fc)) for q, fc in point_charges]
+        return fig
+
+
+class Ga2O3SplitVacanciesTestCase(unittest.TestCase):
+    """
+    Tests of the multi-site (``point_charges``) eFNV and FNV corrections with
+    DFT calculations of point and split Ga vacancies (q = -3) in β-Ga2O3, in 12
+    supercells of 160-1280 atoms (see ``README.md`` in the test data folder).
+    """
+
+    defect_dict: dict[str, DefectEntry]
+    charge_models = ("single site (centroid)", "multi-site")  # see ``_get_charge_models``
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.defect_dict = loadfn(
+            os.path.join(data_dir, "Ga2O3_split_vacancies/Ga2O3_split_vacancies_defect_dict.json.gz")
+        )
+
+    @staticmethod
+    def _get_charge_models(defect_entry, fnv: bool = False) -> tuple[dict, dict]:
+        """
+        Get the ``get_kumagai_correction`` (or ``get_freysoldt_correction``, if
+        ``fnv``) kwargs to model the charge of ``defect_entry`` at a single
+        site (the centroid of the complex), and split over its constituent Ga
+        vacancies (-3) and interstitials (+3).
+        """
+        point_charges = defect_entry.calculation_metadata["point_charges"]  # (already unwrapped)
+        centroid = np.mean([frac_coords for _q, frac_coords in point_charges], axis=0)
+        coords_kwarg = "defect_frac_coords" if fnv else "defect_coords"
+        return {coords_kwarg: centroid}, {"point_charges": point_charges}
+
+    @classmethod
+    @cache
+    def _get_corrections(cls) -> dict[str, dict]:
+        """
+        Get the eFNV and FNV corrections of each entry, with the charge at a
+        single site (the centroid of the complex) and split over its
+        constituents (see ``_get_charge_models``), as ``{key: {label:
+        CorrectionResult}}``.
+
+        Cached (used by multiple tests).
+        """
+        corrections: dict[str, dict] = {key: {} for key in cls.defect_dict}
+        funcs: dict[str, Any] = {"eFNV": get_kumagai_correction, "FNV": get_freysoldt_correction}
+        with warnings.catch_warnings():  # warnings for complexes spanning > half the smaller cells
+            warnings.simplefilter("ignore")
+            for key, entry in cls.defect_dict.items():
+                for name, func in funcs.items():
+                    models = cls._get_charge_models(entry, fnv=name == "FNV")
+                    for model, kwargs in zip(cls.charge_models, models, strict=True):
+                        corrections[key][f"{name}; {model}"] = func(entry, verbose=False, **kwargs)
+        return corrections
+
+    @custom_mpl_image_compare("Ga2O3_split_vacancies_charge_corrections_vs_supercell_size.png")
+    def test_multi_site_corrections_vs_supercell_size(self):
+        """
+        Test the convergence with supercell size of the energies of point and
+        split Ga vacancies in β-Ga2O3; uncorrected, and eFNV- or FNV-corrected
+        with the charge at a single site (the centroid of the complex) or split
+        over the constituent vacancies (-3) and interstitials (+3).
+
+        The energies are plotted against the point-charge (lattice) energy of a
+        single q = -3 charge in each supercell (E_PC; independent of its
+        position, so set by the supercell and dielectric tensor alone), which
+        the leading finite-size error scales with, accounting for the supercell
+        shape and dielectric anisotropy (unlike the number of atoms or minimum
+        image distance), with linear fits (weighted by 1/E_PC²) extrapolating
+        to the dilute limit (E_PC = 0).
+        """
+        names = list(dict.fromkeys(key.split("/")[1] for key in self.defect_dict))
+        # Γ-folded bulk VBMs differ by up to 24 meV between the supercells, so take the highest for all:
+        vbm = max(entry.calculation_metadata["vbm"] for entry in self.defect_dict.values())
+        labels = ["Uncorrected", *next(iter(self._get_corrections().values()))]
+        data: dict = {name: {} for name in names}
+        for key, entry in self.defect_dict.items():
+            cell, name = key.split("/")
+            raw_energy = entry.get_ediff() + entry.charge_state * vbm
+            # formation energies (minus the Ga chemical potential) at E_F = VBM, and estimated eFNV errors:
+            energies = [(raw_energy, 0)]
+            corrections = self._get_corrections()[key]
+            for label, corr in corrections.items():
+                error = (
+                    get_efnv_alignment_error(corr.metadata["pydefect_ExtendedFnvCorrection"])
+                    if label.startswith("eFNV")
+                    else 0
+                )
+                energies.append((raw_energy + corr.correction_energy, error * abs(entry.charge_state)))
+            efnv = corrections["eFNV; single site (centroid)"].metadata["pydefect_ExtendedFnvCorrection"]
+            data[name][cell] = {"pc_energy": efnv.point_charge_correction, "energies": np.array(energies)}
+
+        # ranges (max - min) of the energies over the supercells (in eV), and linear fits vs E_PC, with
+        # weights of 1/E_PC² (``polyfit`` squares ``w``), upweighting smaller finite-size errors, for each
+        # model:
+        ranges, fits = {}, {}
+        for name in names:
+            pc_energies = np.array([vals["pc_energy"] for vals in data[name].values()])
+            energies = np.array([vals["energies"][:, 0] for vals in data[name].values()])  # cells x models
+            ranges[name] = np.ptp(energies, axis=0)
+            fits[name] = np.polyfit(pc_energies, energies, 1, w=1 / np.abs(pc_energies))
+
+        # (uncorrected, eFNV single site, eFNV multi-site, FNV single site, FNV multi-site), and the dilute
+        # limit extrapolated from the uncorrected energies:
+        for name, (expected_ranges, extrapolated_energy) in {
+            "v_Ga1_-3": ((1.190, 0.117, 0.117, 0.106, 0.106), 15.779),
+            "v_Ga2_-3": ((1.200, 0.165, 0.165, 0.074, 0.074), 15.343),
+            "v_Ga_2split_ic_-3": ((1.762, 0.157, 0.223, 0.197, 0.165), 14.613),
+            "v_Ga_2split_ib_-3": ((1.142, 0.064, 0.108, 0.160, 0.212), 14.994),
+            "v_Ga_3split_68_-3": ((1.055, 0.326, 0.272, 0.261, 0.309), 14.855),
+            "v_Ga_3split_27_-3": ((1.361, 0.578, 0.222, 0.644, 0.376), 15.322),
+            "v_Ga_4split_119_-3": ((1.626, 0.189, 0.336, 0.333, 0.391), 14.617),
+            "v_Ga_4split_218_-3": ((0.760, 0.912, 0.483, 0.660, 0.203), 14.561),
+        }.items():
+            assert np.allclose(ranges[name], expected_ranges, atol=2e-3), name
+            uncorrected, *corrected = ranges[name]
+            for single_site, multi_site in [corrected[:2], corrected[2:]]:  # eFNV, FNV
+                assert multi_site < uncorrected
+                if "split" not in name:  # point vacancies; same single point charge in both models
+                    assert np.isclose(single_site, multi_site, atol=1e-8)
+                elif name in ["v_Ga_3split_27_-3", "v_Ga_4split_218_-3"]:  # most extended complexes; more
+                    assert multi_site < single_site  # consistent with the multi-site model
+            slopes, intercepts = fits[name]
+            assert np.isclose(intercepts[0], extrapolated_energy, atol=2e-3), name
+            # multi-site corrections remove most of the size scaling (single-site don't, for 4split_218):
+            assert all(abs(slopes[[2, 4]]) < abs(slopes[0]) / 2), name
+
+        fig, axes = mpl.pyplot.subplots(2, 4, figsize=(16, 8), layout="constrained")
+        # colour by charge model, with filled markers & dashed fits for eFNV, open markers & dotted (FNV):
+        styles = [(7, "o", "--"), (1, "s", "--"), (2, "D", "--"), (1, "s", ":"), (2, "D", ":")]
+        for ax, name in zip(axes.ravel(), names, strict=True):
+            pc_energies = np.array([vals["pc_energy"] for vals in data[name].values()])
+            fit_range = np.array([min(0, pc_energies.min()), pc_energies.max()])
+            for i, (label, (c, marker, ls)) in enumerate(zip(labels, styles, strict=True)):
+                energy, error = np.array([vals["energies"][i] for vals in data[name].values()]).T
+                style = {"c": f"C{c}", "marker": marker, "mfc": "white" if ls == ":" else f"C{c}"}
+                ax.errorbar(pc_energies, energy, yerr=error, label=label, ls="", **style)
+                ax.plot(fit_range, np.polyval(fits[name][:, i], fit_range), c=f"C{c}", ls=ls, lw=1)
+            for cell, vals in data[name].items():  # label the supercells, next to the uncorrected energies
+                ax.annotate(
+                    cell, (vals["pc_energy"], vals["energies"][0, 0]), xytext=(3, -10),
+                    textcoords="offset points", fontsize=7, c="C7",
+                )  # fmt: skip
+            ax.axvline(0, c="k", lw=0.5)
+            _v, site, *config, charge = name.split("_")  # e.g. v_Ga1_-3, v_Ga_2split_ic_-3
+            ax.set_title(rf"$V_{{\text{{{site}}}}}^{{{charge}}}$ {'_'.join(config)}".strip())
+        fig.legend(*axes[0, 0].get_legend_handles_labels(), loc="outside upper center", ncols=5)
+        fig.supxlabel(r"Point-charge energy of a single $q = -3$ charge in the supercell, $E_{PC}$ (eV)")
+        fig.supylabel(r"$E_f - \mu_{Ga}$ at $E_F$ = VBM (eV)")
+        return fig
+
+    def test_multi_site_fnv_vs_efnv(self):
+        """
+        Cross-check the FNV and eFNV corrections of the point and split Ga
+        vacancies in β-Ga2O3, for both single and multi-site charge models.
+
+        The electrostatic (lattice) energies of the model charges should match
+        (with Gaussian or point model charges respectively), while the
+        potential alignments differ (from planar-averaged or atomic site
+        potentials respectively), but converge with supercell size.
+
+        Correspondence between multi-site FNV and eFNV correction schemes also
+        tracked by the output plot in
+        ``test_multi_site_corrections_vs_supercell_size``.
+        """
+        max_diffs: dict[int, float] = {}  # max |FNV - eFNV| for each supercell size
+        for key, corrections in self._get_corrections().items():
+            num_atoms = len(self.defect_dict[key].bulk_entry.structure)
+            for model in self.charge_models:
+                efnv, fnv = corrections[f"eFNV; {model}"], corrections[f"FNV; {model}"]
+                efnv_pc_energy = efnv.metadata["pydefect_ExtendedFnvCorrection"].point_charge_correction
+                assert np.isclose(fnv.metadata["electrostatic"], efnv_pc_energy, atol=2.5e-3), (key, model)
+                diff = abs(fnv.correction_energy - efnv.correction_energy)
+                max_diffs[num_atoms] = max(max_diffs.get(num_atoms, 0), diff)
+
+        assert np.isclose(max_diffs[160], 0.337, atol=2e-3)  # 4-split 119 in 1x4x2, single site
+        assert all(diff < 0.06 for num_atoms, diff in max_diffs.items() if num_atoms >= 960)
+
+    def test_multi_site_corrections_from_parsed_sites(self):
+        """
+        End-to-end test of the multi-site corrections, with the point charges
+        from ``doped``'s own identification of the defect sites in the relaxed.
+
+        defect and bulk supercells (rather than the stored ``point_charges``):
+        -3 on each vacated Ga site and +3 on each Ga interstitial, at their
+        (wrapped) positions in the unit cell, so the corrections must unwrap
+        the complexes, which here cross the cell boundary.
+        """
+        for key, num_sites in {
+            "3x4x2/v_Ga1_-3": 1,  # point vacancy; no spurious defect sites from the relaxation
+            "4x4x2/v_Ga_2split_ic_-3": 3,
+            "2x4x2/v_Ga_3split_68_-3": 5,
+            "2x4x2/v_Ga_4split_119_-3": 7,  # spans > complex min image distance, but unwrapping consistent
+        }.items():
+            entry = self.defect_dict[key]
+            defect, bulk = entry.sc_entry.structure, entry.bulk_entry.structure
+            _type, bulk_idxs, defect_idxs = get_defect_type_and_site_indices(defect, bulk, site_tol=0.4)
+            point_charges = [(-3, bulk[i].frac_coords) for i in bulk_idxs]
+            point_charges += [(3, defect[i].frac_coords) for i in defect_idxs]
+            stored_point_charges = entry.calculation_metadata["point_charges"]  # unwrapped
+            assert len(point_charges) == len(stored_point_charges) == num_sites, key
+            stored_frac_coords = np.array([frac_coords for _q, frac_coords in stored_point_charges])
+            assert num_sites == 1 or np.any((stored_frac_coords < 0) | (stored_frac_coords >= 1)), key
+
+            for func in [get_kumagai_correction, get_freysoldt_correction]:
+                corrections = []
+                for charges in [point_charges, stored_point_charges]:
+                    with warnings.catch_warnings():  # warnings for complexes spanning > half these cells
+                        warnings.simplefilter("ignore")
+                        corrections.append(func(entry, point_charges=charges, verbose=False))
+                # the stored Ga_i sites have the relaxation drift (mean displacement of the other atoms,
+                # 0.001-0.012 Å here) removed, which changes the corrections by up to 2.6 meV:
+                assert np.isclose(*(corr.correction_energy for corr in corrections), atol=3e-3), key
+
+    @custom_mpl_image_compare("Ga2O3_v_Ga_2split_ic_-3_multi_site_eFNV_plot.png")
+    def test_plot_kumagai_2split_multi_site(self):
+        """
+        Test eFNV correction plotting for the 2-split Ga vacancy (2 V_Ga +
+        Ga_i; the ground state) in the largest (1280-atom) supercell, with the
+        multi-site charge model.
+        """
+        entry = self.defect_dict["2x8x4/v_Ga_2split_ic_-3"]
+        corr, fig = get_kumagai_correction(
+            entry, plot=True, verbose=False, **self._get_charge_models(entry)[1]
+        )
+        assert np.isclose(corr.correction_energy, 0.685, atol=1e-3)  # 0.691 eV for a single site
+        return fig
+
+    @custom_mpl_image_compare("Ga2O3_v_Ga_4split_218_-3_multi_site_eFNV_plot.png")
+    def test_plot_kumagai_4split_multi_site(self):
+        """
+        Test eFNV correction plotting for an extended 4-split Ga vacancy (4
+        V_Ga + 3 Ga_i, spanning 8.1 Å) in a 960-atom supercell, with the multi-
+        site charge model.
+        """
+        entry = self.defect_dict["2x4x6/v_Ga_4split_218_-3"]
+        (corr, fig), _output, w = _run_func_and_capture_stdout_warnings(
+            get_kumagai_correction, entry, plot=True, **self._get_charge_models(entry)[1]
+        )
+        assert np.isclose(corr.correction_energy, 0.611, atol=1e-3)
+        # 4 pairs of charges are more than half the smallest cell dimension (12.2 Å) apart:
+        assert sum("more than half the minimum image distance" in str(warn.message) for warn in w) == 4
+        return fig
+
+    @custom_mpl_image_compare("Ga2O3_v_Ga_4split_218_-3_single_site_eFNV_plot.png")
+    def test_plot_kumagai_4split_single_site(self):
+        """
+        Test eFNV correction plotting for an extended 4-split Ga vacancy, as in
+        ``test_plot_kumagai_4split_multi_site`` but with the charge at a single
+        site (the centroid of the complex), for comparison.
+        """
+        entry = self.defect_dict["2x4x6/v_Ga_4split_218_-3"]
+        corr, fig = get_kumagai_correction(
+            entry, plot=True, verbose=False, **self._get_charge_models(entry)[0]
+        )
+        assert np.isclose(corr.correction_energy, 0.583, atol=1e-3)
+        return fig
+
+    @custom_mpl_image_compare("Ga2O3_v_Ga_2split_ic_-3_multi_site_FNV_plot.png")
+    def test_plot_freysoldt_2split_multi_site(self):
+        """
+        Test FNV correction plotting for the 2-split Ga vacancy in the largest
+        supercell with the multi-site charge model, as in
+        ``test_plot_kumagai_2split_multi_site``.
+        """
+        entry = self.defect_dict["2x8x4/v_Ga_2split_ic_-3"]
+        corr, fig = get_freysoldt_correction(
+            entry, plot=True, verbose=False, **self._get_charge_models(entry, fnv=True)[1]
+        )
+        assert np.isclose(corr.correction_energy, 0.692, atol=1e-3)  # 0.685 eV with eFNV
+        assert len(corr.metadata["point_charges"]) == 3
+        return fig
+
+    @custom_mpl_image_compare("Ga2O3_v_Ga_4split_218_-3_multi_site_FNV_plot.png")
+    def test_plot_freysoldt_4split_multi_site(self):
+        """
+        Test FNV correction plotting for an extended 4-split Ga vacancy with
+        the multi-site charge model, as in
+        ``test_plot_kumagai_4split_multi_site``.
+        """
+        entry = self.defect_dict["2x4x6/v_Ga_4split_218_-3"]
+        (corr, fig), _output, w = _run_func_and_capture_stdout_warnings(
+            get_freysoldt_correction, entry, plot=True, **self._get_charge_models(entry, fnv=True)[1]
+        )
+        assert np.isclose(corr.correction_energy, 0.596, atol=1e-3)  # 0.611 eV with eFNV
+        messages = [str(warn.message) for warn in w if "more than half the" in str(warn.message)]
+        assert len(messages) == 4  # as for eFNV
+        assert all("(and FNV correction) may be unreliable" in message for message in messages)
+        return fig
+
+    @custom_mpl_image_compare("Ga2O3_v_Ga_4split_218_-3_single_site_FNV_plot.png")
+    def test_plot_freysoldt_4split_single_site(self):
+        """
+        Test FNV correction plotting for an extended 4-split Ga vacancy with
+        the charge at a single site (the centroid of the complex), as in
+        ``test_plot_kumagai_4split_single_site``.
+        """
+        entry = self.defect_dict["2x4x6/v_Ga_4split_218_-3"]
+        corr, fig = get_freysoldt_correction(
+            entry, plot=True, verbose=False, **self._get_charge_models(entry, fnv=True)[0]
+        )
+        assert np.isclose(corr.correction_energy, 0.544, atol=1e-3)  # 0.583 eV with eFNV
+        assert "point_charges" not in corr.metadata
         return fig
