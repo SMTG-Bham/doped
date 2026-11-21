@@ -43,6 +43,7 @@ from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
 from pymatgen.util.coord import pbc_diff
 from pymatgen.util.string import latexify, latexify_spacegroup
 from pymatgen.util.typing import PathLike
+from requests.exceptions import RequestException
 from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
@@ -670,6 +671,9 @@ def _check_MP_API_key(api_key: str | None = None) -> str | None:
     Check that the Materials Project (MP) API key is valid, throwing an
     informative error if not.
 
+    Connection issues when querying the MP API (e.g. network problems or API
+    rate limits) are re-raised as is, as these do not relate to the API key.
+
     Args:
         api_key (str):
             Materials Project (MP) API key, needed to access the MP database
@@ -687,6 +691,9 @@ def _check_MP_API_key(api_key: str | None = None) -> str | None:
         with MPRester(api_key) as mpr:
             mpr.get_entry_by_material_id("mp-1")  # check if API key is valid
     except MPRestError as mp_exc:
+        if isinstance(mp_exc.__context__, RequestException):  # connection issue (network, rate limits...)
+            raise
+
         raise ValueError(
             f"The supplied API key (either ``api_key={api_key}``, the ``MP_API_KEY`` environment "
             f"variable, or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or ``~/.config/.pmgrc.yaml``; in order of "
