@@ -242,6 +242,12 @@ def get_defect_in_supercell(
             if len(defect_entry) > 2:
                 orig_defect_frac_coords = np.array(defect_entry[2])  # user-provided coords, use as-is
             else:
+                # TODO: Make complex-aware, matching |DefectEntry| parsing (``site_tol = 0.4``; centroid
+                #  for defect complexes). Currently assumes a single point defect, so tuple inputs of
+                #  structures parsed as complexes are centred differently to the corresponding parsed
+                #  |DefectEntry| inputs. Note that simply using ``template_defect_entry_from_structures``
+                #  here changes the stenciled structure for e.g. the Se_i_C2_-1 (Se_i-Se_i-v_Se) case in
+                #  ``test_Se_20_A_supercell_structure_tuple_input``, so needs checking first.
                 defect_site, defect_type, *_ = defect_site_from_structures(
                     orig_supercell, orig_bulk_supercell, return_all_info=True, _parameter_order_warn=False
                 )

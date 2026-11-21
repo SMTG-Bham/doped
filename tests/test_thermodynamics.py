@@ -56,7 +56,11 @@ from doped.thermodynamics import (
     get_interpolated_chempots,
     scissor_dos,
 )
-from doped.utils.parsing import _get_defect_supercell_frac_coords, get_vasprun
+from doped.utils.parsing import (
+    _get_defect_supercell_frac_coords,
+    get_point_defect_types_and_site_indices,
+    get_vasprun,
+)
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     get_min_dist_between_equiv_sites,
@@ -923,15 +927,16 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             and len(defect_thermo.defect_entries) < 20
             and len(defect_thermo.defect_entries) > 3
         ):  # CdTe example defects
-            # Int_Te_3_Unperturbed_1 is 1.24 Å from Int_Te_3_1 and 0.7 Å from Int_Te_3_2, the latter of
-            # which are 1.73 Å apart from each other.
+            # Int_Te_3_Unperturbed_1 is 1.23 Å from Int_Te_3_1 and 0.6 Å from Int_Te_3_2 (0.7 Å if parsed
+            # as a point defect), the latter of which are 1.04 Å apart from each other when parsed as
+            # defect complexes (using their constituent point defect sites), or 1.73 Å as point defects.
             # So, all Int_Te_3 merged with default dist_tol = 1.5 Å (or higher):
             self._check_CdTe_example_dist_tol(defect_thermo, 3)  # 1.5 Å default
             self._set_and_check_dist_tol(2.0, defect_thermo, 3)
-            # for dist_tol < 1.24 Å (but greater than 0.7 Å), Int_Te_3_Unperturbed_1 and Int_Te_3_2 are
-            # merged but Int_Te_3_1 it on its own:
-            self._set_and_check_dist_tol(1.2, defect_thermo, 4)
-            # no Int_Te_3 interstitials merged for dist_tol < 0.7 Å:
+            # for dist_tol < 1.04 Å (but greater than 0.7 Å), Int_Te_3_Unperturbed_1 and Int_Te_3_2 are
+            # merged but Int_Te_3_1 is on its own:
+            self._set_and_check_dist_tol(1.0, defect_thermo, 4)
+            # no Int_Te_3 interstitials merged for dist_tol < 0.6 Å:
             self._set_and_check_dist_tol(0.5, defect_thermo, 5)
 
         # test mismatching chempot warnings:
@@ -1056,7 +1061,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     other_cluster_dict = (
                         defect_thermo.clustered_defect_entries
                         if method == "centroid"
-                        else defect_thermo.clustered_defect_entries_by_type[entry.defect.name]
+                        else defect_thermo.clustered_defect_entries_by_type[entry.defect.net_name]
                     )
                     for other_cluster in other_cluster_dict.values():
                         if other_cluster == cluster:
@@ -1300,13 +1305,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         Test outputs of transition level functions for CdTe.
         """
         assert self.CdTe_defect_thermo.transition_level_map == {
-            "Int_Te_3": {0.03497090517885537: [2, 1]},
+            "Int_Te_3": {0.03838191221220488: [2, 1]},
             "Te_Cd": {},
-            "v_Cd": {0.47047144459596113: [0, -2]},
+            "v_Cd": {0.4706614445959504: [0, -2]},
         }
 
         tl_info = ["Defect: v_Cd", "Defect: Te_Cd"]
-        tl_info_not_all = ["Transition level ε(0/-2) at 0.470 eV above the VBM"]
+        tl_info_not_all = ["Transition level ε(0/-2) at 0.471 eV above the VBM"]
         tl_info_all = [
             "Transition level ε(-1*/-2) at 0.399 eV above the VBM",
             "Transition level ε(0/-1*) at 0.542 eV above the VBM",
@@ -1322,7 +1327,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             + tl_info_not_all
             + [
                 "Defect: Int_Te_3\x1b",
-                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+                "Transition level ε(+2/+1) at 0.038 eV above the VBM",
             ]
         ):
             assert i in tl_output
@@ -1339,8 +1344,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             + tl_info_all
             + [
                 "Defect: Int_Te_3\x1b",
-                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
-                "Transition level ε(+2/+1*) at 0.090 eV above the VBM",
+                "Transition level ε(+2/+1) at 0.038 eV above the VBM",
+                "Transition level ε(+2/+1*) at 0.094 eV above the VBM",
             ]
         ):
             assert i in tl_output
@@ -1359,7 +1364,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 + tl_info_not_all
                 + [
                     "Defect: Int_Te_3\x1b",
-                    "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+                    "Transition level ε(+2/+1) at 0.038 eV above the VBM",
                 ]
             ):
                 assert i in tl_output
@@ -1367,7 +1372,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 *tl_info_all,
                 "Defect: Int_Te_3_a",
                 "Defect: Int_Te_3_b",
-                "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+                "Transition level ε(+2/+1) at 0.094 eV above the VBM",
             ]:
                 assert i not in tl_output
 
@@ -1381,7 +1386,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 + tl_info_all
                 + [
                     "Defect: Int_Te_3\x1b",
-                    "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+                    "Transition level ε(+2/+1) at 0.038 eV above the VBM",
                 ]
             ):
                 assert i in tl_output
@@ -1390,7 +1395,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 *tl_info_not_all,
                 "Defect: Int_Te_3_a",
                 "Defect: Int_Te_3_b",
-                "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+                "Transition level ε(+2/+1) at 0.094 eV above the VBM",
             ]:
                 assert i not in tl_output
 
@@ -1410,14 +1415,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             + [
                 "Defect: Int_Te_3_a",
                 "Defect: Int_Te_3_b",
-                "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+                "Transition level ε(+2/+1) at 0.094 eV above the VBM",
             ]
         ):
             assert i in tl_output
         for i in [
             *tl_info_all,
             "Defect: Int_Te_3\x1b",
-            "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+            "Transition level ε(+2/+1) at 0.038 eV above the VBM",
         ]:
             assert i not in tl_output
 
@@ -1432,7 +1437,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             + [
                 "Defect: Int_Te_3_a",
                 "Defect: Int_Te_3_b",
-                "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+                "Transition level ε(+2/+1) at 0.094 eV above the VBM",
             ]
         ):
             assert i in tl_output
@@ -1440,7 +1445,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         for i in [
             *tl_info_not_all,
             "Defect: Int_Te_3\x1b",
-            "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+            "Transition level ε(+2/+1) at 0.038 eV above the VBM",
         ]:
             assert i not in tl_output
 
@@ -1463,8 +1468,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         for i in [
             *tl_info_all,
             "Defect: Int_Te_3\x1b",
-            "Transition level ε(+2/+1) at 0.090 eV above the VBM",
-            "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+            "Transition level ε(+2/+1) at 0.094 eV above the VBM",
+            "Transition level ε(+2/+1) at 0.038 eV above the VBM",
         ]:
             assert i not in tl_output
 
@@ -1487,8 +1492,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         for i in [
             *tl_info_not_all,
             "Defect: Int_Te_3\x1b",
-            "Transition level ε(+2/+1) at 0.035 eV above the VBM",
-            "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+            "Transition level ε(+2/+1) at 0.038 eV above the VBM",
+            "Transition level ε(+2/+1) at 0.094 eV above the VBM",
         ]:
             assert i not in tl_output
 
@@ -1496,28 +1501,28 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         def _test_default_all_Int_Te_3_merged_tl_df(tl_df):
             assert tl_df.shape == (3, 2)
             assert list(tl_df.index.to_numpy()[0]) == ["v_Cd", "ε(0/-2)"]
-            assert list(tl_df.iloc[0]) == [0.47, True]
+            assert list(tl_df.iloc[0]) == [0.471, True]
             assert list(tl_df.index.to_numpy()[1]) == ["Te_Cd", "None"]
             assert list(tl_df.iloc[1]) == [np.inf, False]
             assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3", "ε(+2/+1)"]
-            assert list(tl_df.iloc[2]) == [0.035, True]
+            assert list(tl_df.iloc[2]) == [0.038, True]
 
         _test_default_all_Int_Te_3_merged_tl_df(self.CdTe_defect_thermo.get_transition_levels())
         self.CdTe_defect_thermo.dist_tol = 2.0
         _test_default_all_Int_Te_3_merged_tl_df(self.CdTe_defect_thermo.get_transition_levels())
 
-        self.CdTe_defect_thermo.dist_tol = 1.2
+        self.CdTe_defect_thermo.dist_tol = 1.0
         tl_df = self.CdTe_defect_thermo.get_transition_levels()
         assert tl_df.shape == (4, 2)
         assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3_a", "ε(+2/+1)"]
-        assert list(tl_df.iloc[2]) == [0.09, True]
+        assert list(tl_df.iloc[2]) == [0.094, True]
         assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_b", "None"]
         assert list(tl_df.iloc[3]) == [np.inf, False]
 
         tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
         assert tl_df.shape == (5, 3)
         assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_a", "ε(+2/+1)"]
-        assert list(tl_df.iloc[3]) == [0.09, True, 0]
+        assert list(tl_df.iloc[3]) == [0.094, True, 0]
         assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_b", "None"]
         assert list(tl_df.iloc[4]) == [np.inf, False, 0]
 
@@ -1530,7 +1535,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert list(tl_df.index.to_numpy()[2]) == ["Te_Cd", "None"]
         assert list(tl_df.iloc[2]) == [np.inf, False, 0]
         assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_a", "ε(+2/+1)"]
-        assert list(tl_df.iloc[3]) == [0.09, True, 0]
+        assert list(tl_df.iloc[3]) == [0.094, True, 0]
         assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_b", "None"]
         assert list(tl_df.iloc[4]) == [np.inf, False, 0]
 
@@ -1582,12 +1587,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 )
             )
 
-        # CdTe with unstable_entries=False prunes v_Cd_-1 & Int_Te_3_Unperturbed_1 (only stable outside
-        # the gap), splitting the Int_Te_3 cluster so its ε(+2/+1) TL is no longer present:
+        # CdTe with unstable_entries=False prunes v_Cd_-1 & Int_Te_3_Unperturbed_1 (only stable outside the
+        # gap). The remaining Int_Te_3_1 & Int_Te_3_2 are within ``dist_tol`` of each other (1.04 Å apart),
+        # so they stay clustered and keep their ε(+2/+1) TL:
         false_tl_df = self.CdTe_defect_thermo.get_transition_levels(unstable_entries=False)
         assert ("Int_Te_3", "ε(+2/+1)") in default_tl_df.index
-        assert ("Int_Te_3", "ε(+2/+1)") not in false_tl_df.index
-        assert {"Int_Te_3_a", "Int_Te_3_b"}.issubset(false_tl_df.index.get_level_values("Defect"))
+        assert ("Int_Te_3", "ε(+2/+1)") in false_tl_df.index
         assert ("v_Cd", "ε(0/-2)") in false_tl_df.index  # ground-state TL unaffected by removing v_Cd_-1
 
         # Se thermo has shallow & unstable states; pruning is monotonic (True ⊇ "not shallow" ⊇ False):
@@ -1596,6 +1601,22 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert len(func(all=all, unstable_entries=True)) == n_true
             assert len(func(all=all)) == n_notshallow  # default is "not shallow"
             assert len(func(all=all, unstable_entries=False)) == n_false
+
+        # pruning unstable entries can also split a defect cluster, when its remaining (stable) entries
+        # were only clustered together (within ``dist_tol``) through the pruned entries; e.g. inter_6_S_0
+        # and inter_6_S_-2 here, the only stable entries of the 10 in the inter_5_S cluster, which are then
+        # separate defects (inter_6_S_a & inter_6_S_b) with no ε(0/-2) TL between them:
+        true_tl_df, false_tl_df = func(unstable_entries=True), func(unstable_entries=False)
+        assert ("inter_5_S", "ε(0/-2)") in true_tl_df.index
+        assert not any("inter_6_S" in name for name in true_tl_df.index.get_level_values("Defect"))
+        assert not any("inter_5_S" in name for name in false_tl_df.index.get_level_values("Defect"))
+        assert ("inter_6_S_a", "None") in false_tl_df.index
+        assert ("inter_6_S_b", "None") in false_tl_df.index
+        # ...or inter_7_Cl_-1, split from the inter_8_Cl cluster, removing its ε(0/-1) TL:
+        assert {("inter_8_Cl", "ε(+1/0)"), ("inter_8_Cl", "ε(0/-1)")}.issubset(true_tl_df.index)
+        assert ("inter_8_Cl", "ε(+1/0)") in false_tl_df.index
+        assert ("inter_8_Cl", "ε(0/-1)") not in false_tl_df.index
+        assert ("inter_7_Cl", "None") in false_tl_df.index
 
         # shallow sub_1_Te_on_Se_1/+2 states pruned by default, no single-electron TLs when ``False`` (
         # only 0/-2 TL remains):
@@ -1913,8 +1934,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 1.499,
                 "N/A",
                 0,
-                0.904,
-                -1.409,
+                0.9,
+                -1.413,
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 0.012,
             ],
@@ -1927,7 +1948,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 "N/A",
                 0,
                 0.3,
-                -2.123,
+                -2.124,
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_1/vasp_ncl",
                 0.003,
             ],
@@ -2112,8 +2133,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 1.499,
                 4.471,
                 0.0,
-                0.904,
-                3.062,
+                0.9,
+                3.058,
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 0.012,
             ],
@@ -2219,8 +2240,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             6,
             1,
             -3,
-            0.904,
-            1.092,
+            0.9,
+            1.088,
         ]
         assert list(manual_form_en_df.index.to_numpy()[4]) == ["Int_Te_3", "+2"]
 
@@ -2541,26 +2562,44 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 skipped += 1
                 continue
 
+            # structures parsed as defect complexes (e.g. split interstitials, with ``site_tol = 0.4``)
+            # have unrelaxed symmetries of the complex configuration (rather than the point defect bulk
+            # site), from ``point_symmetry_from_structure(relaxed=False)`` -- tested in ``test_complexes``:
+            parsed_as_complex = (
+                len(
+                    get_point_defect_types_and_site_indices(
+                        defect_entry.defect_supercell, defect_entry.bulk_supercell
+                    )
+                )
+                > 1
+            )
+
             assert (
                 point_symmetry_from_structure(defect_entry.defect_supercell)
                 == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
             )  # no bulk reference: defect position guessed (SOAP analysis) and candidate symmetry
             # operations generated directly from the local atomic geometry
-            assert (
-                point_symmetry_from_structure(
-                    defect_entry.defect_supercell, bulk_structure=defect_entry.bulk_supercell
-                )
-                == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
+            # vac_2_Te_shaken_-2 is parsed as a v_Te + v_Cd + Cd_i complex with the default ``site_tol``
+            # (0.4) here, as only one of the two dimerised Cd neighbours (displaced by 1.19 and 1.10 Å) is
+            # beyond the 1.13 Å site-matching distance, giving Cs; C2v with ``symprec`` >= 0.12, if parsed
+            # as a point defect (``site_tol=None``), or with both Cd off-site (``site_tol`` <= 0.38):
+            assert point_symmetry_from_structure(
+                defect_entry.defect_supercell, bulk_structure=defect_entry.bulk_supercell
+            ) == (
+                "Cs"
+                if defect_entry.name == "vac_2_Te_shaken_-2"
+                else sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
             )
 
-            assert (
-                point_symmetry_from_structure(
-                    defect_entry.defect_supercell,
-                    bulk_structure=defect_entry.bulk_supercell,
-                    relaxed=False,
+            if not parsed_as_complex:
+                assert (
+                    point_symmetry_from_structure(
+                        defect_entry.defect_supercell,
+                        bulk_structure=defect_entry.bulk_supercell,
+                        relaxed=False,
+                    )
+                    == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
                 )
-                == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
-            )
             assert (
                 point_symmetry_from_site(
                     _get_defect_supercell_frac_coords(defect_entry, relaxed=False),
@@ -2569,14 +2608,15 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
             )
 
-            assert (
-                point_symmetry_from_structure(
-                    defect_entry.defect_supercell,
-                    bulk_structure=defect_entry.bulk_supercell,
-                    relaxed=False,
+            if not parsed_as_complex:
+                assert (
+                    point_symmetry_from_structure(
+                        defect_entry.defect_supercell,
+                        bulk_structure=defect_entry.bulk_supercell,
+                        relaxed=False,
+                    )
+                    == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
                 )
-                == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
-            )
             assert (
                 point_symmetry_from_site(
                     _get_defect_supercell_frac_coords(defect_entry, relaxed=False),

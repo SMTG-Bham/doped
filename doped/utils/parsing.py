@@ -26,8 +26,9 @@ from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, Incar, Kpoints, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.optimization.neighbors import find_points_in_spheres
-from pymatgen.util.coord import all_distances
+from pymatgen.util.coord import all_distances, lattice_points_in_supercell
 from pymatgen.util.typing import PathLike, SpeciesLike
+from scipy.optimize import linear_sum_assignment
 from scipy.spatial import KDTree
 
 from doped.utils import _warn_parameter_order
@@ -558,6 +559,34 @@ def _is_split_interstitial(
     )
 
 
+def _get_site_dist_tols(
+    bulk_supercell: Structure,
+    site_tol: float | None,
+    abs_tol: bool,
+    site_indices: list[int] | np.ndarray | None = None,
+) -> np.ndarray:
+    """
+    Get the distance tolerance for matching each bulk site (or those with
+    ``site_indices``), as used in ``get_defect_type_and_site_indices``.
+
+    This is ``inf`` if ``site_tol`` is ``None`` (then only unmatched sites are
+    defect sites), otherwise ``site_tol`` x the shortest bond length of the
+    site (to any species, floored at 1 Å), or ``site_tol`` in Å if
+    ``abs_tol``.
+    """
+    indices = (
+        np.arange(len(bulk_supercell)) if site_indices is None else np.asarray(site_indices, dtype=int)
+    )
+    site_dist_tols = np.full(len(indices), np.inf if site_tol is None else site_tol, dtype=float)
+    if site_tol is not None and not abs_tol:
+        dists = bulk_supercell.lattice.get_all_distances(
+            bulk_supercell.frac_coords[indices], bulk_supercell.frac_coords
+        )
+        dists[np.arange(len(indices)), indices] = np.inf  # exclude self-distances
+        site_dist_tols *= np.maximum(dists.min(axis=1), 1)  # shortest bond lengths, floored at 1 Å
+    return site_dist_tols
+
+
 def get_defect_type_and_site_indices(
     defect_supercell: Structure,
     bulk_supercell: Structure,
@@ -575,7 +604,8 @@ def get_defect_type_and_site_indices(
     ``site_tol`` is set, split interstitials are also identified (see
     ``_is_split_interstitial``), with the bulk site returned as a missing site
     (even if the split-interstitial atoms are within the distance tolerance)
-    and both atoms as additional defect sites.
+    and both atoms as additional defect sites. The defect type is determined
+    only by composition difference between the bulk and defect structures.
 
     Note that this assumes consistent cell definitions (lattice vectors and
     bases) for the input defect and bulk supercells, and does not perform any
@@ -657,13 +687,7 @@ def get_defect_type_and_site_indices(
     additional_defect_site_indices = []
     missing_bulk_site_indices = []
 
-    # distance tolerance for each bulk site; ``inf`` if ``site_tol`` is ``None`` (then only unmatched sites
-    # are defect sites), otherwise ``site_tol`` x site's shortest bond or ``site_tol`` in Å if ``abs_tol``
-    site_dist_tols = np.full(len(bulk_supercell), np.inf if site_tol is None else site_tol, dtype=float)
-    if site_tol is not None and not abs_tol:
-        bulk_dists = bulk_supercell.distance_matrix
-        np.fill_diagonal(bulk_dists, np.inf)  # exclude self-distances
-        site_dist_tols *= np.maximum(bulk_dists.min(axis=1), 1)  # shortest bond lengths, floored at 1 Å
+    site_dist_tols = _get_site_dist_tols(bulk_supercell, site_tol, abs_tol)
 
     for elt_symbol in elt_symbols:
         bulk_species_fcoords, bulk_species_indices = get_coords_and_idx_of_species(
@@ -753,6 +777,115 @@ def get_defect_type_and_site_indices(
     # handling this for finite-size corrections.
 
     return defect_type, missing_bulk_site_indices, additional_defect_site_indices
+
+
+def get_point_defect_types_and_site_indices(
+    defect_supercell: Structure,
+    bulk_supercell: Structure,
+    site_tol: float | None = 0.4,
+    abs_tol: bool = False,
+    use_oxi_states: bool = False,
+    rms: bool = False,
+) -> list[tuple[str, int | None, int | None]]:
+    """
+    Get the constituent point defects in the defect supercell, as their types
+    and indices of the defect sites in the bulk (vacancies / substitutions) and
+    defect (interstitials / substitutions) supercells.
+
+    Defect sites are determined with ``get_defect_type_and_site_indices``
+    (matching sites in the bulk and defect structures by element and distance,
+    according to ``site_tol``, and identifying split interstitials). Missing
+    bulk sites are then paired with additional defect sites of a `different`
+    species within the site's distance tolerance as substitutions, with the
+    remaining missing bulk sites and additional defect sites giving vacancies
+    and interstitials respectively. Multiple point defects thus correspond to a
+    defect complex (e.g. a split vacancy, as a vacancy + interstitial +
+    vacancy).
+
+    Note that this assumes consistent cell definitions (lattice vectors and
+    bases) for the input defect and bulk supercells, and does not perform any
+    structural re-orientations.
+
+    Args:
+        defect_supercell (|Structure|):
+            The defect supercell structure.
+        bulk_supercell (|Structure|):
+            The bulk supercell structure.
+        site_tol (float | None):
+            The (fractional) tolerance for matching sites between the defect
+            and bulk structures. If ``abs_tol`` is ``False`` (default), then
+            the distance threshold for matching each bulk site is set to the
+            product of ``site_tol`` and the shortest bond length of that site
+            in the bulk structure (i.e. its distance to the nearest other site,
+            of any species; floored at 1 Å), otherwise the value is used
+            directly (as a length in Å). If ``None``, a single point defect is
+            assumed, with its type determined by the composition difference
+            and its site as the site of largest mismatch. Default is 0.4.
+        abs_tol (bool):
+            Whether to use ``site_tol`` as an absolute distance tolerance (in
+            Å) instead of a fractional tolerance (in terms of the shortest bond
+            length of each bulk site). Default is ``False``.
+        use_oxi_states (bool):
+            Whether to use the oxidation states of the sites in the bulk and
+            defect structures when considering matching sites (such that e.g.
+            ``Fe3+`` and ``Fe2+`` would be considered different species).
+            Default is ``False``.
+        rms (bool):
+            Site mapping (using linear assignment) -- used to determine defect
+            sites -- will be that which minimises either the summed `squared`
+            distances (i.e. the RMS displacement; if ``rms`` is ``True``) or
+            the summed distances (if ``False``, default) between all paired
+            sites.
+
+    Returns:
+        list[tuple[str, int | None, int | None]]:
+            The point defects found, as ``(defect_type, bulk_site_index,
+            defect_site_index)`` tuples, where ``defect_type`` is
+            ``"vacancy"``, ``"substitution"`` or ``"interstitial"``, and the
+            bulk / defect site index is ``None`` for interstitials / vacancies
+            respectively.
+    """
+    defect_type, missing_idxs, additional_idxs = get_defect_type_and_site_indices(
+        defect_supercell,
+        bulk_supercell,
+        site_tol=site_tol,
+        abs_tol=abs_tol,
+        use_oxi_states=use_oxi_states,
+        rms=rms,
+    )
+    if site_tol is None:  # single point defect, typed by the composition difference
+        return [
+            (
+                defect_type,
+                missing_idxs[0] if missing_idxs else None,
+                additional_idxs[0] if additional_idxs else None,
+            )
+        ]
+
+    pairs: list[tuple[int, int]] = []  # (missing bulk site, additional defect site) substitution pairs
+    if missing_idxs and additional_idxs:
+        dists = bulk_supercell.lattice.get_all_distances(
+            bulk_supercell.frac_coords[missing_idxs], defect_supercell.frac_coords[additional_idxs]
+        )
+        bulk_species, defect_species = (
+            [_parse_site_species_str(structure[i], wout_charge=not use_oxi_states) for i in idxs]
+            for structure, idxs in ((bulk_supercell, missing_idxs), (defect_supercell, additional_idxs))
+        )
+        site_dist_tols = _get_site_dist_tols(bulk_supercell, site_tol, abs_tol, site_indices=missing_idxs)
+        valid = (dists <= site_dist_tols[:, None]) & (
+            np.array(bulk_species)[:, None] != np.array(defect_species)[None, :]
+        )  # substituting species differs from the bulk site species, and within the site's tolerance
+        rows, cols = linear_sum_assignment(np.where(valid, dists**2 if rms else dists, 1e6))
+        pairs = [
+            (missing_idxs[r], additional_idxs[c]) for r, c in zip(rows, cols, strict=True) if valid[r, c]
+        ]
+
+    paired_missing, paired_additional = ({pair[i] for pair in pairs} for i in (0, 1))
+    return [
+        *(("substitution", bulk_idx, defect_idx) for bulk_idx, defect_idx in pairs),
+        *(("vacancy", idx, None) for idx in missing_idxs if idx not in paired_missing),
+        *(("interstitial", None, idx) for idx in additional_idxs if idx not in paired_additional),
+    ]
 
 
 def get_coords_and_idx_of_species(
@@ -925,6 +1058,44 @@ def _create_unrelaxed_defect_structure(
     return unrelaxed_defect_structure
 
 
+def _get_interstitials_fc_via_prim(
+    bulk_supercell: Structure, symprec: float = 0.01, **interstitial_gen_kwargs
+) -> np.ndarray:
+    """
+    Temporary wrapper for get_interstitial_sites - tries to fold to primitive and get
+    interstitial sites there then transform back, like get_all_equiv_sites, for
+    efficiency. Because full get_interstitial_sites is used now in parsing on
+    supercells, unlike in generation (only on primitive).
+
+    Returns:
+        np.ndarray:
+            ``(N, 3)`` array of candidate interstitial fractional coordinates
+            in ``bulk_supercell``.
+    """
+    from doped.generation import get_interstitial_sites
+    from doped.utils.symmetry import _get_supercell_to_prim_fold_map, get_primitive_structure
+
+    primitive = get_primitive_structure(bulk_supercell, symprec=symprec)
+    fold_map = (
+        _get_supercell_to_prim_fold_map(bulk_supercell, primitive, symprec=symprec)
+        if len(primitive) < len(bulk_supercell)
+        else None
+    )  # None -> no clean map or already prim
+
+    # try interstitials in prim if clean map works
+    host = bulk_supercell if fold_map is None else primitive
+    equiv_fpos = np.array(
+        [fpos for *_, equiv in get_interstitial_sites(host, **interstitial_gen_kwargs) for fpos in equiv]
+    )
+    if fold_map is None:
+        return equiv_fpos
+
+    # unfold to supercell and add equiv points
+    M, translation = fold_map
+    cosets = lattice_points_in_supercell(M)
+    return ((equiv_fpos - translation) @ np.linalg.inv(M) + cosets[:, None]).reshape(-1, 3) % 1
+
+
 def _guess_initial_defect_structure(
     unrelaxed_defect_structure: Structure,
     bulk_supercell: Structure,
@@ -954,17 +1125,15 @@ def _guess_initial_defect_structure(
     if defect_type != "interstitial":
         return guessed_initial_defect_structure, defect_site_in_bulk
 
-    from doped.generation import _H_INTERSTITIAL_GEN_KWARGS, get_interstitial_sites
+    # (if defect_site_index was out of range interstitial will have been added at end)
+    defect_site_index = min(cast("int", defect_site_index), len(guessed_initial_defect_structure) - 1)
+    from doped.generation import _H_INTERSTITIAL_GEN_KWARGS
 
     # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
     # settings) to the relaxed interstitial site, as this is likely the _initial_ interstitial site
     int_site = guessed_initial_defect_structure.pop(defect_site_index)
     int_gen_kwargs: dict[str, Any] = _H_INTERSTITIAL_GEN_KWARGS if int_site.species_string == "H" else {}
-    all_equiv_fpos = [  # all candidate interstitial frac coords in the bulk supercell
-        fpos
-        for *_, equiv_fpos in get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
-        for fpos in equiv_fpos
-    ]
+    all_equiv_fpos = _get_interstitials_fc_via_prim(bulk_supercell, **int_gen_kwargs)
     closest_cand_int_fcoords = all_equiv_fpos[  # closest candidate interstitial frac coords
         np.argmin(bulk_supercell.lattice.get_all_distances(defect_site.frac_coords, all_equiv_fpos))
     ]
@@ -981,6 +1150,108 @@ def _guess_initial_defect_structure(
         defect_site_in_bulk = guessed_initial_defect_structure[defect_site_index]
 
     return guessed_initial_defect_structure, defect_site_in_bulk
+
+
+def _guess_initial_complex_structure(
+    unrelaxed_defect_structure: Structure,
+    bulk_supercell: Structure,
+    interstitial_sites: list[PeriodicSite],
+    interstitial_site_indices: list[int],
+) -> tuple[Structure, list[PeriodicSite]]:
+    """
+    Guess the initial defect structure, corresponding to
+    ``unrelaxed_defect_structure`` but with each interstitial placed at the
+    closest candidate interstitial site in the bulk supercell (based on default
+    ``doped`` interstitial generation settings) to the relaxed interstitial
+    site -- as this is likely the `initial` interstitial site.
+
+    Returns the guessed initial (unrelaxed) site for each interstitial: this is
+    the guessed initial site if it is within 1 Å of the relaxed site, otherwise
+    the relaxed site itself. Interstitials whose closest candidate site is
+    shared with another interstitial are not assigned (their relaxed sites are
+    kept, and a warning is issued).
+
+    Args:
+        unrelaxed_defect_structure (Structure):
+            The unrelaxed defect supercell structure.
+        bulk_supercell (Structure):
+            The bulk supercell structure, used to generate candidate
+            interstitial sites.
+        interstitial_sites (list[PeriodicSite]):
+            The relaxed interstitial sites.
+        interstitial_site_indices (list[int]):
+            The indices of the interstitial sites in the defect supercell.
+
+    Returns:
+        tuple[Structure, list[PeriodicSite]]:
+            The guessed initial defect structure, and the guessed initial
+            (unrelaxed) site for each interstitial.
+    """
+    guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
+    interstitial_sites_in_bulk = list(interstitial_sites)  # copy
+
+    if not interstitial_sites:
+        return guessed_initial_defect_structure, interstitial_sites_in_bulk
+
+    from doped.generation import _H_INTERSTITIAL_GEN_KWARGS
+
+    # get candidate interstitials (for H present or not)
+    int_is_H = [site.species_string == "H" for site in interstitial_sites]
+    candidate_fpos = {
+        is_H: _get_interstitials_fc_via_prim(
+            bulk_supercell, **(_H_INTERSTITIAL_GEN_KWARGS if is_H else {})
+        )
+        for is_H in set(int_is_H)
+    }
+
+    # get closest candidate interstitials
+    closest_candidate_list = []  # closest candidate interstitial frac coords in the bulk, per interstitial
+    for defect_site, is_H in zip(interstitial_sites, int_is_H, strict=True):
+        all_equiv_fpos = candidate_fpos[is_H]
+        closest_candidate_list.append(
+            all_equiv_fpos[
+                np.argmin(
+                    bulk_supercell.lattice.get_all_distances(defect_site.frac_coords, all_equiv_fpos)
+                )
+            ]
+        )
+
+    # TODO draft prevent collisions between interstitials to same candidate - how likely is this actually?
+    # are there other similar issues?
+    closest_candidates = np.array(closest_candidate_list)
+    _vals, idxs, counts = np.unique(closest_candidates, axis=0, return_index=True, return_counts=True)
+    accepted_candidates = idxs[counts == 1]
+    rejected_candidates = [idx for idx in range(len(closest_candidates)) if idx not in accepted_candidates]
+
+    if rejected_candidates:
+        rejected_sites = [interstitial_sites[int_idx] for int_idx in rejected_candidates]
+        warnings.warn(
+            "The following relaxed interstitial(s) could not be assigned to guessed initial sites "
+            "(multiple relaxed interstitials mapped to the same candidate site), so their relaxed "
+            "sites are used instead:\n"
+            + "\n".join(f"  - {site.species_string} at {site.frac_coords}" for site in rejected_sites)
+        )
+
+    # only use guessed sites if only correspond to one relaxed interstitial
+    for int_idx in accepted_candidates:
+        defect_site = interstitial_sites[int_idx]
+        defect_site_index = interstitial_site_indices[int_idx]
+        closest_cand_int_fcoords = closest_candidates[int_idx]
+
+        int_site = guessed_initial_defect_structure.pop(defect_site_index)
+        guessed_initial_defect_structure.insert(
+            defect_site_index,  # place defect at same position as in supercell calculation
+            int_site.species_string,
+            closest_cand_int_fcoords,
+            coords_are_cartesian=False,
+            validate_proximity=True,
+        )
+        # if guessed initial site is sufficiently close to the relaxed site, then use it as
+        # "defect_site_in_bulk", otherwise use the relaxed site:
+        if defect_site.distance_and_image_from_frac_coords(closest_cand_int_fcoords)[0] < 1:
+            interstitial_sites_in_bulk[int_idx] = guessed_initial_defect_structure[defect_site_index]
+
+    return guessed_initial_defect_structure, interstitial_sites_in_bulk
 
 
 def find_nearest_coords(
@@ -1052,6 +1323,67 @@ def find_missing_idx(
     )
 
 
+def _create_unrelaxed_complex_structure(
+    defect_supercell: Structure,
+    bulk_supercell: Structure,
+    point_defects: list[tuple[str, int | None, int | None]],
+    defect_coords: list[bool] | None = None,
+) -> Structure:
+    """
+    Create the unrelaxed defect structure, which corresponds to the bulk
+    supercell with the unrelaxed defect site.
+
+    The unrelaxed defect site corresponds to the vacancy/substitution site in
+    the pristine (bulk) supercell for vacancies/substitutions, and the `final`
+    relaxed interstitial site for interstitials (as the assignment of their
+    initial site is ambiguous).
+
+    Args:
+        defect_supercell (Structure):
+            The defect structure.
+        bulk_supercell (Structure):
+            The bulk structure.
+        point_defects (list[tuple[str, int | None, int | None]]):
+            List of tuples of (point defect type, bulk site index, defect
+            site index), eg as returned by get_point_defect_types_and_site_indices.
+        defect_coords (list[bool]):
+            Whether to use the fractional coordinates of the defect site in the
+            defect structure, or the bulk structure. Irrelevant for vacancies.
+            Parent functions in ``doped`` use ``True`` for interstitials, and
+            ``False`` for substitutions (i.e. use bulk site coords), as is
+            default here (if defect_coords is None).
+
+    Returns:
+        Structure:
+            The unrelaxed defect structure.
+    """
+    unrelaxed_defect_structure = bulk_supercell.copy()  # create unrelaxed defect structure
+
+    # to try to match defect_site_idxs
+    point_defects = sorted(point_defects, key=lambda x: (x[2] is None, x[2]))
+
+    # remove bulk sites
+    bulk_site_idxs = [pd[1] for pd in point_defects if pd[1] is not None]
+    unrelaxed_defect_structure.remove_sites(bulk_site_idxs)
+
+    # default behaviour of defect_coords
+    defect_coords = defect_coords or [point_defect[0] == "interstitial" for point_defect in point_defects]
+
+    point_defects_info = zip(point_defects, defect_coords, strict=True)
+    for (_defect_type, bulk_site_idx, defect_site_idx), defect_coord in point_defects_info:
+        if defect_site_idx is None:  # vacancy
+            continue
+        defect_site_in_defect = defect_supercell[defect_site_idx]
+        if not defect_coord and bulk_site_idx is not None:
+            defect_fc = bulk_supercell[bulk_site_idx].frac_coords
+        else:
+            defect_fc = defect_site_in_defect.frac_coords
+
+        unrelaxed_defect_structure.insert(defect_site_idx, defect_site_in_defect.species, defect_fc)
+
+    return unrelaxed_defect_structure
+
+
 def get_half_max_face_distance(lattice: Structure | Lattice) -> float:
     """
     Get half the largest distance between parallel faces of the cell.
@@ -1081,6 +1413,7 @@ def get_half_max_face_distance(lattice: Structure | Lattice) -> float:
     return max(distances) / 2.0
 
 
+# TODO different version for complex defects? or should still be ok outside WS radius?
 def check_atom_mapping_far_from_defect(
     defect_supercell: Structure,
     bulk_supercell: Structure,
@@ -1304,8 +1637,8 @@ def _nearest_neighbour_site_mapping(
 def _get_site_mapping_from_coords_and_indices(
     s1_coords: ArrayLike,
     s2_coords: ArrayLike,
-    s1_indices: np.ndarray | None = None,
-    s2_indices: np.ndarray | None = None,
+    s1_indices: np.ndarray | list[int] | None = None,
+    s2_indices: np.ndarray | list[int] | None = None,
     lattice: Lattice | None = None,
     rms: bool = False,
 ) -> list[tuple[float | None, int | None, int | None]]:
@@ -2296,6 +2629,7 @@ def _get_defect_supercell_frac_coords(
     return sc_defect_frac_coords
 
 
+# TODO merge with complex function
 def _get_defect_supercell_site(defect_entry: "DefectEntry", relaxed=True, **kwargs) -> PeriodicSite | None:
     def _return_defect_supercell_site(defect_entry: "DefectEntry", relaxed=True):
         if relaxed or defect_entry.defect.defect_type == DefectType.Interstitial:
@@ -2330,6 +2664,69 @@ def _get_defect_supercell_site(defect_entry: "DefectEntry", relaxed=True, **kwar
     return _return_defect_supercell_site(defect_entry, relaxed=relaxed)
 
 
+def _get_defect_supercell_sites(
+    defect_entry: "DefectEntry", relaxed=True, unwrapped: bool = False, **kwargs
+) -> list[PeriodicSite] | None:
+    """
+    Get the constituent point defect sites of a defect `complex`, in the defect
+    supercell frame (the complex analogue of ``_get_defect_supercell_site``).
+
+    If ``relaxed`` (default), the relaxed site is used for substitutions, else
+    the bulk site is used. The relaxed site is always used for interstitials
+    (and the bulk site for substitutions).
+
+    If ``unwrapped``, the sites are returned as a single unwrapped complex
+    (i.e. not individually mapped back to the unit cell), otherwise each site
+    is wrapped into the unit cell.
+
+    Returns ``None`` if ``defect_entry`` is not a defect complex, or if the
+    constituent site information could not be determined.
+    """
+    from doped.core import DefectComplex
+
+    if not isinstance(defect_entry.defect, DefectComplex):
+        return None
+
+    def _return_defect_supercell_sites(defect_entry: "DefectEntry", relaxed=True):
+        if relaxed and (sites := getattr(defect_entry, "defect_supercell_sites", None)):
+            return sites
+
+        metadata = getattr(defect_entry, "calculation_metadata", None) or {}
+        if metadata.get("bulk_sites") and metadata.get("defect_site_indices"):
+            defect_supercell = _get_defect_supercell(defect_entry)
+            return [  # defect_site_indices is ``None`` for vacancies
+                defect_supercell[index]
+                if index is not None and (relaxed or constituent.defect_type == DefectType.Interstitial)
+                else bulk_site  # always the relaxed site for interstitials
+                for constituent, bulk_site, index in zip(
+                    defect_entry.defect.defects,
+                    metadata["bulk_sites"],
+                    metadata["defect_site_indices"],
+                    strict=True,
+                )
+            ]
+        return None
+
+    if not (sites := _return_defect_supercell_sites(defect_entry, relaxed=relaxed)):
+        # otherwise need to reparse info:
+        _update_defect_entry_structure_metadata(defect_entry, **kwargs)
+        if not (sites := _return_defect_supercell_sites(defect_entry, relaxed=relaxed)):
+            return None
+
+    if not unwrapped:
+        return [site.to_unit_cell() for site in sites]
+
+    from doped.utils.supercells import _get_unwrapped_complex_frac_coords  # avoid circular import
+
+    lattice = sites[0].lattice
+    return [
+        PeriodicSite(site.species, frac_coords, lattice, properties=site.properties)
+        for site, frac_coords in zip(
+            sites, _get_unwrapped_complex_frac_coords(lattice, sites), strict=True
+        )
+    ]
+
+
 def _update_defect_entry_structure_metadata(
     defect_entry: "DefectEntry", overwrite: bool = False, **kwargs
 ):
@@ -2353,9 +2750,11 @@ def _update_defect_entry_structure_metadata(
             ``defect_and_info_from_structures`` function.
     """
     from doped.analysis import defect_and_info_from_structures
+    from doped.core import DefectComplex
 
     bulk_supercell = _get_bulk_supercell(defect_entry)
     defect_supercell = _get_defect_supercell(defect_entry)
+    calculation_metadata = getattr(defect_entry, "calculation_metadata", None) or {}
     (
         defect,
         defect_site,
@@ -2364,7 +2763,18 @@ def _update_defect_entry_structure_metadata(
         defect_supercell,
         bulk_supercell,
         _parameter_order_warn=False,
-        **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
+        **{  # reuse the stored ``site_tol`` (``None`` is a valid value) when re-parsing, unless given;
+            # otherwise (older entries) keep the stored defect's identity (point defect vs complex):
+            "site_tol": (
+                calculation_metadata["site_tol"]
+                if "site_tol" in calculation_metadata
+                else 0.4
+                if getattr(defect_entry, "defect", None) is None
+                or isinstance(defect_entry.defect, DefectComplex)
+                else None
+            ),
+            **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
+        },
     )
     if not getattr(defect_entry, "calculation_metadata", None):
         defect_entry.calculation_metadata = {}

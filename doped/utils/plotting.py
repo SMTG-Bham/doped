@@ -453,9 +453,9 @@ def _resolve_color_grouping(
 
 def _color_group_key(defect, color_grouping: str = "type") -> str:
     """
-    The palette colour key for a defect: its defect type (``Defect.name``), or
-    its extrinsic element if extrinsic and ``color_grouping="element"`` -- so
-    e.g. ``F_O`` and ``F_i`` share a base colour.
+    The palette colour key for a defect: its defect type (``Defect.net_name``),
+    or its extrinsic element if extrinsic and ``color_grouping="element"`` --
+    so e.g. ``F_O`` and ``F_i`` share a base colour.
 
     ``color_grouping="site"`` keys on the defect `group` name, which is handled
     by the callers as it is not a property of the defect itself (i.e. defect
@@ -463,7 +463,7 @@ def _color_group_key(defect, color_grouping: str = "type") -> str:
     """
     if color_grouping == "element" and (extrinsic_element := _extrinsic_element(defect)):
         return extrinsic_element
-    return defect.name  # if color_grouping != "element", assumed to be "type" here
+    return defect.net_name  # if color_grouping != "element", assumed to be "type" here
 
 
 def get_defect_type_palette(
@@ -778,7 +778,7 @@ def get_defect_colors_and_linestyles(
     group_palette_keys: dict[str, str] = {}  # {defect group name: palette colour key}
     for group_name, entry_list in defect_thermodynamics.all_entries.items():
         defect = entry_list[0].defect
-        group_types[group_name] = defect.name
+        group_types[group_name] = defect.net_name
         group_palette_keys[group_name] = (
             group_name if color_grouping == "site" else _color_group_key(defect, color_grouping)
         )  # colour key -> all_entries key for site color grouping, otherwise element/type key
@@ -1172,6 +1172,36 @@ def format_defect_name(
 
     if not include_charge:
         defect_species += "_99"  # add dummy charge for parsing; 99 red balloons go by...
+
+    # defect complex names (constituent point defects and their separations, then the point group, as
+    # hyphen-delimited terms; e.g. ``v_Cd-1.87-Cd_i-1.87-v_Cd-C3v_0``) are formatted as their constituents.
+    # Hyphens directly following underscores are negative charge states (``v_Cd_-2``), not delimiters:
+    pre_charge_name, _, charge_str = defect_species.rpartition("_")
+    if len(complex_terms := re.split(r"(?<!_)-", pre_charge_name)) > 1:
+        # same-named complexes are given ``_a``, ``_b``... suffixes after the point group (``...-C3v_a``):
+        if (match := re.fullmatch(r"(.+)_[a-z]+", complex_terms[-1])) and match[1] in sch_symbols:
+            complex_terms[-1] = match[1]
+        constituents = [  # skip separations and point group terms
+            term for term in complex_terms if term not in sch_symbols and not re.fullmatch(r"[\d.]+", term)
+        ]
+        formatted_constituents = [
+            format_defect_name(f"{term}_99", include_charge=False) for term in constituents
+        ]
+        # only a defect complex name if there are multiple recognised constituent point defects, otherwise
+        # (e.g. hyphens in user-defined name suffixes; ``v_Cd-HSE06_0``) parsed as a point defect below:
+        if len(constituents) > 1 and all(name is not None for name in formatted_constituents):
+            complex_name = "\u2013".join(
+                name for name in formatted_constituents if name is not None
+            )  # en dash
+            if not include_charge:
+                return complex_name
+            try:
+                return f"{complex_name}$^{{{_signed_charge(int(charge_str))}}}$"
+            except ValueError as e:
+                raise ValueError(
+                    f"Problem reading defect name {defect_species}, should end with charge state after "
+                    f"underscore (e.g. Te_i_Td_Te2.83_+1)"
+                ) from e
 
     name_parts = defect_species.split("_")
     try:

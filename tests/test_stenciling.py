@@ -154,8 +154,10 @@ def _make_stenciled_defect_entry(
     defect_site = _site_matching_input_entry(defect_entry, stenciled_supercell, defect_site)
     stenciled_entry.defect_supercell_site = defect_site
     stenciled_entry.sc_defect_frac_coords = defect_site.frac_coords
-    # pop any previously-calculated site displacement data:
-    stenciled_entry.calculation_metadata.pop("site_displacements", None)
+    # pop any previously-calculated site displacement data, and per-constituent (defect complex) site info
+    # of the original supercells (re-parsed for the stenciled supercells when needed):
+    for key in ("site_displacements", "bulk_sites", "defect_site_indices", "bulk_site_indices"):
+        stenciled_entry.calculation_metadata.pop(key, None)
     stenciled_entry.calculation_metadata["bulk_site"] = (
         defect_site_in_bulk
         if bulk_site_index is None  # interstitial
@@ -493,8 +495,8 @@ class DefectStencilingTest(unittest.TestCase):
     def test_edge_tol_min_dist_tol_ranges_and_warning_factor(self):
         """
         Test the usage of ``edge_tol_range`` and ``min_dist_tol_range`` inputs
-        to ``get_defect_in_supercell`` for Se defects stenciled to the same 20Å
-        supercell.
+        to ``get_defect_in_supercell`` for Se defects stenciled to the same
+        20Å supercell.
 
         234-atom supercell was generated from
         ``DefectsGenerator(prim_Se, supercell_gen_kwargs={"min_dist":20})``.
@@ -649,8 +651,8 @@ class DefectStencilingTest(unittest.TestCase):
         with target composition handling).
 
         Example MgO data is from a cubic 12 Å cell (90° angles), while this
-        uses a FCC-like 12 Å cell with ~62.5° angles as the stenciling target,
-        which also has a different volume per atom!
+        uses a FCC-like 12 Å cell with ~62.5° angles as the stenciling
+        target, which also has a different volume per atom!
         """
         from doped.generation import get_ideal_supercell_matrix
 
