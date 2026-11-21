@@ -812,7 +812,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         print("Checking plot()...")
         figure_or_list, output, w = _run_func_and_capture_stdout_warnings(defect_thermo.plot)
         assert isinstance(figure_or_list, mpl.figure.Figure | list)
-        assert not output or "Trying to install ShakeNBreak custom font" in output
+        assert not output
         if chempots is None:
             assert any(
                 "You have not specified chemical potentials (`chempots`), so chemical potentials are set "

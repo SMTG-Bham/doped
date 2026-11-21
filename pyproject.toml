@@ -147,4 +147,7 @@ filterwarnings = [  # later entries take precedence over earlier ones
     "error::DeprecationWarning",  # throw errors with Deprecation/Future warnings, to track
     "error::PendingDeprecationWarning",
     "error::FutureWarning",
+    # ASE (<=3.29.0) sets ``array.shape`` in ``Atoms.new_array``, deprecated in NumPy 2.5. TODO: Remove
+    # once the next ASE release (> 3.29.0) is out, in which this is fixed (``reshape`` on ASE ``master``):
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:ase",
 ]  # if needed to pass CI, can add warnings catch and ignore if running locally (POTCARs available), w/note to remove

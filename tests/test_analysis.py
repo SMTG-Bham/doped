@@ -899,9 +899,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         ytos_example_dir_path = os.path.abspath(self.YTOS_EXAMPLE_DIR)  # remove "tests/../" from path
         assert (
             f"No defect calculations in `output_path` '{ytos_example_dir_path}' were successfully parsed, "
-            f"using `bulk_path`: {ytos_example_dir_path}/Bulk and `subfolder`: 'vasp_gam'. Please check "
-            f"the correct defect/bulk paths and subfolder are being set, and that the folder structure is "
-            f"as expected (see `DefectsParser` docstring)." in str(exc.value)
+            f"using `bulk_path`: {os.path.join(ytos_example_dir_path, 'Bulk')} and `subfolder`: "
+            f"'vasp_gam'. Please check the correct defect/bulk paths and subfolder are being set, and "
+            f"that the folder structure is as expected (see `DefectsParser` docstring)." in str(exc.value)
         )
 
     @custom_mpl_image_compare(filename="O_Se_example_defects_plot.png")

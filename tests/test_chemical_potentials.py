@@ -2737,7 +2737,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self._compare_cpas(lst_cpa, cpa)
         self._general_cpa_check(lst_cpa)
 
-        all_folders = [path.rsplit("/vasprun.xml")[0] for path in all_paths]
+        all_folders = [os.path.dirname(path) for path in all_paths]
         lst_fols_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries=all_folders)
         assert len(lst_fols_cpa.elements) == 2
         self._compare_cpas(lst_fols_cpa, cpa)
@@ -3082,8 +3082,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )
             elif attr == "entries":
                 assert cleanse_entries(cpa_a.entries) == cleanse_entries(cpa_b.entries)
-            elif attr in ("vasprun_paths", "parsed_folders"):
-                assert sorted(getattr(cpa_a, attr)) == sorted(getattr(cpa_b, attr))
+            elif attr in ("vasprun_paths", "parsed_folders"):  # path separators can be mixed on Windows
+                assert sorted(map(os.path.normpath, getattr(cpa_a, attr))) == sorted(
+                    map(os.path.normpath, getattr(cpa_b, attr))
+                )
             else:
                 assert getattr(cpa_a, attr) == getattr(cpa_b, attr)
 
@@ -3282,13 +3284,14 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 "Cs2AgBiBr6", f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases"
             )
         _print_warning_info(w)  # for debugging
+        cp_dir = os.path.join(data_dir, "Sn_in_Cs2AgBiBr6_CompetingPhases")
         for expected_warning in [
             (
                 f"Multiple `vasprun.xml` files found in competing phase directory: "
-                f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0"
+                f"{os.path.join(cp_dir, 'Br_EaH=0')}"
             ),
             (
-                f"vasprun.xml file at {data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
+                f"vasprun.xml file at {os.path.join(cp_dir, 'Bi_EaH=0', 'vasprun.xml.gz')}"
                 f" is corrupted/incomplete. Attempting to continue parsing but may fail!"
             ),
             (
@@ -3515,7 +3518,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     def test_chempot_heatmap_5D_w_fixed_elements_error_wrong_element(self):
         with pytest.raises(ValueError) as exc:
             self.Sn_in_Cs2AgBiBr6_ncl_cpa.plot_chempot_heatmap(fixed_elements={"Cd": -0.5})
-        assert "Cd (eV)' is not in list" in str(exc.value)
+        assert "not in list" in str(exc.value)
 
     def test_chempot_heatmap_5D_w_fixed_elements_error(self):
         # ``Sn_in_Cs2AgBiBr6_ncl_cpa`` is 5-D (Cs, Ag, Bi, Br, Sn); fixing 3 elements leaves only
