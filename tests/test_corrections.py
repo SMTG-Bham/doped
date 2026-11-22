@@ -10,6 +10,7 @@ import os
 import tempfile
 import unittest
 import warnings
+from copy import deepcopy
 from functools import cache
 from typing import Any
 from unittest.mock import patch
@@ -34,9 +35,9 @@ from test_utils import (
 )
 
 from doped.analysis import DefectParser, DefectsParser
-from doped.core import DefectEntry, Vacancy
+from doped.core import DefectComplex, DefectEntry, Vacancy
 from doped.corrections import get_efnv_alignment_error, get_freysoldt_correction, get_kumagai_correction
-from doped.utils.parsing import _get_defect_supercell_sites, get_defect_type_and_site_indices
+from doped.utils.parsing import _get_defect_supercell_sites, _update_defect_entry_structure_metadata
 from doped.utils.supercells import _get_unwrapped_complex_frac_coords
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
@@ -450,6 +451,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             f"{cls.CdTe_example_dir}/v_Cd_example_data",
             bulk_path=cls.CdTe_bulk_data_dir,
             dielectric=cls.CdTe_dielectric,
+            json_filename=False,  # don't write parsed defect dict JSON into the example data folder
         ).defect_dict
 
         cls.ytos_dielectric = [40.7, 40.7, 25.2]  # from legacy Materials Project
@@ -969,12 +971,12 @@ class Ga2O3SplitVacanciesTestCase(unittest.TestCase):
     def test_multi_site_corrections_from_parsed_sites(self):
         """
         End-to-end test of the multi-site corrections, with the point charges
-        from ``doped``'s own identification of the defect sites in the relaxed.
-
-        defect and bulk supercells (rather than the stored ``point_charges``):
-        -3 on each vacated Ga site and +3 on each Ga interstitial, at their
-        (wrapped) positions in the unit cell, so the corrections must unwrap
-        the complexes, which here cross the cell boundary.
+        from ``doped``'s own parsing of the relaxed defect and bulk supercells
+        (rather than the stored ``point_charges``); split vacancies are parsed
+        as |DefectComplex| objects, with point charges set to the (formal)
+        oxidation states of the constituent defects (-3 for ``v_Ga``, +3 for
+        ``Ga_i``) at their (wrapped) supercell sites, so the corrections must
+        unwrap the complexes, which here cross the cell boundary.
         """
         for key, num_sites in {
             "3x4x2/v_Ga1_-3": 1,  # point vacancy; no spurious defect sites from the relaxation
@@ -982,11 +984,17 @@ class Ga2O3SplitVacanciesTestCase(unittest.TestCase):
             "2x4x2/v_Ga_3split_68_-3": 5,
             "2x4x2/v_Ga_4split_119_-3": 7,  # spans > complex min image distance, but unwrapping consistent
         }.items():
-            entry = self.defect_dict[key]
-            defect, bulk = entry.sc_entry.structure, entry.bulk_entry.structure
-            _type, bulk_idxs, defect_idxs = get_defect_type_and_site_indices(defect, bulk, site_tol=0.4)
-            point_charges = [(-3, bulk[i].frac_coords) for i in bulk_idxs]
-            point_charges += [(3, defect[i].frac_coords) for i in defect_idxs]
+            entry = deepcopy(self.defect_dict[key])  # don't modify the shared class entries
+            with warnings.catch_warnings():  # (re-)parse defect sites, as a complex if multiple
+                warnings.simplefilter("ignore")
+                _update_defect_entry_structure_metadata(entry, overwrite=True, site_tol=0.4)
+            is_complex = isinstance(entry.defect, DefectComplex)
+            defects = entry.defect.defects if is_complex else [entry.defect]
+            # n Ga_i (+3) and n + 1 v_Ga (-3) constituents for n-split vacancies (n = 0 for point vacancy):
+            expected = [("Ga_i", 3)] * (num_sites // 2) + [("v_Ga", -3)] * (num_sites // 2 + 1)
+            assert sorted((d.name, d.oxi_state) for d in defects) == expected, key
+            sites = _get_defect_supercell_sites(entry) if is_complex else [entry.defect_supercell_site]
+            point_charges = [(d.oxi_state, s.frac_coords) for d, s in zip(defects, sites, strict=True)]
             stored_point_charges = entry.calculation_metadata["point_charges"]  # unwrapped
             assert len(point_charges) == len(stored_point_charges) == num_sites, key
             stored_frac_coords = np.array([frac_coords for _q, frac_coords in stored_point_charges])
