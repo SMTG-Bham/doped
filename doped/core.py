@@ -20,8 +20,11 @@ from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
-from scipy.stats import sem
 
+from doped._oxi_states import (
+    _guess_and_set_struct_oxi_states_icsd_prob,
+    _guess_and_set_struct_oxi_states_icsd_prob_process,
+)
 from doped.utils import (
     _doped_obj_properties_methods,
     _signed_charge,
@@ -324,7 +327,7 @@ class DefectEntry(thermo.DefectEntry):
         correction_error,
         return_correction_error=False,
         type="FNV",
-        error_tolerance=0.05,
+        error_tolerance=0.025,
     ):
         if return_correction_error:
             if isinstance(correction_output, tuple):  # correction_output may be a tuple, so amalgamate:
@@ -333,19 +336,16 @@ class DefectEntry(thermo.DefectEntry):
 
         if (
             correction_error > error_tolerance
-        ):  # greater than 50 meV error in charge correction, warn the user
-            if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
-                error_val_string = f"{correction_error:.3f}"
-                error_tol_string = f"{error_tolerance:.3f}"
-            else:  # else give in scientific notation:
-                error_val_string = f"{correction_error:.2e}"
-                error_tol_string = f"{error_tolerance:.2e}"
+        ):  # error in charge correction is greater than the tolerance, warn the user
+            # if greater than 10 meV, round energy values to meV, else use scientific notation:
+            error_str = f"{correction_error:.3f}" if error_tolerance >= 0.01 else f"{correction_error:.2e}"
+            tol_str = f"{error_tolerance:.3f}" if error_tolerance >= 0.01 else f"{error_tolerance:.2e}"
 
             warnings.warn(
                 f"Estimated error in the {'Freysoldt (FNV)' if type == 'FNV' else 'Kumagai (eFNV)'} "
-                f"charge correction for defect {self.name} is {error_val_string} eV (i.e. which is "
-                f"greater than the `error_tolerance`: {error_tol_string} eV). You may want to check "
-                f"the accuracy of the correction by plotting the site potential differences (using "
+                f"charge correction for defect {self.name} is {error_str} eV (i.e. which is greater than "
+                f"the `error_tolerance`: {tol_str} eV). You may want to check the accuracy of the "
+                f"correction by plotting the site potential differences (using "
                 f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
                 f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
                 f"which can't be accurately modelled with the supercell approach; see "
@@ -365,7 +365,7 @@ class DefectEntry(thermo.DefectEntry):
         filename: PathLike | None = None,
         axis=None,
         return_correction_error: bool = False,
-        error_tolerance: float = 0.05,
+        error_tolerance: float = 0.025,
         style_file: PathLike | None = None,
         ax: "mpl.axes.Axes | list[mpl.axes.Axes] | np.ndarray | None" = None,
         **kwargs,
@@ -389,10 +389,12 @@ class DefectEntry(thermo.DefectEntry):
         spherical average of the dielectric tensor for the isolated energy and
         the G = 0 (alignment) term.
 
-        The charge correction error is estimated by computing the average
-        standard deviation of the planar-averaged potential difference in the
-        sampling region, and multiplying by the defect charge. This is expected
-        to be a lower bound estimate of the true charge correction error.
+        The charge correction error is estimated from the sampling noise in the
+        potential alignment; the average standard deviation of the
+        planar-averaged potential difference in the sampling region, multiplied
+        by the defect charge. This is a lower bound on the error in the charge
+        correction, which is itself a lower bound on the remnant finite-size
+        error.
 
         The defect coordinates are taken as the relaxed defect site by default
         (``DefectEntry.defect_supercell_site``) -- which is the bulk site for
@@ -443,14 +445,15 @@ class DefectEntry(thermo.DefectEntry):
                 If None, then all three axes are plotted.
             return_correction_error (bool):
                 If True, also returns the average standard deviation of the
-                planar-averaged potential difference times the defect charge
-                (which gives an estimate of the error range of the correction
-                energy). Default is False.
+                planar-averaged potential difference times the defect charge; a
+                lower bound on the error in the charge correction (itself a
+                lower bound on the remnant finite-size error), based on
+                sampling noise. Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction, based on the
-                variance of the potential in the sampling region, is greater
+                If the estimated error in the charge correction (a lower bound,
+                from the sampling noise in the potential alignment) is greater
                 than this value (in eV), then a warning is raised.
-                (default: 0.05 eV)
+                (default: 0.025 eV)
             style_file (PathLike):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
@@ -465,9 +468,11 @@ class DefectEntry(thermo.DefectEntry):
                 is not applied to user-provided ``Axes``), otherwise a single
                 ``Axes``. Default: None.
             **kwargs:
-                Additional kwargs to pass to the ``pymatgen-analysis-defects``
-                ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
-                ``mad_tol``, ``q_model``, ``defect_frac_coords``).
+                Additional kwargs to pass to
+                :func:`~doped.corrections.get_freysoldt_correction` (e.g.
+                ``point_charges`` to model the defect charge as multiple
+                Gaussian charges, such as for defect complexes, or ``q_model``,
+                ``energy_cutoff``, ``mad_tol``, ``defect_frac_coords``).
 
         Returns:
             ``utils.CorrectionResults`` (summary of the corrections applied and
@@ -531,7 +536,7 @@ class DefectEntry(thermo.DefectEntry):
         plot: bool = False,
         filename: PathLike | None = None,
         return_correction_error: bool = False,
-        error_tolerance: float = 0.05,
+        error_tolerance: float = 0.025,
         style_file: PathLike | None = None,
         **kwargs,
     ):
@@ -551,16 +556,19 @@ class DefectEntry(thermo.DefectEntry):
         this (and/or ``excluded_indices``) to ensure the best sampling of the
         plateau region away from the defect position -- ``doped`` should throw a
         warning in these cases (about the correction error being above the
-        default tolerance (50 meV)). For example, with layered materials, the
+        default tolerance (25 meV)). For example, with layered materials, the
         defect charge is often localised to one layer, so we may want to adjust
         ``defect_region_radius`` and/or ``excluded_indices`` to ensure that
         only sites in other layers are used for the sampling region (plateau) -
         see example on doped docs ``Tips`` page.
 
-        The correction error is estimated by computing the standard error of
-        the mean of the sampled site potential differences, multiplied by the
-        defect charge. This is expected to be a lower bound estimate of the
-        true charge correction error.
+        The correction error is estimated from the sampling noise in the
+        potential alignment; the (multiplicity-weighted) standard error of the
+        mean of the sampled (inequivalent) site potential differences,
+        multiplied by the defect charge (see
+        :func:`~doped.corrections.get_efnv_alignment_error`). This is a lower
+        bound on the error in the charge correction, which is itself a lower
+        bound on the remnant finite-size error.
 
         If this correction is used, please cite the Kumagai & Oba (eFNV) paper:
         10.1103/PhysRevB.89.195205 and the ``pydefect`` paper: "Insights into
@@ -594,9 +602,10 @@ class DefectEntry(thermo.DefectEntry):
                 region are used for sampling the electrostatic potential far
                 from the defect (to obtain the potential alignment). If
                 ``None`` (default), uses half the largest distance between
-                parallel cell faces (as in ``pydefect``). The radius is reduced
-                as necessary (with a warning) to ensure at least 3 sites in the
-                sampling region.
+                parallel cell faces (as in ``pydefect``), reduced as necessary
+                to include at least 8 inequivalent sites in the sampling region
+                (or a quarter of all inequivalent sites if fewer, with a
+                minimum of 3 sites).
             excluded_indices (list):
                 List of site indices (in the defect supercell) to exclude from
                 the site potential sampling in the correction calculation/plot.
@@ -620,15 +629,16 @@ class DefectEntry(thermo.DefectEntry):
                 Filename to save the Kumagai site potential plots to.
                 If None, plots are not saved.
             return_correction_error (bool):
-                If True, also returns the standard error of the mean of the
-                sampled site potential differences times the defect charge
-                (which gives an estimate of the error range of the correction
-                energy). Default is False.
+                If True, also returns the (multiplicity-weighted) standard
+                error of the mean of the sampled (inequivalent) site potential
+                differences times the defect charge; a lower bound on the error
+                in the charge correction (itself a lower bound on the remnant
+                finite-size error), based on sampling noise. Default is False.
             error_tolerance (float):
-                If the estimated error in the charge correction, based on the
-                variance of the potential in the sampling region, is greater
+                If the estimated error in the charge correction (a lower bound,
+                from the sampling noise in the potential alignment) is greater
                 than this value (in eV), then a warning is raised.
-                (default: 0.05 eV)
+                (default: 0.025 eV)
             style_file (PathLike):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
@@ -645,7 +655,7 @@ class DefectEntry(thermo.DefectEntry):
             ``True``, and the estimated charge correction error if
             ``return_correction_error`` is ``True``.
         """
-        from doped.corrections import get_kumagai_correction
+        from doped.corrections import get_efnv_alignment_error, get_kumagai_correction
 
         if dielectric is None:
             dielectric = self.calculation_metadata.get("dielectric")
@@ -672,14 +682,11 @@ class DefectEntry(thermo.DefectEntry):
         self._check_if_multiple_finite_size_corrections()
         self.corrections_metadata.update({"kumagai_charge_correction": correction.metadata.copy()})
 
-        # check accuracy of correction:
-        efnv_corr_obj = correction.metadata["pydefect_ExtendedFnvCorrection"]
-        sampled_pot_diff_array = np.array(
-            [s.diff_pot for s in efnv_corr_obj.sites if s.distance > efnv_corr_obj.defect_region_radius]
-        )
-
-        # correction energy error can be estimated from standard error of the mean:
-        correction_error = sem(sampled_pot_diff_array) * abs(self.charge_state)
+        # check accuracy of correction; error estimated from the (multiplicity-weighted) standard error of
+        # the mean, taken over the _inequivalent_ sampled sites (as equivalent sites are not independent):
+        correction_error = get_efnv_alignment_error(
+            correction.metadata["pydefect_ExtendedFnvCorrection"]
+        ) * abs(self.charge_state)
         self.corrections_metadata.update({"kumagai_charge_correction_error": correction_error})
         return self._check_correction_error_and_return_output(
             efnv_correction_output,
@@ -1918,56 +1925,6 @@ def _guess_and_set_struct_oxi_states(structure: Structure) -> Structure | bool:
     return False  # if oxi states could not be guessed
 
 
-def _guess_and_set_struct_oxi_states_icsd_prob(
-    structure: Structure, try_without_max_sites: bool = False
-) -> Structure | bool:
-    """
-    Tries to guess (and set) the oxidation states of the input structure, using
-    the ``pymatgen``-tabulated ICSD oxidation state probabilities.
-
-    Args:
-        structure (|Structure|):
-            The structure for which to guess the oxidation states.
-        try_without_max_sites (bool):
-            Whether to try to guess the oxidation states
-            without using the ``max_sites=-1`` argument (``True``)(which
-            attempts to use the reduced composition for guessing oxi states) or
-            not (``False``; default).
-
-    Returns:
-        Structure:
-            The structure with oxidation states guessed and set, or ``False``
-            if oxidation states could not be guessed.
-    """
-    structure = structure.copy()  # don't modify original structure
-    if try_without_max_sites:
-        with contextlib.suppress(Exception):
-            structure.add_oxidation_state_by_guess()
-            # check all oxidation states are whole numbers:
-            if all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
-                return structure
-
-    # else try to use the reduced cell since oxidation state assignment scales poorly with system size:
-    try:  # retry with broader guesses if oxi states are all zero or not whole numbers:
-        for kwargs in ({"max_sites": -1}, {"max_sites": -1, "all_oxi_states": True}, {}):
-            structure.add_oxidation_state_by_guess(**kwargs)
-            if not all(specie.oxi_state == 0 for specie in structure.species) and all(
-                np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species
-            ):
-                break
-        if not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
-            return False  # non-integer (e.g. mixed-valence average) oxidation states from every guess
-    except Exception:
-        structure.add_oxidation_state_by_guess()
-
-    if all(hasattr(site.specie, "oxi_state") for site in structure.sites) and all(
-        isinstance(site.specie.oxi_state, int | float) for site in structure.sites
-    ):
-        return structure
-
-    return False
-
-
 def guess_and_set_struct_oxi_states(structure: Structure, try_without_max_sites: bool = False):
     """
     Tries to guess (and set) the oxidation states of the input structure, first
@@ -2138,21 +2095,6 @@ def most_common_oxi(element_symbol: str) -> int:
     return next(iter(get_oxi_probabilities(element_symbol).keys()))
 
 
-def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_without_max_sites=False):
-    """
-    Implements the ``_guess_and_set_struct_oxi_states_icsd_prob`` function
-    above, but also putting the results into the supplied ``multiprocessing``
-    queue object (for use with timeouts via ``Process``).
-
-    For internal ``doped`` usage.
-    """
-    try:
-        structure_with_oxi = _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites)
-    except Exception:  # e.g. unknown elements; must put a result, else ``queue.get()`` hangs
-        structure_with_oxi = False
-    queue.put(structure_with_oxi or False)
-
-
 def _guess_and_set_oxi_states_with_timeout_icsd_prob(
     structure,
     timeout_1: float = 10,
@@ -2186,32 +2128,25 @@ def _guess_and_set_oxi_states_with_timeout_icsd_prob(
     """
     queue = _mp.SimpleQueue()
 
-    guess_oxi_process_wout_max_sites = _mp.Process(
-        target=_guess_and_set_struct_oxi_states_icsd_prob_process, args=(structure, queue, True)
-    )  # try without max sites first, if fails, try with max sites
-    guess_oxi_process_wout_max_sites.start()
-    guess_oxi_process_wout_max_sites.join(timeout=timeout_1)
-
-    if guess_oxi_process_wout_max_sites.is_alive():  # still running, revert to using max sites
-        guess_oxi_process_wout_max_sites.terminate()
-        guess_oxi_process_wout_max_sites.join()
-
+    # try without max sites first, if that times out, try with max sites:
+    for try_without_max_sites, timeout in ((True, timeout_1), (False, timeout_2)):
+        started = _mp.Event()
         guess_oxi_process = _mp.Process(
             target=_guess_and_set_struct_oxi_states_icsd_prob_process,
-            args=(structure, queue, False),
+            args=(structure, queue, try_without_max_sites, started),
         )
         guess_oxi_process.start()
-        guess_oxi_process.join(timeout=timeout_2)  # wait for pymatgen to guess oxi states,
-        # otherwise revert to all Defect oxi states being set to 0
+        # the timeouts are for the oxi state guessing itself, so first wait (up to 60 s) for the process to
+        # start up, which can be slow if run from a script importing ``doped`` (as it is then re-imported):
+        started.wait(60)
+        guess_oxi_process.join(timeout=timeout)  # wait for pymatgen to guess oxi states
+        if not guess_oxi_process.is_alive():
+            return queue.get()  # apply oxi states to structure
 
-        if guess_oxi_process.is_alive():
-            guess_oxi_process.terminate()
-            guess_oxi_process.join()
+        guess_oxi_process.terminate()  # still running
+        guess_oxi_process.join()
 
-            return False
-
-    # apply oxi states to structure:
-    return queue.get()
+    return False  # otherwise revert to all Defect oxi states being set to 0
 
 
 def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites=True) -> float:

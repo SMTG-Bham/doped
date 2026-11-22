@@ -128,6 +128,209 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
     return locpot_or_outcar
 
 
+def _check_and_unwrap_point_charges(
+    lattice, charge, point_charges, correction_type: str = "eFNV"
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Check the input ``point_charges`` for a multi-site charge correction, and
+    unwrap them to a single (minimum image) configuration, i.e. the isolated
+    complex geometry.
+
+    Args:
+        lattice (|Lattice|):
+            Lattice of the defect supercell.
+        charge (float):
+            Total defect charge state, which the point charges must sum to.
+        point_charges (list[tuple[float, ArrayLike]]):
+            List of ``(charge, frac_coords)`` pairs of the model charges.
+        correction_type (str):
+            Name of the charge correction, for the warning message. Default is
+            "eFNV".
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]:
+            Array of the site charges, and array of their unwrapped fractional
+            coordinates.
+    """
+    site_charges = np.array([q for q, _fc in point_charges], dtype=float)
+    if not np.isclose(site_charges.sum(), charge):
+        raise ValueError(
+            f"The sum of the supplied point charges ({site_charges.sum():+.3f}) does not match the total "
+            f"defect charge state ({charge:+.3f})."
+        )
+    charge_coords = np.array(_get_unwrapped_complex_frac_coords(lattice, [fc for _q, fc in point_charges]))
+    half_min_image_dist = _get_min_image_distance_from_matrix(lattice.matrix) / 2
+    for i, j in combinations(range(len(site_charges)), 2):
+        pair_dist = np.linalg.norm(lattice.get_cartesian_coords(charge_coords[j] - charge_coords[i]))
+        if pair_dist < 0.1:  # pair term is finite as pair_dist -> 0, but likely an input error
+            raise ValueError(
+                f"Point charges {i} and {j} are (near-)coincident ({pair_dist:.2f} Å apart), so should "
+                f"likely be combined into a single point charge."
+            )
+        if pair_dist > half_min_image_dist:
+            warnings.warn(
+                f"Point charges {i} and {j} are {pair_dist:.2f} Å apart, which is more than half the "
+                f"minimum image distance of the supercell ({half_min_image_dist:.2f} Å), so the multiple "
+                f"point charge model (and {correction_type} correction) may be unreliable."
+            )
+    return site_charges, charge_coords
+
+
+def _get_multi_site_freysoldt_correction(
+    site_charges: np.ndarray,
+    charge_coords: np.ndarray,
+    dielectric: float | np.ndarray | list,
+    defect_locpot: Locpot | dict,
+    bulk_locpot: Locpot | dict,
+    lattice,
+    q_model=None,
+    energy_cutoff: float = 1500,
+    mad_tol: float = 1e-6,
+) -> CorrectionResult:
+    r"""
+    Freysoldt (FNV) correction for a model charge of one or more Gaussians, as
+    with multiple charges in ``sxdefectalign``.
+
+    This generalises the ``pymatgen-analysis-defects``
+    ``get_freysoldt_correction`` function, with the same output format and
+    treatment of anisotropic dielectric screening, and reproduces it for a
+    single charge. The potential alignment along each axis is sampled furthest
+    from all charges (half a cell from the grid plane nearest the middle of the
+    charges, i.e. opposite the largest gap between them along that axis).
+
+    Args:
+        site_charges (np.ndarray):
+            Charges of the model Gaussians.
+        charge_coords (np.ndarray):
+            Unwrapped fractional coordinates of the model Gaussians (see
+            ``_check_and_unwrap_point_charges``).
+        dielectric (float or int or 3x1 matrix or 3x3 matrix):
+            Total dielectric constant (ionic + static contributions).
+        defect_locpot (Locpot | dict):
+            ``Locpot`` object, or dictionary of the planar-averaged potential
+            along each axis, for the defect supercell.
+        bulk_locpot (Locpot | dict):
+            ``Locpot`` object, or dictionary of the planar-averaged potential
+            along each axis, for the bulk supercell.
+        lattice (|Lattice|):
+            Lattice of the defect supercell.
+        q_model (QModel):
+            ``pymatgen-analysis-defects`` ``QModel`` object, setting the width
+            (``beta``) of each model charge. Non-Gaussian model charges
+            (``expnorm > 0``) are only supported for a single charge. Default
+            is ``None`` (``QModel()``; Gaussians with ``beta`` = 1 bohr).
+        energy_cutoff (float):
+            Maximum reciprocal space energy cutoff (in eV) to try in converging
+            the periodic energy of the model charge. Default is 1500.
+        mad_tol (float):
+            Convergence tolerance (in Ha) for the periodic energy of the model
+            charge. Default is 1e-6 (tighter than the 1e-4 default in
+            ``pymatgen-analysis-defects``, at negligible cost here).
+
+    Returns:
+        CorrectionResult:
+            Correction summary object, with the same ``metadata`` as from the
+            ``pymatgen-analysis-defects`` ``get_freysoldt_correction``
+            function.
+    """
+    from pymatgen.analysis.defects.utils import QModel, ang_to_bohr, converge, genrecip, hart_to_ev
+    from scipy.integrate import quad
+
+    q_model = q_model or QModel()
+    if q_model.expnorm and len(site_charges) > 1:  # pair interaction below is for Gaussians
+        raise ValueError("Only Gaussian model charges (``expnorm = 0``) are supported for multi-site FNV.")
+
+    def get_planar_averages(locpot):
+        if not isinstance(locpot, dict):
+            return [locpot.get_average_along_axis(i) for i in range(3)]
+        locpot = {int(k): v for k, v in locpot.items()}  # keys are strings if reloaded from ``json``
+        return [np.asarray(locpot[i], dtype=float) for i in range(3)]
+
+    defect_avgs, bulk_avgs = get_planar_averages(defect_locpot), get_planar_averages(bulk_locpot)
+    total_charge = site_charges.sum()
+    eps = freysoldt._get_dielectric_tensor(dielectric)
+    avg_eps = freysoldt.get_spherically_averaged_dielectric(eps)
+    eps_eigvals, eps_eigvecs = np.linalg.eigh((eps + eps.T) / 2)  # symmetric part, as enters G·ε·G
+    cell = ang_to_bohr * lattice.matrix  # atomic units
+    volume = abs(np.linalg.det(cell))
+    cart_coords = charge_coords @ cell
+    # G = 0 term of the long-range model potential (per unit charge), which is included in both the
+    # periodic energy and the model potential (so cancels in the total correction), as in
+    # ``pymatgen-analysis-defects``:
+    g0_term = 4 * np.pi * q_model.rho_rec_limit0 / (avg_eps * volume)
+
+    def e_periodic(encut):  # (2π/V) Σ_G |Σᵢ qᵢ exp(-iG·rᵢ)|² rho(G)² / (G·ε·G), for G ≠ 0
+        G = np.array(list(genrecip(*cell, encut)))
+        if not len(G):
+            return 0.0
+        structure_factor = np.exp(-1j * G @ cart_coords.T) @ site_charges
+        rho_sq = q_model.rho_rec(np.einsum("ij,ij->i", G, G)) ** 2
+        screened_G_sq = np.einsum("ij,jk,ik->i", G, eps, G)
+        return 2 * np.pi / volume * np.sum(np.abs(structure_factor) ** 2 * rho_sq / screened_G_sq)
+
+    def e_isolated_pair(r_ij):  # interaction of two unit Gaussians separated by r_ij, in the dielectric
+        u = (eps_eigvecs.T @ r_ij) / np.sqrt(eps_eigvals)
+        widths = q_model.beta**2 / eps_eigvals
+
+        def integrand(t):
+            denom = 1 + 2 * t * t * widths
+            return np.exp(-t * t * np.sum(u * u / denom)) / np.sqrt(np.prod(denom))
+
+        integral = quad(integrand, 0, np.inf, limit=400, epsabs=1e-13, epsrel=1e-11)[0]
+        return 2 / np.sqrt(np.pi) * integral / np.sqrt(np.prod(eps_eigvals))
+
+    # isolated energy; model charge self-energies, screened by the spherically-averaged dielectric
+    # constant as in ``pymatgen-analysis-defects``, plus pair interactions:
+    e_self = quad(lambda g: q_model.rho_rec(g * g) ** 2, 0, np.inf, epsabs=1e-13, epsrel=1e-11)[0] / np.pi
+    e_isolated = np.sum(site_charges**2) * e_self / avg_eps + sum(
+        site_charges[i] * site_charges[j] * e_isolated_pair(cart_coords[j] - cart_coords[i])
+        for i, j in combinations(range(len(site_charges)), 2)
+    )
+    e_periodic_converged = converge(e_periodic, 5, mad_tol, energy_cutoff) + total_charge**2 * g0_term
+    es_corr = (e_isolated - e_periodic_converged) * hart_to_ev
+
+    alignment_corrs, plot_data = {}, {}
+    for axis in range(3):
+        n = len(defect_avgs[axis])
+        # planar-averaged long-range model potential, as in ``perform_pot_corr``:
+        b_vec = lattice.reciprocal_lattice.matrix[axis]
+        k = np.arange(1, (n + 1) // 2)
+        g2 = (k * lattice.reciprocal_lattice.abc[axis] / ang_to_bohr) ** 2
+        coeffs = 8 * np.pi * q_model.rho_rec(g2) / (b_vec @ eps @ b_vec / (b_vec @ b_vec) * g2) / volume
+        phases = np.arange(n)[:, None] / n - charge_coords[None, :, axis]  # (n, N_charges)
+        model_pot = -hart_to_ev * (
+            np.cos(2 * np.pi * phases[:, :, None] * k) @ coeffs @ site_charges + total_charge * g0_term
+        )
+
+        # sample alignment furthest from all charges along this axis; shifting the grid plane nearest the
+        # centre of the charges (i.e. opposite their largest gap) to the origin, with ``perform_pot_corr``
+        # (for q = 0) then sampling half a cell from it:
+        sorted_coords = np.sort(charge_coords[:, axis] % 1)
+        gaps = np.diff([*sorted_coords, sorted_coords[0] + 1])
+        shift = -int(np.floor((sorted_coords[np.argmax(gaps)] + gaps.max() / 2 - 0.5) * n + 0.5))
+        defect_avg, bulk_avg, model_pot = (
+            np.roll(avg, shift) for avg in (defect_avgs[axis], bulk_avgs[axis], model_pot)
+        )
+        alignment_corrs[axis], plot_data[axis] = freysoldt.perform_pot_corr(
+            np.arange(n) / n * lattice.abc[axis], pureavg=bulk_avg, defavg=defect_avg - model_pot,
+            lattice=lattice, q=0, defect_frac_coords=[0, 0, 0], axis=axis, dielectric=eps, q_model=q_model,
+        )  # fmt: skip
+        plot_data[axis]["pot_plot_data"].update({"Vr": model_pot, "dft_diff": defect_avg - bulk_avg})
+
+    mean_alignment = np.mean(list(alignment_corrs.values()))
+    pot_corr = mean_alignment * total_charge
+    return CorrectionResult(
+        correction_energy=es_corr + pot_corr,
+        metadata={
+            "plot_data": plot_data,
+            "electrostatic": es_corr,
+            "alignments": alignment_corrs,
+            "mean_alignments": mean_alignment,
+            "potential": pot_corr,
+        },
+    )
+
+
 def get_freysoldt_correction(
     defect_entry,
     dielectric: float | np.ndarray | list | None = None,
@@ -139,6 +342,7 @@ def get_freysoldt_correction(
     verbose: bool = True,
     style_file: PathLike | None = None,
     ax: plt.Axes | list[plt.Axes] | np.ndarray | None = None,
+    point_charges: list[tuple[float, np.ndarray | list]] | None = None,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -219,10 +423,23 @@ def get_freysoldt_correction(
             shared y-axis of the default three-panel figure is not applied to
             user-provided ``Axes``), otherwise a single ``Axes``.
             Default: None.
+        point_charges (list[tuple[float, ArrayLike]]):
+            List of ``(charge, frac_coords)`` pairs specifying multiple
+            (Gaussian) model charges for the defect (e.g. for the constituents
+            of a defect complex), used in place of the default single charge
+            (total defect charge at the defect site), as with multiple charges
+            in ``sxdefectalign``. The charges must sum to the defect charge
+            state, and are unwrapped to a single (minimum image) configuration.
+            The potential alignment along each axis is then sampled furthest
+            from all charges. Default is ``None`` (single charge).
         **kwargs:
-            Additional kwargs to pass to the ``pymatgen-analysis-defects``
-            ``get_freysoldt_correction`` function (e.g. ``energy_cutoff``,
-            ``mad_tol``, ``q_model``, ``defect_frac_coords``).
+            Additional keyword arguments for the FNV correction; ``q_model``
+            (``pymatgen-analysis-defects`` ``QModel`` object for the model
+            charge(s); Gaussian(s) with ``beta`` = 1 bohr by default),
+            ``energy_cutoff`` and ``mad_tol`` (maximum reciprocal space energy
+            cutoff, in eV, and convergence tolerance, in Ha, for the periodic
+            energy of the model charge; 1500 and 1e-6 by default) and
+            ``defect_frac_coords``.
 
     Returns:
         ``CorrectionResults`` (summary of the corrections applied and
@@ -244,17 +461,27 @@ def get_freysoldt_correction(
     defect_locpot = _check_if_pathlike_and_get_locpot_or_core_pots(defect_locpot, obj_type="locpot")
     bulk_locpot = _check_if_pathlike_and_get_locpot_or_core_pots(bulk_locpot, obj_type="locpot")
 
-    fnv_correction = freysoldt.get_freysoldt_correction(
-        q=defect_entry.charge_state,
-        dielectric=dielectric,
-        defect_locpot=defect_locpot,
-        bulk_locpot=bulk_locpot,
-        lattice=_get_defect_supercell(defect_entry).lattice if isinstance(defect_locpot, dict) else None,
-        defect_frac_coords=kwargs.pop(
-            "defect_frac_coords", _get_defect_supercell_frac_coords(defect_entry)
-        ),  # _relaxed_ defect coords (except for vacancies)
-        **kwargs,
+    lattice = (
+        _get_defect_supercell(defect_entry).lattice
+        if isinstance(defect_locpot, dict)
+        else defect_locpot.structure.lattice
     )
+    defect_frac_coords = kwargs.pop(  # _relaxed_ defect coords (except for vacancies) by default
+        "defect_frac_coords", _get_defect_supercell_frac_coords(defect_entry)
+    )
+    site_charges, charge_coords = _check_and_unwrap_point_charges(
+        lattice,
+        defect_entry.charge_state,
+        point_charges or [(defect_entry.charge_state, defect_frac_coords)],
+        "FNV",
+    )
+    fnv_correction = _get_multi_site_freysoldt_correction(
+        site_charges, charge_coords, dielectric, defect_locpot, bulk_locpot, lattice, **kwargs
+    )
+    if point_charges:  # store multiple point charge model, for reproducibility
+        fnv_correction.metadata["point_charges"] = [
+            (float(q), fc.tolist()) for q, fc in zip(site_charges, charge_coords, strict=True)
+        ]
 
     if verbose:
         print(f"Calculated Freysoldt (FNV) correction is {fnv_correction.correction_energy:.3f} eV")
@@ -357,6 +584,117 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
         return ax
 
 
+MIN_EFNV_SAMPLED_GROUPS = 8  # minimum number of inequivalent sites in the default eFNV sampling region
+
+
+def _get_equivalent_site_groups(
+    species, distances, potentials, dist_tol: float = 0.02, pot_tol: float = 2e-3
+) -> np.ndarray:
+    """
+    Group atomic sites which are (near-)equivalent for the eFNV potential
+    sampling.
+
+    Sites of the same species, at the same distance from the (nearest) defect
+    charge (within ``dist_tol``, in Å) and with the same site potential
+    difference (within ``pot_tol``, in V) are taken to be equivalent, and so
+    give only one `independent` sample of the far-field potential.
+
+    Args:
+        species (Sequence[str]):
+            Species (strings) of the sites.
+        distances (Sequence[float]):
+            Distances (in Å) of the sites to the (nearest) defect charge.
+        potentials (Sequence[float]):
+            Site potential differences (defect - bulk; in V).
+        dist_tol (float):
+            Distance tolerance (in Å). Default is 0.02.
+        pot_tol (float):
+            Potential tolerance (in V). Default is 2e-3.
+
+    Returns:
+        np.ndarray:
+            Integer group label for each site.
+    """
+    keys = [
+        (str(specie), round(float(d) / dist_tol), round(float(pot) / pot_tol))
+        for specie, d, pot in zip(species, distances, potentials, strict=True)
+    ]
+    labels: dict = {}
+    return np.array([labels.setdefault(key, len(labels)) for key in keys], dtype=int)
+
+
+def get_efnv_sampled_group_means(efnv_correction) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Get the mean sampled potential difference (``diff_pot``; in V) and
+    multiplicity (number of sites) of each group of equivalent sites in the
+    sampling region of a ``pydefect`` ``ExtendedFnvCorrection`` object (see
+    ``_get_equivalent_site_groups``).
+
+    The scatter of these values gives the sampling noise in the eFNV potential
+    alignment (see ``get_efnv_alignment_error``), which is used to estimate a
+    lower bound on the error in the charge correction (itself a lower bound on
+    the remnant finite-size error).
+
+    Args:
+        efnv_correction (ExtendedFnvCorrection):
+            ``pydefect`` ``ExtendedFnvCorrection`` object.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]:
+            Mean ``diff_pot`` (in V) and multiplicity for each group of
+            equivalent sites.
+    """
+    sampled = [s for s in efnv_correction.sites if s.distance > efnv_correction.defect_region_radius]
+    if not sampled:
+        return np.array([]), np.array([], dtype=int)
+    groups = _get_equivalent_site_groups(
+        [s.specie for s in sampled], [s.distance for s in sampled], [s.potential for s in sampled]
+    )
+    diff_pots = np.array([s.diff_pot for s in sampled])
+    unique_groups, multiplicities = np.unique(groups, return_counts=True)
+    return np.array([diff_pots[groups == g].mean() for g in unique_groups]), multiplicities
+
+
+def get_efnv_alignment_error(efnv_correction) -> float:
+    """
+    Estimate the sampling error (in V) in the eFNV potential alignment of a
+    ``pydefect`` ``ExtendedFnvCorrection`` object, as the standard error of the
+    mean sampled potential difference (``diff_pot``).
+
+    Equivalent sites (see ``_get_equivalent_site_groups``) are not independent
+    samples of the far-field potential, so the standard error is evaluated over
+    the groups of equivalent sites, weighted by their multiplicities ``w`` (as
+    the alignment is the mean over all sampled sites); the weighted standard
+    deviation of the group means, divided by ``sqrt(n_eff - 1)`` where
+    ``n_eff = sum(w)^2 / sum(w^2)`` is the effective sample size. This reduces
+    to the usual standard error of the mean when no sites are equivalent, which
+    is also used if all sampled sites are equivalent.
+
+    Multiplied by the defect charge, this gives a lower bound on the error in
+    the charge correction (itself a lower bound on the remnant finite-size
+    error).
+
+    Args:
+        efnv_correction (ExtendedFnvCorrection):
+            ``pydefect`` ``ExtendedFnvCorrection`` object.
+
+    Returns:
+        float:
+            Estimated sampling error in the potential alignment (in V); ``nan``
+            if fewer than two sites are sampled.
+    """
+    means, weights = get_efnv_sampled_group_means(efnv_correction)
+    if len(means) < 2:  # all sampled sites are equivalent, so can only use the scatter between them
+        sites = efnv_correction.sites
+        means = np.array([s.diff_pot for s in sites if s.distance > efnv_correction.defect_region_radius])
+        weights = np.ones(len(means))
+    if len(means) < 2:
+        return np.nan
+    n_eff = weights.sum() ** 2 / np.sum(weights**2)
+    variance = np.average((means - np.average(means, weights=weights)) ** 2, weights=weights)
+    return float(np.sqrt(variance / (n_eff - 1)))
+
+
 def get_kumagai_correction(
     defect_entry,
     dielectric: float | np.ndarray | list | None = None,
@@ -390,7 +728,7 @@ def get_kumagai_correction(
     this (and/or ``excluded_indices``) to ensure the best sampling of the
     plateau region away from the defect position -- ``doped`` should throw a
     warning in these cases (about the correction error being above the default
-    tolerance (50 meV)). For example, with layered materials, the defect charge
+    tolerance (25 meV)). For example, with layered materials, the defect charge
     is often localised to one layer, so we may want to adjust
     ``defect_region_radius`` and/or ``excluded_indices`` to ensure that only
     sites in other layers are used for the sampling region (plateau) -- see
@@ -436,8 +774,11 @@ def get_kumagai_correction(
             are used for sampling the electrostatic potential far from the
             defect (to obtain the potential alignment). If ``None`` (default),
             uses half the largest distance between parallel cell faces (as in
-            ``pydefect``), reduced as necessary (with a warning) to ensure at
-            least 3 sites in the sampling region.
+            ``pydefect``), reduced as necessary to include at least 8
+            inequivalent sites in the sampling region (or a quarter of all
+            inequivalent sites if fewer, with a minimum of 3 sites). Sites are
+            taken as equivalent if they have the same species, distance to the
+            (nearest) defect charge and site potential difference.
         excluded_indices (list):
             List of site indices (in the defect supercell) to exclude from
             the site potential sampling in the correction calculation/plot.
@@ -506,38 +847,18 @@ def get_kumagai_correction(
 
         If ``defect_region_radius`` is not specified, then the ``pydefect``
         default (half the largest distance between parallel cell faces) is
-        used, reduced as necessary (with a warning) to ensure at least 3 sites
-        in the sampling region.
+        used, reduced as necessary to include at least 8 inequivalent sites in
+        the sampling region (or a quarter of all inequivalent sites if fewer,
+        with a minimum of 3 sites).
         """
         if calc_results.structure.lattice != perfect_calc_results.structure.lattice:
             raise SupercellError("The lattice constants for defect and perfect models are different")
         lattice = calc_results.structure.lattice
         sites, rel_coords = [], []
 
-        point_charges = point_charges or [(charge, defect_coords)]
-        site_charges = np.array([q for q, _fc in point_charges], dtype=float)
-        if not np.isclose(site_charges.sum(), charge):
-            raise ValueError(
-                f"The sum of the supplied point charges ({site_charges.sum():+.3f}) does not match the "
-                f"defect charge state ({charge:+.3f})."
-            )
-        charge_coords = np.array(
-            _get_unwrapped_complex_frac_coords(lattice, [fc for _q, fc in point_charges])
-        )  # unwrap to a single (minimum image) configuration, i.e. the isolated complex geometry
-        half_min_image_dist = _get_min_image_distance_from_matrix(lattice.matrix) / 2
-        for i, j in combinations(range(len(site_charges)), 2):
-            pair_dist = np.linalg.norm(lattice.get_cartesian_coords(charge_coords[j] - charge_coords[i]))
-            if pair_dist < 0.1:  # pair term is finite as pair_dist -> 0, but likely an input error
-                raise ValueError(
-                    f"Point charges {i} and {j} are (near-)coincident ({pair_dist:.2f} Å apart), so "
-                    f"should likely be combined into a single point charge."
-                )
-            if pair_dist > half_min_image_dist:
-                warnings.warn(
-                    f"Point charges {i} and {j} are {pair_dist:.2f} Å apart, which is more than half the "
-                    f"minimum image distance of the supercell ({half_min_image_dist:.2f} Å), so the "
-                    f"multiple point charge model (and eFNV correction) may be unreliable."
-                )
+        site_charges, charge_coords = _check_and_unwrap_point_charges(
+            lattice, charge, point_charges or [(charge, defect_coords)]
+        )
 
         excluded_indices = [] if excluded_indices is None else [int(i) for i in excluded_indices]
 
@@ -594,15 +915,27 @@ def get_kumagai_correction(
         site_distances = np.array([site.distance for site in sites])
         if defect_region_radius is None:
             defect_region_radius = get_half_max_face_distance(lattice)
-            min_sampled = min(3, len(site_distances))  # ensure >= 3 sampled sites (e.g. slabs with vacuum)
-            if np.count_nonzero(site_distances > defect_region_radius) < min_sampled:
-                # reduce to just below the 3rd-furthest site distance (with tolerance for equal distances):
-                defect_region_radius = np.sort(site_distances)[-min_sampled] - 1e-3
-                warnings.warn(
-                    f"Fewer than {min_sampled} atomic sites lie outside the default eFNV defect region "
-                    f"radius, so it has been reduced to {defect_region_radius:.2f} Å to include at least "
-                    f"{min_sampled} sites in the potential sampling region."
-                )
+            # ensure a minimum number of _inequivalent_ sites in the sampling region, as the default radius
+            # can leave just a few (often equivalent) sites for e.g. elongated supercells, extended
+            # (multi-site) defects or slabs with vacuum, giving a noisy potential alignment and unreliable
+            # error estimate. The 8 furthest groups (or a quarter of all groups, for small/high-symmetry
+            # cells) and the 3 furthest sites must be sampled:
+            groups = _get_equivalent_site_groups(
+                [site.specie for site in sites], site_distances, [site.potential for site in sites]
+            )
+            group_distances = np.sort([site_distances[groups == g].max() for g in np.unique(groups)])
+            min_groups = min(MIN_EFNV_SAMPLED_GROUPS, int(np.ceil(len(group_distances) / 4)))
+            furthest_sites = np.sort(site_distances)[-3:]
+            min_distance = min([*group_distances[-min_groups:], *furthest_sites], default=np.inf)
+            if min_distance <= defect_region_radius:  # reduce to just below it:
+                if furthest_sites[0] <= defect_region_radius:  # unusual; e.g. slabs with vacuum
+                    warnings.warn(
+                        f"Fewer than {len(furthest_sites)} atomic sites lie outside the default eFNV "
+                        f"defect region radius, so it has been reduced to {min_distance - 1e-3:.2f} Å to "
+                        f"include at least {len(furthest_sites)} sites in the potential sampling region."
+                    )
+                defect_region_radius = min_distance - 1e-3  # (with tolerance for equal distances)
+
         elif (num_sampled := np.count_nonzero(site_distances > defect_region_radius)) == 0:
             raise ValueError(
                 f"No atomic sites lie outside the supplied eFNV `defect_region_radius` "

@@ -2041,8 +2041,9 @@ class DefectThermodynamics(MSONable):
         - 'Path':
             Path to the defect calculation folder.
         - 'Δ[E_corr]':
-            Estimated error in the charge correction, from the variance of the
-            potential in the sampling region.
+            Estimated lower bound on the error in the charge correction (itself
+            a lower bound on the remnant finite-size error), from the sampling
+            noise in the potential alignment.
 
         Args:
             chempots (dict):

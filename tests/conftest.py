@@ -6,6 +6,20 @@ import pytest
 
 from doped.core import warn_once
 from doped.utils import _ignore_pmg_warnings
+from doped.utils.plotting import _resolve_doped_style
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _install_custom_font():
+    """
+    Install ``doped``'s custom plotting font (if not already present) at the
+    start of the test session.
+
+    Otherwise, in fresh environments (e.g. CI), the font installation messages
+    are printed by the first plotting call of the session, breaking any
+    ``stdout`` checks in whichever test that happens to be.
+    """
+    _resolve_doped_style()
 
 
 @pytest.fixture(autouse=True)

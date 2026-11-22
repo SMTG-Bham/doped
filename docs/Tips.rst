@@ -183,10 +183,10 @@ particularly for metals, which are often the most expensive competing phases -- 
 
 - **Pre-screen polymorphs without SOC:** While spin-orbit coupling (SOC) can be important for accurate
   `absolute` energies in heavy-element systems (as discussed in |Guidelines Perspective|, Box 1), 
-  `relative` energies of polymorphs `of the same composition/oxidation states`` are usually reliable 
-  without SOC. Thus for systems with many candidate polymorphs, you can cheaply pre-screen with non-SOC 
-  calculations, and then only perform the (expensive) SOC calculations on the ground-state polymorph of 
-  each competing phase.
+  `relative` energies of polymorphs `of the same composition/oxidation states` are usually reliable 
+  without SOC. Thus for systems with many candidate polymorphs, you can cheaply pre-screen with non-SOC
+  energies from the relaxations, and then only perform the (expensive) SOC single-point calculations on
+  the ground-state polymorph of each candidate competing phase.
 
 - **Smearing:** Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and ``2``) are the ``doped`` default 
   settings for insulators and metals for geometry relaxations (and `k`-point convergence testing), but 
@@ -241,8 +241,8 @@ when parsing the intrinsic defects, the -3 charge antimony vacancy (``v_Sb-3``) 
 
 .. code-block::
 
-        Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.067 eV (i.e. which 
-        is greater than the ``error_tolerance``: 0.050 eV). You may want to check the accuracy of the 
+        Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.069 eV (i.e. which 
+        is greater than the ``error_tolerance``: 0.025 eV). You may want to check the accuracy of the 
         correction by plotting the site potential differences (using 
         ``defect_entry.get_kumagai_correction()`` with ``plot=True``). Large errors are often due to 
         unstable or shallow defect charge states (which can't be accurately modelled with the supercell 
@@ -251,10 +251,11 @@ when parsing the intrinsic defects, the -3 charge antimony vacancy (``v_Sb-3``) 
 
 .. note::
 
-    Charge correction errors are estimated by computing the standard error of the mean of the electrostatic
-    potential difference between the bulk and defect supercells, in the sampling region (far from the
-    defect site), and multiplying by the defect charge. This gives a lower bound estimate of the true
-    error in the charge correction for a given supercell.
+    Charge correction errors are estimated from the sampling noise in the potential alignment; the standard
+    error of the mean of the electrostatic potential difference between the bulk and defect supercells, in
+    the sampling region (far from the defect site), multiplied by the defect charge. This gives a lower
+    bound on the error in the charge correction for a given supercell, which is itself a lower bound on the
+    remnant finite-size error.
 
 Following the advice in the warning, we use the |DefectEntry|
 :meth:`~doped.core.DefectEntry.get_kumagai_correction()` method with ``plot=True`` to plot the site 
@@ -737,11 +738,17 @@ for multiple defects.
 
 .. note::
 
-    For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` will
-    automatically set ``ISPIN=2`` (allowing spin polarisation) and ``NUPDOWN`` according to the
-    magnetization output from the ``Materials Project`` calculation of the competing phase, but ``MAGMOM``
-    (and possibly ``ISPIN``/``NUPDOWN``) may also need to be set to induce a specific spin configuration in
-    certain cases.
+    For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` uses
+    the primitive cell which retains the magnetic ordering of the ``Materials Project`` calculation of the
+    competing phase, and automatically sets ``ISPIN=2`` (allowing spin polarisation), ``MAGMOM`` (initial
+    site moments) and (for non-metals) ``NUPDOWN`` (total cell magnetisation) accordingly. However, these
+    may need to be adjusted to induce a specific spin configuration in certain cases -- e.g. if the
+    ``Materials Project`` magnetic ordering is not the ground state (``doped`` warns if the orderings of
+    the ``Materials Project`` r2SCAN and GGA(+U) calculations differ, common for antiferromagnets), or for
+    host structures supplied to ``CompetingPhases`` without ``magmom`` site properties (for which only
+    ``ISPIN``/``NUPDOWN`` are set, from the ``Materials Project`` total magnetization, so initial moments
+    are ferromagnetic (the ``VASP`` default), with a warning if the ``Materials Project`` host is
+    magnetic).
 
 When parsing defect calculations, ``doped`` will automatically extract the total magnetization from the
 ``VASP`` output files, in order to determine the spin multiplicity. This value is stored in

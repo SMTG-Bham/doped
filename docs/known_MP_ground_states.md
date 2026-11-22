@@ -9,10 +9,10 @@ for chemical potential (competing phase) and phase diagram calculations. Citatio
 studies where the hybrid DFT energy analyses (of candidate low-energy polymorphs) were initially performed. 
 
 > **Note:** the energy-above-hull (EaH) values quoted below correspond to the mixed GGA/GGA+U/r2SCAN 
-> MP phase diagrams (``thermo_types=['GGA_GGA+U_R2SCAN']``; the default for MP queries — including 
-> ``doped``'s ``CompetingPhases`` — since ``mp-api`` 0.47), as of September 2026. These mostly match 
-> the legacy GGA/GGA+U values quoted in the cited studies, with some notable differences (e.g. for K 
-> and P) mentioned below.
+> MP phase diagrams (``thermo_types=['GGA_GGA+U_R2SCAN']``; the default for MP queries since ``mp-api`` 
+> 0.46.5, and for ``doped``'s ``CompetingPhases`` since ``doped`` v4.0.0), as of MP database version 
+> 2026.09.28. These mostly match the legacy GGA/GGA+U values quoted in the cited studies, with some 
+> notable differences (e.g. for K and P) mentioned below.
 
 ## Elemental Phases
 ### Chalcogens (S, Se, Te)

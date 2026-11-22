@@ -1262,7 +1262,7 @@ class DefectsParser:
         subfolder: PathLike | None = None,
         bulk_path: PathLike | None = None,
         skip_corrections: bool = False,
-        error_tolerance: float = 0.05,
+        error_tolerance: float = 0.025,
         bulk_band_gap_vr: PathLike | Vasprun | None = None,
         processes: int | None = None,
         json_filename: PathLike | bool | None = None,
@@ -1343,10 +1343,10 @@ class DefectsParser:
                 charge corrections to the defect energies (not recommended in
                 most cases). Default is ``False``.
             error_tolerance (float):
-                If the estimated error in any charge correction, based on the
-                variance of the potential in the sampling region, is greater
+                If the estimated error in any charge correction (a lower bound,
+                from the sampling noise in the potential alignment) is greater
                 than this value (in eV), then a warning is raised. Default is
-                0.05 eV. Note that this warning is skipped for defects which
+                0.025 eV. Note that this warning is skipped for defects which
                 are predicted to not be stable for any Fermi level in the band
                 gap (based on all parsed defects here), or are predicted to be
                 shallow (perturbed host) states according to eigenvalue
@@ -1904,10 +1904,14 @@ def _get_calculation_folders_for_parsing(
         if _BULK_FOLDER_PATTERN in str(g).lower()
         or (bulk_path and str(g).lower() == str(bulk_path).lower())
     ]
+    # update candidate defect folders, based on bulk folder(s) and subfolder (for subfolder ".", only those
+    # with outputs directly inside, skipping folders of nested outputs, e.g. competing phases):
+    output_folders = set(calc_files_df["folder_path"])
     defect_folders = [
-        d  # update candidate defect calculation folders, based on bulk calculation folder(s) and subfolder
+        d
         for d in possible_defect_folders
-        if d not in possible_bulk_folders and (subfolder == "." or (out_root / d / subfolder).is_dir())
+        if d not in possible_bulk_folders
+        and (out_root / d in output_folders if subfolder == "." else (out_root / d / subfolder).is_dir())
     ]
 
     if bulk_path is not None and not _get_calc_files_df(Path(bulk_path)).empty:
@@ -2646,7 +2650,7 @@ class DefectParser:
         defect_entry: DefectEntry,
         defect_vr: Vasprun | None = None,
         bulk_vr: Vasprun | None = None,
-        error_tolerance: float = 0.05,
+        error_tolerance: float = 0.025,
         parse_projected_eigen: bool | None = None,
         **kwargs,
     ):
@@ -2668,10 +2672,10 @@ class DefectParser:
                 ``pymatgen`` |Vasprun| object for the reference bulk
                 supercell calculation.
             error_tolerance (float):
-                If the estimated error in the defect charge correction, based
-                on the variance of the potential in the sampling region is
+                If the estimated error in the defect charge correction (a lower
+                bound, from the sampling noise in the potential alignment) is
                 greater than this value (in eV), then a warning is raised.
-                Default is 0.05 eV.
+                Default is 0.025 eV.
             parse_projected_eigen (bool):
                 Whether to parse the projected eigenvalues & magnetization from
                 the bulk and defect calculations (so
@@ -2723,7 +2727,7 @@ class DefectParser:
         dielectric: float | np.ndarray | list | None = None,
         charge_state: int | None = None,
         skip_corrections: bool = False,
-        error_tolerance: float = 0.05,
+        error_tolerance: float = 0.025,
         bulk_band_gap_vr: PathLike | Vasprun | None = None,
         parse_projected_eigen: bool | None = None,
         **kwargs,
@@ -2781,10 +2785,10 @@ class DefectParser:
                 charge corrections to the defect energy (not recommended in
                 most cases). Default = ``False``.
             error_tolerance (float):
-                If the estimated error in the defect charge correction, based
-                on the variance of the potential in the sampling region, is
+                If the estimated error in the defect charge correction (a lower
+                bound, from the sampling noise in the potential alignment) is
                 greater than this value (in eV), then a warning is raised.
-                Default is 0.05 eV.
+                Default is 0.025 eV.
             bulk_band_gap_vr (PathLike or |Vasprun|):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
                 |Vasprun| object, from which to determine the bulk band gap

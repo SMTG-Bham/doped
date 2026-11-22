@@ -1254,41 +1254,6 @@ def _guess_initial_complex_structure(
     return guessed_initial_defect_structure, interstitial_sites_in_bulk
 
 
-def find_nearest_coords(
-    candidate_frac_coords: list | np.ndarray,
-    target_frac_coords: list | np.ndarray,
-    lattice: Lattice,
-    return_idx: bool = False,
-) -> tuple[list | np.ndarray, int] | list | np.ndarray:
-    """
-    Find the nearest coords in ``candidate_frac_coords`` to
-    ``target_frac_coords``.
-
-    If ``return_idx`` is ``True``, also returns the index of the nearest coords
-    in ``candidate_frac_coords`` to ``target_frac_coords``.
-
-    Args:
-        candidate_frac_coords (list | np.ndarray):
-            Fractional coordinates (typically from a bulk supercell), to find
-            the nearest coordinates to ``target_frac_coords``.
-        target_frac_coords (list | np.ndarray):
-            The target coordinates to find the nearest coordinates to in
-            ``candidate_frac_coords``.
-        lattice (|Lattice|):
-            The lattice object to use with the fractional coordinates.
-        return_idx (bool):
-            Whether to also return the index of the nearest coordinates in
-            ``candidate_frac_coords`` to ``target_frac_coords``.
-    """
-    if len(np.array(target_frac_coords).shape) > 1:
-        raise ValueError("`target_frac_coords` should be a 1D array of fractional coordinates!")
-
-    distance_matrix = lattice.get_all_distances(candidate_frac_coords, target_frac_coords).ravel()
-    match = distance_matrix.argmin()
-
-    return candidate_frac_coords[match], match if return_idx else candidate_frac_coords[match]
-
-
 def find_missing_idx(
     frac_coords1: list | np.ndarray,
     frac_coords2: list | np.ndarray,
