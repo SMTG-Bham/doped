@@ -446,7 +446,7 @@ def get_defect_in_supercell(
             oriented_new_defect_supercell = _orient_to_match_target(
                 new_defect_supercell,
                 target_supercell,
-                trans,
+                (trans[0], trans[1], []), # no need for mapping
                 new_lattice=oriented_new_bulk_supercell.lattice,
             )
         else:
