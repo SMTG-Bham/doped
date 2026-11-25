@@ -35,12 +35,14 @@ from doped.analysis import (
     DefectParser,
     DefectsParser,
     _handle_charge_correction_errors,
+    check_and_set_defect_entry_name,
     defect_from_structures,
     defect_site_from_structures,
     guess_defect_position,
     parse_symmetry_and_degeneracy_metadata,
     shallow_dopant_binding_energy,
 )
+from doped.core import DefectComplex, template_defect_entry_from_structures
 from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.utils.efficiency import Structure
 from doped.utils.eigenvalues import get_eigenvalue_analysis
@@ -49,6 +51,7 @@ from doped.utils.parsing import (
     _create_unrelaxed_defect_structure,
     _num_electrons_from_charge_state,
     _simple_spin_degeneracy_from_num_electrons,
+    _update_defect_entry_structure_metadata,
     compare_incar_tags,
     compare_kpoints,
     compare_potcar_symbols,
@@ -60,11 +63,13 @@ from doped.utils.parsing import (
     get_vasprun,
     spin_degeneracy_from_vasprun,
 )
+from doped.utils.supercells import get_min_image_distance
 from doped.utils.symmetry import (
     get_orientational_degeneracy,
     get_primitive_structure,
     get_sga,
     group_order_from_schoenflies,
+    local_point_symmetry,
     point_symmetry_from_defect_entry,
     point_symmetry_from_structure,
     schoenflies_from_hermann,
@@ -135,17 +140,24 @@ def check_DefectsParser(dp, skip_corrections=False, **thermo_kwargs):
                 _num_electrons_from_charge_state(defect_entry.defect_supercell, defect_entry.charge_state)
             )
 
+        is_complex = isinstance(defect_entry.defect, DefectComplex)  # equivalent configurations:
+        equiv_configs = (
+            defect_entry.defect.equivalent_complexes
+            if is_complex
+            else defect_entry.defect.equivalent_sites
+        )
         print(
             "Should be the same:",
-            len(defect_entry.defect.equivalent_sites),
+            len(equiv_configs),
             defect_entry.defect.multiplicity,
             defect_entry.defect.get_multiplicity(symprec=bulk_symprec),
         )  # debugging
-        assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+        assert len(equiv_configs) == defect_entry.defect.multiplicity
         assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
             symprec=bulk_symprec
         )
-        assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+        if not is_complex:
+            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
 
         bulk_site_symmetry = defect_entry.calculation_metadata.get("bulk site symmetry")
         # site multiplicities must satisfy the orbit-stabiliser relation against the determined bulk site
@@ -358,7 +370,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         )  # uncorrected energy
         # slightly higher atol here, due to LOCPOT sub-sampling for file compression on repo:
         assert np.isclose(dp.defect_dict["v_Cd_-2"].get_ediff(), 8.398, atol=2e-3)
-        assert np.isclose(dp.defect_dict["Int_Te_3_2"].get_ediff(), -6.2009, atol=1e-3)
+        # Int_Te_3_2 parsed as a Te_i + v_Cd + Cd_i complex (``site_tol = 0.4``), with the eFNV correction
+        # evaluated at its centroid (-6.2009 eV as a Te_i point defect, with ``site_tol=None``):
+        assert np.isclose(dp.defect_dict["Int_Te_3_2"].get_ediff(), -6.2046, atol=1e-3)
 
     def _check_default_CdTe_DefectsParser_outputs(
         self, CdTe_dp, recorded_warnings, multiple_outcars_warning=True, dist_tol=1.5, test_attributes=True
@@ -471,31 +485,21 @@ class DefectsParsingTestCase(unittest.TestCase):
             [0, 0, 0],
         )
         assert CdTe_dp.defect_dict["v_Cd_-2"].calculation_metadata["bulk_site_index"] == 0
-        assert CdTe_dp.defect_dict["Int_Te_3_1"].calculation_metadata["defect_site_index"] == 64
-        assert np.isclose(
-            CdTe_dp.defect_dict["Int_Te_3_1"].calculation_metadata["guessed_defect_displacement"],
-            1.45,
-            atol=1e-2,
-        )
-        assert np.allclose(
-            CdTe_dp.defect_dict["Int_Te_3_1"]
-            .calculation_metadata["guessed_initial_defect_site"]
-            .frac_coords,
-            [0.75, 0.25, 0.75],
-        )
-        assert CdTe_dp.defect_dict["Int_Te_3_1"].calculation_metadata["bulk_site_index"] is None
-        assert np.isclose(
-            CdTe_dp.defect_dict["Int_Te_3_2"].calculation_metadata["guessed_defect_displacement"],
-            1.36,
-            atol=1e-2,
-        )
-        assert np.allclose(
-            CdTe_dp.defect_dict["Int_Te_3_2"]
-            .calculation_metadata["guessed_initial_defect_site"]
-            .frac_coords,
-            [0.9375, 0.9375, 0.6875],
-        )
-        assert CdTe_dp.defect_dict["Int_Te_3_2"].calculation_metadata["bulk_site_index"] is None
+        # Te_i entries parsed as defect complexes (with ``site_tol = 0.4``; Int_Te_3_1 a Te_i split
+        # interstitial, Int_Te_3_2 a Te_i with a displaced Cd neighbour), with per-constituent metadata,
+        # where the Te_i constituent info matches that for the point defect description:
+        for name, displacement, guessed_site in [
+            ("Int_Te_3_1", 1.45, [0.75, 0.25, 0.75]),
+            ("Int_Te_3_2", 1.36, [0.9375, 0.9375, 0.6875]),
+        ]:
+            metadata = CdTe_dp.defect_dict[name].calculation_metadata
+            assert metadata["defect_site_index"] is None  # point-defect-only key
+            te_i_idx = metadata["defect_site_indices"].index(64)
+            assert metadata["bulk_site_indices"][te_i_idx] is None
+            assert np.isclose(metadata["guessed_defect_displacements"][te_i_idx], displacement, atol=1e-2)
+            assert np.allclose(
+                metadata["guessed_initial_defect_sites"][te_i_idx].frac_coords, guessed_site
+            )
         assert np.isclose(
             CdTe_dp.defect_dict["Int_Te_3_Unperturbed_1"].calculation_metadata[
                 "guessed_defect_displacement"
@@ -653,7 +657,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 for i in [
                     "Estimated error in the Kumagai (eFNV) charge correction for certain defects",
                     "greater than the `error_tolerance` (= 0.010 eV):",
-                    "Int_Te_3_2: 0.016 eV",
+                    "Int_Te_3_2: 0.014 eV",
                     "You may want to check the accuracy",
                 ]
             )
@@ -804,10 +808,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             "charge correction for certain defects is greater than the `error_tolerance` (= 1.00e-03 eV):",
             "v_Cd_-2: 1.08e-02 eV",
             # "v_Cd_-1: 8.46e-03 eV",  # now not printed because not stable charge states
-            "Int_Te_3_1: 4.16e-03 eV",
+            "Int_Te_3_1: 4.37e-03 eV",
             "Te_Cd_+1: 4.24e-03 eV",
             # "Int_Te_3_Unperturbed_1: 4.91e-03 eV",  # now not printed because not stable charge states
-            "Int_Te_3_2: 1.64e-02 eV",
+            "Int_Te_3_2: 1.35e-02 eV",
             "You may want to check the accuracy of the corrections by",
             "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
             "(using `defect_entry.get_kumagai_correction()` with `plot=True`)",
@@ -1097,8 +1101,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warning in w
         )
         assert any(
-            "v_O_Cs_V1.60_0 (unrecognised_1), v_O_Cs_V1.60_0 (unrecognised_4), v_O_Cs_V1.60_0 ("
-            "unrecognised_5)" in str(warning.message)
+            "V_i-0.99-v_V-1.60-v_O-Cs_0 (unrecognised_1), V_i-0.99-v_V-1.60-v_O-Cs_0 (unrecognised_4), "
+            "V_i-0.99-v_V-1.60-v_O-Cs_0 (unrecognised_5)" in str(warning.message)  # v_O w/displaced V
             for warning in w
         )
         assert len(dp.defect_dict) == 3  # only 3 defects, 2 duplicates warned and omitted
@@ -1507,9 +1511,24 @@ class DefectsParsingTestCase(unittest.TestCase):
         Test parsing v_Bi_+1 from BiOI defect calculations, and confirming the
         correct point group symmetry of Cs is determined.
         """
+        from doped.utils.symmetry import get_orientational_degeneracy
+
+        # with default ``site_tol = 0.4``, v_Bi_+1 is parsed as a I_Bi + v_I complex (an I neighbour having
+        # moved into the vacated Bi site; net v_Bi), with the same configurational degeneracy
+        # (multiplicity x orientational degeneracy) as the v_Bi point defect (``site_tol=None``, below):
+        dp, w = _create_dp_and_capture_warnings(output_path=self.BiOI_DATA_DIR, skip_corrections=True)
+        assert not w
+        check_DefectsParser(dp, skip_corrections=True)
+        v_Bi_complex = dp.defect_dict["v_Bi_+1"]
+        assert isinstance(v_Bi_complex.defect, DefectComplex)
+        assert v_Bi_complex.defect.name == "I_Bi-v_I"
+        assert v_Bi_complex.defect.net_name == "v_Bi"
+        assert v_Bi_complex.calculation_metadata["bulk site symmetry"] == "Cs"
+        assert v_Bi_complex.calculation_metadata["relaxed point symmetry"] == "Cs"
+        assert v_Bi_complex.defect.multiplicity * get_orientational_degeneracy(v_Bi_complex) == 8
+
         dp, w = _create_dp_and_capture_warnings(
-            output_path=self.BiOI_DATA_DIR,
-            skip_corrections=True,
+            output_path=self.BiOI_DATA_DIR, skip_corrections=True, site_tol=None
         )
         assert not w
         assert len(dp.defect_dict) == 1
@@ -1518,6 +1537,36 @@ class DefectsParsingTestCase(unittest.TestCase):
         # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "Cs"
+        assert (
+            dp.defect_dict["v_Bi_+1"].defect.multiplicity
+            * get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"])
+            == 8
+        )  # same configurational degeneracy as for the complex description above
+
+        # ``site_tol`` is passed through to defect site determination in the structure-based functions:
+        v_Bi_point = dp.defect_dict["v_Bi_+1"]
+        defect_sc, bulk_sc = v_Bi_point.defect_supercell, v_Bi_point.bulk_supercell
+        assert point_symmetry_from_structure(defect_sc, bulk_sc, relaxed=False) == "Cs"  # I_Bi-v_I
+        assert point_symmetry_from_structure(defect_sc, bulk_sc, relaxed=False, site_tol=None) == "C4v"
+        cluster_centres = [
+            local_point_symmetry(defect_sc, bulk_sc, site_tol=site_tol)[2]["cluster_centre_cart"]
+            for site_tol in [0.4, None]
+        ]
+        assert not np.allclose(*cluster_centres)  # complex vs v_Bi site
+
+        # and stored in ``calculation_metadata``, to be reused when re-parsing defect site info (rather
+        # than defaulting to 0.4 for complexes, which would give I_Bi-v_I here):
+        assert v_Bi_complex.calculation_metadata["site_tol"] == 0.4
+        assert v_Bi_point.calculation_metadata["site_tol"] is None
+        entry = template_defect_entry_from_structures(
+            defect_sc, bulk_sc, site_tol=0.2, oxi_state="Undetermined", multiplicity=1
+        )
+        assert entry.defect.name == "I_i-v_Bi-v_I"
+        assert entry.calculation_metadata["site_tol"] == 0.2
+        _update_defect_entry_structure_metadata(
+            entry, overwrite=True, oxi_state="Undetermined", multiplicity=1
+        )
+        assert entry.defect.name == "I_i-v_Bi-v_I"
 
         # test setting symprec during parsing
         dp, w = _create_dp_and_capture_warnings(
@@ -1525,6 +1574,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             skip_corrections=True,
             symprec=0.01,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
+            site_tol=None,
         )
         assert not w
         assert len(dp.defect_dict) == 1
@@ -1535,8 +1585,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         # mapping residual is ~0.008 Å, well-separated from the next-best candidate ops at ~0.28 Å)
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "Cs"
-
-        from doped.utils.symmetry import get_orientational_degeneracy
 
         assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"]) == 4.0
         assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"], symprec=0.005) == 8.0
@@ -1807,7 +1855,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             assert (
                 f"Estimated error in the Kumagai (eFNV) charge correction for defect "
-                f"{parsed_int_Te_2_fake_aniso.name} is 0.205 eV (i.e. which is greater than the "
+                f"{parsed_int_Te_2_fake_aniso.name} is 0.151 eV (i.e. which is greater than the "
                 f"`error_tolerance`: 0.025 eV). You may want to check the accuracy of the correction "
                 f"by plotting the site potential differences (using "
                 f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
@@ -1823,7 +1871,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             -7.105,
             atol=3e-3,
         )  # uncorrected energy
-        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -4.991240009587045, atol=1e-3)
+        # Int_Te_3_2 is parsed as a Cd_i-Te_i-v_Cd complex with the default ``site_tol``, so the eFNV
+        # sampling region is centred on the complex centroid, rather than the Te_i site (``site_tol=None``,
+        # which gives -4.9912 eV with an error of 0.157 eV here); differences exaggerated by this ε:
+        assert np.isclose(parsed_int_Te_2_fake_aniso.get_ediff(), -5.0034, atol=1e-3)
 
         # test isotropic dielectric but only OUTCAR present:
         with warnings.catch_warnings(record=True) as w:
@@ -1835,7 +1886,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             ).defect_entry
         assert len(w) == 1  # no charge correction warning with iso dielectric, parsing from OUTCARs,
         # but multiple OUTCARs present -> warning
-        assert np.isclose(parsed_int_Te_2.get_ediff(), -6.2009, atol=1e-3)
+        assert np.isclose(parsed_int_Te_2.get_ediff(), -6.2046, atol=1e-3)  # complex; see above
 
         # test warning when only OUTCAR present but no core level info (ICORELEVEL != 0)
         shutil.move(
@@ -1870,6 +1921,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
                 charge_state=2,
+                site_tol=None,  # Te_i point defect; as a Cd_i-Te_i-v_Cd complex (default ``site_tol``) the
+                # complex centroid is used, giving -5.5285 eV with an FNV error (0.041 eV) below tolerance
             ).defect_entry
         _print_warning_info(w)
         assert len(w) == 1
@@ -2248,6 +2301,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=self.CdTe_dielectric,
                 charge_state=+2,  # test manually specifying charge state
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
+                site_tol=None,  # Te_i point defect (else a Te_i + v_Cd + Cd_i complex with 0.4)
             ).defect_entry
 
         self._check_defect_entry_corrections(te_i_2_ent, -6.2009, 0.9038318161163628)
@@ -2263,6 +2317,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=self.CdTe_dielectric,
                 charge_state=+2,  # test manually specifying charge state
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
+                site_tol=None,  # Te_i point defect (else a Te_i + v_Cd + Cd_i complex with 0.4)
             ).defect_entry
 
         mock_print.assert_not_called()
@@ -2491,7 +2546,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert sorted(additional_defect_site_indices) == [0, len(si) - 1]
 
         # ``site_tol`` is passed through ``defect_from_structures``, where multiple identified defect sites
-        # fall back to the single point defect case (with a warning; no defect complex handling yet):
+        # give a ``DefectComplex`` (or a single point defect with ``site_tol=None``):
         split_structure = si.copy()
         split_structure.translate_sites([0], 0.35 * si_si_bond * direction, frac_coords=False)
         split_structure.append(
@@ -2500,15 +2555,24 @@ class DefectsParsingTestCase(unittest.TestCase):
         defect, _stdout, w = _run_func_and_capture_stdout_warnings(
             defect_from_structures, split_structure, si, site_tol=0.4, _parameter_order_warn=False
         )
-        assert any(
-            "Multiple defect sites (1 missing bulk site(s) and 2 additional defect site(s)) were "
-            "identified with ``site_tol`` = 0.4" in str(warning.message)
-            for warning in w
-        )
+        assert not w
+        assert isinstance(defect, DefectComplex)
+        assert defect.name == "Si_i-Si_i-v_Si"
+        assert defect.net_name == "Si_i"
+        defect = defect_from_structures(split_structure, si, site_tol=None, _parameter_order_warn=False)
+        assert not isinstance(defect, DefectComplex)
         assert defect.name == "Si_i"
-        with pytest.raises(ValueError) as exc:
-            defect_from_structures(frenkel_structure, si, site_tol=0.4, _parameter_order_warn=False)
-        assert "parsing of complex defects is not yet supported here" in str(exc.value)
+
+        with warnings.catch_warnings():  # complex spans more than half the (small) supercell here
+            warnings.simplefilter("ignore")
+            defect = defect_from_structures(
+                frenkel_structure, si, site_tol=0.4, _parameter_order_warn=False
+            )
+        assert isinstance(defect, DefectComplex)
+        assert defect.name == "Si_i-Si_i-v_Si-v_Si"
+        with pytest.raises(ValueError) as exc:  # no net point defect, so not parseable as one
+            defect_from_structures(frenkel_structure, si, site_tol=None, _parameter_order_warn=False)
+        assert "the defect is a complex defect, but ``site_tol`` is set to ``None``" in str(exc.value)
 
         # similar displacements, but not split across the site (bent at 90°), so not a split interstitial:
         bent_structure = si.copy()
@@ -2534,6 +2598,56 @@ class DefectsParsingTestCase(unittest.TestCase):
             [],
             [len(si)],
         )
+
+        # no defect sites identified (e.g. bulk supercell given as defect supercell) gives a clear error:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for func in [defect_from_structures, local_point_symmetry]:
+                kwargs = {"_parameter_order_warn": False} if func is defect_from_structures else {}
+                with pytest.raises(ValueError) as exc:
+                    func(si, si, **kwargs)
+                assert "No defect sites could be identified from the defect and bulk supercells" in str(
+                    exc.value
+                )
+
+    def test_local_point_symmetry_radius_periodic_images(self):
+        """
+        Test that ``local_point_symmetry`` includes all periodic images of
+        atoms within ``radius`` of the defect, so that radii above half the
+        minimum image distance do not give asymmetrically truncated clusters
+        (and thus lower symmetries).
+        """
+        defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json"))
+        for name, point_group in [("v_Cd_-2", "Td"), ("v_Cd_0", "C2v"), ("Te_Cd_+1", "C3v")]:
+            defect_entry = defect_dict[name]
+            min_image_distance = get_min_image_distance(defect_entry.defect_supercell)
+            for radius in [
+                None,
+                0.45 * min_image_distance,
+                0.55 * min_image_distance,
+                0.7 * min_image_distance,
+            ]:
+                print(f"Testing {name} with radius = {radius}")
+                assert (
+                    local_point_symmetry(
+                        defect_entry.defect_supercell,
+                        defect_entry.bulk_supercell,
+                        site_tol=None,
+                        radius=radius,
+                    )[0]
+                    == point_group
+                )
+
+    def test_hyphenated_folder_names_kept(self):
+        """
+        Test that (user-defined) point defect folder names with hyphens in
+        their suffixes are recognised and kept as the ``DefectEntry`` names
+        (rather than being taken as unrecognised defect complex names).
+        """
+        defect_entry = loadfn(os.path.join(data_dir, "v_Cd_defect_entry.json.gz"))
+        for folder_name in ["v_Cd-HSE06_0", "v_Cd_C2v-meta_0", "v_Cd_2x2x2-cell_0", "v_Cd_HSE06_0"]:
+            check_and_set_defect_entry_name(defect_entry, folder_name)
+            assert defect_entry.name == folder_name
 
     def test_bond_centre_H_interstitial_initial_site(self):
         """
@@ -2920,6 +3034,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                         rattled_defect_supercell,
                         defect_entry.bulk_supercell,
                         return_all_info=True,
+                        site_tol=None,  # single point defect (else rattled atoms can give complexes)
                         _parameter_order_warn=False,
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )
@@ -3002,6 +3117,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                         defect_entry.defect_supercell,
                         rattle(defect_entry.bulk_supercell, stdev=stdev).copy(),
                         return_all_info=True,
+                        site_tol=None,  # single point defect (else rattled atoms can give complexes)
                         _parameter_order_warn=False,
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )
@@ -3458,8 +3574,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         supercell (e.g. from a small drift during relaxation), including for
         tight ``symprec`` values.
         """
-        from doped.utils.symmetry import local_point_symmetry
-
         bulk = (
             Structure.from_spacegroup(
                 "F-43m", np.eye(3) * 6.55, ["Cd", "Te"], [[0, 0, 0], [0.25, 0.25, 0.25]]
@@ -3829,6 +3943,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"{self.MgO_EXAMPLE_DIR}/Defects/Pre_Calculated_Results/MgO_bulk/vasp_std",
             skip_corrections=True,
             parse_projected_eigen=True,
+            site_tol=None,  # Mg_O point defect (else a v_O + Mg_i complex with 0.4; off-site Mg)
         ).defect_entry
         assert defect_entry.degeneracy_factors["spin degeneracy"] == 2
 
@@ -3846,7 +3961,9 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # Test loading using |DefectsParser|
         print("Testing Cu2SiSe3 eigenvalue analysis default, with vaspruns (& PROCARs)")
-        dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
+        # (point defects, with ``site_tol=None``, as eigenvalue analysis of defect complexes uses the
+        # complex centroid as the defect position; Si_i_-1 is a Si_i + Cu_i + v_Cu complex with 0.4):
+        dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True, site_tol=None)
 
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
@@ -3892,7 +4009,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/no_eig_vr.xml.gz",
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz",
         )
-        dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
+        dp = DefectsParser(
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True, site_tol=None
+        )  # see above
 
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
@@ -3915,7 +4034,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/no_eig_vr.xml.gz",
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz",
         )
-        dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
+        dp = DefectsParser(
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True, site_tol=None
+        )  # see above
 
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
@@ -3934,7 +4055,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/hidden_vr.gz",
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz",
         )
-        dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
+        dp = DefectsParser(
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True, site_tol=None
+        )  # see above
 
         print("Testing v_Cu_0 with plot = True")
         bes, fig = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis()  # Test plotting KS
@@ -3998,7 +4121,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/vasprun.xml.gz",
         )
         dp = DefectsParser(
-            f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True, parse_projected_eigen=False
+            f"{self.Cu2SiSe3_EXAMPLE_DIR}",
+            skip_corrections=True,
+            parse_projected_eigen=False,
+            site_tol=None,  # see above
         )
 
         # now should still all work fine:
@@ -4022,6 +4148,19 @@ class DefectsParsingTestCase(unittest.TestCase):
             ),
         )
         _compare_band_edge_states_dicts(bes, v_Cu_0_bes_path, orb_diff_tol=0.001)
+
+        print("Testing Si_i_-1 with site_tol = None, direct VASP outputs; vaspruns")
+        bes = get_eigenvalue_analysis(
+            bulk_vr=get_vasprun(
+                f"{self.Cu2SiSe3_EXAMPLE_DIR}/bulk/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
+            ),
+            defect_vr=get_vasprun(
+                f"{self.Cu2SiSe3_EXAMPLE_DIR}/Si_i_-1/vasp_std/vasprun.xml.gz", parse_projected_eigen=True
+            ),
+            plot=False,
+            site_tol=None,  # Si_i point defect, as above (else a Cu_i + Si_i + v_Cu complex)
+        )
+        _compare_band_edge_states_dicts(bes, Si_i_m1_bes_path, orb_diff_tol=0.001)
 
         print("Testing v_Cu_0 with plot = True, direct VASP outputs; vaspruns and procars")
         self.tearDown()  # ensure PROCARs returned to original state

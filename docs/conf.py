@@ -198,10 +198,13 @@ rst_prolog = """
 .. |CompetingPhasesAnalyzer| replace:: :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
 .. |Defect| replace:: :class:`~doped.core.Defect`
 .. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
+.. |DefectComplex| replace:: :class:`~doped.core.DefectComplex`
 .. |bulk_site_concentration| replace:: :attr:`DefectEntry.bulk_site_concentration <doped.core.DefectEntry.bulk_site_concentration>`
 .. |DefectsSet| replace:: :class:`~doped.vasp.DefectsSet`
 .. |get_orientational_degeneracy| replace:: :func:`~doped.utils.symmetry.get_orientational_degeneracy()`
 .. |point_symmetry_from_defect_entry| replace:: :func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()`
+.. |Molecule| replace:: :class:`~pymatgen.core.structure.Molecule`
+.. |BruteForceOrderMatcher| replace:: :class:`~pymatgen.analysis.molecule_matcher.BruteForceOrderMatcher`
 .. |get_X_rich_poor_limit| replace:: :func:`~doped.chemical_potentials.get_X_rich_poor_limit`
 .. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
 .. |PeriodicSite| replace:: :class:`~pymatgen.core.sites.PeriodicSite`

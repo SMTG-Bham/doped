@@ -9,9 +9,11 @@ import operator
 import re
 import warnings
 from collections import defaultdict
+from collections.abc import Iterable, Iterator, Sequence
 from copy import deepcopy
 from functools import lru_cache, partial, reduce
-from itertools import chain
+from itertools import chain, count, product
+from string import ascii_lowercase
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock
 
@@ -36,6 +38,7 @@ from tqdm import tqdm
 
 from doped.core import (
     Defect,
+    DefectComplex,
     DefectEntry,
     Interstitial,
     Substitution,
@@ -413,6 +416,11 @@ def get_defect_name_from_defect(
     Returns:
         str: Defect name.
     """
+    if isinstance(defect, DefectComplex):  # constituents, separations and point group, as in generation
+        from doped.complexes import get_defect_complex_name  # avoid a circular import
+
+        return get_defect_complex_name(defect, element_list=element_list)
+
     point_group_symbol = symmetry.point_symmetry_from_defect(defect, symprec=symprec)
 
     return f"{defect.name}_{point_group_symbol}_{closest_site_info(defect, element_list=element_list)}"
@@ -463,6 +471,13 @@ def get_defect_name_from_entry(
     point_group_symbol = symmetry.point_symmetry_from_defect_entry(
         defect_entry, symprec=symprec, relaxed=relaxed, **kwargs
     )
+    if isinstance(defect_entry.defect, DefectComplex):  # constituents and separations, then point group
+        from doped.complexes import get_defect_complex_name  # avoid a circular import
+
+        complex_name = get_defect_complex_name(
+            defect_entry.defect, element_list=element_list, include_point_group=False
+        )
+        return f"{complex_name}-{point_group_symbol}"
 
     return (
         f"{defect_entry.defect.name}_{point_group_symbol}"
@@ -492,6 +507,23 @@ def _get_neutral_defect_entry(
             target_frac_coords=target_frac_coords,
             return_sites=True,
         )
+
+        # add complex specific attributes - any single sites get the centroid
+        defect_supercell_sites = equivalent_supercell_complexes = None  # ``None`` for point defects
+        if isinstance(defect, DefectComplex):
+            defect_supercell_sites, equivalent_supercell_complexes = (
+                defect_supercell_site,
+                equivalent_supercell_sites,
+            )
+            defect_supercell_site, *equivalent_supercell_sites = [
+                PeriodicSite(
+                    defect.site.species,
+                    np.mean([site.frac_coords for site in sites], axis=0),
+                    dummy_defect_supercell.lattice,
+                )
+                for sites in [defect_supercell_sites, *equivalent_supercell_complexes]
+            ]
+
         dummy_sites = [
             site for site in dummy_defect_supercell if site.specie.symbol == _dummy_species.symbol
         ]
@@ -509,6 +541,8 @@ def _get_neutral_defect_entry(
         neutral_defect_entry.defect_supercell = neutral_defect_entry.sc_entry.structure
         neutral_defect_entry.defect_supercell_site = defect_supercell_site
         neutral_defect_entry.equivalent_supercell_sites = equivalent_supercell_sites
+        neutral_defect_entry.defect_supercell_sites = defect_supercell_sites  # complexes only
+        neutral_defect_entry.equivalent_supercell_complexes = equivalent_supercell_complexes
         neutral_defect_entry.bulk_supercell = bulk_supercell
 
         neutral_defect_entry.conventional_structure = (
@@ -546,6 +580,10 @@ def _get_neutral_defect_entry(
         # sort array with symmetry._frac_coords_sort_func:
         conv_cell_coord_list.sort(key=symmetry._frac_coords_sort_func)
 
+        if isinstance(defect, DefectComplex):
+            # TODO ?
+            wyckoff_label = "N/A"
+
         neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
         neutral_defect_entry.conv_cell_frac_coords = neutral_defect_entry.defect.conv_cell_frac_coords = (
             None if not conv_cell_coord_list else conv_cell_coord_list[0]
@@ -560,6 +598,28 @@ def _get_neutral_defect_entry(
     return neutral_defect_entry
 
 
+def _name_wout_charge_state(name: str) -> str:
+    """
+    Strip the charge state from a ``doped`` defect name, if present: this is
+    the last _ split if the final substring is +int or -int.
+    """
+    charge = name.rsplit("_", 1)[-1]
+    return name.rsplit("_", 1)[0] if "_" in name and charge.lstrip("+-").isdigit() else name
+
+
+def _match_defect_names(name: str, available: Iterable[str], label: str = "Defect") -> list[str]:
+    """
+    Match a given defect name against ``available`` names, ignoring any charge
+    states and allowing partial matches (see ``_check_if_name_subset``).
+    """
+    if not (matches := [n for n in available if _check_if_name_subset(n, _name_wout_charge_state(name))]):
+        raise ValueError(
+            f"{label} name {name!r} does not match any of the generated {label.lower()} names: "
+            f"{list(available)}"
+        )
+    return matches
+
+
 def _check_if_name_subset(long_name: str, poss_subset_name: str):
     """
     Check if the longer name is a superset of the shorter name, where
@@ -567,6 +627,33 @@ def _check_if_name_subset(long_name: str, poss_subset_name: str):
 
     Previously used ``startswith`` to compare, but caused issues with e.g.
     ``v_Cl`` and ``v_C`` defects in the same material.
+
+    Defect complex names use hyphens as their outer delimiter (constituent
+    names and their separations, then the complex point group), so these are
+    compared term-by-term, of which only a trailing complex point group may be
+    omitted from ``poss_subset_name``. Point defect names contain no hyphens
+    and so are a single term, meaning e.g. ``v_Cd`` does not match the complex
+    ``v_Cd-2.83-v_Te-C3v``, while ``v_Cd-2.83-v_Te`` does.
+    """
+    # a hyphen directly following an underscore is the sign of a negative charge state
+    # (``v_Cd_-2``), not a complex name delimiter:
+    long_terms, subset_terms = (re.split(r"(?<!_)-", name) for name in (long_name, poss_subset_name))
+    if len(long_terms) != len(subset_terms) and not (
+        len(subset_terms) == len(long_terms) - 1 and len(long_terms) % 2 == 0
+    ):  # an even number of terms means the last is a complex point group, which may be omitted
+        # because a complex name looks like (defect-sep)*n-defect-pointgroup
+        return False
+
+    return all(
+        _check_if_underscore_name_subset(long_term, subset_term)
+        for long_term, subset_term in zip(long_terms, subset_terms, strict=False)
+    )
+
+
+def _check_if_underscore_name_subset(long_name: str, poss_subset_name: str):
+    """
+    As ``_check_if_name_subset``, but for a single hyphen-delimited term (i.e.
+    an individual point defect name, or a complex point group).
     """
     subset_num_underscores = poss_subset_name.count("_")
     for i in range(subset_num_underscores + 1):
@@ -713,13 +800,19 @@ def name_defect_entries(
 
         return defect_naming_dict, defect_name
 
-    defect_naming_dict: dict[str, DefectEntry] = {}
-    for defect_entry in defect_entries:
-        defect = (
+    def _get_defect(defect_entry):
+        return (
             defect_entry.defect
             if isinstance(defect_entry, DefectEntry | thermo.DefectEntry)
             else defect_entry
         )
+
+    complex_entries = [entry for entry in defect_entries if isinstance(_get_defect(entry), DefectComplex)]
+    defect_naming_dict: dict[str, DefectEntry] = {}
+    for defect_entry in defect_entries:
+        defect = _get_defect(defect_entry)
+        if isinstance(defect, DefectComplex):
+            continue  # named below
         full_defect_name = get_defect_name_from_defect(defect, element_list)
         split_number = 1 if defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
@@ -748,6 +841,14 @@ def name_defect_entries(
         )
         defect_naming_dict[full_defect_name] = defect_entry
 
+    # defect complexes are named as in |DefectsGenerator| (constituents, separations and point group; e.g.
+    # ``v_Cd-1.87-Cd_i-1.87-v_Cd-C3v``), with ``_a``, ``_b``... suffixes for any shared names:
+    complex_names, _renames = _disambiguate_names(
+        [get_defect_name_from_defect(_get_defect(entry), element_list) for entry in complex_entries],
+        existing_names=defect_naming_dict,
+    )
+    defect_naming_dict.update(zip(complex_names, complex_entries, strict=True))
+
     if len(defect_entries) != len(defect_naming_dict):
         raise ValueError(
             f"Number of defect entries ({len(defect_entries)}) does not match "
@@ -755,6 +856,90 @@ def name_defect_entries(
             f"Please report this issue to the developers."
         )
     return defect_naming_dict
+
+
+def _letter_suffixes() -> Iterator[str]:
+    """
+    Yield a, b, ..., z, aa, ab, ... as an iterator.
+
+    Note this differs from the scheme in ``name_defect_entries``, which goes
+    ``"z"`` -> ``"aa"`` -> ``"aaa"`` (ie repeated letters only): here a full
+    lexicographic sequence is used for sorting and due to the frequency of collisions.
+    """
+    for length in count(1):
+        for letters in product(ascii_lowercase, repeat=length):
+            yield "".join(letters)
+
+
+def _disambiguate_names(
+    new_names: Sequence[str], existing_names: Iterable[str] = ()
+) -> tuple[list[str], dict[str, str]]:
+    """
+    Append ``_a``, ``_b``, ... suffixes to make ``new_names`` unique, both
+    among themselves and against ``existing_names``.
+
+    Used for defect complexes, whose names are necessarily not unique. Any existing
+    holder of a unique name in ``existing_names`` that is now shared is appended
+    with ``"_a"``, instead of remaining bare.
+
+    Args:
+        new_names (Sequence[str]):
+            Names to be added, in the order they should be assigned suffixes.
+        existing_names (Iterable[str]):
+            Names already in use, which ``new_names`` must not collide with.
+            (Default: ``()``)
+
+    Returns:
+        tuple[list[str], dict[str, str]]:
+            The names to use for ``new_names`` (in the same order), and any
+            ``{old_name: new_name}`` renames the caller must apply to
+            ``existing_names``.
+    """
+    taken = set(existing_names)
+    renames: dict[str, str] = {}
+    demoted: set[str] = set()  # bare names which have been superseded by a suffixed series
+    names: list[str] = []
+
+    def _next_free(name: str) -> str:
+        return next(f"{name}_{suffix}" for suffix in _letter_suffixes() if f"{name}_{suffix}" not in taken)
+
+    def _series_base(name: str) -> str | None:
+        """
+        The bare name of ``name`` if it is a member of a suffixed series, else
+        ``None``; suffixes from ``_letter_suffixes`` are lowercase ASCII
+        letters, unlike any point group symbol.
+        """
+        base, _, suffix = name.rpartition("_")
+        return base if base and suffix.isascii() and suffix.isalpha() and suffix.islower() else None
+
+    # bare names already superseded by a suffixed series, detected from *any* surviving member of
+    # that series -- not just ``_a`` -- so that deleting members cannot resurrect the bare name:
+    series = {base for name in taken if (base := _series_base(name)) is not None}
+
+    for name in new_names:
+        # a bare name which has already been superseded by a series must not be reused, even if the
+        # series was assigned in an earlier call (or before reloading):
+        if name not in taken and name not in series:
+            taken.add(name)  # no collision, use the bare name
+            names.append(name)
+            continue
+
+        # TODO: this renames a complex - which the user may already possibly have generated
+        # files/calculations for? alternative is to leave bare, but then not obvious that this
+        # is a name in common with other complexes - and code would be simpler i think...
+        if name in taken and name not in demoted:  # demote whoever holds the bare name
+            demoted.add(name)  # (and keep the bare name reserved, so it is never reused)
+            suffixed = _next_free(name)
+            taken.add(suffixed)
+            if name in names:  # an earlier new name, so can be corrected directly
+                names[names.index(name)] = suffixed
+            else:  # an existing entry, so the caller must rename it
+                renames[name] = suffixed
+
+        taken.add(new_name := _next_free(name))
+        names.append(new_name)
+
+    return names, renames
 
 
 def charge_state_probability(
@@ -967,6 +1152,115 @@ def _get_charge_states(
     }
 
 
+def _guess_complex_charge_states(
+    defect_complex: DefectComplex, probability_threshold: float = 0.0075
+) -> tuple[list[int], list[dict]]:
+    r"""
+    Guess the possible stable charge states of a defect `complex`, from those
+    of its constituent point defects; see ``guess_defect_charge_states``.
+
+    The charge state probabilities of the constituents (from
+    ``charge_state_probability``) are treated as independent distributions and
+    convolved such that the probability of a charge state of a complex is the
+    sum over probabilities of each decomposition of the charge over its constituents.
+
+    The result is rescaled so that the neutral
+    state has a probability of 1 (as for point defects), and the same
+    ``probability_threshold`` is applied.
+
+    TODO this disfavours high charge states more strongly, not less?
+
+    Args:
+        defect_complex (DefectComplex):
+            |DefectComplex| object to guess the charge states of.
+        probability_threshold (float):
+            Probability threshold for including charge states, applied both to
+            the constituents and to the combined probabilities. (Default: 0.0075)
+
+    Returns:
+        tuple[list[int], list[dict]]:
+            The guessed charge states, and a list of dictionaries of the input
+            & computed values used to determine each charge state probability
+            (ordered by decreasing probability).
+    """
+    constituent_probabilities = []  # {charge state: probability} for each constituent
+    for constituent in defect_complex.defects:
+        _charge_states, log = cast(
+            "tuple[list[int], list[dict]]",
+            guess_defect_charge_states(
+                constituent,
+                probability_threshold=probability_threshold,
+                return_log=True,
+            ),
+        )
+        # charge state probability is only defined where there is a corresponding common oxi state
+        # of the element, plus the neutral state (and for vacancy charge states, all probabilities
+        # in the range are set to 1). the intermediate states filled in between such charge states
+        # are not included (ie probability 0) here.
+        probabilities = {entry["input_parameters"]["charge_state"]: entry["probability"] for entry in log}
+        probabilities[0] = 1.0
+        total_probability = sum(probabilities.values())  # normalise
+        constituent_probabilities.append({q: p / total_probability for q, p in probabilities.items()})
+
+    # convolution of the constituent distributions, accumulating one constituent at a time
+    # for efficiency. also keep most probable distribution for log
+    # {total charge state: (probability, most probable decomposition, its probability)}
+    distribution: dict[int, tuple[float, tuple[int, ...], float]] = {0: (1.0, (), 1.0)}
+    for probabilities in constituent_probabilities:
+        combined: dict[int, tuple[float, tuple[int, ...], float]] = {}
+        for total, (probability, combo, combo_probability) in distribution.items():
+            for charge_state, factor in probabilities.items():
+                prev_probability, prev_combo, prev_combo_probability = combined.get(
+                    total + charge_state, (0.0, (), 0.0)
+                )
+                joint = combo_probability * factor
+                combined[total + charge_state] = (
+                    prev_probability + probability * factor,  # sum over decompositions
+                    *(
+                        ((*combo, charge_state), joint)
+                        if joint > prev_combo_probability
+                        else (prev_combo, prev_combo_probability)
+                    ),
+                )
+        distribution = combined
+
+    # rescale so that the neutral state has a probability of 1, to match point defects
+    neutral_probability = distribution[0][0]
+    distribution = {
+        q: (p / neutral_probability, combo, combo_probability)
+        for q, (p, combo, combo_probability) in distribution.items()
+    }
+
+    charge_state_list = [q for q, (p, _, _) in distribution.items() if p > probability_threshold]
+    if not charge_state_list:
+        charge_state_list = [max(distribution, key=lambda q: distribution[q][0])]  # most probable
+    # set charge_state_range to min/max of range, ensuring range is extended to 0, as for point
+    # defects (so that any intermediate charge states are included):
+    charge_state_range = (min(*charge_state_list, 0), max(*charge_state_list, 0))
+
+    charge_state_guessing_log = [
+        {
+            "input_parameters": {
+                "charge_state": int(charge_state),
+                "most_probable_constituent_charge_states": [int(q) for q in combo],
+            },
+            "probability_factors": {
+                "constituent_probabilities": [
+                    probabilities[q]
+                    for probabilities, q in zip(constituent_probabilities, combo, strict=True)
+                ]
+            },
+            "probability": probability,
+            "probability_threshold": probability_threshold,
+        }
+        for charge_state, (probability, combo, _combo_probability) in sorted(
+            distribution.items(), key=lambda item: item[1][0], reverse=True
+        )
+    ]
+
+    return list(range(charge_state_range[0], charge_state_range[1] + 1)), charge_state_guessing_log
+
+
 def guess_defect_charge_states(
     defect: Defect, probability_threshold: float = 0.0075, return_log: bool = False
 ) -> list[int] | tuple[list[int], list[dict]]:
@@ -1004,6 +1298,9 @@ def guess_defect_charge_states(
     'fully-ionised'). For specific details on the probability functions
     employed, see the :func:`charge_state_probability()` function.
 
+    For a defect `complex`, the charge states are instead combined from those of
+    its constituent point defects; see ``_guess_complex_charge_states``.
+
     These probability functions were found to give optimal performance in terms
     of efficiency and completeness when tested against other approaches (see
     the ``doped`` JOSS paper: https://doi.org/10.21105/joss.06433) but of
@@ -1034,6 +1331,11 @@ def guess_defect_charge_states(
     """
     # Could consider band gap magnitude as well, by pulling from Materials Project. Smaller gaps mean
     # extreme charge states less likely. Would mean querying the MP database here though; not ideal.
+    if isinstance(defect, DefectComplex):  # combine the constituent point defect charge states
+        charge_states, charge_state_guessing_log = _guess_complex_charge_states(
+            defect, probability_threshold=probability_threshold
+        )
+        return (charge_states, charge_state_guessing_log) if return_log else charge_states
 
     orig_oxi = get_defect_site_orig_oxi_state(defect)  # checks vacancy oxi state validity first
     max_host_oxi_magnitude = round(max(abs(site.specie.oxi_state) for site in defect.structure))
@@ -1269,6 +1571,144 @@ def get_ideal_supercell_matrix(
                 optimal_P = alt_optimal_P
                 best_min_dist = alt_best_min_dist
                 target_size = alt_target_size
+
+    if pbar is not None:
+        pbar.set_description(
+            f"Best min distance: {best_min_dist:.2f} Å, with size = {target_size} unit cells"
+        )
+
+    return optimal_P
+
+
+def get_ideal_complex_supercell_matrix(
+    structure: Structure,
+    cart_coords: np.ndarray,
+    min_image_distance: float | None = None,
+    min_atoms: int = 50,
+    force_cubic: bool = False,
+    force_diagonal: bool = False,
+    ideal_threshold: float = 0.1,
+    verbose: bool = False,
+    pbar: tqdm | None = None,
+) -> np.ndarray:
+    """
+    Determine the ideal supercell matrix for a defect complex in the given
+    structure, based on the complex minimum image distance (i.e. the minimum
+    distance between any constituent point defect and a constituent point
+    defect of a periodic image), minimum number of atoms and
+    ``ideal_threshold``.
+
+    The equivalent of ``get_ideal_supercell_matrix`` for defect complexes.
+    In addition to the different metric, the supercell search is currently
+    exhaustive, instead of based on a scan around a guessed FCC/SC shape,
+    which may not be good candidates for a complex defect.
+
+    Sizes are preferred which give a diagonal expansion of the
+    primitive/conventional cell, then which give the largest minimum image distance,
+    then which are smallest.
+
+    Args:
+        structure (|Structure|): Unit cell structure to generate a supercell of.
+        cart_coords (np.ndarray):
+            ``(n, 3)`` array of Cartesian coordinates of the constituent
+            point defect sites of the complex, unwrapped.
+        min_image_distance (float):
+            Minimum complex minimum image distance (in Å) for the supercell.
+            If ``None`` (default), ``max(10, 2 * span)`` is used, where
+            ``span`` is the largest separation between any two constituent
+            sites of the complex -- scaling the target with the size of the
+            complex, so that extended complexes are still well-separated from
+            their periodic images, while reducing to the usual point defect
+            default of 10 Å for compact complexes (spans up to 5 Å).
+        min_atoms (int):
+            Minimum number of atoms in the supercell. (Default = 50)
+        force_cubic (bool):
+            Whether to return the most cubic supercell satisfying the above
+            criteria, rather than that with the largest complex minimum image
+            distance. Note that, unlike for point defects, this is done by
+            doped using the same exhaustive search rather than using
+            the ``pymatgen`` ``CubicSupercellTransformation``, which optimises
+            the single-site minimum image distance. (Default = False)
+        force_diagonal (bool):
+            As ``force_cubic``, but additionally requiring a diagonal supercell
+            transformation matrix. (Default = False)
+        ideal_threshold (float):
+            Threshold for scanning larger supercell sizes, as a fraction of the
+            smallest satisfactory size. Not used if ``force_cubic`` or
+            ``force_diagonal`` is set, as the supercell shape is then already
+            constrained. (Default = 0.1; i.e. 10% larger)
+        verbose (bool):
+            Whether to print out extra information about the supercell search.
+            (Default = False)
+        pbar (tqdm):
+            ``tqdm`` progress bar object to update (for internal ``doped``
+            usage). Default is ``None``.
+
+    Returns:
+        Ideal supercell matrix (``np.ndarray``).
+    """
+    span = np.max(np.linalg.norm(cart_coords[:, None] - cart_coords[None, :], axis=-1))
+    if min_image_distance is None:  # scale the target with the size of the complex; span = 0 for a
+        # single site, giving the same 10 Å default as for point defects
+        min_image_distance = max(10.0, 2 * span)
+    elif min_image_distance < 1.1 * span:  # can only be triggered by an explicit request, as the
+        # default above is always at least 2 * span
+        warnings.warn(
+            f"The requested complex minimum image distance ({min_image_distance:.2f} Å) is not "
+            f"appreciably larger than the span of the complex ({span:.2f} Å; the largest separation "
+            f"between its constituent sites). The returned supercell will then have constituent sites "
+            f"which are as close (or closer) to those of neighbouring complex images as they are to "
+            f"each other, so the complex is not well-defined in this supercell. A minimum image "
+            f"distance of at least ~2x the complex span is recommended.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # smallest size which could possibly satisfy both criteria
+    target_size = max(
+        int(np.ceil(min_atoms / len(structure))),
+        supercells._get_min_complex_target_size(structure.lattice.matrix, cart_coords, min_image_distance),
+    )
+
+    def _trial(size: int) -> tuple[np.ndarray, float]:
+        if pbar is not None:
+            pbar.set_description(f"Trialling size = {size} unit cells...")
+        return supercells.find_ideal_complex_supercell(  # type: ignore[return-value]
+            structure.lattice.matrix,
+            cart_coords,
+            target_size=size,
+            return_min_dist=True,
+            force_cubic=force_cubic,
+            force_diagonal=force_diagonal,
+            verbose=verbose,
+        )
+
+    # trial target sizes until min image dist hit
+    optimal_P, best_min_dist = _trial(target_size)
+    while best_min_dist < min_image_distance:
+        target_size += 1
+        optimal_P, best_min_dist = _trial(target_size)
+
+    if force_cubic or force_diagonal:  # constrained - no gain by searching higher?
+        return optimal_P
+
+    # test up to threshold
+    candidates = [(target_size, optimal_P, best_min_dist)]
+    for alt_target_size in range(target_size + 1, int(np.ceil(target_size * (1 + ideal_threshold))) + 1):
+        alt_optimal_P, alt_min_dist = _trial(alt_target_size)
+        if alt_min_dist >= min_image_distance:
+            candidates.append(
+                (
+                    alt_target_size,
+                    supercells._check_and_return_scalar_matrix(alt_optimal_P, structure.lattice.matrix),
+                    alt_min_dist,
+                )
+            )
+
+    target_size, optimal_P, best_min_dist = min(  # diagonal, then max distance, then smallest size
+        candidates,
+        key=lambda x: (round(supercells._min_sum_off_diagonals(structure, x[1])) != 0, -x[2], x[0]),
+    )
 
     if pbar is not None:
         pbar.set_description(
@@ -2037,6 +2477,11 @@ class DefectsGenerator(MSONable):
                 for defect_entry in defect_entry_dict.values()
                 if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "interstitials"
             ],
+            "others": [  # defect complexes, only present after calling a complex generator method
+                defect_entry.defect
+                for defect_entry in defect_entry_dict.values()
+                if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "others"
+            ],
         }
         # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
         self.defects = {k: v for k, v in self.defects.items() if v}
@@ -2085,33 +2530,531 @@ class DefectsGenerator(MSONable):
 
             pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
 
-    def defect_generator_info(self):
+    # TODO check signature
+    def generate_complex_chains(
+        self,
+        chain: Iterable[str] | Iterable[Iterable[str]] | str | None = None,
+        chain_length: int = 2,
+        max_separation: float = 2.5,
+        min_separation: float = 0.0,
+        symprec: float | None = None,
+        dist_tol_factor: float = 1.0,
+        additional_defects: dict[str, Defect] | None = None,
+        **kwargs,
+    ) -> None:
+        r"""
+        Generate a set of symmetry-inequivalent defect complexes as ordered
+        chains of point defects. The set of possible point defects at each
+        position in the chain can be specified, as well as the maximum and
+        minimum separation between consecutive point defects in the chain.
+
+        ``chain`` can set both the length of the chains and the point defects allowed
+        at each position along them, so e.g. ``[["v_Cd"], ["Cd_i"], ["v_Cd"]]``
+        gives split vacancies (vacancy-interstitial-vacancy complexes), or
+        ``[["v_Cd", "v_Te"], ["v_Cd", "v_Te"]]`` gives all possible divacancies.
+        Alternatively, a single list of names allows chains composed of these defects
+        in any order, with ``chain_length`` setting the length.
+
+        For an alternative method of defect complex generation, see
+        ``generate_complex_clusters``.
+
+        Args:
+            chain (Iterable[str] | Iterable[Iterable[str]] | str | None):
+                Names of the point defects (matching those in
+                ``self.defect_entries``, with or without their charge states)
+                to use as candidate constituents of the generated chains.
+                Partial names match all defects of which they are a subset (as
+                in ``add_charge_states`` etc.), so e.g. ``"Cd_i"`` matches every
+                generated Cd interstitial site. If ``None`` (default), all
+                generated point defects are used.
+
+                May also be given as one iterable of names `per position` along
+                the chain, which then sets both the chain length (overriding
+                ``chain_length``) and the constituents allowed at each position;
+                e.g. ``[["v_Cd"], ["Cd_i"], ["v_Cd"]]`` for a split vacancy.
+            chain_length (int):
+                Number of constituent point defects in the generated chains.
+                Ignored if ``defects`` is given per position. (Default: 2)
+            max_separation (float):
+                Maximum distance (in Å) between consecutive constituent point
+                defects in a chain. (Default: 2.5)
+            min_separation (float):
+                Minimum distance (in Å) between consecutive constituent point
+                defects in a chain. (Default: 0.0)
+            symprec (float):
+                Symmetry precision to use for identifying and pruning
+                symmetry-equivalent complexes. If ``None`` (default), uses
+                ``self.symprec``.
+            dist_tol_factor (float):
+                Factor by which ``symprec`` is multiplied to give the distance
+                tolerance for matching symmetry-equivalent complexes. (Default:
+                1.0)
+            additional_defects (dict[str, Defect] | None):
+                Additional |Defect| objects to include as candidate
+                constituents, as a ``{name: Defect}`` dictionary, for point
+                defects not generated by this |DefectsGenerator|. The given
+                names must not collide with those of the generated defects.
+                (Default: ``None``)
+            **kwargs:
+                Additional keyword arguments, e.g. for the complex generation
+                and symmetry analysis functions in ``doped.complexes``.
+        """
+        from doped.complexes import get_complex_chains  # here, to avoid a circular import
+
+        pool, names, nested = self._complex_constituent_pool(chain, additional_defects)
+        positions = (
+            cast("list[list[str]]", names)  # positions given explicitly, so they set the chain
+            if nested  # length and the allowed constituents
+            else [[name for group in names for name in group]] * chain_length  # any, at each position
+        )
+        show_pbar = kwargs.pop("pbar", True)
+        complexes = get_complex_chains(
+            pool,
+            positions,
+            max_separation=max_separation,
+            min_separation=min_separation,
+            symprec=self.symprec if symprec is None else symprec,
+            dist_tol_factor=dist_tol_factor,
+            pbar=show_pbar,
+            **kwargs,
+        )
+
+        self._add_defect_complexes(complexes, pbar=show_pbar)
+
+    def generate_complex_clusters(
+        self,
+        defects: Iterable[str] | str | None = None,
+        cluster_size: int | tuple[int, int] = 2,
+        max_diameter: float = 3.0,
+        min_separation: float = 0.0,
+        allow_repeats: bool = True,
+        symprec: float | None = None,
+        dist_tol_factor: float = 1.0,
+        additional_defects: dict[str, Defect] | None = None,
+        **kwargs,
+    ) -> None:
+        r"""
+        Generate a set of symmetry-inequivalent defect complexes as unordered
+        clusters of point defects. The set of possible point defects, the
+        maximum and minimum size of the cluster, and the maximum diameter of
+        the complex can be specified.
+
+        Constituents are drawn from ``defects`` in any combination, so e.g.
+        ``[v_Cd, v_Te]`` with ``size = 2`` gives all divacancies, and with
+        ``size = (2, 3)`` all di- and tri-vacancies. With ``allow_repeats = False``,
+        complexes with an exact composition can be specified, e.g.
+        ``[v_Cd, v_Cd, Cd_i, Cd_Te]`` with ``size = 4`` will only give clusters
+        with this exact composition of point defects.
+
+        For an alternative method of defect complex generation, see
+        ``generate_complex_chains``.
+
+        Args:
+            defects (Iterable[str] | str | None):
+                Names of the point defects (matching those in
+                ``self.defect_entries``, with or without their charge states)
+                to use as candidate constituents of the generated clusters.
+                Partial names match all defects of which they are a subset (as
+                in ``add_charge_states`` etc.), so e.g. ``"Cd_i"`` matches every
+                generated Cd interstitial site. If ``None`` (default), all
+                generated point defects are used.
+
+                A name may be given more than once, setting the number of times
+                that point defect may appear in a cluster when ``allow_repeats``
+                is ``False``; e.g. ``["v_Cd", "v_Cd", "Cd_i"]`` with
+                ``cluster_size=3, allow_repeats=False`` gives only
+                ``v_Cd-v_Cd-Cd_i`` type complexes. An entry may itself be a
+                group of names, which then count as one constituent between
+                them; e.g. ``["v_Cd", ["Cd_i", "Te_i"]]`` to permit a single
+                Cd interstitial OR Te interstitial in the cluster. Note groups
+                are assumed disjoint or identical, partially overlapping
+                groups are not supported.
+            cluster_size (int | tuple[int, int]):
+                Number of constituent point defects in the generated
+                clusters, or a ``(min, max)`` range thereof. (Default: 2)
+            max_diameter (float):
+                Maximum span (diameter) of the generated clusters in Å; i.e.
+                the maximum allowed distance between any two constituent
+                point defects. (Default: 3.0)
+            min_separation (float):
+                Minimum distance (in Å) between any two constituent point
+                defects in a cluster. (Default: 0.0)
+            allow_repeats (bool):
+                Whether the same point defect may appear more than once in a
+                cluster. If ``False``, the multiplicity of each constituent is
+                set by how many times it is named in ``defects``. (Default: True)
+            symprec (float):
+                Symmetry precision to use for identifying and pruning
+                symmetry-equivalent complexes. If ``None`` (default), uses
+                ``self.symprec``.
+            dist_tol_factor (float):
+                Factor by which ``symprec`` is multiplied to give the distance
+                tolerance for matching symmetry-equivalent complexes. (Default:
+                1.0)
+            additional_defects (dict[str, Defect] | None):
+                Additional |Defect| objects to include as candidate
+                constituents, as a ``{name: Defect}`` dictionary, for point
+                defects not generated by this |DefectsGenerator|. The given
+                names must not collide with those of the generated defects.
+                (Default: ``None``)
+            **kwargs:
+                Additional keyword arguments, e.g. for the complex generation
+                and symmetry analysis functions in ``doped.complexes``.
+        """
+        from doped.complexes import get_complex_clusters  # avoid a circular import
+
+        pool, names, _nested = self._complex_constituent_pool(defects, additional_defects)
+        show_pbar = kwargs.pop("pbar", True)
+        complexes = get_complex_clusters(
+            pool,
+            names=names,  # one group per given name - repeats set constituent multiplicity
+            size=cluster_size,
+            max_diameter=max_diameter,
+            min_separation=min_separation,
+            allow_repeats=allow_repeats,
+            symprec=self.symprec if symprec is None else symprec,
+            dist_tol_factor=dist_tol_factor,
+            pbar=show_pbar,
+            **kwargs,
+        )
+
+        self._add_defect_complexes(complexes, pbar=show_pbar)
+
+    def _defects_by_name(self, complexes: bool = False) -> dict[str, Defect]:
+        """
+        The generated point defects (or defect complexes, if ``complexes``),
+        keyed by name without charge state, taking the neutral |DefectEntry|'s
+        |Defect| if present.
+        """
+        available: dict[str, Defect] = {}
+        for name, defect_entry in self.defect_entries.items():
+            if isinstance(defect_entry.defect, DefectComplex) is not complexes:
+                continue
+            name_wout_charge = _name_wout_charge_state(name)
+            if name_wout_charge not in available or defect_entry.charge_state == 0:
+                available[name_wout_charge] = defect_entry.defect
+
+        return available
+
+    def _complex_constituent_pool(
+        self,
+        defects: Iterable[str] | Iterable[Iterable[str]] | str | None = None,
+        additional_defects: dict[str, Defect] | None = None,
+    ) -> tuple[dict[str, Defect], list[list[str]], bool]:
+        """
+        Construct a labelled dictionary of point defects for a pool of
+        constituent point defects for complexes. May take names with or without
+        charge state, and the names are matched to the self.defect_entries
+        dict. Also take partial matches e.g. Cd_i will match all Cd
+        interstitials if multiple.
+
+        Returns the ``{name: Defect}`` pool, the given names resolved against
+        it as one group per given name (or per position, for a nested input),
+        and whether the input was nested (ie to distinguish the two uses for
+        the chains/clusters applications).
+        """
+        available = self._defects_by_name()  # point defects only, no complexes of complexes
+
+        def _resolve(names: Iterable[str] | str) -> list[str]:
+            """
+            Expand the given names against ``available``, preserving order and
+            repeats.
+            """
+            return [
+                match
+                for name in ([names] if isinstance(names, str) else names)
+                for match in _match_defect_names(name, available, "Point defect")
+            ]
+
+        nested = (
+            defects is not None
+            and not isinstance(defects, str)
+            and not all(isinstance(entry, str) for entry in defects)
+        )
+        if defects is None:
+            names = [[name] for name in available]  # each generated point defect, once
+        elif nested:
+            names = [_resolve(position) for position in defects]  # type: ignore[arg-type]
+        else:
+            names = [
+                _resolve(name)
+                for name in ([defects] if isinstance(defects, str) else cast("Iterable[str]", defects))
+            ]
+
+        pool = {  # any position may draw on any of the resolved names
+            name: available[name] for group in names for name in group
+        }
+
+        taken = {name.rsplit("_", 1)[0] for name in self.defect_entries}
+        for name, defect in (additional_defects or {}).items():
+            if (generated := available.get(name)) is not None and generated == defect:
+                # user gave a defect already in self.defects - use generated to be safe
+                pool[name] = generated
+            elif name in taken:
+                raise ValueError(
+                    f"The name {name!r} given in ``additional_defects`` is already used by a "
+                    f"different generated defect! Please use a different name to avoid ambiguity."
+                )
+            else:
+                pool[name] = defect
+            # also available at each position, unless the caller named the positions explicitly
+            if nested:
+                continue
+            names.append([name])
+
+        return pool, names, nested
+
+    def _add_defect_complexes(
+        self, complexes: list[tuple[DefectComplex, list[str]]], pbar: tqdm | bool = True
+    ) -> None:
+        """
+        From DefectComplexes, generate DefectEntries and add to self.defects
+        and self.defect_entries. Coordinates pbar, deduplication, warnings,
+        name disambiguation, charge state guessing, defect entry generation,
+        sorting.
+
+        Args:
+            complexes (list[tuple[DefectComplex, list[str]]]):
+                The generated complexes and the ``doped`` names of their
+                constituent point defects, as returned by the generation
+                functions in ``doped.complexes``.
+            pbar (tqdm | bool):
+                An existing progress bar to report into, or ``True``/``False``
+                to create a new bar which is shown/hidden. One step is taken
+                per complex. (Default: True)
+        """
+        # avoid a circular import:
+        from doped.complexes import _complex_generation_pbar, get_defect_complex_name
+
+        if not complexes:
+            warnings.warn(
+                "No defect complexes were generated with the given parameters! Try increasing "
+                "``max_separation``/``max_diameter``, or check the given ``defects``.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return
+
+        # match against complexes already generated
+        generated: dict[str, DefectComplex] = {  # {name (wout charge): complex} already generated
+            name.rsplit("_", 1)[0]: cast("DefectComplex", defect_entry.defect)
+            for name, defect_entry in self.defect_entries.items()
+            if isinstance(defect_entry.defect, DefectComplex)
+        }
+        new_complexes = []
+        duplicate_names = []  # names of the already generated complexes regenerated here
+        for defect_complex, constituent_names in complexes:
+            name = next((n for n, other in generated.items() if other == defect_complex), None)
+            if name is None:
+                new_complexes.append((defect_complex, constituent_names))
+            else:
+                duplicate_names.append(name)
+
+        # sort new complexes before labelling to give deterministic _a, _b etc suffixes up to
+        # within a single generation method run - but cannot guarantee deterministic if collided
+        # names are generated in separate generation calls
+        new_complexes.sort(
+            key=lambda complex_and_names: _defect_sort_key(
+                complex_and_names[0], self._element_list, include_frac_coords=True
+            )
+        )
+
+        # label collided names
+        names, renames = _disambiguate_names(
+            [
+                get_defect_complex_name(defect_complex, names=constituent_names)
+                for defect_complex, constituent_names in new_complexes
+            ],
+            existing_names=[name.rsplit("_", 1)[0] for name in self.defect_entries],
+        )
+        for old_name, new_name in renames.items():  # rename all charge states of any demoted complex
+            for entry_name in [n for n in self.defect_entries if n.rsplit("_", 1)[0] == old_name]:
+                defect_entry = self.defect_entries.pop(entry_name)
+                defect_entry.name = f"{new_name}_{entry_name.rsplit('_', 1)[1]}"
+                self.defect_entries[defect_entry.name] = defect_entry
+        duplicate_names = [renames.get(name, name) for name in duplicate_names]  # if demoted just above
+
+        partial_func = partial(
+            _get_neutral_defect_entry,
+            supercell_matrix=self.supercell_matrix,
+            target_frac_coords=self.target_frac_coords,
+            bulk_supercell=self.bulk_supercell,
+            conventional_structure=self.conventional_structure,
+            _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
+            wyckoff_label_dict={},
+            symprec=self.symprec,
+        )
+        with (
+            warnings.catch_warnings(),
+            # one step per complex for each of the two stages below:
+            # DefectEntry copying and charge state guessing take roughly comparable time
+            _complex_generation_pbar(2 * len(new_complexes), pbar) as entry_pbar,
+        ):
+            # aggregate small supercell warnings
+            warnings.filterwarnings("ignore", message="The complex minimum image distance")
+            entry_pbar.set_description(
+                f"Generating DefectEntry objects for {len(new_complexes)} complex(es)"
+            )
+            neutral_defect_entries = {}
+            for name, (defect_complex, _constituent_names) in zip(names, new_complexes, strict=True):
+                neutral_defect_entries[name] = partial_func(defect_complex)
+                entry_pbar.update(1)
+
+            if neutral_defect_entries:  # all complexes may have already been generated
+                self._guess_and_set_charge_states(neutral_defect_entries, entry_pbar)
+            if (remaining := entry_pbar.total - entry_pbar.n) > 0:
+                entry_pbar.update(remaining)
+
+        if neutral_defect_entries:
+            self._warn_if_small_supercell(neutral_defect_entries)
+
+        added = [defect_entry.defect for defect_entry in neutral_defect_entries.values()]
+        self.defects.setdefault("others", []).extend(added)
+        # re sort both dicts
+        self.defects = _sort_defects(self.defects, element_list=self._element_list)
+        self.defect_entries = sort_defect_entries(self.defect_entries, element_list=self._element_list)
+
+        # print the complexes info table, as for point defects on |DefectsGenerator| initialisation:
+        # showing all complexes matching the given parameters, including any skipped as already
+        # generated, so the printed set shows all complexes matching the query
+        shown = set(names) | set(duplicate_names)
+        self.defect_generator_info(
+            defect_classes=["others"],
+            defect_entries={
+                name: defect_entry
+                for name, defect_entry in self.defect_entries.items()
+                if name.rsplit("_", 1)[0] in shown
+            },
+        )
+
+    def _warn_if_small_supercell(
+        self, defect_entries: dict[str, DefectEntry], min_span_factor: float = 1.5
+    ):
+        """
+        Small supercell warnings for complexes.
+        """
+        ill_defined = {}
+        for name, defect_entry in defect_entries.items():
+            cart_coords = np.array([site.coords for site in defect_entry.defect_supercell_sites or []])
+            min_image_distance = supercells._get_complex_min_image_distance_from_matrix(
+                self.bulk_supercell.lattice.matrix, cart_coords
+            )
+            span = float(np.linalg.norm(cart_coords[:, None] - cart_coords[None, :], axis=-1).max())
+            if min_image_distance < span * min_span_factor:
+                ill_defined[name] = (min_image_distance, span)
+
+        if not ill_defined:
+            return
+
+        # split by severity: at or below the span, each constituent is at least as close to those of
+        # a neighbouring image as to the rest of its own complex, and complex is likely not well defined
+        # above it, just results may be physically inaccurate
+        severe = {name: v for name, v in ill_defined.items() if round(v[0], 2) <= round(v[1], 2)}
+        marginal = {name: v for name, v in ill_defined.items() if round(v[0], 2) > round(v[1], 2)}
+
+        def _listing(entries: dict[str, tuple[float, float]], max_shown: int = 10) -> str:
+            shown = list(entries.items())[:max_shown]
+            return "\n".join(
+                f"  {name}: complex minimum image distance {dist:.2f} Å vs span {span:.2f} Å"
+                for name, (dist, span) in shown
+            ) + (f"\n  ... and {len(entries) - len(shown)} more" if len(entries) > len(shown) else "")
+
+        message = (
+            f"\n!!! {len(ill_defined)} of the {len(defect_entries)} generated defect complexes are not "
+            f"well-defined in this supercell !!!\nThe complex minimum image distance (the minimum "
+            f"distance between any constituent and a constituent of a periodic image) is compared "
+            f"against the complex span (the largest separation between its own constituents):\n"
+        )
+        if severe:
+            message += (
+                f"\n{len(severe)} with a minimum image distance less than or equal to their span, so each "
+                f"constituent is as close (or closer) to those of neighbouring complex images as it is "
+                f"to the rest of its own complex; these complexes are not physically meaningful in "
+                f"this supercell and their formation energies may be unreliable:\n" + _listing(severe)
+            )
+        if marginal:
+            message += (
+                f"\n{len(marginal)} with a minimum image distance larger than, but close to "
+                f"({min_span_factor}x), their span, so complex-image interactions will be "
+                f"significant:\n" + _listing(marginal)
+            )
+        warnings.warn(
+            f"{message}\nA larger and/or complex-optimised supercell is strongly recommended; see "
+            f"``optimise_supercell``.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    def defect_generator_info(
+        self,
+        defect_classes: Iterable[str] | None = None,
+        defect_entries: dict[str, DefectEntry] | None = None,
+    ):
         """
         Prints information about the defects that have been generated.
-        """
-        return print(self._defect_generator_info())
 
-    def _defect_generator_info(self):
+        Args:
+            defect_classes (Iterable[str]):
+                The classes of defect to print, as keys of ``self.defects``
+                (i.e. ``"vacancies"``, ``"substitutions"``, ``"interstitials"``
+                and/or ``"others"``; the last being defect complexes). If
+                ``None`` (default), all generated classes are printed.
+            defect_entries (dict[str, DefectEntry]):
+                The |DefectEntry| objects to tabulate, allowing a subset of
+                the generated defects to be printed. If ``None`` (default),
+                ``self.defect_entries`` is used.
+        """
+        return print(
+            self._defect_generator_info(defect_classes=defect_classes, defect_entries=defect_entries)
+        )
+
+    def _defect_generator_info(
+        self,
+        defect_classes: Iterable[str] | None = None,
+        defect_entries: dict[str, DefectEntry] | None = None,
+    ):
         """
         Returns a string with information about the defects that have been
         generated by the |DefectsGenerator|.
+
+        Args:
+            defect_classes (Iterable[str]):
+                The classes of defect to include, as keys of ``self.defects``
+                (i.e. ``"vacancies"``, ``"substitutions"``, ``"interstitials"``
+                and/or ``"others"``; the last being defect complexes). If
+                ``None`` (default), all generated classes are included.
+            defect_entries (dict[str, DefectEntry]):
+                The |DefectEntry| objects to tabulate, allowing a subset of
+                the generated defects to be printed. If ``None`` (default),
+                ``self.defect_entries`` is used.
         """
+        from doped.complexes import get_defect_complex_name  # avoid a circular import
+
+        if defect_entries is None:
+            defect_entries = self.defect_entries
         info_string = ""
-        for defect_class, defect_list in self.defects.items():
+        shown_wyckoff = shown_complexes = False
+        for defect_class in self.defects if defect_classes is None else defect_classes:
+            defect_list = self.defects.get(defect_class, [])
             if len(defect_list) > 0:
                 table = []
+                complexes = defect_class == "others"  # complexes; named differently, and no Wyckoff label
                 header = [
-                    defect_class.capitalize(),
+                    "Complexes" if complexes else defect_class.capitalize(),
                     "Guessed Charges",
-                    "Conv. Cell Coords",
-                    "Wyckoff",
+                    # the full name already gives the point group, so is shown in place of "Wyckoff":
+                    *(["Name", "Conv. Cell Coords"] if complexes else ["Conv. Cell Coords", "Wyckoff"]),
                 ]
                 defect_type = defect_list[0].defect_type
                 matching_defect_types = {
                     defect_entry_name: defect_entry
-                    for defect_entry_name, defect_entry in self.defect_entries.items()
+                    for defect_entry_name, defect_entry in defect_entries.items()
                     if defect_entry.defect.defect_type == defect_type
                 }
+                if not matching_defect_types:  # none of this class in the given ``defect_entries``
+                    continue
+                shown_wyckoff = shown_wyckoff or not complexes
+                shown_complexes = shown_complexes or complexes
                 matching_type_names_wout_charge = []
                 for defect_entry_name in matching_defect_types:
                     defect_name_wout_charge = defect_entry_name.rsplit("_", 1)[0]
@@ -2125,7 +3068,7 @@ class DefectsGenerator(MSONable):
                         if defect_entry_name.rsplit("_", 1)[0] == defect_name_wout_charge
                     ]
                     # convert list of strings to one string with comma-separated charges
-                    charges = "[" + ",".join(charges) + "]"
+                    charges_string = "[" + ",".join(charges) + "]"
                     defect_entry = next(
                         entry
                         for name, entry in matching_defect_types.items()
@@ -2136,12 +3079,26 @@ class DefectsGenerator(MSONable):
                         if defect_entry.conv_cell_frac_coords is None
                         else ",".join(f"{x:.3f}" for x in defect_entry.conv_cell_frac_coords)
                     )
-                    row = [
-                        defect_name_wout_charge,
-                        charges,
-                        f"[{frac_coords_string}]",
-                        defect_entry.wyckoff,
-                    ]
+                    row = (
+                        [  # composition at a glance first, then the full name:
+                            get_defect_complex_name(
+                                cast("DefectComplex", defect_entry.defect),
+                                element_list=self._element_list,
+                                include_point_group=False,
+                                include_separations=False,
+                            ),
+                            charges_string,
+                            defect_name_wout_charge,
+                            f"[{frac_coords_string}]",
+                        ]
+                        if complexes
+                        else [
+                            defect_name_wout_charge,
+                            charges_string,
+                            f"[{frac_coords_string}]",
+                            defect_entry.wyckoff,
+                        ]
+                    )
                     table.append(row)
                 info_string += (
                     tabulate(
@@ -2154,10 +3111,18 @@ class DefectsGenerator(MSONable):
                 )
         conventional_cell_comp = self.conventional_structure.composition
         formula, fu = conventional_cell_comp.get_reduced_formula_and_factor(iupac_ordering=True)
-        info_string += (
-            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
-            f"conventional ('conv.') unit cell, which comprises {fu} formula unit(s) of {formula}.\n"
-        )
+        if shown_wyckoff:
+            info_string += (
+                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
+                f"the conventional ('conv.') unit cell, which comprises {fu} formula unit(s) of "
+                f"{formula}.\n"
+            )
+        if shown_complexes:
+            info_string += (
+                "Complex names give the constituent point defects in order along the shortest chain "
+                "through the complex, with their separations (in Å) interleaved and the point group of "
+                "the complex appended, while the conv. cell coordinates are those of its centroid.\n"
+            )
 
         return info_string
 
@@ -2167,8 +3132,7 @@ class DefectsGenerator(MSONable):
         charge_states: list | int,
         match_charge_states: bool = True,
     ) -> tuple[list, list]:
-        if defect_entry_name[-1].isdigit():  # if defect entry name ends with number:
-            defect_entry_name = defect_entry_name.rsplit("_", 1)[0]  # name without charge
+        defect_entry_name = _name_wout_charge_state(defect_entry_name)
 
         charge_states = [round(charge) for charge in np.atleast_1d(charge_states).tolist()]  # int list
 
@@ -2273,6 +3237,9 @@ class DefectsGenerator(MSONable):
         for key, value in d.items():  # set instance variables directly, decoding nested MSON dicts
             if key not in {"@module", "@class", "@version"}:
                 setattr(defects_generator, key, MontyDecoder().process_decoded(value))
+
+        # ``padding`` (removed in v4.0; see ``__init__``) may be saved in generators from older versions:
+        getattr(defects_generator, "charge_state_gen_kwargs", {}).pop("padding", None)  # TODO: remove v4.1
 
         return defects_generator
 
@@ -2478,12 +3445,22 @@ def _get_element_list(defect: Defect | DefectEntry | dict | list) -> list[str]:
         return element_list
 
     if isinstance(defect, Defect | DefectEntry | core.Defect | thermo.DefectEntry):
-        return _get_single_defect_element_list(
-            defect if isinstance(defect, Defect | core.Defect) else defect.defect
-        )
+        single_defect = defect if isinstance(defect, Defect | core.Defect) else defect.defect
+        if isinstance(single_defect, core.DefectComplex):  # constituent species, not dummy centroid
+            return _get_element_list(single_defect.defects)
+        return _get_single_defect_element_list(single_defect)
 
     # else is dict/list
     defect_list = defect if isinstance(defect, list) else list(defect.values())
+    defect_list = [  # flatten nested lists
+        entry_or_defect
+        for entry_or_defect_or_list in defect_list
+        for entry_or_defect in (
+            entry_or_defect_or_list
+            if isinstance(entry_or_defect_or_list, list)
+            else [entry_or_defect_or_list]
+        )
+    ]
     defect_list = [
         (
             entry_or_defect.defect
@@ -2491,6 +3468,13 @@ def _get_element_list(defect: Defect | DefectEntry | dict | list) -> list[str]:
             else entry_or_defect
         )
         for entry_or_defect in defect_list
+    ]
+    defect_list = [  # constituent point defects of any complexes, not their dummy centroid sites:
+        constituent
+        for single_defect in defect_list
+        for constituent in (
+            single_defect.defects if isinstance(single_defect, core.DefectComplex) else [single_defect]
+        )
     ]
     host_element_list = list(
         dict.fromkeys(el.symbol for el in next(iter(defect_list)).structure.composition.elements)
@@ -2569,7 +3553,9 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
     |DefectsParser| objects.
 
     Sorts defect entries by defect type (vacancies, substitutions,
-    interstitials), then by order of appearance of elements in the host
+    interstitials, complexes; where complexes with the net composition change
+    of a single point defect, e.g. split vacancies, are sorted with that point
+    defect type), then by order of appearance of elements in the host
     composition, then by periodic group (main groups 1, 2, 13-18 first, then
     TMs), then by atomic number, then (for defect entries of the same type)
     sort by name and charge state (from positive to negative).
@@ -2597,21 +3583,50 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
         else name_defect_entries(defect_entries, element_list)
     )
 
+    def _type_and_name_elements(name: str, defect: Defect) -> tuple[int, tuple]:
+        """
+        Complex-aware equivalent of the defect type and first and second
+        element sort keys.
+
+        Defect complexes with the net composition change of a single point
+        defect (such as split vacancies; see ``DefectComplex.net_name``) are
+        sorted with that point defect type, while for other complexes this
+        takes only symmetry-invariant, always available (generation and
+        parsing) keys - number of defects, constituent point defects
+        composition, and interdefect distances.
+        """
+        if isinstance(defect, core.DefectComplex):
+            if defect.net_name == defect.name:  # not a single net point defect
+                return defect.defect_type.value, _defect_sort_key(defect, element_list)[1:-1]
+            name = defect.net_name  # sort with the corresponding point defect type
+            defect_type = (
+                core.DefectType.Vacancy
+                if name.startswith("v_")
+                else core.DefectType.Interstitial
+                if name.endswith("_i")
+                else core.DefectType.Substitution
+            )
+        else:
+            defect_type = defect.defect_type
+        return defect_type.value, tuple(
+            _list_index_or_val(element_list, element) for element in _first_and_second_element(name)
+        )
+
     try:
         sorted_defect_entries_dict = dict(
             sorted(
                 defect_entries_dict.items(),
                 key=lambda s: (
-                    s[1].defect.defect_type.value,
-                    _list_index_or_val(element_list, _first_and_second_element(s[0])[0]),
-                    _list_index_or_val(element_list, _first_and_second_element(s[0])[1]),
+                    *_type_and_name_elements(s[0], s[1].defect),
                     s[0].rsplit("_", 1)[0],  # name without charge
                     -s[1].charge_state,  # charge state
                 ),
             )
         )
-    except ValueError as value_err:
+    except (ValueError, TypeError) as sort_err:
         # possibly defect entries with names not in doped format, try sorting without using name:
+        from doped.complexes import get_defect_complex_name  # avoid circular import
+
         try:
 
             def _defect_entry_sort_func(defect_entry):
@@ -2620,19 +3635,17 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
                 )
                 if unrelaxed_defect_name_w_charge is not None:
                     name_from_defect = unrelaxed_defect_name_w_charge.rsplit("_", 1)[0]  # without charge
+                elif isinstance(defect_entry.defect, core.DefectComplex):
+                    name_from_defect = get_defect_complex_name(
+                        defect_entry.defect, element_list=element_list
+                    )
                 else:
                     name_from_defect = get_defect_name_from_defect(
                         defect_entry.defect,
                         element_list=element_list,
                     )
                 return (
-                    defect_entry.defect.defect_type.value,
-                    _list_index_or_val(
-                        element_list, _first_and_second_element(defect_entry.defect.name)[0]
-                    ),
-                    _list_index_or_val(
-                        element_list, _first_and_second_element(defect_entry.defect.name)[1]
-                    ),
+                    *_type_and_name_elements(defect_entry.defect.name, defect_entry.defect),
                     defect_entry.name.rsplit("_", 1)[0],  # name without charge
                     name_from_defect,  # doped name without charge
                     -defect_entry.charge_state,  # charge state
@@ -2644,8 +3657,8 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
                     key=lambda s: _defect_entry_sort_func(s[1]),  # sort by defect entry object
                 )
             )
-        except ValueError as value_err_2:
-            raise value_err_2 from value_err
+        except (ValueError, TypeError) as sort_err_2:
+            raise sort_err_2 from sort_err
 
     if isinstance(defect_entries, list):  # then return as a list
         return list(sorted_defect_entries_dict.values())
@@ -2653,7 +3666,85 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
     return sorted_defect_entries_dict  # else dict
 
 
-def _sort_defects(defects_dict: dict, element_list: list[str] | None = None):
+def _defect_sort_key(defect: Defect, element_list: list[str], include_frac_coords: bool = False) -> tuple:
+    """
+    Deterministic sort key for |Defect| objects; see ``_sort_defects``.
+
+    Defect `complexes` sort after all point defects (by ``defect_type``), then
+    by number of constituents, then by their constituent point defects, then by
+    interdefect distances, then by point group, then by conventional cell
+    fractional coordinates of the constituents.
+
+    Args:
+        defect (Defect):
+            |Defect| (or |DefectComplex|) object to generate the sort key for.
+        element_list (list[str]):
+            Ordered list of elements, used to sort by order of appearance in
+            the host composition.
+        include_frac_coords (bool):
+            If ``True``, the fractional coordinates of the defect site (and of
+            each constituent, for a complex) are appended to the key, for stronger
+            discrimination - for a complex, the invariant terms
+            above do not always distinguish inequivalent complexes, while these
+            coordinates always do.
+
+            Note that these coordinates are not symmetry invariant, so if the
+            sort reaches this term then symmetry-equivalent complexes (which
+            differ only in their choice of configuration) may be sorted further
+            apart than inequivalent ones. Only appropriate therefore where a
+            total order matters more than symmetry invariance, and where all
+            objects being sorted come from the same pathway (and duplicate
+            equivalent defects are not present?).
+            (Default: False)
+
+    Returns:
+        tuple: Sort key for the defect.
+    """
+    if isinstance(defect, core.DefectComplex):
+        cart_coords = defect.structure.lattice.get_cartesian_coords(
+            [defect.site.frac_coords for defect in defect.defects]
+        )
+        seps = np.linalg.norm(cart_coords[:, None, :] - cart_coords[None, :, :], axis=-1)
+        complex_seps = tuple(sorted(np.round(seps[np.triu_indices(len(cart_coords), k=1)], 2).tolist()))
+        point_sort_keys = sorted(
+            _defect_sort_key(constituent, element_list, include_frac_coords=include_frac_coords)
+            for constituent in defect.defects
+        )
+        key_terms = list(zip(*point_sort_keys, strict=True))
+        return (
+            defect.defect_type.value,
+            len(defect.defects),
+            tuple(key_terms[:4]),  # symmetry invariant: type, elements and name of each constituent
+            complex_seps,
+            defect.point_group or "",  # ``None`` if not yet determined
+            # conv_cell_frac_coords is actually symmetry invariant but we sort on this last
+            # to maintain maximum parity between generation (attribute is present) and parsing
+            # (attribute is not present)
+            (
+                symmetry._frac_coords_sort_func(getattr(defect, "conv_cell_frac_coords", None)),
+                # centroid conv cell frac coords
+                *key_terms[4:],
+                # constituent conv cell frac coords, then optionally raw constituent frac coords
+            ),
+        )
+
+    return (
+        defect.defect_type.value,
+        _list_index_or_val(element_list, _first_and_second_element(defect.name)[0]),
+        _list_index_or_val(element_list, _first_and_second_element(defect.name)[1]),
+        defect.name,  # bare name without charge
+        symmetry._frac_coords_sort_func(getattr(defect, "conv_cell_frac_coords", None)),
+        *(  # not symmetry invariant, so only ever an optional tiebreak; see docstring
+            [symmetry._frac_coords_sort_func(defect.site.frac_coords)] if include_frac_coords else []
+        ),
+    )
+
+
+def _sort_defects(
+    defects_dict: dict,
+    element_list: list[str] | None = None,
+    include_frac_coords: bool = False,
+):
     """
     Sort defect objects for deterministic behaviour (for output and when
     reloading |DefectsGenerator| objects.
@@ -2662,6 +3753,17 @@ def _sort_defects(defects_dict: dict, element_list: list[str] | None = None):
     then by order of appearance of elements in the composition, then by
     periodic group (main groups 1, 2, 13-18 first, then TMs), then by atomic
     number, then according to ``symmetry._frac_coords_sort_func``.
+
+    Defect complexes sort after all point defects, then by number of constituents,
+    then by their constituent point defects (except coords), then by interdefect
+    separations, then by constituent conventional cell fractional coords.
+
+    If ``include_frac_coords`` is used, raw fractional coordinates are included
+    to fully discriminate between defects - however note these are not symmetry
+    invariant. Conventional cell fractional coords (symmetry invariant) are
+    not available parsing side, and do not distinguish fully between different
+    inequivalent complexes, so this is required for a fully deterministic ordering
+    of complex constituents, for example.
     """
     if element_list is None:
         element_list = _get_element_list(defects_dict)
@@ -2669,12 +3771,7 @@ def _sort_defects(defects_dict: dict, element_list: list[str] | None = None):
     return {
         defect_type: sorted(
             defect_list,
-            key=lambda d: (
-                _list_index_or_val(element_list, _first_and_second_element(d.name)[0]),
-                _list_index_or_val(element_list, _first_and_second_element(d.name)[1]),
-                d.name,  # bare name without charge
-                symmetry._frac_coords_sort_func(d.conv_cell_frac_coords),
-            ),
+            key=lambda d: _defect_sort_key(d, element_list, include_frac_coords=include_frac_coords),
         )
         for defect_type, defect_list in defects_dict.items()
     }

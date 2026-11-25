@@ -36,12 +36,15 @@ def suppress_logging(level=logging.CRITICAL):
 def patch_vise_for_windows():
     """
     Context manager to patch
-    ``vise.defaults.UserSettings._make_yaml_file_list``, so that it returns an
-    empty list.
+    ``vise.user_settings.UserSettings._make_yaml_file_list`` (so that it
+    returns an empty list), and then trigger the first import of
+    ``vise.defaults`` with the patch in effect.
 
     Fixes an issue where this function gives an infinite recursive search on
-    Windows, causing hanging.
+    Windows, causing hanging. The failing search runs at import vise.defaults,
+    so user_settings has to be imported and patched first.
     """
+    # TODO intended behaviour is to ignore vise.yaml?
     vise_user_settings = importlib.import_module("vise.user_settings")
     orig = vise_user_settings.UserSettings._make_yaml_file_list
     vise_user_settings.UserSettings._make_yaml_file_list = lambda *args, **kwargs: []

@@ -1,0 +1,1456 @@
+{
+    "Ba3Al2(SiO4)3-mp-14049": {
+        "Al|-2876.3581125456826": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3i",
+                "C3i"
+            ]
+        },
+        "Al|-2878.0475617140423": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3i",
+                "C3i"
+            ]
+        },
+        "Al|-2882.283608582666": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3i",
+                "C3i"
+            ]
+        },
+        "Ba|-2978.427589457431": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D2",
+                "D2"
+            ]
+        },
+        "Ba|-2979.5462294440586": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D2",
+                "D2"
+            ]
+        },
+        "Ba|-2979.7179962144846": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D2",
+                "D2"
+            ]
+        },
+        "Ba|-2980.329291013322": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D2",
+                "D2"
+            ]
+        },
+        "Ba|-2980.8816542087575": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D2",
+                "D2"
+            ]
+        },
+        "Ba|-2984.6156185161844": {
+            "int_symm": "C2",
+            "multiplicity": 24,
+            "relaxed_symm": "C2",
+            "unrelaxed_symm": "C2",
+            "vac_symms": [
+                "D2",
+                "D2"
+            ]
+        },
+        "Si|-2808.005441733379": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "S4",
+                "S4"
+            ]
+        },
+        "Si|-2825.9926757904996": {
+            "int_symm": "C2",
+            "multiplicity": 24,
+            "relaxed_symm": "C2",
+            "unrelaxed_symm": "C2",
+            "vac_symms": [
+                "S4",
+                "S4"
+            ]
+        },
+        "Si|-2843.1815830387077": {
+            "int_symm": "C1",
+            "multiplicity": 48,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "S4",
+                "S4"
+            ]
+        }
+    },
+    "CsCd(PO3)3-mp-13738": {
+        "Cd|-5788.84993623595": {
+            "int_symm": "C1",
+            "multiplicity": 8,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Cd|-5790.970342167872": {
+            "int_symm": "C1",
+            "multiplicity": 8,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Cd|-5792.523418854683": {
+            "int_symm": "Cs",
+            "multiplicity": 4,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Cs|-5839.277881052231": {
+            "int_symm": "C1",
+            "multiplicity": 8,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Cs|-5839.515154122696": {
+            "int_symm": "C1",
+            "multiplicity": 8,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Cs|-5840.233946819394": {
+            "int_symm": "C1",
+            "multiplicity": 8,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Cs|-5840.728993977381": {
+            "int_symm": "Cs",
+            "multiplicity": 4,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Cs|-5842.1755725619505": {
+            "int_symm": "C1",
+            "multiplicity": 8,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Cs|-5842.737317397882": {
+            "int_symm": "C1",
+            "multiplicity": 8,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Cs|-5843.923629757018": {
+            "int_symm": "Cs",
+            "multiplicity": 8,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "P|-5539.039741221686": {
+            "int_symm": "Cs",
+            "multiplicity": 4,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C1",
+                "C1"
+            ]
+        },
+        "P|-5568.059553653835": {
+            "int_symm": "C1",
+            "multiplicity": 8,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C1",
+                "Cs"
+            ]
+        },
+        "P|-5571.801392165679": {
+            "int_symm": "Cs",
+            "multiplicity": 8,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C1",
+                "Cs"
+            ]
+        }
+    },
+    "Ga2O3-mp-1243": {
+        "Ga|-4245.988605840683": {
+            "int_symm": "C2",
+            "multiplicity": 12,
+            "relaxed_symm": "C3",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3",
+                "C3"
+            ]
+        },
+        "Ga|-4246.283070682254": {
+            "int_symm": "C2",
+            "multiplicity": 12,
+            "relaxed_symm": "C3",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3",
+                "C3"
+            ]
+        },
+        "Ga|-4251.752418378564": {
+            "int_symm": "C3i",
+            "multiplicity": 2,
+            "relaxed_symm": "C3i",
+            "unrelaxed_symm": "C3i",
+            "vac_symms": [
+                "C3",
+                "C3"
+            ]
+        },
+        "Ga|-4254.514592924256": {
+            "int_symm": "C2",
+            "multiplicity": 6,
+            "relaxed_symm": "C2",
+            "unrelaxed_symm": "C2",
+            "vac_symms": [
+                "C3",
+                "C3"
+            ]
+        },
+        "Ga|-4274.703489311639": {
+            "int_symm": "D3",
+            "multiplicity": 2,
+            "relaxed_symm": "C3",
+            "unrelaxed_symm": "D3",
+            "vac_symms": [
+                "C3",
+                "C3"
+            ]
+        }
+    },
+    "Ga2O3-mp-886": {
+        "Ga|-3532.271636883619": {
+            "int_symm": "Cs",
+            "multiplicity": 4,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Ga|-3533.0105217664072": {
+            "int_symm": "Cs",
+            "multiplicity": 4,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Ga|-3534.0710246716094": {
+            "int_symm": "C1",
+            "multiplicity": 4,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Ga|-3534.1733735716566": {
+            "int_symm": "Cs",
+            "multiplicity": 2,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Ga|-3535.0352812268243": {
+            "int_symm": "Cs",
+            "multiplicity": 4,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Ga|-3536.5774614029033": {
+            "int_symm": "Cs",
+            "multiplicity": 2,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Ga|-3537.183042692767": {
+            "int_symm": "C2",
+            "multiplicity": 2,
+            "relaxed_symm": "C2h",
+            "unrelaxed_symm": "C2",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Ga|-3538.32401214789": {
+            "int_symm": "C1",
+            "multiplicity": 4,
+            "relaxed_symm": "C2h",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        },
+        "Ga|-3540.978794414263": {
+            "int_symm": "C2h",
+            "multiplicity": 1,
+            "relaxed_symm": "C2h",
+            "unrelaxed_symm": "C2h",
+            "vac_symms": [
+                "Cs",
+                "Cs"
+            ]
+        }
+    },
+    "GeI2-mp-1540935": {
+        "Ge|-421.0360243077214": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.037642954272": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.04284619706135": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.0875307724988": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.08782436398803": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.0898833191112": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.090278541954": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.09141629438136": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.09241455573795": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.2715592446299": {
+            "int_symm": "C3v",
+            "multiplicity": 3,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.27451949822546": {
+            "int_symm": "C3v",
+            "multiplicity": 3,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.3174230026583": {
+            "int_symm": "C3v",
+            "multiplicity": 3,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.3207226685495": {
+            "int_symm": "C3v",
+            "multiplicity": 3,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.32163828647646": {
+            "int_symm": "C3v",
+            "multiplicity": 3,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ge|-421.3254892191653": {
+            "int_symm": "C3v",
+            "multiplicity": 3,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        }
+    },
+    "Li3Ti4O8-mp-752879": {
+        "Li|-3309.5547200934707": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.6071615488345": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.6140534871356": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.614903888785": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "Ci",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.6380284306015": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.648926073248": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.655339634218": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.657828984621": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.6579187003617": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.6603807911742": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.6605372604095": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.6676054970785": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.6731588139405": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.7308778057495": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.743355157916": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.748033532279": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3309.767848492227": {
+            "int_symm": "C3v",
+            "multiplicity": 12,
+            "relaxed_symm": "Ci",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3311.924827168447": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3311.9563273470703": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Li|-3311.9791985658367": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3192.946127214918": {
+            "int_symm": "C1",
+            "multiplicity": 12,
+            "relaxed_symm": "C2h",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3193.115298453013": {
+            "int_symm": "C1",
+            "multiplicity": 12,
+            "relaxed_symm": null,
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3201.521459774776": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "D3d"
+            ]
+        },
+        "Ti|-3201.693030042275": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "D3d"
+            ]
+        },
+        "Ti|-3202.023269632146": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3d",
+                "C2h"
+            ]
+        },
+        "Ti|-3202.845867600892": {
+            "int_symm": "C1",
+            "multiplicity": 12,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3202.8979063511247": {
+            "int_symm": "C1",
+            "multiplicity": 12,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3203.2186389682715": {
+            "int_symm": "C1",
+            "multiplicity": 12,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3203.2357592619755": {
+            "int_symm": "C1",
+            "multiplicity": 12,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3203.3921432441102": {
+            "int_symm": "C1",
+            "multiplicity": 12,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3203.5708068764984": {
+            "int_symm": "C1",
+            "multiplicity": 12,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3208.2157328158605": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3208.7811592739267": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        },
+        "Ti|-3209.1554706604106": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "Cs",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C2h",
+                "C2h"
+            ]
+        }
+    },
+    "Na2Mg(NiO2)2-mp-2217469": {
+        "Mg|-1403.0580119649749": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1403.0855640482243": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1403.6200854122148": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1403.7526028002803": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1403.9712696411211": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1403.992749404462": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1404.6406031699694": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1406.6448080466257": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1406.9770746905488": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1407.3267812628987": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1411.1765804933084": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Mg|-1416.2629200367314": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1420.627721359717": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1421.322560265073": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1421.9179890350483": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.0084296227835": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.0143988561404": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.0639712923305": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.0949690013324": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.248225505958": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.325639456551": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.342234133728": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.3529536863286": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.3618000347897": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.497049189167": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.5010906511905": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.6591731636029": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.6912720699145": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.7571587108716": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.7846244406323": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1422.9151056697808": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.011929795319": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.0190447902467": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.2653529896772": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.274574657387": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.3224574938347": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.325492424846": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.4141390088503": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.4272631828585": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.4429009301916": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.4915819522564": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1423.5869894652585": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1424.5434406931902": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1424.894509663898": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1424.9214790796757": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1424.9349449910567": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1425.6312556447472": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1425.6410947149104": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1425.8004894243138": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1425.809341782727": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1425.813942871288": {
+            "int_symm": "Cs",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1426.0554513122995": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Na|-1426.0560786447816": {
+            "int_symm": "Cs",
+            "multiplicity": 12,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "C1",
+            "vac_symms": [
+                "D3h",
+                "D3h"
+            ]
+        },
+        "Ni|-1380.0872791229413": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ni|-1380.097280653185": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        },
+        "Ni|-1380.0996123603172": {
+            "int_symm": "C3v",
+            "multiplicity": 6,
+            "relaxed_symm": "C1",
+            "unrelaxed_symm": "Cs",
+            "vac_symms": [
+                "C3v",
+                "C3v"
+            ]
+        }
+    }
+}

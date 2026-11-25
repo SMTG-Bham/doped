@@ -1713,7 +1713,14 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             plotting.format_defect_name(defect_species=2, include_site_info=True)
         # check invalid defect type returns None
         assert plotting.format_defect_name(defect_species="kk_Cd_1_0", include_site_info=True) is None
+        with pytest.raises(ValueError) as e:  # same informative error for names without underscores
+            plotting.format_defect_name(defect_species="bulk")
+        assert "Problem reading defect name bulk, should end with charge state" in str(e.value)
 
+        vac, dash = (
+            "$\\it{V}\\!$ ",
+            "\u2013",
+        )  # vacancy symbol, and en dash used to join complex constituents
         defect_species_name_dict = {
             "vac_Cd_mult32_0": "$\\it{V}\\!$ $_{Cd}^{0}$",
             "VSb_0": "$\\it{V}\\!$ $_{Sb}^{0}$",
@@ -1799,6 +1806,20 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             "T_Co_Td_0": "T$_{Co}^{0}$",
             "T_Si_Td_0": "T$_{Si}^{0}$",
             "C_Si_C3v_0": "C$_{Si}^{0}$",
+            # hyphens in (user-defined) point defect name suffixes are not defect complex delimiters:
+            "v_Cd-HSE06_0": f"{vac}$_{{Cd}}^{{0}}$",
+            "v_Cd_C2v-meta_0": f"{vac}$_{{Cd}}^{{0}}$",
+            "v_Cd_-1-rerun_-1": f"{vac}$_{{Cd}}^{{-1}}$",
+            "Li_i_C1-rattled_+1": "Li$_i^{+1}$",
+            "Te_Cd_C3v-Cs_+1": "Te$_{Cd}^{+1}$",
+            # defect complexes; constituents joined by en dashes, omitting separations and point groups:
+            "v_Cd-1.87-Cd_i-1.87-v_Cd-C3v_0": f"{vac}$_{{Cd}}${dash}Cd$_i${dash}{vac}$_{{Cd}}$$^{{0}}$",
+            "Cd_i-Te_i-v_Cd_+2": f"Cd$_i${dash}Te$_i${dash}{vac}$_{{Cd}}$$^{{+2}}$",
+            "Te_i-v_Cd-Cd_i_-1": f"Te$_i${dash}{vac}$_{{Cd}}${dash}Cd$_i$$^{{-1}}$",
+            # ...including with the ``_a``, ``_b``... suffixes given to same-named complexes:
+            "Cd_i_C3v-2.31-Cd_i_C3v-C2v_a_+2": f"Cd$_i${dash}Cd$_i$$^{{+2}}$",
+            "Cd_i_C3v-2.31-Te_i_C3v-Cs_b_+6": f"Cd$_i${dash}Te$_i$$^{{+6}}$",
+            "v_Cd-2.83-v_Te-Td_aa_0": f"{vac}$_{{Cd}}${dash}{vac}$_{{Te}}$$^{{0}}$",
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():

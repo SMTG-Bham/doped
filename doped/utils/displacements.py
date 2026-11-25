@@ -14,12 +14,13 @@ import pandas as pd
 from pymatgen.util.coord import pbc_shortest_vectors
 from pymatgen.util.typing import PathLike
 
-from doped.core import DefectEntry
+from doped.core import DefectComplex, DefectEntry
 from doped.generation import _get_element_list
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
+    _update_defect_entry_structure_metadata,
     get_matching_site,
     get_site_mappings,
 )
@@ -50,6 +51,9 @@ def calc_site_displacements(
     The signed displacements are stored in the calculation_metadata of the
     |DefectEntry| object under the ``"site_displacements"`` key.
 
+    For defect complexes, distances and relative displacements are measured to
+    the closest constituent point defect site.
+
     Args:
         defect_entry (|DefectEntry|):
             |DefectEntry| object.
@@ -79,8 +83,8 @@ def calc_site_displacements(
         ``pandas`` ``DataFrame`` with site displacements (compared to pristine
         supercell), and other displacement-related information.
     """
-    bulk_sc, defect_sc_with_site, defect_site_index = _get_bulk_struct_with_defect(defect_entry)
-    defect_site = defect_sc_with_site[defect_site_index]
+    bulk_sc, defect_sc_with_site, defect_site_indices = _get_bulk_struct_with_defect(defect_entry)
+    defect_sites = [defect_sc_with_site[index] for index in defect_site_indices]
 
     # Map sites in defect supercell to bulk supercell:
     mappings = get_site_mappings(defect_sc_with_site, bulk_sc, threshold=threshold)
@@ -107,8 +111,9 @@ def calc_site_displacements(
         # First final point, then initial point
         disp = pbc_shortest_vectors(bulk_sc.lattice, bulk_site.frac_coords, site.frac_coords)[0, 0]
 
-        # Distance to defect site (last site in defect sc)
+        # Distance to defect site (or closest one for defect complexes)
         atomic_site = site if relaxed_distances else bulk_site
+        defect_site = min(defect_sites, key=lambda ds: ds.distance_and_image(atomic_site)[0])
         distance = defect_site.distance_and_image(atomic_site)[0]
         disp_dict["Species"].append(site.specie.name)
         disp_dict["Distance to defect"].append(distance)
@@ -161,22 +166,14 @@ def calc_site_displacements(
         + ["Index (defect supercell)"]
     ]
 
-    # Store in DefectEntry.calculation_metadata
-    # For vacancies, before storing displacements data, remove the last site
-    # (defect site) as not present in input defect supercell
-    # But leave it in disp_df as clearer to include in the displacement plot
-    disp_vectors_list = deepcopy(list(disp_df["Displacement vector"]))
-    distance_list = deepcopy(list(disp_df["Distance to defect"]))
-    if defect_entry.defect.defect_type.name == "Vacancy":
-        # get idx of value closest to zero:
-        min_idx = min(range(len(distance_list)), key=lambda i: abs(distance_list[i]))
-        if np.isclose(distance_list[min_idx], 0, atol=1e-2):  # just to be sure
-            disp_vectors_list.pop(min_idx)
-            distance_list.pop(min_idx)
+    # Store displacements data but first remove all vacancy sites appended to defect supercell
+    # But leave them in disp_df as clearer to include in the displacement plot
+    in_defect_sc = disp_df["Index (defect supercell)"] < len(_get_defect_supercell(defect_entry))
     # Store in DefectEntry.calculation_metadata
     defect_entry.calculation_metadata["site_displacements"] = {
-        "displacements": disp_vectors_list,  # Ordered by site index in defect supercell
-        "distances": distance_list,
+        # Ordered by species then distance?
+        "displacements": deepcopy(list(disp_df["Displacement vector"][in_defect_sc])),
+        "distances": deepcopy(list(disp_df["Distance to defect"][in_defect_sc])),
     }
 
     return disp_df
@@ -1142,41 +1139,66 @@ def _get_bulk_struct_with_defect(defect_entry: DefectEntry) -> tuple:
     Returns structures for bulk and defect supercells with the `same` number of
     sites and species, to be used for site matching.
 
-    If ```Vacancy```, adds (unrelaxed) site to defect structure. If
-    ``Interstitial``, adds relaxed site to bulk structure. If ``Substitution``,
-    replaces (unrelaxed) defect site in bulk structure with the relaxed site.
+    For each (constituent) point defect; if ``Vacancy``, adds the (unrelaxed)
+    site to the defect structure. If ``Interstitial``, adds the relaxed site to
+    the bulk structure. If ``Substitution``, replaces the (unrelaxed) defect
+    site in the bulk structure with the defect species.
 
-    Returns tuple of
-    ``(bulk_sc_with_defect, defect_sc_with_defect, defect_site_index)``.
+    Returns tuple of ``(bulk_sc_with_defect, defect_sc_with_defect,
+    defect_site_indices)``, with one (defect supercell) site index per
+    (constituent) point defect.
     """
-    defect_type = defect_entry.defect.defect_type.name
-    if defect_type not in {"Vacancy", "Interstitial", "Substitution"}:
-        raise ValueError(f"Defect type {defect_type} not supported")
-    species = defect_entry.defect.site.specie
     bulk_sc = _get_bulk_supercell(defect_entry).copy()
-    relaxed_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=True)
-    assert relaxed_frac_coords is not None  # always set for a parsed defect entry
-
-    # remove any rigid translation drift (e.g. due to rattling), placing the relaxed supercell and defect
-    # site in the same frame as the bulk supercell -- otherwise it spuriously adds to every displacement:
-    defect_sc, shifted_frac_coords = remove_translation_drift(
-        _get_defect_supercell(defect_entry), bulk_sc, relaxed_frac_coords
-    )
-    if defect_type == "Vacancy":  # add the vacancy site to the defect structure; vacancy site defined...
-        defect_sc.append(species, relaxed_frac_coords, coords_are_cartesian=False)
-        return bulk_sc, defect_sc, len(defect_sc) - 1  # ...in the _bulk_ frame, so unaffected by drift
-
-    # index of the (relaxed) defect site in the defect supercell, which may differ from the bulk site
-    # index; matched on coordinates, as the drift removal above has shifted all sites:
-    defect_site_index = defect_sc.index(get_matching_site(shifted_frac_coords, defect_sc))
-    if defect_type == "Interstitial":  # add the relaxed interstitial site to the bulk structure
-        bulk_sc.append(species, shifted_frac_coords, coords_are_cartesian=False)
-    else:  # Substitution; replace the (unrelaxed) bulk site with the defect species
-        unrelaxed_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=False)
-        bulk_sc.replace(
-            bulk_sc.index(get_matching_site(unrelaxed_frac_coords, bulk_sc)),
-            species,
-            unrelaxed_frac_coords,
-            coords_are_cartesian=False,
+    defect_sc = _get_defect_supercell(defect_entry)
+    defect = defect_entry.defect
+    # (point defect, unrelaxed frac coords, relaxed defect supercell site index; None for vacancies):
+    constituents: list[tuple[Any, Any, int | None]]
+    if isinstance(defect, DefectComplex):
+        if not (getattr(defect_entry, "calculation_metadata", None) or {}).get("bulk_sites"):
+            _update_defect_entry_structure_metadata(defect_entry)
+        metadata = defect_entry.calculation_metadata
+        constituents = [
+            (point_defect, bulk_site.frac_coords, index)
+            for point_defect, bulk_site, index in zip(
+                defect.defects, metadata["bulk_sites"], metadata["defect_site_indices"], strict=True
+            )
+        ]
+    else:
+        defect_type = defect.defect_type.name
+        relaxed_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=True)
+        assert relaxed_frac_coords is not None  # always set for a parsed defect entry
+        unrelaxed_frac_coords = (  # vacancy site defined in the bulk frame, so relaxed = unrelaxed
+            _get_defect_supercell_frac_coords(defect_entry, relaxed=False)
+            if defect_type == "Substitution"
+            else relaxed_frac_coords
         )
-    return bulk_sc, defect_sc, defect_site_index
+        index = (
+            None
+            if defect_type == "Vacancy"
+            else defect_sc.index(get_matching_site(relaxed_frac_coords, defect_sc))
+        )
+        constituents = [(defect, unrelaxed_frac_coords, index)]
+
+    # remove any rigid translation drift (e.g. due to rattling), placing the relaxed supercell in the same
+    # frame as the bulk supercell -- otherwise it spuriously adds to every displacement; site order is
+    # unchanged (so defect site indices still apply), and vacancy/substitution sites are in the bulk frame:
+    defect_sc, _ = remove_translation_drift(defect_sc, bulk_sc, np.zeros(3))
+    defect_site_indices = []
+    for point_defect, unrelaxed_frac_coords, defect_site_index in constituents:
+        species, defect_type = point_defect.site.specie, point_defect.defect_type.name
+        if defect_type == "Vacancy":  # add the vacancy site to the defect structure
+            defect_sc.append(species, unrelaxed_frac_coords, coords_are_cartesian=False)
+        elif defect_type == "Interstitial":  # add the relaxed interstitial site to the bulk structure
+            bulk_sc.append(species, defect_sc[defect_site_index].frac_coords, coords_are_cartesian=False)
+        elif defect_type == "Substitution":  # replace the (unrelaxed) bulk site with the defect species
+            bulk_sc.replace(
+                bulk_sc.index(get_matching_site(unrelaxed_frac_coords, bulk_sc)),
+                species,
+                unrelaxed_frac_coords,
+                coords_are_cartesian=False,
+            )
+        else:
+            raise ValueError(f"Defect type {defect_type} not supported")
+        defect_site_indices.append(len(defect_sc) - 1 if defect_type == "Vacancy" else defect_site_index)
+
+    return bulk_sc, defect_sc, defect_site_indices

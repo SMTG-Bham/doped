@@ -154,8 +154,10 @@ def _make_stenciled_defect_entry(
     defect_site = _site_matching_input_entry(defect_entry, stenciled_supercell, defect_site)
     stenciled_entry.defect_supercell_site = defect_site
     stenciled_entry.sc_defect_frac_coords = defect_site.frac_coords
-    # pop any previously-calculated site displacement data:
-    stenciled_entry.calculation_metadata.pop("site_displacements", None)
+    # pop any previously-calculated site displacement data, and per-constituent (defect complex) site info
+    # of the original supercells (re-parsed for the stenciled supercells when needed):
+    for key in ("site_displacements", "bulk_sites", "defect_site_indices", "bulk_site_indices"):
+        stenciled_entry.calculation_metadata.pop(key, None)
     stenciled_entry.calculation_metadata["bulk_site"] = (
         defect_site_in_bulk
         if bulk_site_index is None  # interstitial
@@ -493,8 +495,8 @@ class DefectStencilingTest(unittest.TestCase):
     def test_edge_tol_min_dist_tol_ranges_and_warning_factor(self):
         """
         Test the usage of ``edge_tol_range`` and ``min_dist_tol_range`` inputs
-        to ``get_defect_in_supercell`` for Se defects stenciled to the same 20Å
-        supercell.
+        to ``get_defect_in_supercell`` for Se defects stenciled to the same
+        20Å supercell.
 
         234-atom supercell was generated from
         ``DefectsGenerator(prim_Se, supercell_gen_kwargs={"min_dist":20})``.
@@ -649,8 +651,8 @@ class DefectStencilingTest(unittest.TestCase):
         with target composition handling).
 
         Example MgO data is from a cubic 12 Å cell (90° angles), while this
-        uses a FCC-like 12 Å cell with ~62.5° angles as the stenciling target,
-        which also has a different volume per atom!
+        uses a FCC-like 12 Å cell with ~62.5° angles as the stenciling
+        target, which also has a different volume per atom!
         """
         from doped.generation import get_ideal_supercell_matrix
 
@@ -804,3 +806,48 @@ class DefectStencilingTest(unittest.TestCase):
             "more than 1%; i.e. changing the structure, which is typically not desired!"
             in str(w[0].message)
         )
+
+    def test_divacancy_stenciling(self):
+        from doped.generation import DefectsGenerator
+        from doped.utils.stenciling import get_defect_in_supercell
+
+        CdTe_prim = Structure.from_file("examples/CdTe/relaxed_primitive_POSCAR")
+        defect_gen = DefectsGenerator(CdTe_prim,supercell_gen_kwargs={'min_image_distance': 10})
+        defect_gen.generate_complex_chains(["v_Cd", "v_Cd"], chain_length=2, max_separation=5.0)
+
+        complex_de = defect_gen['v_Cd-4.62-v_Cd-C2v_+2']
+        template_supercell = DefectsGenerator(CdTe_prim,supercell_gen_kwargs={'min_image_distance': 20}).bulk_supercell
+
+        stencilled_complex, bulk = get_defect_in_supercell(
+            complex_de,
+            template_supercell,
+        )
+
+        def get_vacancy_indices(defect_supercell, bulk_supercell, tol=0.5):
+            """Indices of bulk sites with no defect-supercell atom within ``tol`` Å."""
+            dists = bulk_supercell.lattice.get_all_distances(
+                bulk_supercell.frac_coords, defect_supercell.frac_coords
+            )
+            return [i for i in range(len(bulk_supercell)) if dists[i].min() > tol], dists
+
+        # check same lattice as target, with exactly two atoms removed
+        np.testing.assert_allclose(
+            stencilled_complex.lattice.matrix, template_supercell.lattice.matrix, atol=1e-4
+        )
+        assert len(stencilled_complex) == len(template_supercell) - 2
+
+        # check two missing sites are both Cd
+        vac_indices, dists = get_vacancy_indices(stencilled_complex, bulk)
+        assert [bulk[i].specie.symbol for i in vac_indices] == ["Cd", "Cd"]
+
+        # vacancy separation matches the original complex
+        orig_vac_indices, _ = get_vacancy_indices(complex_de.defect_supercell, complex_de.bulk_supercell)
+        orig_separation = complex_de.bulk_supercell.get_distance(*orig_vac_indices)
+        new_separation = bulk.get_distance(*vac_indices)
+        assert np.isclose(new_separation, orig_separation, atol=0.01)
+
+        # corresponding bulk matches the target supercell
+        assert StructureMatcher_scan_stol(
+            template_supercell, bulk, "fit", max_stol=0.02, primitive_cell=True
+        )
+
